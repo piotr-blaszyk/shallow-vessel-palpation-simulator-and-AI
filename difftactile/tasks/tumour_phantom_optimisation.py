@@ -18,8 +18,9 @@ SLOW_DOWN = 0.5
 SPEED_1_MM_S = 4.0828765820486765 / SLOW_DOWN
 SPEED_2_DEG_S = 81.63 / SLOW_DOWN
 TIME_STEPS_PER_S = 10 * SLOW_DOWN
-PHANTOM_INITIAL_POSE = [9.75, 9.75, 1.85, 0, 0, 0]
-SENSOR_DOME_TIP_INITIAL_POSE = [9.75, 9.75, 2.95, -90, 0, 0]
+PHANTOM_CLOSEST_VERTEX = [6.687500, 6.687500, 1.687500]
+PHANTOM_INITIAL_POSE = [15.687500, 11.937500, 2.787500, 0, 0, 0]
+SENSOR_DOME_TIP_INITIAL_POSE = [PHANTOM_CLOSEST_VERTEX[0]+2, PHANTOM_CLOSEST_VERTEX[1]+2, 3.887500, -90, 0, 0]
 
 def print_point_cloud(arr):
     # Print the shape for verification
@@ -52,15 +53,15 @@ class Contact(ContactVisualisation):
             dt=dt,
             sub_steps=num_sub_frames,
             obj_name=obj,
-            space_scale=16.0,
-            obj_scale=8.0,
+            space_scale=36.0,
+            obj_scale=18.0,
             density=0.5,
             rho=1.07,
         )
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
-        self.trajectory = ti.Vector.field(6, dtype=float, shape=13, needs_grad=False)
+        self.trajectory = ti.Vector.field(6, dtype=float, shape=12, needs_grad=False)
         self.tumour_present = ti.field(dtype=bool, shape=(), needs_grad=False)
         self.tumour_present[None] = False
         self.set_up_initial_positions_and_trajectory()
@@ -208,17 +209,16 @@ class Contact(ContactVisualisation):
         trajectory_npy = np.array([
             [x, y, z, xr, yr, zr],
             [x, y, z-1, xr, yr, zr],
-            [x, y+1, z-1, xr, yr, zr],
-            [x, y, z-1, xr, yr, zr],
-            [x, y, z, xr, yr, zr],
-            [x, y, z-1, xr, yr, zr],
-            [x, y, z-1, xr+15, yr, zr],
-            [x, y, z-1, xr, yr, zr],
-            [x, y, z, xr, yr, zr],
-            [x, y, z-1, xr, yr, zr],
-            [x, y, z-1, xr, yr, zr+15],
-            [x, y, z-1, xr, yr, zr],
-            [x, y, z, xr, yr, zr],
+            [x+14, y, z-1, xr, yr, zr],
+            [x+14, y+1.5, z-1, xr, yr, zr],
+            [x, y+1.5, z-1, xr, yr, zr],
+            [x, y+3.0, z-1, xr, yr, zr],
+            [x+14, y+3.0, z-1, xr, yr, zr],
+            [x+14, y+4.5, z-1, xr, yr, zr],
+            [x, y+4.5, z-1, xr, yr, zr],
+            [x, y+6.0, z-1, xr, yr, zr],
+            [x+14, y+6.0, z-1, xr, yr, zr],
+            [x+14, y+6.0, z, xr, yr, zr],
         ], dtype=float)
         self.trajectory.from_numpy(trajectory_npy)
 
@@ -564,7 +564,7 @@ class Contact(ContactVisualisation):
             
             clamp_speed = True
             # Clamp pos_control to max_speed
-            max_speed_pos = 10.0
+            max_speed_pos = 100.0
             pos_control_norm = pos_control.norm()
             if clamp_speed and pos_control_norm > max_speed_pos:
                 pos_control = pos_control / pos_control_norm * max_speed_pos
@@ -647,7 +647,7 @@ def main():
 
     gui_tuple = set_up_gui(PHANTOM_INITIAL_POSE.copy(), SENSOR_DOME_TIP_INITIAL_POSE.copy())
 
-    phantom_name = "cylinder.stl"
+    phantom_name = "vascular-phantom.stl"
     num_sub_frames = 50
     num_frames = 1_000
     num_opt_steps = 500
@@ -680,7 +680,7 @@ def main():
             contact_model.memory_to_cache(0)
 
             keypoint_coords = contact_model.tactile_sensor.get_keypoint_coordinates(0, contact_model.keypoint_indices)
-            update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords)
+            update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords[0, :].reshape((1, 3)))
 
             if contact_model.frames_since_last_target_reached[None] == 100:
                 contact_model.take_snapshot(opts)
