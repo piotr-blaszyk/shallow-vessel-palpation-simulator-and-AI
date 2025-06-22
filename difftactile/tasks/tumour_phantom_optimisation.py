@@ -201,11 +201,13 @@ class Contact(ContactVisualisation):
         )
 
         xr_offset = np.random.uniform(-15, 15)
+        yr_offset = np.random.uniform(-15, 15)
+        zr_offset = np.random.uniform(-15, 15)
         press_depth = np.random.uniform(0.6, 1.6)
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         trajectory_npy = np.array([
-            [x, y, z, xr+xr_offset, yr, zr],
-            [x, y, z-press_depth, xr, yr, zr],
+            [x, y, z, xr+xr_offset, yr+yr_offset, zr+zr_offset],
+            [x, y, z-press_depth, xr+xr_offset, yr+yr_offset, zr+zr_offset],
         ], dtype=float)
         self.trajectory.from_numpy(trajectory_npy)
 
@@ -551,7 +553,7 @@ class Contact(ContactVisualisation):
             
             clamp_speed = True
             # Clamp pos_control to max_speed
-            max_speed_pos = 10.0
+            max_speed_pos = 100.0
             pos_control_norm = pos_control.norm()
             if clamp_speed and pos_control_norm > max_speed_pos:
                 pos_control = pos_control / pos_control_norm * max_speed_pos
@@ -559,7 +561,7 @@ class Contact(ContactVisualisation):
             ori_control = self.pid_controller_kp[None] * ori_error + self.pid_controller_ki[None] * self.ori_error_sum[None] + self.pid_controller_kd[None] * ori_derivative
             
             # Clamp ori_control to max_speed_ori
-            max_speed_ori = 10.0
+            max_speed_ori = 100.0
             ori_control_norm = ori_control.norm()
             if clamp_speed and ori_control_norm > max_speed_ori:
                 ori_control = ori_control / ori_control_norm * max_speed_ori
@@ -636,8 +638,8 @@ def main():
 
     phantom_name = "cylinder.stl"
     num_sub_frames = 50
-    num_frames = 5_000
-    num_opt_steps = 10
+    num_frames = 100
+    num_opt_steps = 500
     dt = 5e-5
     contact_model = Contact(
         dt=dt,
