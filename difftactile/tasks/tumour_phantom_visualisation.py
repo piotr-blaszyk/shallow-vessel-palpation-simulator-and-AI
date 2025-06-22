@@ -63,8 +63,30 @@ class ContactVisualisation:
         offset[:, 1] = offset[:, 1] / img_height
         offset = offset - draw_points
         if not off_screen:
+            # Draw circle outline using line segments
+            circle_centre = np.array([359, 266])
+            circle_radius = 180
+            
+            # Generate 100 points around the circle
+            theta = np.linspace(0, 2*np.pi, 100)
+            points_x = circle_centre[0] + circle_radius * np.cos(theta)
+            points_y = circle_centre[1] + circle_radius * np.sin(theta)
+            points = np.stack([points_x, points_y], axis=1)
+            points[:, 0] /= img_width
+            points[:, 1] /= img_height
+            
+            # Create begin and end points for lines (connecting consecutive points)
+            begin_points = points[:-1]  # All points except the last
+            end_points = points[1:]     # All points except the first
+            # Add final line connecting last point to first point
+            begin_points = np.vstack([begin_points, points[-1]])
+            end_points = np.vstack([end_points, points[0]])
+            
+            # Draw the lines
+            gui.lines(begin=begin_points, end=end_points, radius=1, color=0xFFFFFF)
+            
             gui.circles(draw_points, radius=2, color=0xF542A1)
-            gui.arrows(draw_points, 10.0 * offset, radius=2, color=0xE6C949)
+            gui.arrows(draw_points, offset * 10.0, radius=2, color=0xE6C949)
     
     @ti.kernel
     def draw_perspective(self, f: ti.i32):

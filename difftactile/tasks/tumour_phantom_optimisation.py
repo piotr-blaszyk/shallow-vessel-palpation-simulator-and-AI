@@ -160,7 +160,7 @@ class Contact(ContactVisualisation):
         self.dwell_frames[None] = 0 # Number of frames to stay at each target
         self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dwell_counter[None] = 0
-        self. dwelling = ti.field(dtype=bool, shape=(), needs_grad=False)
+        self.is_dwelling = ti.field(dtype=bool, shape=(), needs_grad=False)
         self.is_dwelling[None] = False
         self.last_target_reached = ti.field(dtype=bool, shape=(), needs_grad=False)
         self.last_target_reached[None] = False

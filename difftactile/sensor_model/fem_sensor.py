@@ -25,8 +25,9 @@ class FEMDomeSensor:
         self.dt = dt
         self.N_node = 200 # number of nodes in the most inner layer
         self.N_t = 2+1 # thickness
-        self.t_res = 0.6 # [cm]; inter-layer distance
-        self.inner_radius = 2.7-self.t_res # [cm]
+        self.t_res = 0.1 # [cm]; inter-layer distance
+        self.outer_radius = 3.3
+        self.inner_radius = self.outer_radius-self.t_res*self.N_t # [cm]
 
         self.all_nodes, self.all_f2v, self.surface_f2v, self.layer_idxs = self.init_mesh()
         self.n_verts = len(self.all_nodes)
@@ -183,7 +184,6 @@ class FEMDomeSensor:
             center = (int(round(pos[0])), int(round(pos[1])))
             cv2.circle(overlay_img, center, radius=5, color=(0, 0, 255), thickness=2)  # Red circle
         cv2.imwrite("../tasks/output/init_cam_model.png", overlay_img)
-        sys.exit()
         surface_nodes = self.all_nodes[self.markers_surface_id_np]
         cam_3D_nodes = np.array([surface_nodes[:,0], surface_nodes[:,2], surface_nodes[:,1]]).T
         with open(f"output/fem_sensor.cam_3d_nodes.pkl", 'wb') as f:
@@ -511,9 +511,9 @@ class FEMDomeSensor:
         return points
 
     def calc_volume(self):
-        inner_spherical_cap_r = self.inner_radius+self.t_res
+        inner_spherical_cap_r = self.inner_radius
         inner_spherical_cap_h = 0.6
-        outer_spherical_cap_r = self.inner_radius+self.t_res*(self.N_t-1)
+        outer_spherical_cap_r = self.outer_radius
         outer_spherical_cap_h = 0.6
 
         inner_cylinder_r = self.calc_spherical_cap_base_radius(inner_spherical_cap_r, inner_spherical_cap_h)
