@@ -60,7 +60,7 @@ class Contact(ContactVisualisation):
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
-        self.trajectory = ti.Vector.field(6, dtype=float, shape=2, needs_grad=False)
+        self.trajectory = ti.Vector.field(6, dtype=float, shape=13, needs_grad=False)
         self.tumour_present = ti.field(dtype=bool, shape=(), needs_grad=False)
         self.tumour_present[None] = False
         self.set_up_initial_positions_and_trajectory()
@@ -206,8 +206,19 @@ class Contact(ContactVisualisation):
         press_depth = np.random.uniform(0.6, 1.6)
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         trajectory_npy = np.array([
-            [x, y, z, xr+xr_offset, yr+yr_offset, zr+zr_offset],
-            [x, y, z-press_depth, xr+xr_offset, yr+yr_offset, zr+zr_offset],
+            [x, y, z, xr, yr, zr],
+            [x, y, z-1, xr, yr, zr],
+            [x, y+1, z-1, xr, yr, zr],
+            [x, y, z-1, xr, yr, zr],
+            [x, y, z, xr, yr, zr],
+            [x, y, z-1, xr, yr, zr],
+            [x, y, z-1, xr+15, yr, zr],
+            [x, y, z-1, xr, yr, zr],
+            [x, y, z, xr, yr, zr],
+            [x, y, z-1, xr, yr, zr],
+            [x, y, z-1, xr, yr, zr+15],
+            [x, y, z-1, xr, yr, zr],
+            [x, y, z, xr, yr, zr],
         ], dtype=float)
         self.trajectory.from_numpy(trajectory_npy)
 
@@ -553,7 +564,7 @@ class Contact(ContactVisualisation):
             
             clamp_speed = True
             # Clamp pos_control to max_speed
-            max_speed_pos = 100.0
+            max_speed_pos = 10.0
             pos_control_norm = pos_control.norm()
             if clamp_speed and pos_control_norm > max_speed_pos:
                 pos_control = pos_control / pos_control_norm * max_speed_pos
@@ -561,7 +572,7 @@ class Contact(ContactVisualisation):
             ori_control = self.pid_controller_kp[None] * ori_error + self.pid_controller_ki[None] * self.ori_error_sum[None] + self.pid_controller_kd[None] * ori_derivative
             
             # Clamp ori_control to max_speed_ori
-            max_speed_ori = 100.0
+            max_speed_ori = max_speed_pos * 10.0
             ori_control_norm = ori_control.norm()
             if clamp_speed and ori_control_norm > max_speed_ori:
                 ori_control = ori_control / ori_control_norm * max_speed_ori
@@ -638,7 +649,7 @@ def main():
 
     phantom_name = "cylinder.stl"
     num_sub_frames = 50
-    num_frames = 100
+    num_frames = 1_000
     num_opt_steps = 500
     dt = 5e-5
     contact_model = Contact(
@@ -669,7 +680,7 @@ def main():
             contact_model.memory_to_cache(0)
 
             keypoint_coords = contact_model.tactile_sensor.get_keypoint_coordinates(0, contact_model.keypoint_indices)
-            update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords[0, :].reshape((1, 3)))
+            update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords)
 
             if contact_model.frames_since_last_target_reached[None] == 100:
                 contact_model.take_snapshot(opts)
