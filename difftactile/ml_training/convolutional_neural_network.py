@@ -84,7 +84,9 @@ class CNNClassifier(pl.LightningModule):
         self.log('val_acc', self.val_accuracy(y_hat, y.int()), prog_bar=True)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=0.001)
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3)
+        return {'optimizer': optimizer, 'lr_scheduler': scheduler, 'monitor': 'val_loss'}
 
 def main():
     predict_markers_snapshots, virtual_markers_snapshots, displacements, ground_truth_labels = load_sim_data()
