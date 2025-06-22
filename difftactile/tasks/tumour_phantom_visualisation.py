@@ -193,7 +193,7 @@ def set_up_gui(phantom_initial_pose, tactile_sensor_initial_pose):
         camera.position(x, y+50, z)
         camera.up(0, 0, 1)
         camera.lookat(x, y, z)
-        camera.fov(30)
+        camera.fov(15)
         if enable_gui1:
             gui1 = ti.GUI("low-level camera", res=window_res)
         else:

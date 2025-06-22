@@ -75,7 +75,7 @@ class MultiObj:
         self.grid_m = ti.field(dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)  # grid node mass
         self.grid_f = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)  # grid node external force
         self.grid_occupy = ti.field(dtype=int, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid))
-        self.surf_f = ti.Vector.field(3, float, shape=(self.sub_steps), needs_grad = True)
+        self.surf_f = ti.Vector.field(3, float, shape=(self.sub_steps), needs_grad=False)
         
         self.cache = dict() # for grad backward
 

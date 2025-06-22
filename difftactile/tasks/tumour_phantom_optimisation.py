@@ -18,8 +18,8 @@ SLOW_DOWN = 0.5
 SPEED_1_MM_S = 4.0828765820486765 / SLOW_DOWN
 SPEED_2_DEG_S = 81.63 / SLOW_DOWN
 TIME_STEPS_PER_S = 10 * SLOW_DOWN
-PHANTOM_INITIAL_POSE = [9.75, 9.75, 1.85+2, 0, 0, 0]
-SENSOR_DOME_TIP_INITIAL_POSE = [9.75, 9.75, 2.95+3, -90, 0, 0]
+PHANTOM_INITIAL_POSE = [9.75, 9.75, 1.85, 0, 0, 0]
+SENSOR_DOME_TIP_INITIAL_POSE = [9.75, 9.75, 2.95, -90, 0, 0]
 
 def print_point_cloud(arr):
     # Print the shape for verification
@@ -40,6 +40,7 @@ class Contact(ContactVisualisation):
         num_frames,
         num_sub_frames,
         obj,
+        num_opt_steps,
     ):
         super().__init__()
 
@@ -60,6 +61,8 @@ class Contact(ContactVisualisation):
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.trajectory = ti.Vector.field(6, dtype=float, shape=2, needs_grad=False)
+        self.tumour_present = ti.field(dtype=bool, shape=(), needs_grad=False)
+        self.tumour_present[None] = False
         self.set_up_initial_positions_and_trajectory()
 
         # Initialize keypoint indices
@@ -157,33 +160,37 @@ class Contact(ContactVisualisation):
         self.dwell_frames[None] = 0 # Number of frames to stay at each target
         self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dwell_counter[None] = 0
-        self.is_dwelling = ti.field(dtype=bool, shape=(), needs_grad=False)
+        self. dwelling = ti.field(dtype=bool, shape=(), needs_grad=False)
         self.is_dwelling[None] = False
         self.last_target_reached = ti.field(dtype=bool, shape=(), needs_grad=False)
         self.last_target_reached[None] = False
+        self.frames_since_last_target_reached = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.frames_since_last_target_reached[None] = 0
+
+        self.num_opt_steps = num_opt_steps
+        # Allocate snapshot fields (num_opt_steps, num_markers, 2)
+        num_markers = self.tactile_sensor.num_markers
+        self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(num_opt_steps, num_markers), needs_grad=False)
+        self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(num_opt_steps, num_markers), needs_grad=False)
+        self.ground_truth_labels = ti.field(dtype=bool, shape=(num_opt_steps,), needs_grad=False)
 
     def set_up_initial_positions_and_trajectory(self):
         ix = self.tactile_sensor.get_keypoint_indices_numpy_point_a()
         camera_lens_to_sensor_tip = self.tactile_sensor.all_nodes[ix, 1]
         self.phantom_pose = PHANTOM_INITIAL_POSE.copy()
         
-        # Draw random cylinder parameters
         cx = np.random.uniform(-1.0, 1.0)
         cy = np.random.uniform(-1.0, 1.0)
         cz = np.random.uniform(-0.9, 0.9)
         theta = np.random.uniform(0, 90)
         h = np.random.uniform(1, 6)
         r = np.random.uniform(0.1, 0.4)
-        # cylinder_tuple = (cx, cy, cz, theta, h, r)
-        cylinder_tuple = (0.0, 0.0, 0.6, 0.0, 6.0, 0.4)
+        cylinder_tuple = (cx, cy, cz, theta, h, r)
         stiffness_healthy_tissue = np.random.uniform(2.5e3, 7.5e3)
         stiffness_tumour = np.random.uniform(2.5e4, 7.5e4)
-        # stiffness_tuple = (stiffness_healthy_tissue, stiffness_tumour)
-        stiffness_tuple = (5e3, 5e4)
-        # Draw tumour_present: True with 80%, False with 20%
-        # tumour_present = np.random.rand() < 0.8
-        tumour_present = True
-
+        stiffness_tuple = (stiffness_healthy_tissue, stiffness_tumour)
+        tumour_present = np.random.rand() < 0.8
+        self.tumour_present[None] = tumour_present
         self.phantom.init(
             pos=self.phantom_pose[:3],
             ori=self.phantom_pose[3:],
@@ -197,8 +204,8 @@ class Contact(ContactVisualisation):
         press_depth = np.random.uniform(0.6, 1.6)
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         trajectory_npy = np.array([
-            [x, y, z, xr, yr, zr],
-            [x, y, z-2-0.6, xr, yr, zr],
+            [x, y, z, xr+xr_offset, yr, zr],
+            [x, y, z-press_depth, xr, yr, zr],
         ], dtype=float)
         self.trajectory.from_numpy(trajectory_npy)
 
@@ -209,7 +216,6 @@ class Contact(ContactVisualisation):
         self.tactile_sensor_initial_position[0] = ti.Vector(self.sensor_dome_tip_initial_pose[:3])
         self.phantom_initial_position[0] = ti.Vector(self.phantom_pose[:3])
     
-        
     def reset_pid_controller(self):
         self.pos_error_sum.fill(0)
         self.ori_error_sum.fill(0)
@@ -219,6 +225,7 @@ class Contact(ContactVisualisation):
         self.dwell_counter[None] = 0
         self.is_dwelling[None] = False
         self.last_target_reached[None] = False
+        self.frames_since_last_target_reached[None] = 0
 
     def fill_out_motion_start_end_ixs(self):
         self.motion_start_end_ixs = ti.field(dtype=int, shape=self.velocities_npy.shape[0] + 1, needs_grad=False)
@@ -482,17 +489,17 @@ class Contact(ContactVisualisation):
         # Check if current target is reached
         pos_error_magnitude = pos_error.norm()
         ori_error_magnitude = ori_error.norm()
-        
-        maintain_pose_on_final_target = self.current_target_idx[None] == self.trajectory.shape[0] - 1 and self.last_target_reached[None]
+
+        if self.last_target_reached[None]:
+            self.frames_since_last_target_reached[None] += 1
 
         # If target is reached and not already dwelling, start dwelling (only for non-final targets)
-        if (not maintain_pose_on_final_target and not self.is_dwelling[None] and 
+        if (not self.last_target_reached[None] and not self.is_dwelling[None] and 
             pos_error_magnitude < self.position_tolerance[None] and 
             ori_error_magnitude < self.orientation_tolerance[None]):
             self.is_dwelling[None] = True
             self.dwell_counter[None] = 0
-            if not self.last_target_reached[None]:
-                print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
+            print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
         
         # If dwelling, increment counter and check if dwell time is complete
         if self.is_dwelling[None]:
@@ -544,7 +551,7 @@ class Contact(ContactVisualisation):
             
             clamp_speed = True
             # Clamp pos_control to max_speed
-            max_speed_pos = 1.0
+            max_speed_pos = 10.0
             pos_control_norm = pos_control.norm()
             if clamp_speed and pos_control_norm > max_speed_pos:
                 pos_control = pos_control / pos_control_norm * max_speed_pos
@@ -552,7 +559,7 @@ class Contact(ContactVisualisation):
             ori_control = self.pid_controller_kp[None] * ori_error + self.pid_controller_ki[None] * self.ori_error_sum[None] + self.pid_controller_kd[None] * ori_derivative
             
             # Clamp ori_control to max_speed_ori
-            max_speed_ori = 1.0
+            max_speed_ori = 10.0
             ori_control_norm = ori_control.norm()
             if clamp_speed and ori_control_norm > max_speed_ori:
                 ori_control = ori_control / ori_control_norm * max_speed_ori
@@ -585,6 +592,39 @@ class Contact(ContactVisualisation):
                 print(f"Dwell Counter (self.dwell_counter[None]): {self.dwell_counter[None]}")
                 print()
 
+    @ti.kernel
+    def take_snapshot(self, opts: ti.i32):
+        for i in range(self.tactile_sensor.num_markers):
+            self.predict_markers_snapshots[opts, i] = self.tactile_sensor.predict_markers[i]
+            self.virtual_markers_snapshots[opts, i] = self.tactile_sensor.virtual_markers[i]
+        self.ground_truth_labels[opts] = self.tumour_present[None]
+
+    def save_marker_data_and_ground_truth_labels_to_file(self):
+        # Convert to numpy arrays
+        predict_np = self.predict_markers_snapshots.to_numpy()
+        virtual_np = self.virtual_markers_snapshots.to_numpy()
+        labels_np = self.ground_truth_labels.to_numpy()
+        # Save all to a single pickle file
+        out = { 
+            'predict_markers_snapshots': predict_np,
+            'virtual_markers_snapshots': virtual_np,
+            'ground_truth_labels': labels_np,
+        }
+        with open('output/marker_snapshots_and_labels.pkl', 'wb') as f:
+            pickle.dump(out, f)
+        # Save each array to a separate CSV file in the requested format
+        def save_markers_with_empty_rows(arr, filename):
+            num_steps, num_markers, dim = arr.shape
+            rows = []
+            for step in range(num_steps):
+                rows.append(arr[step])  # shape (num_markers, 2)
+                rows.append(np.full((1, dim), np.nan))  # empty row
+            out_arr = np.vstack(rows)
+            np.savetxt(filename, out_arr, delimiter=',')
+        save_markers_with_empty_rows(predict_np, 'output/predict_markers_snapshots.csv')
+        save_markers_with_empty_rows(virtual_np, 'output/virtual_markers_snapshots.csv')
+        np.savetxt('output/ground_truth_labels.csv', labels_np, delimiter=',', fmt='%d')
+
 def main():
     np.set_printoptions(precision=3, floatmode='maxprec', suppress=False)
     if RUN_ON_LAB_MACHINE:
@@ -597,13 +637,14 @@ def main():
     phantom_name = "cylinder.stl"
     num_sub_frames = 50
     num_frames = 5_000
-    num_opt_steps = 1
+    num_opt_steps = 10
     dt = 5e-5
     contact_model = Contact(
         dt=dt,
         num_frames=num_frames,
         num_sub_frames=num_sub_frames,
         obj=phantom_name,
+        num_opt_steps=num_opt_steps,
     )
     np.savetxt(f'output/trajectory.p_sensor1.csv', contact_model.p_sensor1.to_numpy(), delimiter=",", fmt='%.2f')
     np.savetxt(f'output/trajectory.o_sensor1.csv', contact_model.o_sensor1.to_numpy(), delimiter=",", fmt='%.2f')
@@ -615,19 +656,6 @@ def main():
         contact_model.reset_3d_scene()
         print('forward')
         for ts in range(num_frames - 1):
-            if ts % 50 == 0:
-                sensor_mean_deformation_top_10_percent = contact_model.tactile_sensor.compute_mean_deformation_top_10_percent()
-                # print(f'sensor_mean_deformation_top_10_percent at ts: {ts}: {sensor_mean_deformation_top_10_percent}')
-            if ts % 500 == 0:
-                pickles = [
-                    ('pos', contact_model.tactile_sensor.pos.to_numpy()[0]),
-                    ('all_f2v', contact_model.tactile_sensor.all_f2v),
-                ]
-                for x, y in pickles:
-                    with open(f"output/tactile_sensor.ts={ts}.{x}.pkl", 'wb') as f:
-                        pickle.dump(y, f)
-                    # print(f'ts: {ts} pickle dumped!')
-
             contact_model.pid_controller(ts)
             contact_model.tactile_sensor.set_pose_control()
             contact_model.tactile_sensor.set_pose_control_maybe_print()
@@ -636,10 +664,15 @@ def main():
             contact_model.reset()
             for ss in range(num_sub_frames - 1):
                 contact_model.update(ss)
-            contact_model.memory_to_cache(0)            
+            contact_model.memory_to_cache(0)
 
             keypoint_coords = contact_model.tactile_sensor.get_keypoint_coordinates(0, contact_model.keypoint_indices)
             update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords[0, :].reshape((1, 3)))
+
+            if contact_model.frames_since_last_target_reached[None] == 100:
+                contact_model.take_snapshot(opts)
+                break
+    contact_model.save_marker_data_and_ground_truth_labels_to_file()
 
 if __name__ == "__main__":
     main()

@@ -10,6 +10,7 @@ import numpy as np
 from scipy.spatial import Delaunay
 from scipy.spatial.transform import Rotation as R
 import pickle
+import sys
 from difftactile.sensor_model.fisheye_model import * 
 
 TI_TYPE = ti.f32
@@ -57,7 +58,7 @@ class FEMDomeSensor:
         self.markers_surface_id = ti.field(int, len(self.markers_surface_id_np))
         self.markers_surface_id.from_numpy(self.markers_surface_id_np.astype(np.int32))
         self.num_surface = len(self.markers_surface_id_np)
-        self.surface_cam_loc = ti.Vector.field(2, float, self.num_surface, needs_grad = True)
+        self.surface_cam_loc = ti.Vector.field(2, float, self.num_surface, needs_grad=False)
         self.surface_cam_virtual_loc = ti.Vector.field(2, float, self.num_surface, needs_grad=False)
 
         # cam model
@@ -66,7 +67,7 @@ class FEMDomeSensor:
         self.num_markers = len(self.initial_markers)
         self.visualise_2d(interp_idx)
 
-        self.predict_markers = ti.Vector.field(2, float, self.num_markers, needs_grad = True)
+        self.predict_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.virtual_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
 
         self.interp_weight = ti.Vector.field(self.num_k_closest, float, self.num_markers, needs_grad=False)
@@ -79,15 +80,15 @@ class FEMDomeSensor:
         self.contact_seg = ti.Vector.field(3, int, self.num_triangles) # surface triangle mesh
         self.contact_seg.from_numpy(self.surface_f2v.astype(np.int32))
 
-        self.virtual_pos = ti.Vector.field(3, float, shape=(self.sub_steps, self.n_verts), needs_grad = True)
-        self.pos = ti.Vector.field(3, float, shape=(self.sub_steps, self.n_verts), needs_grad = True)
-        self.vel = ti.Vector.field(3, float, shape=(self.sub_steps, self.n_verts), needs_grad = True)
+        self.virtual_pos = ti.Vector.field(3, float, shape=(self.sub_steps, self.n_verts), needs_grad=False)
+        self.pos = ti.Vector.field(3, float, shape=(self.sub_steps, self.n_verts), needs_grad=False)
+        self.vel = ti.Vector.field(3, float, shape=(self.sub_steps, self.n_verts), needs_grad=False)
 
         self.B = ti.Matrix.field(3, 3, float, self.n_cells, needs_grad=False)
         self.phi = ti.field(float, self.n_cells, needs_grad=False)  # potential energy of each face (Neo-Hookean)
 
-        self.external_force_field = ti.Vector.field(3, dtype=ti.f32, shape=(self.sub_steps, self.n_verts), needs_grad = True) # contact force between FEM node to the closest particle
-        self.surf_f = ti.Vector.field(3, float, shape=(self.sub_steps), needs_grad = True) # surface aggreated 3-axis forces
+        self.external_force_field = ti.Vector.field(3, dtype=ti.f32, shape=(self.sub_steps, self.n_verts), needs_grad=False) # contact force between FEM node to the closest particle
+        self.surf_f = ti.Vector.field(3, float, shape=(self.sub_steps), needs_grad=False) # surface aggreated 3-axis forces
 
         # contact model parameters (default)
         self.out_direction = ti.Vector.field(3, float, (), needs_grad=False)
@@ -182,6 +183,7 @@ class FEMDomeSensor:
             center = (int(round(pos[0])), int(round(pos[1])))
             cv2.circle(overlay_img, center, radius=5, color=(0, 0, 255), thickness=2)  # Red circle
         cv2.imwrite("../tasks/output/init_cam_model.png", overlay_img)
+        sys.exit()
         surface_nodes = self.all_nodes[self.markers_surface_id_np]
         cam_3D_nodes = np.array([surface_nodes[:,0], surface_nodes[:,2], surface_nodes[:,1]]).T
         with open(f"output/fem_sensor.cam_3d_nodes.pkl", 'wb') as f:
