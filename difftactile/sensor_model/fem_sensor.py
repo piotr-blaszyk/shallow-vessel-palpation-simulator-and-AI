@@ -177,7 +177,7 @@ class FEMDomeSensor:
             init_img = cv2.imread("./init.png")
         else:
             init_img = cv2.imread(init_img_path)
-        initial_markers = get_marker_image(init_img)
+        initial_markers, _, _ = get_marker_image(init_img)
         # Overlay initial_markers on the image and save
         overlay_img = init_img.copy()
         for pos in initial_markers:

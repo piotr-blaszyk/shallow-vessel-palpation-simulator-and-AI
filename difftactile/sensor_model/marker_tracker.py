@@ -64,7 +64,7 @@ class MarkerTracker:
             if frame_count % frame_interval == 0:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 self.frames.append(frame)
-                markers = get_marker_image(gray)
+                markers, _, _ = get_marker_image(gray)
                 
                 if len(markers) > 0:  # Only append if markers were detected
                     self.frame_markers.append(markers)

@@ -8,8 +8,9 @@ from os import path as osp
 import os
 import math
 import taichi as ti
-import glob
+from glob import glob
 import pickle
+import matplotlib.pyplot as plt
 
 F = 230.0
 FX = F
@@ -125,8 +126,8 @@ def interactive_exploration(image_dir):
     image_files = []
     
     for ext in image_extensions:
-        image_files.extend(glob.glob(os.path.join(image_dir, ext)))
-        image_files.extend(glob.glob(os.path.join(image_dir, ext.upper())))
+        image_files.extend(glob(os.path.join(image_dir, ext)))
+        image_files.extend(glob(os.path.join(image_dir, ext.upper())))
     
     # Sort files for consistent ordering
     image_files.sort()
@@ -195,8 +196,8 @@ def extract_experimental_markers_and_save_to_file(image_dir):
     image_files = []
     
     for ext in image_extensions:
-        image_files.extend(glob.glob(os.path.join(image_dir, ext)))
-        image_files.extend(glob.glob(os.path.join(image_dir, ext.upper())))
+        image_files.extend(glob(os.path.join(image_dir, ext)))
+        image_files.extend(glob(os.path.join(image_dir, ext.upper())))
     
     # Sort files for consistent ordering
     image_files.sort()
@@ -276,9 +277,28 @@ def extract_experimental_markers_and_save_to_file(image_dir):
     print(f"Marker positions shape: {all_marker_positions.shape}")
     print(f"Class labels shape: {class_labels.shape}")
 
+def save_init_marker_positions():
+    # Read the image
+    img = cv2.imread('init.png', cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise FileNotFoundError("Could not find or open init.png")
+    
+    # Get marker positions
+    marker_positions, circle_center, circle_radius = get_marker_image(img)
+    
+    # Save marker positions to pickle file
+    with open('init-marker-positions.pkl', 'wb') as f:
+        pickle.dump(marker_positions, f)
+    
+    print(f"Found {len(marker_positions)} markers")
+    print(f"Marker positions saved to init-marker-positions.pkl")
+    
+    return marker_positions
+
 if __name__ == '__main__':
     image_dir = "/home/psb120/Documents/TCP-IP-Python-V4/experiment-capture-completed"
     if False:
         interactive_exploration(image_dir)
     else:
+        save_init_marker_positions()
         extract_experimental_markers_and_save_to_file(image_dir)

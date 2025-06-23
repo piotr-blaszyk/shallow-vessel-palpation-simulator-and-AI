@@ -14,6 +14,12 @@ def load_sim_data():
         print("predict_markers_snapshots shape:", predict_markers_snapshots.shape)
         print("virtual_markers_snapshots shape:", virtual_markers_snapshots.shape)
         print("ground_truth_labels shape:", ground_truth_labels.shape)
+        print("ground_truth_labels dtype:", ground_truth_labels.dtype)
+        print("predict_markers_snapshots dtype:", predict_markers_snapshots.dtype)
+        print("virtual_markers_snapshots dtype:", virtual_markers_snapshots.dtype)
+        print("\nGround Truth Labels Distribution:")
+        print(f"True (tumor) count: {np.sum(ground_truth_labels)}")
+        print(f"False (no tumor) count: {ground_truth_labels.shape[0] - np.sum(ground_truth_labels)}")
     
     return predict_markers_snapshots, virtual_markers_snapshots, displacements, ground_truth_labels
 
@@ -68,7 +74,8 @@ def visualize_markers(predict_markers, virtual_markers, ground_truth_labels):
 
 def main():
     predict_markers_snapshots, virtual_markers_snapshots, displacements, ground_truth_labels = load_sim_data()
-    visualize_markers(predict_markers_snapshots, virtual_markers_snapshots, ground_truth_labels)
+    if False:
+        visualize_markers(predict_markers_snapshots, virtual_markers_snapshots, ground_truth_labels)
 
 if __name__ == "__main__":
     main()

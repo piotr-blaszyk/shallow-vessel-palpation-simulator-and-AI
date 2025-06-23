@@ -18,9 +18,9 @@ SLOW_DOWN = 0.5
 SPEED_1_MM_S = 4.0828765820486765 / SLOW_DOWN
 SPEED_2_DEG_S = 81.63 / SLOW_DOWN
 TIME_STEPS_PER_S = 10 * SLOW_DOWN
-PHANTOM_CLOSEST_VERTEX = [6.687500, 6.687500, 1.687500]
-PHANTOM_INITIAL_POSE = [15.687500, 11.937500, 2.787500, 0, 0, 0]
-SENSOR_DOME_TIP_INITIAL_POSE = [PHANTOM_CLOSEST_VERTEX[0]+2, PHANTOM_CLOSEST_VERTEX[1]+2, 3.887500, -90, 0, 0]
+PHANTOM_CLOSEST_VERTEX = [5.750000, 5.750000, 0.750000]
+PHANTOM_INITIAL_POSE = [9.750000, 9.750000, 1.850000, 0, 0, 0]
+SENSOR_DOME_TIP_INITIAL_POSE = [9.750000, 9.750000, 2.950000, -90, 0, 0]
 
 def print_point_cloud(arr):
     # Print the shape for verification
@@ -53,15 +53,15 @@ class Contact(ContactVisualisation):
             dt=dt,
             sub_steps=num_sub_frames,
             obj_name=obj,
-            space_scale=36.0,
-            obj_scale=18.0,
+            space_scale=16.0,
+            obj_scale=8.0,
             density=0.5,
             rho=1.07,
         )
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
-        self.trajectory = ti.Vector.field(6, dtype=float, shape=12, needs_grad=False)
+        self.trajectory = ti.Vector.field(6, dtype=float, shape=2, needs_grad=False)
         self.tumour_present = ti.field(dtype=bool, shape=(), needs_grad=False)
         self.tumour_present[None] = False
         self.set_up_initial_positions_and_trajectory()
@@ -190,7 +190,7 @@ class Contact(ContactVisualisation):
         stiffness_healthy_tissue = np.random.uniform(2.5e3, 7.5e3)
         stiffness_tumour = np.random.uniform(2.5e4, 7.5e4)
         stiffness_tuple = (stiffness_healthy_tissue, stiffness_tumour)
-        tumour_present = np.random.rand() < 0.8
+        tumour_present = np.random.rand() < 0.5
         self.tumour_present[None] = tumour_present
         self.phantom.init(
             pos=self.phantom_pose[:3],
@@ -204,22 +204,16 @@ class Contact(ContactVisualisation):
         xr_offset = np.random.uniform(-15, 15)
         yr_offset = np.random.uniform(-15, 15)
         zr_offset = np.random.uniform(-15, 15)
+        # xr_offset = 0
+        # yr_offset = 0
+        # zr_offset = 0
         press_depth = np.random.uniform(0.6, 1.6)
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         trajectory_npy = np.array([
-            [x, y, z, xr, yr, zr],
-            [x, y, z-1, xr, yr, zr],
-            [x+14, y, z-1, xr, yr, zr],
-            [x+14, y+1.5, z-1, xr, yr, zr],
-            [x, y+1.5, z-1, xr, yr, zr],
-            [x, y+3.0, z-1, xr, yr, zr],
-            [x+14, y+3.0, z-1, xr, yr, zr],
-            [x+14, y+4.5, z-1, xr, yr, zr],
-            [x, y+4.5, z-1, xr, yr, zr],
-            [x, y+6.0, z-1, xr, yr, zr],
-            [x+14, y+6.0, z-1, xr, yr, zr],
-            [x+14, y+6.0, z, xr, yr, zr],
+            [x, y, z, xr+xr_offset, yr+yr_offset, zr+zr_offset],
+            [x, y, z-press_depth, xr+xr_offset, yr+yr_offset, zr+zr_offset],
         ], dtype=float)
+        assert self.trajectory.shape[0] == trajectory_npy.shape[0], f"Set self.trajectory length to {trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(trajectory_npy)
 
         self.sensor_dome_tip_initial_pose = trajectory_npy[0].tolist()
@@ -512,7 +506,7 @@ class Contact(ContactVisualisation):
             ori_error_magnitude < self.orientation_tolerance[None]):
             self.is_dwelling[None] = True
             self.dwell_counter[None] = 0
-            print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
+            # print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
         
         # If dwelling, increment counter and check if dwell time is complete
         if self.is_dwelling[None]:
@@ -543,9 +537,6 @@ class Contact(ContactVisualisation):
         if self.is_dwelling[None]:
             self.tactile_sensor.d_pos_global[None] = ti.Vector([0.0, 0.0, 0.0])
             self.tactile_sensor.d_ori_global_euler_angles[None] = ti.Vector([0.0, 0.0, 0.0])
-            if False:
-                print(f'We are dwelling')
-                print()
         else:
             # Update error sums for integral term
             self.pos_error_sum[None] += pos_error
@@ -623,6 +614,7 @@ class Contact(ContactVisualisation):
             'virtual_markers_snapshots': virtual_np,
             'ground_truth_labels': labels_np,
         }
+
         with open('output/marker_snapshots_and_labels.pkl', 'wb') as f:
             pickle.dump(out, f)
         # Save each array to a separate CSV file in the requested format
@@ -647,10 +639,10 @@ def main():
 
     gui_tuple = set_up_gui(PHANTOM_INITIAL_POSE.copy(), SENSOR_DOME_TIP_INITIAL_POSE.copy())
 
-    phantom_name = "vascular-phantom.stl"
+    phantom_name = "cylinder.stl"
     num_sub_frames = 50
-    num_frames = 1_000
-    num_opt_steps = 500
+    num_frames = 500
+    num_opt_steps = 1_000
     dt = 5e-5
     contact_model = Contact(
         dt=dt,
@@ -663,7 +655,7 @@ def main():
     np.savetxt(f'output/trajectory.o_sensor1.csv', contact_model.o_sensor1.to_numpy(), delimiter=",", fmt='%.2f')
     
     for opts in range(num_opt_steps):
-        print(f"optimisation step: {opts}")
+        print(f"optimisation step: {opts} / {num_opt_steps}")
         contact_model.set_up_initial_positions_and_trajectory()
         contact_model.reset_pid_controller()
         contact_model.reset_3d_scene()
@@ -682,7 +674,7 @@ def main():
             keypoint_coords = contact_model.tactile_sensor.get_keypoint_coordinates(0, contact_model.keypoint_indices)
             update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords[0, :].reshape((1, 3)))
 
-            if contact_model.frames_since_last_target_reached[None] == 100:
+            if contact_model.frames_since_last_target_reached[None] == 10:
                 contact_model.take_snapshot(opts)
                 break
     contact_model.save_marker_data_and_ground_truth_labels_to_file()
