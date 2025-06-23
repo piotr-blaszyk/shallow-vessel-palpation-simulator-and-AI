@@ -297,7 +297,7 @@ def save_init_marker_positions():
 
 if __name__ == '__main__':
     image_dir = "/home/psb120/Documents/TCP-IP-Python-V4/experiment-capture-completed"
-    if False:
+    if True:
         interactive_exploration(image_dir)
     else:
         save_init_marker_positions()

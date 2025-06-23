@@ -20,7 +20,7 @@ SPEED_2_DEG_S = 81.63 / SLOW_DOWN
 TIME_STEPS_PER_S = 10 * SLOW_DOWN
 PHANTOM_CLOSEST_VERTEX = [5.750000, 5.750000, 0.750000]
 PHANTOM_INITIAL_POSE = [9.750000, 9.750000, 1.850000, 0, 0, 0]
-SENSOR_DOME_TIP_INITIAL_POSE = [9.750000, 9.750000, 2.950000, -90, 0, 0]
+SENSOR_DOME_TIP_INITIAL_POSE = [9.750000, 9.750000, 2+2.950000, -90, 0, 0]
 
 def print_point_cloud(arr):
     # Print the shape for verification
@@ -207,7 +207,7 @@ class Contact(ContactVisualisation):
         # xr_offset = 0
         # yr_offset = 0
         # zr_offset = 0
-        press_depth = np.random.uniform(0.6, 1.6)
+        press_depth = 2 + np.random.uniform(0.6, 1.6)
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         trajectory_npy = np.array([
             [x, y, z, xr+xr_offset, yr+yr_offset, zr+zr_offset],
@@ -642,7 +642,7 @@ def main():
     phantom_name = "cylinder.stl"
     num_sub_frames = 50
     num_frames = 500
-    num_opt_steps = 1_000
+    num_opt_steps = 10
     dt = 5e-5
     contact_model = Contact(
         dt=dt,
@@ -659,6 +659,11 @@ def main():
         contact_model.set_up_initial_positions_and_trajectory()
         contact_model.reset_pid_controller()
         contact_model.reset_3d_scene()
+        if opts == 0:
+            contact_model.tactile_sensor.extract_markers(0)
+            initial_markers = contact_model.tactile_sensor.predict_markers.to_numpy()
+            with open('output/sim-markers-initial-positions.pkl', 'wb') as f:
+                pickle.dump(initial_markers, f)
         print('forward')
         for ts in range(num_frames - 1):
             contact_model.pid_controller(ts)
@@ -677,7 +682,7 @@ def main():
             if contact_model.frames_since_last_target_reached[None] == 10:
                 contact_model.take_snapshot(opts)
                 break
-    contact_model.save_marker_data_and_ground_truth_labels_to_file()
+    # contact_model.save_marker_data_and_ground_truth_labels_to_file()
 
 if __name__ == "__main__":
     main()

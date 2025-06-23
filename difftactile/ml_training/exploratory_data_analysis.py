@@ -74,7 +74,7 @@ def visualize_markers(predict_markers, virtual_markers, ground_truth_labels):
 
 def main():
     predict_markers_snapshots, virtual_markers_snapshots, displacements, ground_truth_labels = load_sim_data()
-    if False:
+    if True:
         visualize_markers(predict_markers_snapshots, virtual_markers_snapshots, ground_truth_labels)
 
 if __name__ == "__main__":
