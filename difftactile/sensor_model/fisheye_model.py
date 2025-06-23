@@ -8,6 +8,7 @@ from os import path as osp
 import os
 import math
 import taichi as ti
+import glob
 
 F = 230.0
 FX = F
@@ -59,14 +60,24 @@ def project_points_to_pix(a, fx=FX, fy=FY, cx=CX, cy=CY):
     return p
 
 def get_marker_image(img):
+    # Get the actual image dimensions
+    if len(img.shape) == 3:
+        source_height, source_width = img.shape[:2]
+    else:
+        source_height, source_width = img.shape
+    
+    # Scale factors for adapting from original 640x480 to current image size
+    scale_x = source_width / 640.0
+    scale_y = source_height / 480.0
+    
     params = cv2.SimpleBlobDetector_Params()
 
     detector = cv2.SimpleBlobDetector_create(params)
     keypoints = detector.detect(img)
 
-    # Circle parameters
-    circle_center = np.array([359, 266])
-    circle_radius = 180
+    # Circle parameters - scaled to match the input image resolution
+    circle_center = np.array([345 * scale_x, 260 * scale_y])
+    circle_radius = 170 * min(scale_x, scale_y)  # Use minimum scale to maintain circular shape
 
     MarkerCenter = []
     for pt in keypoints:
@@ -78,7 +89,7 @@ def get_marker_image(img):
             MarkerCenter.append([pt.pt[0], pt.pt[1]])
     MarkerCenter = np.array(MarkerCenter)
 
-    return MarkerCenter
+    return MarkerCenter, circle_center, circle_radius
 
 def project_points_to_pix_cv2(points3d, K=None, D=None, rvec=None, tvec=None):
     """
@@ -109,20 +120,72 @@ def project_points_to_pix_cv2(points3d, K=None, D=None, rvec=None, tvec=None):
     return res
 
 if __name__ == '__main__':
-    img = cv2.imread("./system-id-screws-3-reps-0001.png")
-    marker_positions = get_marker_image(img)
-
-    # Create a copy of the image for visualization
-    vis_img = img.copy()
+    # Get all image files from the directory
+    image_dir = "../experiment-capture-completed"
+    image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff']
+    image_files = []
     
-    # Draw detected markers
-    for pos in marker_positions:
-        # Convert positions to integers for drawing
-        center = (int(pos[0]), int(pos[1]))
-        # Draw a circle at each marker position (red color)
-        cv2.circle(vis_img, center, radius=5, color=(0, 0, 255), thickness=2)
+    for ext in image_extensions:
+        image_files.extend(glob.glob(os.path.join(image_dir, ext)))
+        image_files.extend(glob.glob(os.path.join(image_dir, ext.upper())))
+    
+    # Sort files for consistent ordering
+    image_files.sort()
+    
+    if not image_files:
+        print(f"No image files found in {image_dir}")
+        exit()
+    
+    print(f"Found {len(image_files)} images")
+    print("Controls: 'j' - previous image, 'l' - next image, 'q' - quit")
+    
+    current_index = 0
+    
+    while True:
+        # Load current image
+        img_path = image_files[current_index]
+        img = cv2.imread(img_path)
         
-    # Display the image with detected markers
-    cv2.imshow("Detected Markers", vis_img)
-    cv2.waitKey(0)
+        if img is None:
+            print(f"Failed to load image: {img_path}")
+            current_index = (current_index + 1) % len(image_files)
+            continue
+        
+        # Get marker positions and circle parameters
+        marker_positions, circle_center, circle_radius = get_marker_image(img)
+        
+        # Create a copy of the image for visualization
+        vis_img = img.copy()
+        
+        # Draw the circle outline used for marker detection (green color)
+        circle_center_int = (int(circle_center[0]), int(circle_center[1]))
+        circle_radius_int = int(circle_radius)
+        cv2.circle(vis_img, circle_center_int, circle_radius_int, color=(0, 255, 0), thickness=2)
+        
+        # Draw detected markers
+        for pos in marker_positions:
+            # Convert positions to integers for drawing
+            center = (int(pos[0]), int(pos[1]))
+            # Draw a circle at each marker position (red color)
+            cv2.circle(vis_img, center, radius=5, color=(0, 0, 255), thickness=2)
+        
+        # Add text overlay with image info
+        filename = os.path.basename(img_path)
+        info_text = f"Image {current_index + 1}/{len(image_files)}: {filename}"
+        cv2.putText(vis_img, info_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(vis_img, f"Markers detected: {len(marker_positions)}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
+        # Display the image with detected markers
+        cv2.imshow("Interactive Marker Detection", vis_img)
+        
+        # Handle keyboard input
+        key = cv2.waitKey(0) & 0xFF
+        
+        if key == ord('q'):
+            break
+        elif key == ord('j'):  # Previous image
+            current_index = (current_index - 1) % len(image_files)
+        elif key == ord('l'):  # Next image
+            current_index = (current_index + 1) % len(image_files)
+    
     cv2.destroyAllWindows()
