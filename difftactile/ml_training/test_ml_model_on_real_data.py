@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import pickle
-from fully_connected_neural_network import TumorClassifier
+from convolutional_neural_network import CNNClassifier, displacements_to_heatmaps
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 from torch.utils.data import DataLoader, TensorDataset
@@ -42,41 +42,39 @@ def load_and_preprocess_data():
     new_labels = np.zeros_like(class_labels)
     new_labels[np.isin(class_labels, [3, 5])] = 1
     
-    # Flatten displacements to match training data format
-    X = displacements.reshape(displacements.shape[0], -1)  # Shape: [n, num_markers*2]
+    # Convert displacements to heatmaps
+    with open('saved_models/cnn_preprocessing_params.pkl', 'rb') as f:
+        params = pickle.load(f)
+    
+    X = displacements_to_heatmaps(displacements, params['default_positions'], grid_size=params['grid_size'])
     y = new_labels
     
     print(f"Processed data shape: {X.shape}")
     print(f"Number of samples per class: {np.bincount(y)}")
     print(f"Marker positions scaled from 1920x1080 to 640x480")
-    print(f"Using displacements relative to initial marker positions as input")
+    print(f"Converted displacements to heatmaps with grid size {params['grid_size']}x{params['grid_size']}")
     
     return X, y
 
 def main():
     # Load preprocessing parameters
-    with open('saved_models/preprocessing_params.pkl', 'rb') as f:
+    with open('saved_models/cnn_preprocessing_params.pkl', 'rb') as f:
         params = pickle.load(f)
-    input_dim = params['input_dim']
-    scaler = params['scaler']
     
     # Initialize and load model
-    model = TumorClassifier(input_dim=input_dim)
-    model.load_state_dict(torch.load('saved_models/tumor_classifier_weights.pt'))
+    model = CNNClassifier()
+    model.load_state_dict(torch.load('saved_models/cnn_classifier_weights.pt'))
     model.eval()
     
     # Load and preprocess experimental data
     X, y = load_and_preprocess_data()
     
-    # Apply the same scaling as training
-    X_scaled = scaler.transform(X)
-    
     # Create dataset and dataloader
     test_dataset = TensorDataset(
-        torch.tensor(X_scaled, dtype=torch.float32),
+        torch.tensor(X, dtype=torch.float32),
         torch.tensor(y, dtype=torch.float32)
     )
-    test_loader = DataLoader(test_dataset, batch_size=64)
+    test_loader = DataLoader(test_dataset, batch_size=32)
     
     # Initialize trainer and test
     trainer = pl.Trainer(
@@ -91,7 +89,7 @@ def main():
     model.test_labels = []
     
     # Run test
-    print("\nTesting model on experimental data:")
+    print("\nTesting CNN model on experimental data:")
     trainer.test(model, test_loader)
 
 if __name__ == "__main__":

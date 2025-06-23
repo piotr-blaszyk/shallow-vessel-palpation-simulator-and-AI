@@ -10,6 +10,14 @@
             "cwd": "${workspaceFolder}/difftactile/tasks",
         },
         {
+            "name": "psb120 debug current file (/ml_training/)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/difftactile/ml_training",
+        },
+        {
             "name": "psb120 debug object_repose",
             "type": "debugpy",
             "request": "launch",
