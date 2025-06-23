@@ -1,10 +1,10 @@
 import torch
 import numpy as np
 import pickle
-from convolutional_neural_network import CNNClassifier, displacements_to_heatmaps
+from graph_neural_network import GNNClassifier
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
-from torch.utils.data import DataLoader, TensorDataset
+from torch_geometric.data import Data, DataLoader
 import pytorch_lightning as pl
 
 def load_and_preprocess_data():
@@ -42,39 +42,59 @@ def load_and_preprocess_data():
     new_labels = np.zeros_like(class_labels)
     new_labels[np.isin(class_labels, [3, 5])] = 1
     
-    # Convert displacements to heatmaps
-    with open('saved_models/cnn_preprocessing_params.pkl', 'rb') as f:
+    # Load GNN preprocessing parameters
+    with open('saved_models/gnn_preprocessing_params.pkl', 'rb') as f:
         params = pickle.load(f)
     
-    X = displacements_to_heatmaps(displacements, init_marker_positions, grid_size=params['grid_size'])
-    y = new_labels
+    # Create graph dataset
+    graphs = []
+    for i in range(len(displacements)):
+        # Node features: [displacement_x, displacement_y] + [default_x, default_y]
+        node_features = np.hstack([
+            displacements[i],
+            init_marker_positions
+        ])
+        
+        # Create kNN graph
+        pos_tensor = torch.tensor(init_marker_positions, dtype=torch.float)
+        dist_matrix = torch.cdist(pos_tensor, pos_tensor)
+        k = params['k_neighbors']
+        _, indices = torch.topk(dist_matrix, k=k, dim=1, largest=False)
+        
+        # Create edge_index
+        src = torch.repeat_interleave(torch.arange(len(pos_tensor)), k)
+        dst = indices.flatten()
+        edge_index = torch.stack([src, dst], dim=0)
+        
+        # Create PyG Data object
+        graphs.append(Data(
+            x=torch.tensor(node_features, dtype=torch.float),
+            edge_index=edge_index,
+            y=torch.tensor([new_labels[i]], dtype=torch.float)
+        ))
     
-    print(f"Processed data shape: {X.shape}")
-    print(f"Number of samples per class: {np.bincount(y)}")
+    print(f"Processed data shape: {len(graphs)} graphs")
+    print(f"Number of samples per class: {np.bincount(new_labels)}")
     print(f"Marker positions scaled from 1920x1080 to 640x480")
-    print(f"Converted displacements to heatmaps with grid size {params['grid_size']}x{params['grid_size']}")
+    print(f"Created k-NN graphs with k={params['k_neighbors']}")
     
-    return X, y
+    return graphs
 
 def main():
     # Load preprocessing parameters
-    with open('saved_models/cnn_preprocessing_params.pkl', 'rb') as f:
+    with open('saved_models/gnn_preprocessing_params.pkl', 'rb') as f:
         params = pickle.load(f)
     
     # Initialize and load model
-    model = CNNClassifier()
-    model.load_state_dict(torch.load('saved_models/cnn_classifier_weights.pt'))
+    model = GNNClassifier(node_dim=params['node_dim'])
+    model.load_state_dict(torch.load('saved_models/gnn_classifier_weights.pt'))
     model.eval()
     
     # Load and preprocess experimental data
-    X, y = load_and_preprocess_data()
+    graphs = load_and_preprocess_data()
     
-    # Create dataset and dataloader
-    test_dataset = TensorDataset(
-        torch.tensor(X, dtype=torch.float32),
-        torch.tensor(y, dtype=torch.float32)
-    )
-    test_loader = DataLoader(test_dataset, batch_size=32)
+    # Create dataloader
+    test_loader = DataLoader(graphs, batch_size=32)
     
     # Initialize trainer and test
     trainer = pl.Trainer(
@@ -89,7 +109,7 @@ def main():
     model.test_labels = []
     
     # Run test
-    print("\nTesting CNN model on experimental data:")
+    print("\nTesting GNN model on experimental data:")
     trainer.test(model, test_loader)
 
 if __name__ == "__main__":
