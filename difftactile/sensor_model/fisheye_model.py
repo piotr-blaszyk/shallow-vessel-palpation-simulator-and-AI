@@ -120,9 +120,77 @@ def project_points_to_pix_cv2(points3d, K=None, D=None, rvec=None, tvec=None):
     res = imgpts.reshape(-1, 2)
     return res
 
-if __name__ == '__main__':
+def interactive_exploration(image_dir):
+    image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff']
+    image_files = []
+    
+    for ext in image_extensions:
+        image_files.extend(glob.glob(os.path.join(image_dir, ext)))
+        image_files.extend(glob.glob(os.path.join(image_dir, ext.upper())))
+    
+    # Sort files for consistent ordering
+    image_files.sort()
+    
+    if not image_files:
+        print(f"No image files found in {image_dir}")
+        exit()
+    
+    print(f"Found {len(image_files)} images")
+    print("Controls: 'j' - previous image, 'l' - next image, 'q' - quit")
+    
+    current_index = 0
+    
+    while True:
+        # Load current image
+        img_path = image_files[current_index]
+        img = cv2.imread(img_path)
+        
+        if img is None:
+            print(f"Failed to load image: {img_path}")
+            current_index = (current_index + 1) % len(image_files)
+            continue
+        
+        # Get marker positions and circle parameters
+        marker_positions, circle_center, circle_radius = get_marker_image(img)
+        
+        # Create a copy of the image for visualization
+        vis_img = img.copy()
+        
+        # Draw the circle outline used for marker detection (green color)
+        circle_center_int = (int(circle_center[0]), int(circle_center[1]))
+        circle_radius_int = int(circle_radius)
+        cv2.circle(vis_img, circle_center_int, circle_radius_int, color=(0, 255, 0), thickness=2)
+        
+        # Draw detected markers
+        for pos in marker_positions:
+            # Convert positions to integers for drawing
+            center = (int(pos[0]), int(pos[1]))
+            # Draw a circle at each marker position (red color)
+            cv2.circle(vis_img, center, radius=5, color=(0, 0, 255), thickness=2)
+        
+        # Add text overlay with image info
+        filename = os.path.basename(img_path)
+        info_text = f"Image {current_index + 1}/{len(image_files)}: {filename}"
+        cv2.putText(vis_img, info_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(vis_img, f"Markers detected: {len(marker_positions)}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
+        # Display the image with detected markers
+        cv2.imshow("Interactive Marker Detection", vis_img)
+        
+        # Handle keyboard input
+        key = cv2.waitKey(0) & 0xFF
+        
+        if key == ord('q'):
+            break
+        elif key == ord('j'):  # Previous image
+            current_index = (current_index - 1) % len(image_files)
+        elif key == ord('l'):  # Next image
+            current_index = (current_index + 1) % len(image_files)
+    
+    cv2.destroyAllWindows()
+
+def extract_experimental_markers_and_save_to_file(image_dir):
     # Get all image files from the directory
-    image_dir = "/home/psb120/Documents/TCP-IP-Python-V4/experiment-capture-completed"
     image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff']
     image_files = []
     
@@ -207,3 +275,10 @@ if __name__ == '__main__':
     print(f"\nResults saved to {output_file}")
     print(f"Marker positions shape: {all_marker_positions.shape}")
     print(f"Class labels shape: {class_labels.shape}")
+
+if __name__ == '__main__':
+    image_dir = "/home/psb120/Documents/TCP-IP-Python-V4/experiment-capture-completed"
+    if False:
+        interactive_exploration(image_dir)
+    else:
+        extract_experimental_markers_and_save_to_file(image_dir)
