@@ -46,7 +46,7 @@ def load_and_preprocess_data():
     with open('saved_models/cnn_preprocessing_params.pkl', 'rb') as f:
         params = pickle.load(f)
     
-    X = displacements_to_heatmaps(displacements, params['default_positions'], grid_size=params['grid_size'])
+    X = displacements_to_heatmaps(displacements, init_marker_positions, grid_size=params['grid_size'])
     y = new_labels
     
     print(f"Processed data shape: {X.shape}")
