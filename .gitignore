@@ -12,3 +12,4 @@ sandbox.ipynb
 *.csv
 output/
 lightning_logs/
+experiment-capture-completed/
