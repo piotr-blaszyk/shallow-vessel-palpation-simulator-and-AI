@@ -9,6 +9,7 @@ import os
 import math
 import taichi as ti
 import glob
+import pickle
 
 F = 230.0
 FX = F
@@ -121,7 +122,7 @@ def project_points_to_pix_cv2(points3d, K=None, D=None, rvec=None, tvec=None):
 
 if __name__ == '__main__':
     # Get all image files from the directory
-    image_dir = "../experiment-capture-completed"
+    image_dir = "/home/psb120/Documents/TCP-IP-Python-V4/experiment-capture-completed"
     image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff']
     image_files = []
     
@@ -137,55 +138,72 @@ if __name__ == '__main__':
         exit()
     
     print(f"Found {len(image_files)} images")
-    print("Controls: 'j' - previous image, 'l' - next image, 'q' - quit")
     
-    current_index = 0
+    # Initialize lists to store marker positions and labels
+    all_marker_positions = []
+    class_labels = []
     
-    while True:
-        # Load current image
-        img_path = image_files[current_index]
+    # Process each image
+    for img_path in image_files:
+        # Load image
         img = cv2.imread(img_path)
         
         if img is None:
             print(f"Failed to load image: {img_path}")
-            current_index = (current_index + 1) % len(image_files)
             continue
         
-        # Get marker positions and circle parameters
-        marker_positions, circle_center, circle_radius = get_marker_image(img)
+        # Get marker positions
+        marker_positions, _, _ = get_marker_image(img)
         
-        # Create a copy of the image for visualization
-        vis_img = img.copy()
-        
-        # Draw the circle outline used for marker detection (green color)
-        circle_center_int = (int(circle_center[0]), int(circle_center[1]))
-        circle_radius_int = int(circle_radius)
-        cv2.circle(vis_img, circle_center_int, circle_radius_int, color=(0, 255, 0), thickness=2)
-        
-        # Draw detected markers
-        for pos in marker_positions:
-            # Convert positions to integers for drawing
-            center = (int(pos[0]), int(pos[1]))
-            # Draw a circle at each marker position (red color)
-            cv2.circle(vis_img, center, radius=5, color=(0, 0, 255), thickness=2)
-        
-        # Add text overlay with image info
+        # Get file number from filename (format: "press-{file_num}.jpg")
         filename = os.path.basename(img_path)
-        info_text = f"Image {current_index + 1}/{len(image_files)}: {filename}"
-        cv2.putText(vis_img, info_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(vis_img, f"Markers detected: {len(marker_positions)}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        try:
+            # Extract number between "press-" and ".jpg"
+            file_num = int(filename.split("press-")[1].split(".")[0])
+        except (IndexError, ValueError):
+            print(f"Warning: Filename {filename} doesn't match expected format 'press-{{number}}.jpg'")
+            continue
         
-        # Display the image with detected markers
-        cv2.imshow("Interactive Marker Detection", vis_img)
+        # Determine class label based on file number
+        if 0 <= file_num <= 10:
+            label = 0
+        elif 11 <= file_num <= 20:
+            label = 1
+        elif 21 <= file_num <= 30:
+            label = 2
+        elif 31 <= file_num <= 40:
+            label = 3
+        elif file_num == 41:
+            label = 4
+        elif file_num == 42:
+            label = 5
+        elif file_num == 43:
+            label = 6
+        else:
+            print(f"Warning: File number {file_num} doesn't match any label criteria")
+            continue
         
-        # Handle keyboard input
-        key = cv2.waitKey(0) & 0xFF
+        # Store results
+        all_marker_positions.append(marker_positions)
+        class_labels.append(label)
         
-        if key == ord('q'):
-            break
-        elif key == ord('j'):  # Previous image
-            current_index = (current_index - 1) % len(image_files)
-        elif key == ord('l'):  # Next image
-            current_index = (current_index + 1) % len(image_files)
+        print(f"Processed image {filename} - Found {len(marker_positions)} markers")
     
-    cv2.destroyAllWindows()
+    # Convert to numpy arrays
+    all_marker_positions = np.array(all_marker_positions)
+    class_labels = np.array(class_labels)
+    
+    # Create dictionary with results
+    results = {
+        'marker_positions': all_marker_positions,
+        'class_labels': class_labels
+    }
+    
+    # Save to pickle file
+    output_file = "vascular-tumour-press-experimental-results.pkl"
+    with open(output_file, 'wb') as f:
+        pickle.dump(results, f)
+    
+    print(f"\nResults saved to {output_file}")
+    print(f"Marker positions shape: {all_marker_positions.shape}")
+    print(f"Class labels shape: {class_labels.shape}")
