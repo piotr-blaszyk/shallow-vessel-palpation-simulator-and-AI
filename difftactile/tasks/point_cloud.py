@@ -3,10 +3,7 @@ import open3d as o3d
 import pickle
 from collections import Counter
 
-ts = 4500
-xs = ['pos', 'all_f2v']
-
-with open(f'output/tactile_sensor.ts={ts}.{xs[0]}.pkl', 'rb') as f:
+with open(f'output/tactile_sensor.pos.max_deformation.pkl', 'rb') as f:
     points = pickle.load(f)
 
 with open(f'output/fem_sensor.interp_idx_flat.pkl', 'rb') as f:
@@ -15,7 +12,7 @@ with open(f'output/fem_sensor.interp_idx_flat.pkl', 'rb') as f:
 with open(f'output/fem_sensor.cam_3d_nodes.pkl', 'rb') as f:
     cam_3d_nodes = pickle.load(f)
 
-with open(f'output/tactile_sensor.ts={ts}.{xs[1]}.pkl', 'rb') as f:
+with open(f'output/tactile_sensor.f2v.pkl', 'rb') as f:
     tetrahedra_indices = pickle.load(f)
 tetrahedra_indices = tetrahedra_indices.astype(int)
 

@@ -46,7 +46,7 @@ class FEMDomeSensor:
         self.lam = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         self.mu[None] = self.E_init[None] / 2 / (1 + self.nu_init[None])
         self.lam[None] = self.E_init[None] * self.nu_init[None] / (1 + self.nu_init[None]) / (1 - 2 * self.nu_init[None])  # Lame parameters
-        self.damping = 10.0
+        
 
 
         self.init_x = ti.Vector.field(3, float, self.n_verts)

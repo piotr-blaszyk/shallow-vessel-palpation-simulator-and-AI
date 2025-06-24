@@ -59,7 +59,7 @@ class MPMObj:
         self.eps = 1e-5
         self.dtype = ti.f32
 
-        self.damping = 35.0
+        
 
         self.E_0 = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         self.nu_0 = ti.field(dtype=ti.f32, shape=(), needs_grad=True)

@@ -20,7 +20,8 @@ SPEED_2_DEG_S = 81.63 / SLOW_DOWN
 TIME_STEPS_PER_S = 10 * SLOW_DOWN
 PHANTOM_CLOSEST_VERTEX = [5.750000, 5.750000, 0.750000]
 PHANTOM_INITIAL_POSE = [9.750000, 9.750000, 1.850000, 0, 0, 0]
-SENSOR_DOME_TIP_INITIAL_POSE = [9.750000, 9.750000, 2+2.950000, -90, 0, 0]
+SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET = 2.0
+SENSOR_DOME_TIP_INITIAL_POSE = [9.750000, 9.750000, 2.950000+SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET, -90, 0, 0]
 
 def print_point_cloud(arr):
     # Print the shape for verification
@@ -204,10 +205,11 @@ class Contact(ContactVisualisation):
         xr_offset = np.random.uniform(-15, 15)
         yr_offset = np.random.uniform(-15, 15)
         zr_offset = np.random.uniform(-15, 15)
-        # xr_offset = 0
-        # yr_offset = 0
-        # zr_offset = 0
-        press_depth = 2 + np.random.uniform(0.6, 1.6)
+        xr_offset = 0
+        yr_offset = 0
+        zr_offset = 0
+        press_depth = np.random.uniform(0.6, 1.6)
+        press_depth = 0.6 + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         trajectory_npy = np.array([
             [x, y, z, xr+xr_offset, yr+yr_offset, zr+zr_offset],
@@ -555,7 +557,7 @@ class Contact(ContactVisualisation):
             
             clamp_speed = True
             # Clamp pos_control to max_speed
-            max_speed_pos = 100.0
+            max_speed_pos = 5.0
             pos_control_norm = pos_control.norm()
             if clamp_speed and pos_control_norm > max_speed_pos:
                 pos_control = pos_control / pos_control_norm * max_speed_pos
@@ -630,6 +632,18 @@ class Contact(ContactVisualisation):
         save_markers_with_empty_rows(virtual_np, 'output/virtual_markers_snapshots.csv')
         np.savetxt('output/ground_truth_labels.csv', labels_np, delimiter=',', fmt='%d')
 
+    def save_tactile_sensor_mesh_to_pickle(self):
+        particles = self.tactile_sensor.pos.to_numpy()[0]
+        with open(f'output/tactile_sensor.pos.max_deformation.pkl', 'wb') as f:
+            pickle.dump(particles, f)
+        print('mesh exported!')
+    
+    def save_tactile_sensor_mesh_node_mapping_to_pickle(self):
+        f2v = self.tactile_sensor.f2v.to_numpy()
+        with open(f'output/tactile_sensor.f2v.pkl', 'wb') as f:
+            pickle.dump(f2v, f)
+        print('mesh node mapping exported!')
+
 def main():
     np.set_printoptions(precision=3, floatmode='maxprec', suppress=False)
     if RUN_ON_LAB_MACHINE:
@@ -641,9 +655,9 @@ def main():
 
     phantom_name = "cylinder.stl"
     num_sub_frames = 50
-    num_frames = 500
+    num_frames = 5_000
     num_opt_steps = 10
-    dt = 5e-5
+    dt = 5e-5 / 2
     contact_model = Contact(
         dt=dt,
         num_frames=num_frames,
@@ -653,6 +667,7 @@ def main():
     )
     np.savetxt(f'output/trajectory.p_sensor1.csv', contact_model.p_sensor1.to_numpy(), delimiter=",", fmt='%.2f')
     np.savetxt(f'output/trajectory.o_sensor1.csv', contact_model.o_sensor1.to_numpy(), delimiter=",", fmt='%.2f')
+    contact_model.save_tactile_sensor_mesh_node_mapping_to_pickle()
     
     for opts in range(num_opt_steps):
         print(f"optimisation step: {opts} / {num_opt_steps}")
@@ -679,9 +694,10 @@ def main():
             keypoint_coords = contact_model.tactile_sensor.get_keypoint_coordinates(0, contact_model.keypoint_indices)
             update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords[0, :].reshape((1, 3)))
 
-            if contact_model.frames_since_last_target_reached[None] == 10:
+            if contact_model.frames_since_last_target_reached[None] == 500:
                 contact_model.take_snapshot(opts)
-                break
+                contact_model.save_tactile_sensor_mesh_to_pickle()
+                # break
     # contact_model.save_marker_data_and_ground_truth_labels_to_file()
 
 if __name__ == "__main__":

@@ -36,7 +36,8 @@ class FEMDomeSensor:
 
         self.dim = 3
         self.total_volume = self.calc_volume()
-        self.rho = 1.145 * 1_000 # density [kg / m^3]
+        # self.rho = 1.145 * 1_000 # density [kg / m^3]
+        self.rho = 1.145
         self.mass_per_vertex = self.total_volume * self.rho / self.n_verts
         self.eps = 1e-10
 
@@ -48,7 +49,7 @@ class FEMDomeSensor:
         self.lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.mu[None] = self.E_init[None] / 2 / (1 + self.nu_init[None])
         self.lam[None] = self.E_init[None] * self.nu_init[None] / (1 + self.nu_init[None]) / (1 - 2 * self.nu_init[None])  # Lame parameters
-        self.damping = 10.0
+        
 
         self.init_x = ti.Vector.field(3, float, self.n_verts, needs_grad=False)
         self.init_x.from_numpy(self.all_nodes.astype(np.float32))

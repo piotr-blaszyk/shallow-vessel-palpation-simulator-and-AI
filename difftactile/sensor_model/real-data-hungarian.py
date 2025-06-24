@@ -197,12 +197,46 @@ def draw_frame(frame_idx, marker_positions, init_markers, hist_bins):
     
     return img
 
+def compute_and_print_sorted_magnitudes(marker_positions, init_markers):
+    """Compute and print mean deformation magnitudes for each frame in real-world coordinates."""
+    # Array to store mean magnitudes for each frame
+    mean_magnitudes = []
+    
+    for frame_idx, frame_markers in enumerate(marker_positions):
+        row_ind, col_ind = match_markers(frame_markers, init_markers)
+        
+        # Convert to real-world coordinates
+        real_frame_markers = frame_markers.copy()
+        
+        real_init_markers = init_markers.copy()
+        
+        # Compute displacements in real-world coordinates
+        displacements = real_frame_markers[row_ind] - real_init_markers[col_ind]
+        magnitudes = np.linalg.norm(displacements, axis=1)
+        
+        # Compute mean magnitude for this frame
+        mean_mag = np.mean(magnitudes)
+        mean_magnitudes.append((frame_idx, mean_mag))
+    
+    # Sort by magnitude
+    sorted_magnitudes = sorted(mean_magnitudes, key=lambda x: x[1])
+    
+    print("\nMean Deformation Magnitudes (in pixels, sorted ascending):")
+    print("Format: (Frame Index, Mean Magnitude)")
+    for frame_idx, mag in sorted_magnitudes:
+        print(f"Frame {frame_idx}: {mag:.2f}")
+    
+    return sorted_magnitudes
+
 def main():
-    # First, train and evaluate the k-NN classifier
+    # First, compute and print sorted magnitudes
+    marker_positions, init_markers, labels = load_data()
+    compute_and_print_sorted_magnitudes(marker_positions, init_markers)
+    
+    # Then proceed with training and visualization
     train_and_evaluate_knn()
     
-    # Then proceed with visualization
-    marker_positions, init_markers, _ = load_data()
+    # Visualization
     num_frames = len(marker_positions)
     frame_idx = 0
     

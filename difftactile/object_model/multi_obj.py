@@ -51,7 +51,7 @@ class MultiObj:
         self.p_vol, self.p_rho =  (self.dx_0 * self.obj_scale) ** 3, self.rho * 1.0# g/m^3
         self.p_mass = self.p_vol * self.p_rho
         self.eps = 1e-5
-        self.damping = 35.0
+        
 
         self.E_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
         self.nu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)

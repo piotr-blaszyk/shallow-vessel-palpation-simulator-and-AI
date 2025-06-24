@@ -86,7 +86,7 @@ class ContactVisualisation:
             gui.lines(begin=begin_points, end=end_points, radius=1, color=0xFFFFFF)
             
             gui.circles(draw_points, radius=2, color=0xF542A1)
-            gui.arrows(draw_points, offset * 10.0, radius=2, color=0xE6C949)
+            gui.arrows(draw_points, offset, radius=2, color=0xE6C949)
     
     @ti.kernel
     def draw_perspective(self, f: ti.i32):

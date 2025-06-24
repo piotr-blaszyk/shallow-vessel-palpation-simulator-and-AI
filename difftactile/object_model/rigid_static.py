@@ -53,7 +53,7 @@ class RigidObj:
         self.p_vol, self.p_rho =  (self.dx_0 * self.obj_scale) ** 3, self.rho * 1.0# g/m^3
         self.p_mass = self.p_vol * self.p_rho
         self.eps = 1e-5
-        self.damping = 32.0
+        
         self.x_0 = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=True)  # position
         self.v_0 = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=True)  # velocity
 
