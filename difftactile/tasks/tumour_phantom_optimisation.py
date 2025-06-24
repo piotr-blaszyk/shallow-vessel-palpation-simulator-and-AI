@@ -79,8 +79,13 @@ class Contact(ContactVisualisation):
         self.kd[None] = 269.44
         self.kt[None] = 108.72
         self.friction_coeff[None] = 14.16
-        self.tactile_sensor.mu[None] = 1294.01
-        self.tactile_sensor.lam[None] = 9201.11
+        
+        # Set material parameters for both shell and gel
+        shell_E = 8e3  # Vytaflex 60
+        shell_nu = 0.43
+        gel_E = 5e2    # RTV27905
+        gel_nu = 0.49
+        self.tactile_sensor.set_material_params(shell_E, shell_nu, gel_E, gel_nu)
 
         self.num_sensor = 1
         self.contact_idx = ti.Vector.field(

@@ -36,20 +36,44 @@ class FEMDomeSensor:
 
         self.dim = 3
         self.total_volume = self.calc_volume()
-        # self.rho = 1.145 * 1_000 # density [kg / m^3]
-        self.rho = 1.145
-        self.mass_per_vertex = self.total_volume * self.rho / self.n_verts
-        self.eps = 1e-10
+        
+        # Material parameters for shell (Vytaflex 60)
+        self.shell_rho = 1.145  # density [g/cm^3]
+        self.shell_E = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.shell_nu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.shell_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.shell_lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        
+        # Material parameters for gel (RTV27905)
+        self.gel_rho = 0.97  # density [g/cm^3]
+        self.gel_E = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.gel_nu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.gel_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.gel_lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
 
+        # Initialize default material parameters
+        self.shell_E[None], self.shell_nu[None] = 8e3, 0.43  # Shell (Vytaflex 60)
+        self.gel_E[None], self.gel_nu[None] = 5e2, 0.49  # Gel (RTV27905)
+        
+        # Compute Lamé parameters for both materials
+        self.shell_mu[None] = self.shell_E[None] / 2 / (1 + self.shell_nu[None])
+        self.shell_lam[None] = self.shell_E[None] * self.shell_nu[None] / (1 + self.shell_nu[None]) / (1 - 2 * self.shell_nu[None])
+        self.gel_mu[None] = self.gel_E[None] / 2 / (1 + self.gel_nu[None])
+        self.gel_lam[None] = self.gel_E[None] * self.gel_nu[None] / (1 + self.gel_nu[None]) / (1 - 2 * self.gel_nu[None])
+        
+        # Track material type for each tetrahedron (0 for gel, 1 for shell)
+        self.element_material = ti.field(dtype=ti.i32, shape=(self.n_cells,), needs_grad=False)
+        
+        # For backward compatibility
+        self.mu = self.shell_mu
+        self.lam = self.shell_lam
+        
+        # Compute mass per vertex based on material distribution
+        self.mass_per_vertex = ti.field(dtype=ti.f32, shape=(self.n_verts,), needs_grad=False)
+        
         self.E_init = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.nu_init = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.E_init[None], self.nu_init[None] = 8e3, 0.43 #0.3e4, 0.445  # Young's modulus and Poisson's ratio
-
-        self.mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.mu[None] = self.E_init[None] / 2 / (1 + self.nu_init[None])
-        self.lam[None] = self.E_init[None] * self.nu_init[None] / (1 + self.nu_init[None]) / (1 - 2 * self.nu_init[None])  # Lame parameters
-        
 
         self.init_x = ti.Vector.field(3, float, self.n_verts, needs_grad=False)
         self.init_x.from_numpy(self.all_nodes.astype(np.float32))
@@ -280,10 +304,20 @@ class FEMDomeSensor:
             self.virtual_markers[i] = init_loc_2d
 
     @ti.kernel
-    def set_material_params(self, E:ti.f32, nu:ti.f32):
-        self.E_init[None], self.nu_init[None] = E, nu # Young's modulus and Poisson's ratio
-        self.mu[None] = self.E_init[None] / 2 / (1 + self.nu_init[None])
-        self.lam[None] = self.E_init[None] * self.nu_init[None] / (1 + self.nu_init[None]) / (1 - 2 * self.nu_init[None])  # Lame parameters
+    def set_material_params(self, shell_E:ti.f32, shell_nu:ti.f32, gel_E:ti.f32, gel_nu:ti.f32):
+        # Set shell material parameters (Vytaflex 60)
+        self.shell_E[None], self.shell_nu[None] = shell_E, shell_nu
+        self.shell_mu[None] = self.shell_E[None] / 2 / (1 + self.shell_nu[None])
+        self.shell_lam[None] = self.shell_E[None] * self.shell_nu[None] / (1 + self.shell_nu[None]) / (1 - 2 * self.shell_nu[None])
+        
+        # Set gel material parameters (RTV27905)
+        self.gel_E[None], self.gel_nu[None] = gel_E, gel_nu
+        self.gel_mu[None] = self.gel_E[None] / 2 / (1 + self.gel_nu[None])
+        self.gel_lam[None] = self.gel_E[None] * self.gel_nu[None] / (1 + self.gel_nu[None]) / (1 - 2 * self.gel_nu[None])
+        
+        # For backward compatibility
+        self.mu[None] = self.shell_mu[None]
+        self.lam[None] = self.shell_lam[None]
 
     @ti.func
     def eul2mat(self, rot_v, trans_v):
@@ -546,12 +580,21 @@ class FEMDomeSensor:
         layer_idxs = []
         all_hemisphere_nodes = []
         num_cur_node = 0
+        
+        # Track which layer each node belongs to for material assignment
+        node_layer_map = {}  # Maps node index to layer number
+        
         for i in range(self.N_t):
             rad = self.inner_radius + i * self.t_res
             ratio = (rad**2) / (self.inner_radius**2)
             n_node = int(self.N_node * ratio)
             layer_nodes, hemisphere_nodes, indices = self.fibonacci_sphere(samples=n_node, radius_of_curvature = rad, is_inner_surface=i == 0)
             n_node = layer_nodes.shape[0]
+            
+            # Store which layer each node belongs to
+            for j in range(n_node):
+                node_layer_map[num_cur_node + j] = i
+                
             all_nodes.append(layer_nodes)
             all_hemisphere_nodes.append(hemisphere_nodes)
             layer_idxs.append(indices + i * 3)
@@ -562,6 +605,7 @@ class FEMDomeSensor:
                 sphere_points = np.vstack((x, z)).T
                 surface_f2v = num_cur_node + Delaunay(sphere_points).simplices
             num_cur_node += n_node
+            
         all_nodes = np.concatenate(all_nodes,axis=0)
         all_hemisphere_nodes = np.concatenate(all_hemisphere_nodes,axis=0)
         point_a_idx = np.argmax(all_nodes[:, 1])
@@ -575,43 +619,56 @@ class FEMDomeSensor:
         layer_idxs = np.concatenate(layer_idxs,axis=0)
 
         # --- Begin filtering out inner-most layer (layer 0) ---
-        # Find indices of inner-most layer nodes
         inner_layer_mask = np.isin(layer_idxs, [0, 1, 2])
         inner_layer_indices = np.where(inner_layer_mask)[0]
         n_inner = len(inner_layer_indices)
-        # Indices to keep (not in inner-most layer)
         keep_mask = ~inner_layer_mask
         keep_indices = np.where(keep_mask)[0]
-        # Build mapping from old indices to new indices
         old_to_new = -np.ones(len(layer_idxs), dtype=int)
         old_to_new[keep_indices] = np.arange(len(keep_indices))
-        # Filter all_nodes and layer_idxs
         all_nodes = all_nodes[keep_mask]
         layer_idxs = layer_idxs[keep_mask]
-        # Filter all_f2v: keep only those tetrahedra whose all nodes are not in inner-most layer
         mask_f2v = np.all(np.isin(all_f2v, keep_indices), axis=1)
         all_f2v = all_f2v[mask_f2v]
-        # Remap indices in all_f2v
         all_f2v = old_to_new[all_f2v]
-        # Filter surface_f2v and remap indices (subtract n_inner)
+        
         if surface_f2v is not None:
-            # Only keep triangles whose all nodes are not in inner-most layer
             mask_surf = np.all(np.isin(surface_f2v, keep_indices), axis=1)
             surface_f2v = surface_f2v[mask_surf]
             surface_f2v = old_to_new[surface_f2v]
         triangle_nodes = triangle_nodes[keep_mask]
-        # --- End filtering ---
-
-        pickles = [
-            ('all_nodes', all_nodes),
-            ('triangle_nodes', triangle_nodes),
-            ('all_f2v', all_f2v),
-            ('layer_idxs', layer_idxs),
-        ]
-        for x, y in pickles:
-            with open(f"output/tactile_sensor.{x}.pkl", 'wb') as f:
-                pickle.dump(y, f)
-            np.savetxt(f'output/tactile_sensor.{x}.csv', y, delimiter=",", fmt='%.2f')
+        
+        # Assign materials to elements
+        element_materials = np.zeros(len(all_f2v), dtype=np.int32)
+        vertex_masses = np.zeros(len(all_nodes), dtype=np.float32)
+        vertex_material_counts = np.zeros((len(all_nodes), 2), dtype=np.int32)  # Count of gel/shell elements per vertex
+        
+        # Compute element volumes and assign materials
+        for i, tetra in enumerate(all_f2v):
+            v1, v2, v3, v4 = tetra
+            pos1, pos2, pos3, pos4 = all_nodes[v1], all_nodes[v2], all_nodes[v3], all_nodes[v4]
+            
+            # Compute tetrahedron volume
+            matrix = np.vstack([pos2 - pos1, pos3 - pos1, pos4 - pos1]).T
+            volume = abs(np.linalg.det(matrix)) / 6.0
+            
+            # Determine material based on average y-coordinate (height)
+            center_y = (pos1[1] + pos2[1] + pos3[1] + pos4[1]) / 4.0
+            is_shell = center_y > 2.0  # Shell material for upper region
+            
+            element_materials[i] = 1 if is_shell else 0
+            material_density = self.shell_rho if is_shell else self.gel_rho
+            element_mass = volume * material_density
+            
+            # Distribute element mass to vertices
+            for vertex_idx in tetra:
+                vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
+                vertex_material_counts[vertex_idx][1 if is_shell else 0] += 1
+        
+        # Transfer material assignments to Taichi fields
+        self.element_material.from_numpy(element_materials)
+        self.mass_per_vertex.from_numpy(vertex_masses)
+        
         return all_nodes, all_f2v, surface_f2v, layer_idxs
 
     @ti.kernel
@@ -707,6 +764,11 @@ class FEMDomeSensor:
             tetra_volume = ti.abs(deformation_matrix.determinant()) / 6
             deformation_gradient = deformation_matrix @ self.B[tetra_idx]
 
+            ## Get material parameters based on element type
+            is_shell = self.element_material[tetra_idx] == 1
+            mu = self.shell_mu[None] if is_shell else self.gel_mu[None]
+            lam = self.shell_lam[None] if is_shell else self.gel_lam[None]
+
             ## stable neo-hooken
             jacobian = deformation_gradient.determinant()
             first_invariant = (deformation_gradient.transpose() @ deformation_gradient).trace()
@@ -714,15 +776,15 @@ class FEMDomeSensor:
             dJ_dF1 = deformation_gradient[:,2].cross(deformation_gradient[:,0])
             dJ_dF2 = deformation_gradient[:,0].cross(deformation_gradient[:,1])
             jacobian_derivative = ti.Matrix.cols([dJ_dF0, dJ_dF1, dJ_dF2])
-            alpha = 1 + 0.75 * self.mu[None]/self.lam[None]
-            stress_tensor = self.mu[None] * (1 - 1/(first_invariant+1)) * deformation_gradient + self.lam[None] * (jacobian - alpha) * jacobian_derivative
+            alpha = 1 + 0.75 * mu/lam
+            stress_tensor = mu * (1 - 1/(first_invariant+1)) * deformation_gradient + lam * (jacobian - alpha) * jacobian_derivative
 
             force_matrix = -tetra_volume * stress_tensor @ self.B[tetra_idx].transpose()
             vertex_indices = ti.Vector([vertex1_idx, vertex2_idx, vertex3_idx, vertex4_idx])
             for k in ti.static(range(3)):
                 vertex_force = ti.Vector([force_matrix[j,k] for j in range(3)])
-                self.vel[frame,vertex_indices[k]] += self.dt * vertex_force / self.mass_per_vertex
-                self.vel[frame,vertex_indices[3]] += -1*self.dt * vertex_force / self.mass_per_vertex
+                self.vel[frame,vertex_indices[k]] += self.dt * vertex_force / self.mass_per_vertex[vertex_indices[k]]
+                self.vel[frame,vertex_indices[3]] += -1*self.dt * vertex_force / self.mass_per_vertex[vertex_indices[3]]
 
 
     @ti.kernel
@@ -730,7 +792,7 @@ class FEMDomeSensor:
         for vertex_idx in range(self.n_verts):
             updated_velocity = ti.Vector([0.0, 0.0, 0.0])
             updated_velocity += self.vel[frame,vertex_idx]
-            updated_velocity += self.dt * self.external_force_field[frame,vertex_idx] / self.mass_per_vertex
+            updated_velocity += self.dt * self.external_force_field[frame,vertex_idx] / self.mass_per_vertex[vertex_idx]
 
             ### stick the bottom layer to be fixed
             is_fixed_layer = self.layer_id[vertex_idx] % 3 == 0
