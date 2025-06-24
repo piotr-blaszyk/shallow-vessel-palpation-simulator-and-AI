@@ -651,39 +651,39 @@ class FEMDomeSensor:
         return cur_min_idx
 
     @ti.func
-    def find_sdf(self, grid_p, grid_v, min_idx, f, offset = 0.0):
-        a, b, c = self.contact_seg[min_idx]
-        p_1 = self.pos[f, a]
-        p_2 = self.pos[f, b]
-        p_3 = self.pos[f, c]
+    def find_sdf(self, point_position, point_velocity, triangle_index, frame, collision_offset = 0.0):
+        vertex1_idx, vertex2_idx, vertex3_idx = self.contact_seg[triangle_index]
+        vertex1_pos = self.pos[frame, vertex1_idx]
+        vertex2_pos = self.pos[frame, vertex2_idx]
+        vertex3_pos = self.pos[frame, vertex3_idx]
 
-        normal_plane = ti.math.cross(p_2-p_1, p_3-p_1) # plane's norm
-        normal_plane = normal_plane.normalized(self.eps)
-        sign_p1 = ti.math.sign(normal_plane.dot(self.out_direction[None]))
-        normal_plane = sign_p1 * normal_plane # facing up
+        triangle_normal = ti.math.cross(vertex2_pos-vertex1_pos, vertex3_pos-vertex1_pos) # plane's norm
+        triangle_normal = triangle_normal.normalized(self.eps)
+        normal_direction = ti.math.sign(triangle_normal.dot(self.out_direction[None]))
+        triangle_normal = normal_direction * triangle_normal # facing up
 
-        d_s = grid_p - p_1 # vector from the first node to the particle
-        sdf = d_s.dot(normal_plane) # distance to the plane
-        project_p1 = grid_p - sdf * normal_plane # projection of point on the segment
-        norm_v = -1* normal_plane
+        point_to_vertex1 = point_position - vertex1_pos # vector from the first node to the particle
+        signed_distance = point_to_vertex1.dot(triangle_normal) # distance to the plane
+        point_projected = point_position - signed_distance * triangle_normal # projection of point on the segment
+        surface_normal = -1* triangle_normal
 
-        v0 = p_3 - p_1
-        v1 = p_2 - p_1
-        v2 = project_p1 - p_1
-        dot00 = v0.dot(v0)
-        dot01 = v0.dot(v1)
-        dot02 = v0.dot(v2)
-        dot11 = v1.dot(v1)
-        dot12 = v1.dot(v2)
-        inv_d = 1 / (dot00 * dot11 - dot01 * dot01)
-        u = (dot11 * dot02 - dot01 * dot12) * inv_d
-        v = (dot00 * dot12 - dot01 * dot02) * inv_d
+        edge1 = vertex3_pos - vertex1_pos
+        edge2 = vertex2_pos - vertex1_pos
+        point_projected_rel = point_projected - vertex1_pos
+        dot_edge1_edge1 = edge1.dot(edge1)
+        dot_edge1_edge2 = edge1.dot(edge2)
+        dot_edge1_point = edge1.dot(point_projected_rel)
+        dot_edge2_edge2 = edge2.dot(edge2)
+        dot_edge2_point = edge2.dot(point_projected_rel)
+        inv_denominator = 1 / (dot_edge1_edge1 * dot_edge2_edge2 - dot_edge1_edge2 * dot_edge1_edge2)
+        barycentric_u = (dot_edge2_edge2 * dot_edge1_point - dot_edge1_edge2 * dot_edge2_point) * inv_denominator
+        barycentric_v = (dot_edge1_edge1 * dot_edge2_point - dot_edge1_edge2 * dot_edge1_point) * inv_denominator
 
         ### correct with an offset for pbd collision
-        sdf -= offset
-        relative_v = grid_v - 1/3 * (self.vel[f, a] + self.vel[f, b] + self.vel[f, c])
-        contact_flag = sdf < 0 and u >= 0 and v >= 0.0 and (u + v <= 1)
-        return sdf, norm_v, relative_v, contact_flag
+        signed_distance -= collision_offset
+        relative_velocity = point_velocity - 1/3 * (self.vel[frame, vertex1_idx] + self.vel[frame, vertex2_idx] + self.vel[frame, vertex3_idx])
+        is_contact = signed_distance < 0 and barycentric_u >= 0 and barycentric_v >= 0.0 and (barycentric_u + barycentric_v <= 1)
+        return signed_distance, surface_normal, relative_velocity, is_contact
 
     @ti.kernel
     def reset_contact(self):
@@ -691,55 +691,55 @@ class FEMDomeSensor:
         self.surf_f.fill(0.0)
 
     @ti.func
-    def update_contact_force(self, min_idx, ext_v1, f):
-        a, b, c = self.contact_seg[min_idx]
-        self.external_force_field[f, a] += 1/3 * ext_v1
-        self.external_force_field[f, b] += 1/3 * ext_v1
-        self.external_force_field[f, c] += 1/3 * ext_v1
+    def update_contact_force(self, triangle_index, contact_force, frame):
+        vertex1_idx, vertex2_idx, vertex3_idx = self.contact_seg[triangle_index]
+        # Distribute contact force equally among triangle vertices
+        self.external_force_field[frame, vertex1_idx] += 1/3 * contact_force
+        self.external_force_field[frame, vertex2_idx] += 1/3 * contact_force
+        self.external_force_field[frame, vertex3_idx] += 1/3 * contact_force
 
     @ti.kernel
-    def update_internal_forces(self, f:ti.i32):
-
-        for i in range(self.n_cells):
-            ia, ib, ic, id = self.f2v[i]
-            a, b, c, d = self.pos[f, ia], self.pos[f, ib], self.pos[f, ic], self.pos[f, id]
-            D_i = ti.Matrix.cols([a - d, b - d, c - d])
-            V_i = ti.abs(D_i.determinant()) / 6
-            F_i = D_i @ self.B[i]
+    def update_internal_forces(self, frame:ti.i32):
+        for tetra_idx in range(self.n_cells):
+            vertex1_idx, vertex2_idx, vertex3_idx, vertex4_idx = self.f2v[tetra_idx]
+            vertex1_pos, vertex2_pos, vertex3_pos, vertex4_pos = self.pos[frame, vertex1_idx], self.pos[frame, vertex2_idx], self.pos[frame, vertex3_idx], self.pos[frame, vertex4_idx]
+            deformation_matrix = ti.Matrix.cols([vertex1_pos - vertex4_pos, vertex2_pos - vertex4_pos, vertex3_pos - vertex4_pos])
+            tetra_volume = ti.abs(deformation_matrix.determinant()) / 6
+            deformation_gradient = deformation_matrix @ self.B[tetra_idx]
 
             ## stable neo-hooken
-            J = F_i.determinant()
-            IC = (F_i.transpose() @ F_i).trace()
-            dJdF0 = F_i[:,1].cross(F_i[:,2])
-            dJdF1 = F_i[:,2].cross(F_i[:,0])
-            dJdF2 = F_i[:,0].cross(F_i[:,1])
-            dJdF = ti.Matrix.cols([dJdF0, dJdF1, dJdF2])
+            jacobian = deformation_gradient.determinant()
+            first_invariant = (deformation_gradient.transpose() @ deformation_gradient).trace()
+            dJ_dF0 = deformation_gradient[:,1].cross(deformation_gradient[:,2])
+            dJ_dF1 = deformation_gradient[:,2].cross(deformation_gradient[:,0])
+            dJ_dF2 = deformation_gradient[:,0].cross(deformation_gradient[:,1])
+            jacobian_derivative = ti.Matrix.cols([dJ_dF0, dJ_dF1, dJ_dF2])
             alpha = 1 + 0.75 * self.mu[None]/self.lam[None]
-            stress = self.mu[None] * (1 - 1/(IC+1)) * F_i + self.lam[None] * (J - alpha) * dJdF
+            stress_tensor = self.mu[None] * (1 - 1/(first_invariant+1)) * deformation_gradient + self.lam[None] * (jacobian - alpha) * jacobian_derivative
 
-            H = -V_i * stress @ self.B[i].transpose()
-            verts = ti.Vector([ia, ib, ic, id])
+            force_matrix = -tetra_volume * stress_tensor @ self.B[tetra_idx].transpose()
+            vertex_indices = ti.Vector([vertex1_idx, vertex2_idx, vertex3_idx, vertex4_idx])
             for k in ti.static(range(3)):
-                force = ti.Vector([H[j,k] for j in range(3)])
-                self.vel[f,verts[k]] += self.dt * force / self.mass_per_vertex
-                self.vel[f,verts[3]] += -1*self.dt * force / self.mass_per_vertex
+                vertex_force = ti.Vector([force_matrix[j,k] for j in range(3)])
+                self.vel[frame,vertex_indices[k]] += self.dt * vertex_force / self.mass_per_vertex
+                self.vel[frame,vertex_indices[3]] += -1*self.dt * vertex_force / self.mass_per_vertex
 
 
     @ti.kernel
-    def update_external_forces(self, f:ti.i32):
-        for i in range(self.n_verts):
-            v_out = ti.Vector([0.0, 0.0, 0.0])
-            v_out += self.vel[f,i]
-            v_out += self.dt * self.external_force_field[f,i] / self.mass_per_vertex
+    def update_external_forces(self, frame:ti.i32):
+        for vertex_idx in range(self.n_verts):
+            updated_velocity = ti.Vector([0.0, 0.0, 0.0])
+            updated_velocity += self.vel[frame,vertex_idx]
+            updated_velocity += self.dt * self.external_force_field[frame,vertex_idx] / self.mass_per_vertex
 
             ### stick the bottom layer to be fixed
-            cond = self.layer_id[i] % 3 == 0
-            if cond:
-                v_out = self.control_vel[i]
-            self.vel[f+1, i] = v_out
-            self.pos[f+1, i] = self.pos[f, i] + self.dt * v_out
+            is_fixed_layer = self.layer_id[vertex_idx] % 3 == 0
+            if is_fixed_layer:
+                updated_velocity = self.control_vel[vertex_idx]
+            self.vel[frame+1, vertex_idx] = updated_velocity
+            self.pos[frame+1, vertex_idx] = self.pos[frame, vertex_idx] + self.dt * updated_velocity
             # update virtual pos
-            self.virtual_pos[f+1, i] = self.virtual_pos[f, i] + self.dt * self.control_vel[i]
+            self.virtual_pos[frame+1, vertex_idx] = self.virtual_pos[frame, vertex_idx] + self.dt * self.control_vel[vertex_idx]
 
 
     @ti.kernel

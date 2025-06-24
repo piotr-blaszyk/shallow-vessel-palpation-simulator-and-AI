@@ -64,14 +64,14 @@ class MultiObj:
         self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # velocity
 
         self.affine_velocity = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # affine velocity field
-        self.F_new = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        self.trial_deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
         self.deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # deformation gradient
         self.U_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
         self.V_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
         self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
 
         self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)  # grid node momentum/velocity
-        self.grid_node_momentum_out = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)  # grid node momentum/velocity
+        self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)  # grid node momentum/velocity
         self.grid_node_mass = ti.field(dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)  # grid node mass
         self.grid_node_external_force = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)  # grid node external force
         self.grid_occupy = ti.field(dtype=int, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid))
@@ -174,7 +174,7 @@ class MultiObj:
     @ti.kernel
     def reset(self):
         self.grid_node_momentum_in.fill(0.0)
-        self.grid_node_momentum_out.fill(0.0)
+        self.grid_node_velocity_out.fill(0.0)
         self.grid_node_mass.fill(0.0)
         self.grid_node_external_force.fill(0.0)
         self.grid_occupy.fill(0.0)
@@ -183,7 +183,7 @@ class MultiObj:
     @ti.kernel
     def get_external_force(self, f:ti.i32):
         for i, j, k in ti.ndrange(self.n_grid, self.n_grid, self.n_grid):
-            self.total_surface_external_force[f] += self.grid_node_external_force[f, i, j, k] /self.dt
+            self.total_surface_external_force[f] += self.grid_node_external_force[f, i, j, k] / self.dt
 
     @ti.func
     def update_contact_force(self, external_force, f, i, j, k):
@@ -192,17 +192,17 @@ class MultiObj:
     @ti.kernel
     def compute_new_F(self, f: ti.i32):
         for p in range(self.n_particles):
-            self.F_new[f, p] = (ti.Matrix.diag(dim=3, val=1) + self.dt * self.affine_velocity[f, p]) @ self.deformation_gradient[f, p]
+            self.trial_deformation_gradient[f, p] = (ti.Matrix.diag(dim=3, val=1) + self.dt * self.affine_velocity[f, p]) @ self.deformation_gradient[f, p]
 
     @ti.kernel
     def svd(self, f: ti.i32):
         for p in range(self.n_particles):
-            self.U_svd[f, p], self.S_svd[f, p], self.V_svd[f, p] = ti.svd(self.F_new[f, p])
+            self.U_svd[f, p], self.S_svd[f, p], self.V_svd[f, p] = ti.svd(self.trial_deformation_gradient[f, p])
 
     @ti.kernel
     def svd_grad(self, f: ti.i32):
         for p in range(self.n_particles):
-            self.F_new.grad[f, p] += self.single_svd_grad(f, p)
+            self.trial_deformation_gradient.grad[f, p] += self.single_svd_grad(f, p)
 
     @ti.func
     def clamp(self, a: ti.f32):
@@ -259,7 +259,7 @@ class MultiObj:
 
             volume_ratio = (self.S_svd[frame, particle_id]).determinant()
             rotation_matrix = self.U_svd[frame, particle_id] @ self.V_svd[frame, particle_id].transpose()
-            cauchy_stress = 2 * shear_modulus * (self.F_new[frame, particle_id] - rotation_matrix) @ self.F_new[frame, particle_id].transpose() + ti.Matrix.identity(float, 3) * bulk_modulus * volume_ratio * (volume_ratio - 1)
+            cauchy_stress = 2 * shear_modulus * (self.trial_deformation_gradient[frame, particle_id] - rotation_matrix) @ self.trial_deformation_gradient[frame, particle_id].transpose() + ti.Matrix.identity(float, 3) * bulk_modulus * volume_ratio * (volume_ratio - 1)
 
             force_term = (-self.dt * self.particle_volume * 4 * self.inverse_grid_node_length * self.inverse_grid_node_length) * cauchy_stress
 
@@ -273,7 +273,7 @@ class MultiObj:
                 self.grid_node_momentum_in[frame, grid_base_index + grid_offset] += weight * (self.particle_mass * self.particle_velocity[frame, particle_id] + momentum_contrib @ dist_to_grid)
                 self.grid_node_mass[frame, grid_base_index + grid_offset] += weight * self.particle_mass
 
-            self.deformation_gradient[frame+1, particle_id] = self.F_new[frame, particle_id]
+            self.deformation_gradient[frame+1, particle_id] = self.trial_deformation_gradient[frame, particle_id]
 
     @ti.kernel
     def check_grid_occupy(self, f:ti.i32):
@@ -282,49 +282,50 @@ class MultiObj:
                 self.grid_occupy[f, i, j, k] = 1
 
     @ti.kernel
-    def grid_op(self, f:ti.i32):
-        for i, j, k in ti.ndrange(self.n_grid, self.n_grid, self.n_grid):
-            if self.grid_occupy[f, i, j, k] == 1:
-                inv_m = 1 / (self.grid_node_mass[f, i, j, k]+self.eps)
+    def grid_op(self, frame:ti.i32):
+        for grid_x, grid_y, grid_z in ti.ndrange(self.n_grid, self.n_grid, self.n_grid):
+            if self.grid_occupy[frame, grid_x, grid_y, grid_z] == 1:
+                inverse_mass = 1 / (self.grid_node_mass[frame, grid_x, grid_y, grid_z] + self.eps)
 
-                v_out = ti.Vector([0.0, 0.0, 0.0])
-                v_out += inv_m * self.grid_node_momentum_in[f, i, j, k] # Momentum to velocity
-                v_out += inv_m * self.grid_node_external_force[f, i, j, k]
-                v_out += self.dt * self.gravity  # gravity
+                grid_velocity = ti.Vector([0.0, 0.0, 0.0])
+                grid_velocity += inverse_mass * self.grid_node_momentum_in[frame, grid_x, grid_y, grid_z] # Momentum to velocity
+                grid_velocity += inverse_mass * self.grid_node_external_force[frame, grid_x, grid_y, grid_z]
+                grid_velocity += self.dt * self.gravity  # gravity
 
-                if i < self.bound and v_out[0] < 0:
-                    v_out[0] = 0  # Boundary conditions
-                if i > self.n_grid - self.bound and v_out[0] > 0:
-                    v_out[0] = 0
-                if j < self.bound and v_out[1] < 0: # < 3
-                    v_out[1] = 0
-                if j > self.n_grid - self.bound and v_out[1] > 0:
-                    v_out[1] = 0
-                if k < self.bound and v_out[2] < 0: # < 3
-                    v_out[2] = 0
-                if k > self.n_grid - self.bound and v_out[2] > 0:
-                    v_out[2] = 0
+                # Apply boundary conditions at domain edges
+                if grid_x < self.bound and grid_velocity[0] < 0:
+                    grid_velocity[0] = 0  # Left boundary
+                if grid_x > self.n_grid - self.bound and grid_velocity[0] > 0:
+                    grid_velocity[0] = 0  # Right boundary
+                if grid_y < self.bound and grid_velocity[1] < 0:
+                    grid_velocity[1] = 0  # Bottom boundary
+                if grid_y > self.n_grid - self.bound and grid_velocity[1] > 0:
+                    grid_velocity[1] = 0  # Top boundary
+                if grid_z < self.bound and grid_velocity[2] < 0:
+                    grid_velocity[2] = 0  # Front boundary
+                if grid_z > self.n_grid - self.bound and grid_velocity[2] > 0:
+                    grid_velocity[2] = 0  # Back boundary
 
-                self.grid_node_momentum_out[f, i, j, k] = v_out
+                self.grid_node_velocity_out[frame, grid_x, grid_y, grid_z] = grid_velocity
 
     @ti.kernel
-    def g2p(self, f:ti.i32):
-        for p in range(self.n_particles): # grid to particle (G2P)
-            base = (self.particle_position[f, p] * self.inverse_grid_node_length - 0.5).cast(int)
-            fx = self.particle_position[f, p] * self.inverse_grid_node_length - base.cast(float)
-            w = [0.5 * (1.5 - fx) ** 2, 0.75 - (fx - 1.0) ** 2, 0.5 * (fx - 0.5) ** 2]
-            new_v = ti.Vector.zero(float, 3)
-            new_C = ti.Matrix.zero(float, 3, 3)
+    def g2p(self, frame:ti.i32):
+        for particle_id in range(self.n_particles): # grid to particle (G2P)
+            grid_base_index = (self.particle_position[frame, particle_id] * self.inverse_grid_node_length - 0.5).cast(int)
+            particle_grid_diff = self.particle_position[frame, particle_id] * self.inverse_grid_node_length - grid_base_index.cast(float)
+            weight_functions = [0.5 * (1.5 - particle_grid_diff) ** 2, 0.75 - (particle_grid_diff - 1.0) ** 2, 0.5 * (particle_grid_diff - 0.5) ** 2]
+            updated_velocity = ti.Vector.zero(float, 3)
+            updated_affine = ti.Matrix.zero(float, 3, 3)
             for i, j, k in ti.static(ti.ndrange(3, 3, 3)):
                 # loop over 3x3 grid node neighborhood
-                dpos = ti.Vector([i, j, k]).cast(float) - fx
-                g_v = self.grid_node_momentum_out[f, base + ti.Vector([i, j, k])]
-                weight = w[i][0] * w[j][1] * w[k][2]
-                new_v += weight * g_v
-                new_C += 4 * self.inverse_grid_node_length * weight * g_v.outer_product(dpos)
+                grid_relative_offset = ti.Vector([i, j, k]).cast(float) - particle_grid_diff
+                grid_node_velocity = self.grid_node_velocity_out[frame, grid_base_index + ti.Vector([i, j, k])]
+                weight = weight_functions[i][0] * weight_functions[j][1] * weight_functions[k][2]
+                updated_velocity += weight * grid_node_velocity
+                updated_affine += 4 * self.inverse_grid_node_length * weight * grid_node_velocity.outer_product(grid_relative_offset)
 
-            self.particle_velocity[f+1, p], self.affine_velocity[f+1, p] = new_v, new_C
-            self.particle_position[f+1, p] = self.particle_position[f, p] + self.dt * new_v  # advection
+            self.particle_velocity[frame+1, particle_id], self.affine_velocity[frame+1, particle_id] = updated_velocity, updated_affine
+            self.particle_position[frame+1, particle_id] = self.particle_position[frame, particle_id] + self.dt * updated_velocity  # advection
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):
@@ -396,10 +397,10 @@ class MultiObj:
     @ti.kernel
     def clear_step_grad(self, f:ti.i32):
         self.grid_node_momentum_in.grad.fill(0.0)
-        self.grid_node_momentum_out.grad.fill(0.0)
+        self.grid_node_velocity_out.grad.fill(0.0)
         self.grid_node_mass.grad.fill(0.0)
         self.grid_node_external_force.grad.fill(0.0)
-        self.F_new.grad.fill(0.0)
+        self.trial_deformation_gradient.grad.fill(0.0)
         self.U_svd.grad.fill(0.0)
         self.V_svd.grad.fill(0.0)
         self.S_svd.grad.fill(0.0)
