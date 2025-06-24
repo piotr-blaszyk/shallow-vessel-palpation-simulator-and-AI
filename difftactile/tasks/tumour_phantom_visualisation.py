@@ -44,9 +44,9 @@ class ContactVisualisation:
     def draw_3d_scene(self, f: ti.i32):
         for p in range(self.phantom.n_particles):
             if self.phantom.titles[p] == 0:
-                self.healthy_tissue_points[p] = self.phantom.x_0[f, p]
+                self.healthy_tissue_points[p] = self.phantom.particle_position[f, p]
             elif self.phantom.titles[p] == 1:
-                self.tumour_points[p] = self.phantom.x_0[f, p]
+                self.tumour_points[p] = self.phantom.particle_position[f, p]
 
         for p in range(self.tactile_sensor.n_verts):
             self.sensor_points[p] = self.tactile_sensor.pos[f, p]
@@ -109,9 +109,9 @@ class ContactVisualisation:
             self.draw_pos2[i][1] = v + 0.5
         for i in range(self.phantom.n_particles):
             x, y, z = (
-                self.phantom.x_0[f, i][0] - offset,
-                self.phantom.x_0[f, i][1] - offset,
-                self.phantom.x_0[f, i][2] - offset,
+                self.phantom.particle_position[f, i][0] - offset,
+                self.phantom.particle_position[f, i][1] - offset,
+                self.phantom.particle_position[f, i][2] - offset,
             )
             xx, zz = x * c_p + z * s_p, z * c_p - x * s_p
             u, v = xx, y * c_t + zz * s_t

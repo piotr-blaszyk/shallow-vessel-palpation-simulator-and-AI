@@ -18,10 +18,11 @@ SLOW_DOWN = 0.5
 SPEED_1_MM_S = 4.0828765820486765 / SLOW_DOWN
 SPEED_2_DEG_S = 81.63 / SLOW_DOWN
 TIME_STEPS_PER_S = 10 * SLOW_DOWN
-PHANTOM_CLOSEST_VERTEX = [5.750000, 5.750000, 0.750000]
-PHANTOM_INITIAL_POSE = [9.750000, 9.750000, 1.850000, 0, 0, 0]
-SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET = 2.0
-SENSOR_DOME_TIP_INITIAL_POSE = [9.750000, 9.750000, 2.950000+SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET, -90, 0, 0]
+GLOBAL_Z_OFFSET = 10
+PHANTOM_CLOSEST_VERTEX = [5.750000, 5.750000, 0.750000+GLOBAL_Z_OFFSET]
+PHANTOM_INITIAL_POSE = [9.750000, 9.750000, 1.850000+GLOBAL_Z_OFFSET, 0, 0, 0]
+SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET = 1/64
+SENSOR_DOME_TIP_INITIAL_POSE = [9.750000, 9.750000, 2.950000+GLOBAL_Z_OFFSET+SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET, -90, 0, 0]
 
 def print_point_cloud(arr):
     # Print the shape for verification
@@ -56,8 +57,8 @@ class Contact(ContactVisualisation):
             obj_name=obj,
             space_scale=16.0,
             obj_scale=8.0,
-            density=0.5,
-            rho=1.07,
+            mesh_density=0.5,
+            mass_density=1.07,
         )
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
@@ -137,7 +138,7 @@ class Contact(ContactVisualisation):
         self.pid_controller_kp = ti.field(dtype=float, shape=(), needs_grad=False)  # Proportional gain
         self.pid_controller_ki = ti.field(dtype=float, shape=(), needs_grad=False)  # Integral gain
         self.pid_controller_kd = ti.field(dtype=float, shape=(), needs_grad=False)  # Derivative gain
-        self.pid_controller_kp[None] = 100.0  # Initial values - these may need tuning
+        self.pid_controller_kp[None] = 1000.0  # Initial values - these may need tuning
         self.pid_controller_ki[None] = 0.0
         self.pid_controller_kd[None] = 0.0
         
@@ -322,8 +323,8 @@ class Contact(ContactVisualisation):
         for i, j, k in ti.ndrange(
             self.phantom.n_grid, self.phantom.n_grid, self.phantom.n_grid
         ):
-            self.phantom.grid_m.grad[f, i, j, k] = ti.math.clamp(
-                self.phantom.grid_m.grad[f, i, j, k], -1000.0, 1000.0
+            self.phantom.grid_node_mass.grad[f, i, j, k] = ti.math.clamp(
+                self.phantom.grid_node_mass.grad[f, i, j, k], -1000.0, 1000.0
             )
         for i in range(self.tactile_sensor.n_verts):
             self.tactile_sensor.pos.grad[f, i] = ti.math.clamp(
@@ -334,70 +335,70 @@ class Contact(ContactVisualisation):
             )
 
     @ti.func
-    def calculate_contact_force(self, sdf, norm_v, relative_v):
-        shear_factor_p0 = ti.Vector([0.0, 0.0, 0.0])
-        shear_vel_p0 = ti.Vector([0.0, 0.0, 0.0])
-        relative_vel_p0 = relative_v
-        normal_vel_p0 = ti.max(norm_v.dot(relative_vel_p0), 0)
-        normal_factor_p0 = (
-            -(self.kn[None] + self.kd[None] * normal_vel_p0) * sdf * norm_v
+    def calculate_contact_force(self, signed_distance, surface_normal, relative_velocity):
+        tangential_force = ti.Vector([0.0, 0.0, 0.0])
+        tangential_velocity = ti.Vector([0.0, 0.0, 0.0])
+        contact_relative_velocity = relative_velocity
+        normal_velocity_magnitude = ti.max(surface_normal.dot(contact_relative_velocity), 0)
+        normal_force = (
+            -(self.kn[None] + self.kd[None] * normal_velocity_magnitude) * signed_distance * surface_normal
         )
-        shear_vel_p0 = relative_vel_p0 - norm_v.dot(relative_vel_p0) * norm_v
-        shear_vel_norm_p0 = shear_vel_p0.norm(self.norm_eps)
-        if shear_vel_norm_p0 > 1e-4:
-            shear_factor_p0 = (
+        tangential_velocity = contact_relative_velocity - surface_normal.dot(contact_relative_velocity) * surface_normal
+        tangential_velocity_magnitude = tangential_velocity.norm(self.norm_eps)
+        if tangential_velocity_magnitude > 1e-4:
+            tangential_force = (
                 1.0
-                * (shear_vel_p0 / shear_vel_norm_p0)
+                * (tangential_velocity / tangential_velocity_magnitude)
                 * ti.min(
-                    self.kt[None] * shear_vel_norm_p0,
-                    self.friction_coeff[None] * normal_factor_p0.norm(self.norm_eps),
+                    self.kt[None] * tangential_velocity_magnitude,
+                    self.friction_coeff[None] * normal_force.norm(self.norm_eps),
                 )
             )
-        ext_v = normal_factor_p0 + shear_factor_p0
-        return ext_v, normal_factor_p0, shear_factor_p0
+        total_contact_force = normal_force + tangential_force
+        return total_contact_force, normal_force, tangential_force
 
     @ti.kernel
-    def check_collision(self, f: ti.i32):
+    def check_collision(self, frame: ti.i32):
         for i, j, k in ti.ndrange(
             self.phantom.n_grid, self.phantom.n_grid, self.phantom.n_grid
         ):
-            if self.phantom.grid_occupy[f, i, j, k] == 1:
-                cur_p = ti.Vector(
+            if self.phantom.grid_occupy[frame, i, j, k] == 1:
+                grid_node_position = ti.Vector(
                     [
-                        (i + 0.5) * self.phantom.dx_0,
-                        (j + 0.5) * self.phantom.dx_0,
-                        (k + 0.5) * self.phantom.dx_0,
+                        (i + 0.5) * self.phantom.grid_node_length,
+                        (j + 0.5) * self.phantom.grid_node_length,
+                        (k + 0.5) * self.phantom.grid_node_length,
                     ]
                 )
-                min_idx1 = self.tactile_sensor.find_closest(cur_p, f)
-                self.contact_idx[f, i, j, k] = min_idx1
+                closest_sensor_vertex_idx = self.tactile_sensor.find_closest(grid_node_position, frame)
+                self.contact_idx[frame, i, j, k] = closest_sensor_vertex_idx
 
     @ti.kernel
-    def collision(self, f: ti.i32):
+    def collision(self, frame: ti.i32):
         for i, j, k in ti.ndrange(
             self.phantom.n_grid, self.phantom.n_grid, self.phantom.n_grid
         ):
-            if self.phantom.grid_occupy[f, i, j, k] == 1:
-                cur_p = ti.Vector(
+            if self.phantom.grid_occupy[frame, i, j, k] == 1:
+                grid_node_position = ti.Vector(
                     [
-                        (i + 0.5) * self.phantom.dx_0,
-                        (j + 0.5) * self.phantom.dx_0,
-                        (k + 0.5) * self.phantom.dx_0,
+                        (i + 0.5) * self.phantom.grid_node_length,
+                        (j + 0.5) * self.phantom.grid_node_length,
+                        (k + 0.5) * self.phantom.grid_node_length,
                     ]
                 )
-                cur_v = self.phantom.grid_v_in[f, i, j, k] / (
-                    self.phantom.grid_m[f, i, j, k] + self.phantom.eps
+                grid_node_velocity = self.phantom.grid_node_momentum_in[frame, i, j, k] / (
+                    self.phantom.grid_node_mass[frame, i, j, k] + self.phantom.eps
                 )
-                min_idx1 = self.contact_idx[f, i, j, k]
-                cur_sdf1, cur_norm_v1, cur_relative_v1, contact_flag1 = (
-                    self.tactile_sensor.find_sdf(cur_p, cur_v, min_idx1, f)
+                closest_sensor_vertex_idx = self.contact_idx[frame, i, j, k]
+                penetration_depth, surface_normal, relative_velocity, is_in_contact = (
+                    self.tactile_sensor.find_sdf(grid_node_position, grid_node_velocity, closest_sensor_vertex_idx, frame)
                 )
-                if contact_flag1:
-                    ext_v1, _, _ = self.calculate_contact_force(
-                        cur_sdf1, -1 * cur_norm_v1, -1 * cur_relative_v1
+                if is_in_contact:
+                    total_contact_force, _, _ = self.calculate_contact_force(
+                        penetration_depth, -1 * surface_normal, -1 * relative_velocity
                     )
-                    self.phantom.update_contact_force(ext_v1, f, i, j, k)
-                    self.tactile_sensor.update_contact_force(min_idx1, -1 * ext_v1, f)
+                    self.phantom.update_contact_force(total_contact_force, frame, i, j, k)
+                    self.tactile_sensor.update_contact_force(closest_sensor_vertex_idx, -1 * total_contact_force, frame)
 
     def memory_to_cache(self, t):
         self.tactile_sensor.memory_to_cache(t)
@@ -557,7 +558,7 @@ class Contact(ContactVisualisation):
             
             clamp_speed = True
             # Clamp pos_control to max_speed
-            max_speed_pos = 5.0
+            max_speed_pos = 10.0
             pos_control_norm = pos_control.norm()
             if clamp_speed and pos_control_norm > max_speed_pos:
                 pos_control = pos_control / pos_control_norm * max_speed_pos

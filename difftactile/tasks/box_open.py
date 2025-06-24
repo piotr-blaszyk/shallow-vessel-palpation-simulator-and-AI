@@ -42,8 +42,8 @@ class Contact:
                       obj_name=obj,
                       space_scale = self.space_scale,
                       obj_scale = self.obj_scale,
-                      density = 1.50,
-                      rho = 0.2)
+                      mesh_density = 1.50,
+                      mass_density = 0.2)
 
         self.alpha = ti.field(float, ())
         self.beta = ti.field(float, ())
@@ -122,7 +122,7 @@ class Contact:
         self.mpm_object.init(self.ball_pos, self.ball_ori, self.ball_vel)
 
         ### extract the height of the obj
-        obj_pos = self.mpm_object.x_0.to_numpy()[0,:]
+        obj_pos = self.mpm_object.particle_position.to_numpy()[0,:]
         sensor_pos = self.fem_sensor1.init_x.to_numpy()
 
         self.obj_x = np.max(obj_pos[:,0]) - np.min(obj_pos[:,0])
@@ -225,7 +225,7 @@ class Contact:
     @ti.kernel
     def clamp_grid(self, f:ti.i32):
         for i, j, k in ti.ndrange(self.mpm_object.n_grid, self.mpm_object.n_grid, self.mpm_object.n_grid):
-            self.mpm_object.grid_m.grad[f, i, j, k] = ti.math.clamp(self.mpm_object.grid_m.grad[f, i, j, k], -1000.0, 1000.0)
+            self.mpm_object.grid_node_mass.grad[f, i, j, k] = ti.math.clamp(self.mpm_object.grid_node_mass.grad[f, i, j, k], -1000.0, 1000.0)
         for i in range(self.fem_sensor1.n_verts):
             self.fem_sensor1.pos.grad[f, i] = ti.math.clamp(self.fem_sensor1.pos.grad[f, i], -1000.0, 1000.0)
             self.fem_sensor1.vel.grad[f, i] = ti.math.clamp(self.fem_sensor1.vel.grad[f, i], -1000.0, 1000.0)
@@ -318,7 +318,7 @@ class Contact:
         for i, j, k in ti.ndrange(self.mpm_object.n_grid, self.mpm_object.n_grid, self.mpm_object.n_grid):
             # if self.mpm_object.grid_m[f, i, j, k] > self.mpm_object.eps:
             if self.mpm_object.grid_occupy[f, i, j, k] == 1:
-                cur_p = ti.Vector([(i+0.5)*self.mpm_object.dx_0, (j+0.5)*self.mpm_object.dx_0, (k+0.5)*self.mpm_object.dx_0])
+                cur_p = ti.Vector([(i+0.5)*self.mpm_object.grid_node_length, (j+0.5)*self.mpm_object.grid_node_length, (k+0.5)*self.mpm_object.grid_node_length])
                 min_idx1 = self.fem_sensor1.find_closest(cur_p, f)
                 self.contact_idx[f, i, j, k] = min_idx1
 
@@ -327,8 +327,8 @@ class Contact:
     def collision(self, f:ti.i32):
         for i, j, k in ti.ndrange(self.mpm_object.n_grid, self.mpm_object.n_grid, self.mpm_object.n_grid):
             if self.mpm_object.grid_occupy[f, i, j, k] == 1:
-                cur_p = ti.Vector([(i+0.5)*self.mpm_object.dx_0, (j+0.5)*self.mpm_object.dx_0, (k+0.5)*self.mpm_object.dx_0])
-                cur_v = self.mpm_object.grid_v_in[f, i, j, k] / (self.mpm_object.grid_m[f, i, j, k]+self.mpm_object.eps)
+                cur_p = ti.Vector([(i+0.5)*self.mpm_object.grid_node_length, (j+0.5)*self.mpm_object.grid_node_length, (k+0.5)*self.mpm_object.grid_node_length])
+                cur_v = self.mpm_object.grid_node_momentum_in[f, i, j, k] / (self.mpm_object.grid_node_mass[f, i, j, k]+self.mpm_object.eps)
                 min_idx1 = self.contact_idx[f, i, j, k]
                 cur_sdf1, cur_norm_v1, cur_relative_v1, contact_flag1 = self.fem_sensor1.find_sdf(cur_p, cur_v, min_idx1, f)
                 if contact_flag1:
@@ -442,7 +442,7 @@ class Contact:
             self.draw_pos2[i][1] = v + 0.5
 
         for i in range(self.mpm_object.n_particles):
-            x, y, z = self.mpm_object.x_0[f, i][0] - offset, self.mpm_object.x_0[f, i][1] - offset, self.mpm_object.x_0[f, i][2] - offset
+            x, y, z = self.mpm_object.particle_position[f, i][0] - offset, self.mpm_object.particle_position[f, i][1] - offset, self.mpm_object.particle_position[f, i][2] - offset
             xx, zz = x * c_p + z * s_p, z * c_p - x * s_p
             u, v = xx, y * c_t + zz * s_t
             self.draw_pos3[i][0] = u + 0.2
