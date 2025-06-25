@@ -4,7 +4,7 @@ import math
 import sys
 import pickle
 
-def generate_vitactip_mesh(tips, visualize_layers=None):
+def generate_vitactip_mesh(tips):
     # Initialize Gmsh
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 1)
@@ -59,73 +59,74 @@ def generate_vitactip_mesh(tips, visualize_layers=None):
     
     # Get all nodes
     node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
-    all_nodes = np.array(node_coords).reshape(-1, 3)
-    tag_to_idx = {tag: i for i, tag in enumerate(node_tags)}
+    if False:
+        all_nodes = np.array(node_coords).reshape(-1, 3)
+        tag_to_idx = {tag: i for i, tag in enumerate(node_tags)}
+        
+        # Get tetrahedrons (3D mesh)
+        tetra_tags, tetra_nodes = gmsh.model.mesh.getElementsByType(4)  # 4-node tetra
+        all_f2v = tetra_nodes.reshape(-1, 4) if tetra_nodes.size > 0 else np.empty((0, 4), dtype=int)
+        
+        # Get outer surface triangles
+        outer_surf_nodes = set()
+        surface_f2v = []
+        for entity in gmsh.model.getEntities(2):
+            elem_types, _, elem_node_tags = gmsh.model.mesh.getElements(2, entity[1])
+            if elem_types:
+                for elem_type, node_tags in zip(elem_types, elem_node_tags):
+                    if elem_type == 2:  # Triangle
+                        tri_nodes = node_tags.reshape(-1, 3)
+                        surface_f2v.append(tri_nodes)
+                        outer_surf_nodes.update(node_tags)
+        surface_f2v = np.vstack(surface_f2v) if surface_f2v else np.empty((0, 3), dtype=int)
+        
+        # Assign layer indices
+        min_y = np.min(all_nodes[:, 1])
+        base_threshold = min_y + 1.0
+        layer_idxs = np.full(len(node_tags), 4, dtype=int)  # Default: non-base gel
+        
+        # Layer 0: Biomimetic tips
+        tip_node_tags = gmsh.model.mesh.getNodesForPhysicalGroup(0, tip_group)[0]
+        for tag in tip_node_tags:
+            idx = tag_to_idx[tag]
+            layer_idxs[idx] = 0
+        
+        # Layer 1: Base region (y <= min_y + 1mm)
+        base_mask = all_nodes[:, 1] <= base_threshold
+        base_idxs = np.where(base_mask)[0]
+        for idx in base_idxs:
+            if layer_idxs[idx] != 0:  # Don't override tips
+                layer_idxs[idx] = 1
+        
+        # Layer 2: Outer surface
+        for tag in outer_surf_nodes:
+            idx = tag_to_idx[tag]
+            if layer_idxs[idx] not in {0, 1}:  # Higher priority layers
+                layer_idxs[idx] = 2
+        
+        # Layer 3: Remaining shell nodes
+        shell_tetra_nodes = set()
+        _, shell_tetra_node_tags = gmsh.model.mesh.getElementsByType(4, 3)  # Shell volume
+        for tag in shell_tetra_node_tags:
+            shell_tetra_nodes.add(tag)
+        for tag in shell_tetra_nodes:
+            idx = tag_to_idx[tag]
+            if layer_idxs[idx] == 4:  # Only unassigned nodes
+                layer_idxs[idx] = 3
     
-    # Get tetrahedrons (3D mesh)
-    tetra_tags, tetra_nodes = gmsh.model.mesh.getElementsByType(4)  # 4-node tetra
-    all_f2v = tetra_nodes.reshape(-1, 4) if tetra_nodes.size > 0 else np.empty((0, 4), dtype=int)
-    
-    # Get outer surface triangles
-    outer_surf_nodes = set()
-    surface_f2v = []
-    for entity in gmsh.model.getEntities(2):
-        elem_types, _, elem_node_tags = gmsh.model.mesh.getElements(2, entity[1])
-        if elem_types:
-            for elem_type, node_tags in zip(elem_types, elem_node_tags):
-                if elem_type == 2:  # Triangle
-                    tri_nodes = node_tags.reshape(-1, 3)
-                    surface_f2v.append(tri_nodes)
-                    outer_surf_nodes.update(node_tags)
-    surface_f2v = np.vstack(surface_f2v) if surface_f2v else np.empty((0, 3), dtype=int)
-    
-    # Assign layer indices
-    min_y = np.min(all_nodes[:, 1])
-    base_threshold = min_y + 1.0
-    layer_idxs = np.full(len(node_tags), 4, dtype=int)  # Default: non-base gel
-    
-    # Layer 0: Biomimetic tips
-    tip_node_tags = gmsh.model.mesh.getNodesForPhysicalGroup(0, tip_group)[0]
-    for tag in tip_node_tags:
-        idx = tag_to_idx[tag]
-        layer_idxs[idx] = 0
-    
-    # Layer 1: Base region (y <= min_y + 1mm)
-    base_mask = all_nodes[:, 1] <= base_threshold
-    base_idxs = np.where(base_mask)[0]
-    for idx in base_idxs:
-        if layer_idxs[idx] != 0:  # Don't override tips
-            layer_idxs[idx] = 1
-    
-    # Layer 2: Outer surface
-    for tag in outer_surf_nodes:
-        idx = tag_to_idx[tag]
-        if layer_idxs[idx] not in {0, 1}:  # Higher priority layers
-            layer_idxs[idx] = 2
-    
-    # Layer 3: Remaining shell nodes
-    shell_tetra_nodes = set()
-    _, shell_tetra_node_tags = gmsh.model.mesh.getElementsByType(4, 3)  # Shell volume
-    for tag in shell_tetra_node_tags:
-        shell_tetra_nodes.add(tag)
-    for tag in shell_tetra_nodes:
-        idx = tag_to_idx[tag]
-        if layer_idxs[idx] == 4:  # Only unassigned nodes
-            layer_idxs[idx] = 3
-    
-    # Visualize specified layers
-    if visualize_layers:
+    if False:
         gmsh.fltk.initialize()
         view_tag = gmsh.view.add("Layer View")
         gmsh.view.addModelData(view_tag, 0, "ViTacTip", "NodeData", node_tags, layer_idxs.reshape(-1, 1))
         gmsh.view.option.setNumber(view_tag, "PointSize", 5)
         gmsh.view.option.setNumber(view_tag, "ColormapNumber", 14)  # Rainbow colormap
-        gmsh.fltk.run()
+    gmsh.fltk.run()
     
     # Finalize Gmsh
     gmsh.finalize()
     
-    return all_nodes, all_f2v, surface_f2v, layer_idxs
+    if False:
+        return all_nodes, all_f2v, surface_f2v, layer_idxs
 
 # Example usage
 if __name__ == "__main__":
@@ -138,8 +139,7 @@ if __name__ == "__main__":
     
     # Generate mesh and extract arrays
     all_nodes, all_f2v, surface_f2v, layer_idxs = generate_vitactip_mesh(
-        tips, 
-        visualize_layers=[0, 1, 2, 3, 4]  # Visualize all layers
+        tips
     )
     
     # Print array shapes

@@ -349,7 +349,7 @@ def generate_marker_3d_projection():
         marker_positions_2d = pickle.load(f)
     
     # Project to 3D using hemisphere radius of 2.9
-    marker_positions_3d = project_pix_to_points(marker_positions_2d, hemisphere_radius=2.9)
+    marker_positions_3d = project_pix_to_points(marker_positions_2d, hemisphere_radius=29)
     
     # Save 3D marker positions to pickle file
     with open('init-marker-positions-3d.pkl', 'wb') as f:
