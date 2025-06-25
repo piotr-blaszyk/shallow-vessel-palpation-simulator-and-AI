@@ -347,10 +347,13 @@ def generate_marker_3d_projection():
     # Load 2D marker positions
     with open('init-marker-positions.pkl', 'rb') as f:
         marker_positions_2d = pickle.load(f)
+
+    shell_inner_r = 35 + 1/3
+    shell_outer_r = 36 + 1/3
     
     # Project to 3D using hemisphere radius of 2.9
-    cone_tips = project_pix_to_points(marker_positions_2d, hemisphere_radius=29)
-    cone_base_centres = project_pix_to_points(marker_positions_2d, hemisphere_radius=31)
+    cone_tips = project_pix_to_points(marker_positions_2d, hemisphere_radius=shell_inner_r-1)
+    cone_base_centres = project_pix_to_points(marker_positions_2d, hemisphere_radius=shell_outer_r+2)
 
     obj = {
         'cone_tips': cone_tips,
