@@ -39,12 +39,21 @@ def generate_vitactip_mesh():
     stem_wall = gmsh.model.occ.cut([(3, stem_wall_outer)], [(3, stem_wall_inner)])[0]
     shell = gmsh.model.occ.fuse(cap, stem_wall)[0]
 
+    outer_ball = gmsh.model.occ.addSphere(0, 0, 0, R_outer)
+    cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
+    all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
+    gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
+
+    gmsh.model.occ.synchronize()
+    gmsh.model.addPhysicalGroup(3, [shell[0][1]], name="shell")
+    gmsh.model.addPhysicalGroup(3, [gel[0][1]], name="gel")
     gmsh.model.occ.synchronize()
     gmsh.option.setNumber("Mesh.Algorithm3D", 10)
     gmsh.option.setNumber("Mesh.Optimize", 1)
     gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
     gmsh.option.setNumber("Mesh.Algorithm", 6)
     gmsh.model.mesh.generate(3)
+    gmsh.write('vitactip.msh')
     gmsh.fltk.run()
     gmsh.finalize()
 
@@ -59,15 +68,7 @@ def point_to_triangle_distance(point, triangle_vertices):
     # Calculate Euclidean distance between point and centroid
     return np.linalg.norm(point - centroid)
 
-def sandbox():
-    gmsh.initialize()
-    gmsh.option.setNumber("General.Terminal", 1)
-    gmsh.model.add("sandbox")
-    x, y, z = (0.5, 1.5, 0.5)
-    point = np.array([x, y, z])
-    gmsh.model.occ.addBox(x=0, y=0, z=0, dx=1, dy=1, dz=1)
-    gmsh.model.occ.synchronize()
-    gmsh.model.mesh.generate(2)
+def find_closest_triangle(point):
     # element_types is irrelevant
     # triangle_tags[0] is a 1d int numpy array of shape (num_triangles,)
     # triangle_vertex_tags[0] is a 1d int numpy array of shape (num_traingles * 3,)
@@ -76,55 +77,63 @@ def sandbox():
     # node_coordinates is a 1d float numpy array of shape (num_particles*3,)
     # parametric_coord is irrelevant
     node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes()
-    
-    # Reshape coordinates array into (n_nodes, 3) array
+
     node_coordinates = node_coordinates.reshape(-1, 3)
-    # Create a mapping from node tags to their indices
     node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
-    
-    # Process triangles
     triangles = []
-    node_tags_array = triangle_vertex_tags[0].reshape(-1, 3)  # Reshape into (n_triangles, 3)
-    
+    node_tags_array = triangle_vertex_tags[0].reshape(-1, 3)
     min_distance = float('inf')
     closest_triangle_idx = None
     closest_triangle_nodes = None
     closest_triangle_coords = None
-    
-    # Iterate through all triangles
     for tri_idx, triangle_node_tags in enumerate(node_tags_array):
-        # Get the coordinates of triangle vertices
         triangle_vertices = [node_coordinates[node_tag_to_idx[tag]] for tag in triangle_node_tags]
-        
-        # Calculate distance from point to triangle
         distance = point_to_triangle_distance(point, triangle_vertices)
-        
-        # Update if this is the closest triangle so far
         if distance < min_distance:
             min_distance = distance
             closest_triangle_idx = tri_idx
             closest_triangle_nodes = triangle_node_tags
             closest_triangle_coords = triangle_vertices
     
-    print(f"\nClosest triangle:")
-    print(f"Triangle index: {closest_triangle_idx}")
-    print(f"Node indices: {closest_triangle_nodes}")
-    print(f"Node coordinates:")
-    for i, coords in enumerate(closest_triangle_coords):
-        print(f"Node {i}: ({coords[0]:.3f}, {coords[1]:.3f}, {coords[2]:.3f})")
-    print(f"Distance to point: {min_distance:.3f}")
+    if False:
+        print(f"\nClosest triangle:")
+        print(f"Triangle index: {closest_triangle_idx}")
+        print(f"Node indices: {closest_triangle_nodes}")
+        print(f"Node coordinates:")
+        for i, coords in enumerate(closest_triangle_coords):
+            print(f"Node {i}: ({coords[0]:.3f}, {coords[1]:.3f}, {coords[2]:.3f})")
+        print(f"Distance to point: {min_distance:.3f}")
+    
+    return closest_triangle_idx, closest_triangle_nodes, closest_triangle_coords, min_distance
 
-    new_point_tag = gmsh.model.addDiscreteEntity(0)
-    gmsh.model.mesh.addNodes(0, new_point_tag, [], [x, y, z])
-    a, b, c = closest_triangle_nodes
-    tetra_node_tags = [a, b, c, new_point_tag]
-    new_volume_tag = gmsh.model.addDiscreteEntity(3)
-    gmsh.model.mesh.addElementsByType(new_volume_tag, 3, [], tetra_node_tags)
+def sandbox():
+    gmsh.initialize()
+    gmsh.option.setNumber("General.Terminal", 1)
+    gmsh.model.add("sandbox")
+    
+    # Set mesh size parameters for coarse mesh
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", 2.0)  # Minimum element size
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", 2.0)  # Maximum element size
+    
+    x, y, z = (0.5, 1.5, 0.5)
+    point = np.array([x, y, z])
+    gmsh.model.occ.addBox(x=0, y=0, z=0, dx=1, dy=1, dz=1)
+    gmsh.model.occ.synchronize()
+    gmsh.model.mesh.generate(2)
+    
+    closest_triangle_idx, closest_triangle_nodes, closest_triangle_coords, min_distance = find_closest_triangle(point)
+
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
+    gmsh.write('sandbox.msh')
+    gmsh.fltk.run()
+    gmsh.finalize()
 
+def load_mesh():
+    gmsh.initialize()
+    gmsh.open("sandbox.msh")
     gmsh.fltk.run()
     gmsh.finalize()
 
 if __name__ == "__main__":
-    sandbox()
+    generate_vitactip_mesh()
