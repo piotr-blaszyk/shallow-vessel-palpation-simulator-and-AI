@@ -61,6 +61,49 @@ def project_points_to_pix(a, fx=FX, fy=FY, cx=CX, cy=CY):
 
     return p
 
+def project_pix_to_points(p, hemisphere_radius, fx=FX, fy=FY, cx=CX, cy=CY):
+    """
+    Projects 2D pixel coordinates to 3D points on a hemisphere.
+    Camera configuration:
+        - position: (0,0,0)
+        - looking at: (0,0,1) (z+ direction)
+        - up vector: (0,1,0) (y axis)
+    Args:
+        p: numpy array of shape (n, 2) containing pixel coordinates
+        hemisphere_radius: radius of the hemisphere the points will lie on
+        fx, fy: focal lengths in x and y directions
+        cx, cy: principal point coordinates
+    Returns:
+        numpy array of shape (n, 3) containing 3D points
+    Raises:
+        ValueError: If any projected point falls outside the valid circle on x-y plane
+    """
+    # Convert to normalized coordinates
+    x_norm = (p[:, 0] - cx) / fx  # normalize by focal length
+    y_norm = (p[:, 1] - cy) / fy  # normalize by focal length
+    
+    # Calculate radial distance in normalized coordinates
+    r = np.sqrt(x_norm**2 + y_norm**2)
+    
+    # Calculate theta (angle from z-axis)
+    theta = r  # in the normalized coordinate system, r directly gives us theta
+    
+    # Calculate phi (azimuthal angle in x-y plane)
+    phi = np.arctan2(y_norm, x_norm)
+    
+    # Convert to 3D coordinates on hemisphere
+    points = np.zeros((len(p), 3))
+    points[:, 0] = hemisphere_radius * np.sin(theta) * np.cos(phi)  # x
+    points[:, 1] = hemisphere_radius * np.sin(theta) * np.sin(phi)  # y
+    points[:, 2] = hemisphere_radius * np.cos(theta)  # z (forward direction)
+    
+    # Check if projections onto x-y plane are within the circle
+    xy_projections = np.sqrt(points[:, 0]**2 + points[:, 1]**2)  # radial distances in x-y plane
+    if np.any(xy_projections > hemisphere_radius):
+        raise ValueError("Marker projected outside the inner surface of the spherical cap")
+    
+    return points
+
 def get_marker_image(img):
     # Get the actual image dimensions
     if len(img.shape) == 3:
@@ -295,10 +338,32 @@ def save_init_marker_positions():
     
     return marker_positions
 
+def generate_marker_3d_projection():
+    """
+    Loads 2D marker positions from init-marker-positions.pkl,
+    projects them to 3D points on a hemisphere using project_pix_to_points,
+    and saves the 3D positions to init-marker-positions-3d.pkl
+    """
+    # Load 2D marker positions
+    with open('init-marker-positions.pkl', 'rb') as f:
+        marker_positions_2d = pickle.load(f)
+    
+    # Project to 3D using hemisphere radius of 2.9
+    marker_positions_3d = project_pix_to_points(marker_positions_2d, hemisphere_radius=2.9)
+    
+    # Save 3D marker positions to pickle file
+    with open('init-marker-positions-3d.pkl', 'wb') as f:
+        pickle.dump(marker_positions_3d, f)
+    
+    print(f"Projected {len(marker_positions_2d)} markers to 3D")
+    print(f"3D marker positions saved to init-marker-positions-3d.pkl")
+    
+    return marker_positions_3d
+
 if __name__ == '__main__':
-    image_dir = "../experiment-capture-completed"
-    if True:
-        interactive_exploration(image_dir)
-    else:
-        save_init_marker_positions()
-        extract_experimental_markers_and_save_to_file(image_dir)
+    # image_dir = "../experiment-capture-completed"
+    # interactive_exploration(image_dir)
+    # save_init_marker_positions()
+    # extract_experimental_markers_and_save_to_file(image_dir)
+    
+    generate_marker_3d_projection()

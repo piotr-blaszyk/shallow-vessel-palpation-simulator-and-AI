@@ -21,7 +21,7 @@ TIME_STEPS_PER_S = 10 * SLOW_DOWN
 GLOBAL_Z_OFFSET = 10
 PHANTOM_CLOSEST_VERTEX = [5.750000, 5.750000, 0.750000+GLOBAL_Z_OFFSET]
 PHANTOM_INITIAL_POSE = [9.750000, 9.750000, 1.850000+GLOBAL_Z_OFFSET, 0, 0, 0]
-SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET = 1/64
+SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET = 0.5
 SENSOR_DOME_TIP_INITIAL_POSE = [9.750000, 9.750000, 2.950000+GLOBAL_Z_OFFSET+SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET, -90, 0, 0]
 
 def print_point_cloud(arr):
@@ -79,13 +79,6 @@ class Contact(ContactVisualisation):
         self.kd[None] = 269.44
         self.kt[None] = 108.72
         self.friction_coeff[None] = 14.16
-        
-        # Set material parameters for both shell and gel
-        shell_E = 8e3  # Vytaflex 60
-        shell_nu = 0.43
-        gel_E = 5e2    # RTV27905
-        gel_nu = 0.49
-        self.tactile_sensor.set_material_params(shell_E, shell_nu, gel_E, gel_nu)
 
         self.num_sensor = 1
         self.contact_idx = ti.Vector.field(
@@ -215,7 +208,7 @@ class Contact(ContactVisualisation):
         yr_offset = 0
         zr_offset = 0
         press_depth = np.random.uniform(0.6, 1.6)
-        press_depth = 0.6 + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET
+        press_depth = 1.2 + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         trajectory_npy = np.array([
             [x, y, z, xr+xr_offset, yr+yr_offset, zr+zr_offset],
@@ -514,7 +507,7 @@ class Contact(ContactVisualisation):
             ori_error_magnitude < self.orientation_tolerance[None]):
             self.is_dwelling[None] = True
             self.dwell_counter[None] = 0
-            # print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
+            print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
         
         # If dwelling, increment counter and check if dwell time is complete
         if self.is_dwelling[None]:
@@ -563,7 +556,7 @@ class Contact(ContactVisualisation):
             
             clamp_speed = True
             # Clamp pos_control to max_speed
-            max_speed_pos = 10.0
+            max_speed_pos = 32.0
             pos_control_norm = pos_control.norm()
             if clamp_speed and pos_control_norm > max_speed_pos:
                 pos_control = pos_control / pos_control_norm * max_speed_pos
@@ -663,7 +656,7 @@ def main():
     num_sub_frames = 50
     num_frames = 5_000
     num_opt_steps = 10
-    dt = 5e-5 / 2
+    dt = 5e-5 / 32
     contact_model = Contact(
         dt=dt,
         num_frames=num_frames,

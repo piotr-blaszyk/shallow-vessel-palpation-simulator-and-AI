@@ -45,7 +45,7 @@ class FEMDomeSensor:
         self.gel_lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
 
         # Initialize default material parameters
-        self.shell_E[None], self.shell_nu[None] = 8e3, 0.43  # Shell (Vytaflex 60)
+        self.shell_E[None], self.shell_nu[None] = 5e3, 0.43  # Shell (Vytaflex 60)
         self.gel_E[None], self.gel_nu[None] = 5e2, 0.49  # Gel (RTV27905)
         
         # Compute Lamé parameters for both materials
@@ -53,10 +53,6 @@ class FEMDomeSensor:
         self.shell_lam[None] = self.shell_E[None] * self.shell_nu[None] / (1 + self.shell_nu[None]) / (1 - 2 * self.shell_nu[None])
         self.gel_mu[None] = self.gel_E[None] / 2 / (1 + self.gel_nu[None])
         self.gel_lam[None] = self.gel_E[None] * self.gel_nu[None] / (1 + self.gel_nu[None]) / (1 - 2 * self.gel_nu[None])
-        
-        # For backward compatibility
-        self.mu = self.shell_mu
-        self.lam = self.shell_lam
 
         self.all_nodes, self.all_f2v, self.surface_f2v, self.layer_idxs, element_materials, vertex_masses = self.init_mesh()
         self.n_verts = len(self.all_nodes)
@@ -73,11 +69,6 @@ class FEMDomeSensor:
         self.mass_per_vertex.from_numpy(vertex_masses)
 
         self.dim = 3
-        
-        
-        self.E_init = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.nu_init = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.E_init[None], self.nu_init[None] = 8e3, 0.43 #0.3e4, 0.445  # Young's modulus and Poisson's ratio
 
         self.init_x = ti.Vector.field(3, float, self.n_verts, needs_grad=False)
         self.init_x.from_numpy(self.all_nodes.astype(np.float32))
@@ -318,10 +309,6 @@ class FEMDomeSensor:
         self.gel_E[None], self.gel_nu[None] = gel_E, gel_nu
         self.gel_mu[None] = self.gel_E[None] / 2 / (1 + self.gel_nu[None])
         self.gel_lam[None] = self.gel_E[None] * self.gel_nu[None] / (1 + self.gel_nu[None]) / (1 - 2 * self.gel_nu[None])
-        
-        # For backward compatibility
-        self.mu[None] = self.shell_mu[None]
-        self.lam[None] = self.shell_lam[None]
 
     @ti.func
     def eul2mat(self, rot_v, trans_v):
@@ -453,82 +440,26 @@ class FEMDomeSensor:
 
         return euler_angles
 
-    def fibonacci_sphere(self, samples, radius_of_curvature, is_inner_surface):
-        # sample points evenly on a hemisphere
+    def fibonacci_sphere(self, samples, radius_of_curvature):
+        # Generate points on a hemisphere using fibonacci spiral
         phi = np.pi * (np.sqrt(5.0) - 1.0)  # golden angle in radians
-        idx = np.arange(samples).astype(float)
-        upper_y = 1.0
-        if is_inner_surface:
-            lower_y = -1.0
-        else:
-            lower_y = (radius_of_curvature-0.6-1.0-0.2) / radius_of_curvature
-        y = lower_y + (idx / (samples - 1)) * (upper_y - lower_y)
+        
+        # Generate points only for the hemisphere (y >= 0)
+        i = np.arange(samples, dtype=float)
+        y = 1 - (i / (samples - 1)) * 2  # Map to [-1, 1]
+        y = np.clip(y, 0, 1)  # Keep only positive y (hemisphere)
+        
+        # Calculate radius at each y level
         radius = np.sqrt(1 - y * y)
-        theta = phi * idx
-        x = np.cos(theta) * radius
-        z = np.sin(theta) * radius
-
-        stem_wall_height = (radius_of_curvature - 0.6) / radius_of_curvature
-        rigid_stem_wall_height = (radius_of_curvature - 0.6-1.0) / radius_of_curvature
-        circle_r = np.sqrt(1.0 ** 2 - stem_wall_height ** 2)
-
-        hemisphere_points = np.vstack((x, y, z)).T
-        points = hemisphere_points.copy()
-
-        dome = points[:, 1] >= stem_wall_height
-        elastic_stem_wall = (points[:, 1] < stem_wall_height) & (points[:, 1] >= rigid_stem_wall_height)
-        rigid_stem_wall = points[:, 1] < rigid_stem_wall_height
-        stem_wall = elastic_stem_wall | rigid_stem_wall
-
-        # Compute angle in xz-plane for these points
-        angles = np.arctan2(points[stem_wall, 2], points[stem_wall, 0])
-        # Map xz to circle of radius circle_r
-        points[stem_wall, 0] = circle_r * np.cos(angles)
-        points[stem_wall, 2] = circle_r * np.sin(angles)
-        # y remains unchanged
-
-        # --- Begin filtering points by random subset from each region ---
-        rng = np.random.default_rng()
-        dome_indices = np.where(dome)[0]
-        elastic_stem_wall_indices = np.where(elastic_stem_wall)[0]
-        rigid_stem_wall_indices = np.where(rigid_stem_wall)[0]
-
-        rng.shuffle(dome_indices)
-        rng.shuffle(elastic_stem_wall_indices)
-        rng.shuffle(rigid_stem_wall_indices)
-
-        dome_k = int(len(dome_indices) * 1.0)
-        elastic_stem_wall_k = int(len(elastic_stem_wall_indices) * 0.25)
-        rigid_stem_wall_k = int(len(rigid_stem_wall_indices) * 0.125)
-
-        dome_indices_k = dome_indices[:dome_k]
-        elastic_stem_wall_indices_k = elastic_stem_wall_indices[:elastic_stem_wall_k]
-        rigid_stem_wall_indices_k = rigid_stem_wall_indices[:rigid_stem_wall_k]
-
-        filtered_point_indices = np.concatenate([dome_indices_k, elastic_stem_wall_indices_k, rigid_stem_wall_indices_k])
-        points = points[filtered_point_indices]
-        hemisphere_points = hemisphere_points[filtered_point_indices]
-
-        # Recompute boolean masks for filtered points
-        dome = points[:, 1] >= stem_wall_height
-        elastic_stem_wall = (points[:, 1] < stem_wall_height) & (points[:, 1] >= rigid_stem_wall_height)
-        rigid_stem_wall = points[:, 1] < rigid_stem_wall_height
-        stem_wall = elastic_stem_wall | rigid_stem_wall
-        # Update indices shape
-        indices = np.zeros(points.shape[0], dtype=int)
-        indices[rigid_stem_wall] = 0
-        indices[elastic_stem_wall] = 1
-        indices[dome] = 2
-
-        if is_inner_surface:
-            hemisphere_points[stem_wall, 0] = 0
-            hemisphere_points[stem_wall, 2] = 0
-        hemisphere_points *= radius_of_curvature
-        if is_inner_surface:
-            hemisphere_points -= self.t_res
-        points *= radius_of_curvature
-
-        return points, hemisphere_points, indices
+        
+        # Calculate x and z coordinates
+        theta = phi * i
+        x = radius * np.cos(theta)
+        z = radius * np.sin(theta)
+        
+        # Stack coordinates and scale by radius
+        points = np.vstack((x, y, z)).T * radius_of_curvature
+        return points
 
     def generate_cylinder_lateral_surface(self, samples=100, scale=1.0):
         """
@@ -578,46 +509,75 @@ class FEMDomeSensor:
         return math.sqrt(r ** 2 - (r - h) ** 2)
 
     def init_mesh(self):
-        # Number of points to generate (can be adjusted)
-        n_points = 5000
-        
-        # Generate random points using rejection sampling
         points = []
-        materials = []  # 0 for gel, 1 for shell
+        materials = []
+        layer_idxs = []
         
-        # Generate points in a bounding box
-        while len(points) < n_points:
+        # Generate inner shell layer using fibonacci sphere
+        n_shell_points_inner = 2000
+        ratio = (self.outer_radius**2) / (self.inner_radius**2)
+        n_shell_points_outer = int(n_shell_points_inner * ratio)
+        
+        # Generate points for each layer
+        inner_shell_points = self.fibonacci_sphere(n_shell_points_inner, self.inner_radius)
+        outer_shell_points = self.fibonacci_sphere(n_shell_points_outer, self.outer_radius)
+        
+        # Generate gel filling using rejection sampling
+        n_gel_points = int(n_shell_points_inner * 0.5)  # Fewer points for gel
+        gel_points = []
+        gel_radius = self.inner_radius - 0.1  # Slightly smaller than inner shell
+        
+        while len(gel_points) < n_gel_points:
             # Generate random point in a cube
-            x = np.random.uniform(-self.outer_radius, self.outer_radius)
-            y = np.random.uniform(0, self.outer_radius)  # Only positive y for hemisphere
-            z = np.random.uniform(-self.outer_radius, self.outer_radius)
+            x = np.random.uniform(-gel_radius, gel_radius)
+            y = np.random.uniform(0, gel_radius)  # Only positive y for hemisphere
+            z = np.random.uniform(-gel_radius, gel_radius)
             
             # Calculate distance from origin
             dist = np.sqrt(x**2 + y**2 + z**2)
             
-            # Check if point is within outer hemisphere
-            if dist <= self.outer_radius:
-                points.append([x, y, z])
-                
-                # Determine material based on distance from origin
-                if dist <= self.inner_radius:
-                    materials.append(0)  # gel material
-                else:
-                    materials.append(1)  # shell material
+            # Check if point is within gel hemisphere
+            if dist <= gel_radius:
+                gel_points.append([x, y, z])
         
-        # Convert to numpy arrays
-        all_nodes = np.array(points, dtype=np.float32)
-        materials = np.array(materials, dtype=np.int32)
+        gel_points = np.array(gel_points)
+        
+        # Combine all points and track their layers
+        all_nodes = np.vstack([
+            gel_points,           # Layer 0 (gel)
+            inner_shell_points,   # Layer 1 (inner shell)
+            outer_shell_points    # Layer 2 (outer shell)
+        ])
+        
+        # Create layer indices
+        layer_idxs = np.zeros(len(all_nodes), dtype=np.int32)
+        layer_idxs[len(gel_points):len(gel_points) + len(inner_shell_points)] = 1
+        layer_idxs[len(gel_points) + len(inner_shell_points):] = 2
+        
+        # Create materials array (0 for gel, 1 for shell)
+        materials = np.zeros(len(all_nodes), dtype=np.int32)
+        materials[len(gel_points):] = 1  # Both shell layers are material 1
         
         # Create Delaunay triangulation for the entire point set
         tri = Delaunay(all_nodes)
         all_f2v = tri.simplices
         
+        # Create surface triangulation using only the outer shell points
+        outer_shell_indices = np.arange(
+            len(gel_points) + len(inner_shell_points),
+            len(all_nodes)
+        )
+        
+        # Project outer shell points onto xz plane for surface triangulation
+        surface_points = all_nodes[outer_shell_indices]
+        surface_tri = Delaunay(surface_points[:,[0,2]])  # Project to xz plane
+        surface_f2v = np.array([outer_shell_indices[i] for i in surface_tri.simplices.flatten()]).reshape(-1, 3)
+        
         # Compute element materials and masses
         element_materials = np.zeros(len(all_f2v), dtype=np.int32)
         vertex_masses = np.zeros(len(all_nodes), dtype=np.float32)
         
-        # First pass: Determine element materials
+        # Compute element volumes and assign materials
         for i, tetra in enumerate(all_f2v):
             v1, v2, v3, v4 = tetra
             pos1, pos2, pos3, pos4 = all_nodes[v1], all_nodes[v2], all_nodes[v3], all_nodes[v4]
@@ -637,31 +597,6 @@ class FEMDomeSensor:
             # Distribute element mass to vertices
             for vertex_idx in tetra:
                 vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
-        
-        # Create surface triangulation using only vertices from shell elements
-        shell_vertices = set()  # Use a set to avoid duplicates
-        for i, tetra in enumerate(all_f2v):
-            if element_materials[i] == 1:  # If this is a shell element
-                for vertex_idx in tetra:
-                    shell_vertices.add(vertex_idx)
-        
-        # Convert set to list and sort for consistent ordering
-        shell_vertices = sorted(list(shell_vertices))
-        
-        # Get points for surface vertices
-        surface_points = all_nodes[shell_vertices]
-        
-        # Create surface triangulation from shell vertices
-        if len(surface_points) > 0:
-            # Project points onto xz plane for triangulation
-            surface_tri = Delaunay(surface_points[:,[0,2]])  # Project to xz plane
-            # Map triangulation indices back to original vertex indices
-            surface_f2v = np.array([shell_vertices[i] for i in surface_tri.simplices.flatten()]).reshape(-1, 3)
-        else:
-            surface_f2v = None
-        
-        # Assign layer indices based on material type
-        layer_idxs = materials  # 0 for gel nodes, 1 for shell nodes
         
         return all_nodes, all_f2v, surface_f2v, layer_idxs, element_materials, vertex_masses
 
@@ -871,10 +806,6 @@ class FEMDomeSensor:
 
     @ti.kernel
     def clear_loss_grad(self):
-        self.E_init.grad[None] = 0.0
-        self.nu_init.grad[None] = 0.0
-        self.mu.grad[None] = 0.0
-        self.lam.grad[None] = 0.0
         self.predict_markers.grad.fill(0.0)
         self.surface_cam_loc.grad.fill(0.0)
         self.d_pos_local.grad[None].fill(0.0)
