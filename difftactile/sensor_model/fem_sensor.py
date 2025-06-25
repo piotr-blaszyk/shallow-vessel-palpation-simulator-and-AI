@@ -28,15 +28,8 @@ class FEMDomeSensor:
         self.t_res = 0.1 # [cm]; inter-layer distance
         self.outer_radius = 3.3
         self.inner_radius = self.outer_radius-self.t_res*self.N_t # [cm]
+        self.eps = 1e-11  # Small epsilon value for numerical stability in vector normalization
 
-        self.all_nodes, self.all_f2v, self.surface_f2v, self.layer_idxs = self.init_mesh()
-        self.n_verts = len(self.all_nodes)
-        self.n_cells = len(self.all_f2v)
-        self.num_triangles = len(self.surface_f2v)
-
-        self.dim = 3
-        self.total_volume = self.calc_volume()
-        
         # Material parameters for shell (Vytaflex 60)
         self.shell_rho = 1.145  # density [g/cm^3]
         self.shell_E = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
@@ -61,15 +54,27 @@ class FEMDomeSensor:
         self.gel_mu[None] = self.gel_E[None] / 2 / (1 + self.gel_nu[None])
         self.gel_lam[None] = self.gel_E[None] * self.gel_nu[None] / (1 + self.gel_nu[None]) / (1 - 2 * self.gel_nu[None])
         
-        # Track material type for each tetrahedron (0 for gel, 1 for shell)
-        self.element_material = ti.field(dtype=ti.i32, shape=(self.n_cells,), needs_grad=False)
-        
         # For backward compatibility
         self.mu = self.shell_mu
         self.lam = self.shell_lam
-        
+
+        self.all_nodes, self.all_f2v, self.surface_f2v, self.layer_idxs, element_materials, vertex_masses = self.init_mesh()
+        self.n_verts = len(self.all_nodes)
+        self.n_cells = len(self.all_f2v)
+        self.num_triangles = len(self.surface_f2v)
+
+        # Track material type for each tetrahedron (0 for gel, 1 for shell)
+        self.element_material = ti.field(dtype=ti.i32, shape=(self.n_cells,), needs_grad=False)
         # Compute mass per vertex based on material distribution
         self.mass_per_vertex = ti.field(dtype=ti.f32, shape=(self.n_verts,), needs_grad=False)
+        
+        # Transfer material assignments to Taichi fields
+        self.element_material.from_numpy(element_materials)
+        self.mass_per_vertex.from_numpy(vertex_masses)
+
+        self.dim = 3
+        self.total_volume = self.calc_volume()
+        
         
         self.E_init = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.nu_init = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
@@ -665,11 +670,7 @@ class FEMDomeSensor:
                 vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
                 vertex_material_counts[vertex_idx][1 if is_shell else 0] += 1
         
-        # Transfer material assignments to Taichi fields
-        self.element_material.from_numpy(element_materials)
-        self.mass_per_vertex.from_numpy(vertex_masses)
-        
-        return all_nodes, all_f2v, surface_f2v, layer_idxs
+        return all_nodes, all_f2v, surface_f2v, layer_idxs, element_materials, vertex_masses
 
     @ti.kernel
     def init_pos(self):
