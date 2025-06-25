@@ -349,16 +349,17 @@ def generate_marker_3d_projection():
         marker_positions_2d = pickle.load(f)
     
     # Project to 3D using hemisphere radius of 2.9
-    marker_positions_3d = project_pix_to_points(marker_positions_2d, hemisphere_radius=29)
+    cone_tips = project_pix_to_points(marker_positions_2d, hemisphere_radius=29)
+    cone_base_centres = project_pix_to_points(marker_positions_2d, hemisphere_radius=31)
+
+    obj = {
+        'cone_tips': cone_tips,
+        'cone_base_centres': cone_base_centres,
+    }
     
     # Save 3D marker positions to pickle file
-    with open('init-marker-positions-3d.pkl', 'wb') as f:
-        pickle.dump(marker_positions_3d, f)
-    
-    print(f"Projected {len(marker_positions_2d)} markers to 3D")
-    print(f"3D marker positions saved to init-marker-positions-3d.pkl")
-    
-    return marker_positions_3d
+    with open('biomimetic-tip-cones.pkl', 'wb') as f:
+        pickle.dump(obj, f)
 
 if __name__ == '__main__':
     # image_dir = "../experiment-capture-completed"
