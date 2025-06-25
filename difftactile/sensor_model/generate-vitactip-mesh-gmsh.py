@@ -58,8 +58,49 @@ def generate_vitactip_mesh():
     gmsh.option.setNumber("Mesh.Algorithm", 6)
     gmsh.model.mesh.generate(3)
     gmsh.write('vitactip.msh')
+    all_tetrahedra, all_nodes, node_labels = get_difftactile_variables()
     gmsh.fltk.run()
     gmsh.finalize()
+
+def get_difftactile_variables():
+    # Get all tetrahedra elements
+    element_types, tetrahedra_tags, tetrahedra_vertex_tags = gmsh.model.mesh.getElements(dim=3)
+    
+    # Reshape the vertex tags array to get a (num_tetrahedra, 4) array
+    # where each row contains the 4 node tags that make up a tetrahedron
+    all_tetrahedra = tetrahedra_vertex_tags[0].reshape(-1, 4).astype(int)
+    
+    # Get all nodes and their coordinates
+    node_tags, node_coordinates, _ = gmsh.model.mesh.getNodes()
+    
+    # Reshape node coordinates into (num_nodes, 3) array
+    all_nodes = node_coordinates.reshape(-1, 3).astype(float)
+    
+    # Initialize node labels array with False
+    # Each row corresponds to a node, columns are [tips, shell, gel]
+    node_labels = np.zeros((len(node_tags), 3), dtype=bool)
+    
+    # Get all physical groups
+    physical_groups = gmsh.model.getPhysicalGroups()
+    
+    # Create a mapping from physical group name to column index
+    group_to_idx = {"tips": 0, "shell": 1, "gel": 2}
+    
+    # For each physical group
+    for dim, tag in physical_groups:
+        # Get the name of this physical group
+        name = gmsh.model.getPhysicalName(dim, tag)
+        if name in group_to_idx:
+            # Get nodes in this physical group
+            group_node_tags, _ = gmsh.model.mesh.getNodesForPhysicalGroup(dim, tag)
+            # Create mapping from node tag to index
+            node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
+            # Set True for these nodes in the appropriate column
+            for node_tag in group_node_tags:
+                if node_tag in node_tag_to_idx:
+                    node_labels[node_tag_to_idx[node_tag], group_to_idx[name]] = True
+    
+    return all_tetrahedra, all_nodes, node_labels
 
 def point_to_triangle_distance(point, triangle_vertices):
     # Convert inputs to numpy arrays
