@@ -58,7 +58,10 @@ def generate_vitactip_mesh():
     gmsh.option.setNumber("Mesh.Algorithm", 6)
     gmsh.model.mesh.generate(3)
     gmsh.write('vitactip.msh')
-    all_tetrahedra, all_nodes, node_labels = get_difftactile_variables()
+    all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles = get_difftactile_variables()
+    gmsh.model.addPhysicalGroup(2, np.unique(shell_surface_triangles.flatten()).tolist(), name="shell_surface_triangles")
+    gmsh.model.occ.synchronize()
+    gmsh.model.mesh.generate(3)
     gmsh.fltk.run()
     gmsh.finalize()
 
@@ -100,7 +103,29 @@ def get_difftactile_variables():
                 if node_tag in node_tag_to_idx:
                     node_labels[node_tag_to_idx[node_tag], group_to_idx[name]] = True
     
-    return all_tetrahedra, all_nodes, node_labels
+    # Get all surface triangles (2D elements)
+    element_types_2d, triangle_tags, triangle_nodes = gmsh.model.mesh.getElements(dim=2)
+    all_surface_triangles = triangle_nodes[0].reshape(-1, 3).astype(int)
+    
+    # Create mapping from node tag to index for all nodes
+    node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
+    
+    # Filter triangles based on node labels
+    shell_triangles_mask = []
+    for triangle in all_surface_triangles:
+        # Get node indices for this triangle
+        node_indices = [node_tag_to_idx[tag] for tag in triangle]
+        # Check if all nodes belong to shell
+        all_in_shell = all(node_labels[idx, group_to_idx["shell"]] for idx in node_indices)
+        # Check if no nodes belong to gel
+        none_in_gel = not any(node_labels[idx, group_to_idx["gel"]] for idx in node_indices)
+        # Keep triangle if both conditions are met
+        shell_triangles_mask.append(all_in_shell and none_in_gel)
+    
+    # Apply mask to get shell surface triangles
+    shell_surface_triangles = all_surface_triangles[shell_triangles_mask]
+    
+    return all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles
 
 def point_to_triangle_distance(point, triangle_vertices):
     # Convert inputs to numpy arrays
