@@ -26,41 +26,29 @@ def generate_vitactip_mesh(tips, visualize_layers=None):
     outer_cap = gmsh.model.occ.addSphere(0, 0, 0, R_outer)
     inner_cap = gmsh.model.occ.addSphere(0, 0, 0, R_inner)
     tool = gmsh.model.occ.addBox(-100, y_cap_base, -100, 200, 200, 200)
-    outer_cap = gmsh.model.occ.intersect([(3, outer_cap)], [(3, tool)], tag=1)[0]
-    inner_cap = gmsh.model.occ.intersect([(3, inner_cap)], [(3, tool)], tag=2)[0]
+    outer_cap = gmsh.model.occ.intersect([(3, outer_cap)], [(3, tool)], removeTool=False)[0]
+    inner_cap = gmsh.model.occ.intersect([(3, inner_cap)], [(3, tool)])[0]
     
     # Create stem volumes
     outer_cyl = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, base_radius_outer)
     inner_cyl = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, base_radius_inner)
-    stem_wall = gmsh.model.occ.cut([(3, outer_cyl)], [(3, inner_cyl)], tag=3)[0]
+    stem_wall = gmsh.model.occ.cut([(3, outer_cyl)], [(3, inner_cyl)], removeObject=False, removeTool=False)[0]
     
-    # Fuse shell parts (cap + stem)
-    shell_parts = []
-    for dim, tag in outer_cap: shell_parts.append((dim, tag))
-    for dim, tag in stem_wall: shell_parts.append((dim, tag))
-    shell_outer = gmsh.model.occ.fuse(shell_parts, [], tag=4)[0]
+    shell_outer = gmsh.model.occ.fuse(outer_cap, [(3, outer_cyl)])[0]
     
     # Create gel volume
-    gel_parts = []
-    for dim, tag in inner_cap: gel_parts.append((dim, tag))
-    gel_parts.append((3, inner_cyl))
-    gel_volume = gmsh.model.occ.fuse(gel_parts, [], tag=5)[0]
+    gel_volume = gmsh.model.occ.fuse(inner_cap, [(3, inner_cyl)])[0]
     
     # Subtract gel from shell to get final shell
-    shell_volume = gmsh.model.occ.cut([(3, shell_outer[0][1])], [(3, gel_volume[0][1])], tag=6)[0]
+    shell_volume = gmsh.model.occ.cut(shell_outer, gel_volume, removeTool=False)[0]
     
     # Add biomimetic tips (points on inner surface)
-    tip_tags = [gmsh.model.occ.addPoint(x, y, z) for x, y, z in tips]
-    tip_group = gmsh.model.addPhysicalGroup(0, tip_tags, name="Tips")
-    
-    # Synchronize geometry
+    tip_tags = [gmsh.model.occ.addPoint(x, y, z, meshSize=0.01) for x, y, z in tips]
+
     gmsh.model.occ.synchronize()
-    
-    # Assign physical groups
-    shell_vol = shell_volume[0][1]
-    gel_vol = gel_volume[0][1]
-    shell_phys = gmsh.model.addPhysicalGroup(3, [shell_vol], name="Shell")
-    gel_phys = gmsh.model.addPhysicalGroup(3, [gel_vol], name="Gel")
+    tip_group = gmsh.model.addPhysicalGroup(0, tip_tags, name="Tips")
+    shell_group = gmsh.model.addPhysicalGroup(3, [x[1] for x in shell_volume], name="Shell")
+    gel_group = gmsh.model.addPhysicalGroup(3, [x[1] for x in gel_volume], name="Gel")
     
     # Generate mesh
     gmsh.option.setNumber("Mesh.Algorithm3D", 10)  # HXT algorithm
