@@ -44,7 +44,11 @@ def generate_vitactip_mesh():
     all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
     gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
 
+    tips = [gmsh.model.occ.addPoint(x, y, z, meshSize=1.0) for x, y, z in cone_tips]
     gmsh.model.occ.synchronize()
+    gmsh.model.mesh.embed(0, tips, 3, gel[0][1])
+    gmsh.model.occ.synchronize()
+    gmsh.model.addPhysicalGroup(0, tips, name="tips")
     gmsh.model.addPhysicalGroup(3, [shell[0][1]], name="shell")
     gmsh.model.addPhysicalGroup(3, [gel[0][1]], name="gel")
     gmsh.model.occ.synchronize()
