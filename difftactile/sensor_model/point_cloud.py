@@ -3,18 +3,33 @@ import open3d as o3d
 import pickle
 from collections import Counter
 
-with open(f'init-marker-positions-3d.pkl', 'rb') as f:
-    points = pickle.load(f)
+# Load mesh data from gmsh
+with open('output/gmsh-mesh.pkl', 'rb') as f:
+    mesh_data = pickle.load(f)
 
-with open(f'../tasks/output/fem_sensor.interp_idx_flat.pkl', 'rb') as f:
-    interp_idx_flat = pickle.load(f)
+# Unpack mesh data
+all_tetrahedra = mesh_data['all_tetrahedra']
+all_nodes = mesh_data['all_nodes']
+node_labels = mesh_data['node_labels']
+all_surface_triangles = mesh_data['all_surface_triangles']
+shell_surface_triangles = mesh_data['shell_surface_triangles']
+tip_tetrahedra = mesh_data['tip_tetrahedra']
+tip_tetrahedra_tags = mesh_data['tip_tetrahedra_tags']
+node_tags = mesh_data['node_tags']
+group_to_idx = mesh_data['group_to_idx']
 
-with open(f'../tasks/output/fem_sensor.cam_3d_nodes.pkl', 'rb') as f:
-    cam_3d_nodes = pickle.load(f)
+# with open(f'init-marker-positions-3d.pkl', 'rb') as f:
+#     points = pickle.load(f)
 
-with open(f'../tasks/output/tactile_sensor.f2v.pkl', 'rb') as f:
-    tetrahedra_indices = pickle.load(f)
-tetrahedra_indices = tetrahedra_indices.astype(int)
+# with open(f'../tasks/output/fem_sensor.interp_idx_flat.pkl', 'rb') as f:
+#     interp_idx_flat = pickle.load(f)
+
+# with open(f'../tasks/output/fem_sensor.cam_3d_nodes.pkl', 'rb') as f:
+#     cam_3d_nodes = pickle.load(f)
+
+# with open(f'../tasks/output/tactile_sensor.f2v.pkl', 'rb') as f:
+#     tetrahedra_indices = pickle.load(f)
+# tetrahedra_indices = tetrahedra_indices.astype(int)
 
 if False:
     counter = Counter(interp_idx_flat)
@@ -40,15 +55,15 @@ if False:
     print(f'Z-axis mean: {np.mean(marker_nodes[:, 2]):.4f}')
     # all_nodes[surface_id_np][np.unique(interp_idx_flat)]
 
-if True:
+if False:
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(points)
     axes = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
     o3d.visualization.draw_geometries([pcd, axes])
 
-if False:
+if True:
     all_triangle_faces = []
-    for tetra in tetrahedra_indices:
+    for tetra in tip_tetrahedra-1:
         v0, v1, v2, v3 = tetra
         all_triangle_faces.append([v0, v1, v2])
         all_triangle_faces.append([v0, v1, v3])
@@ -58,7 +73,7 @@ if False:
     triangle_faces_np = np.array(all_triangle_faces, dtype=np.int32)
 
     mesh = o3d.geometry.TriangleMesh()
-    mesh.vertices = o3d.utility.Vector3dVector(points)
+    mesh.vertices = o3d.utility.Vector3dVector(all_nodes)
     mesh.triangles = o3d.utility.Vector3iVector(triangle_faces_np)
     mesh.compute_vertex_normals()
     mesh = mesh.remove_duplicated_triangles()

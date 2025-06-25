@@ -3,6 +3,7 @@ import numpy as np
 import math
 import sys
 import pickle
+import os
 
 def dome_radius_of_curvature(radius_of_projection, height):
     r = radius_of_projection
@@ -44,7 +45,7 @@ def generate_vitactip_mesh():
     all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
     gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
 
-    tips = [gmsh.model.occ.addPoint(x, y, z, meshSize=1.0) for x, y, z in cone_tips]
+    tips = [gmsh.model.occ.addPoint(x, y, z, meshSize=0.125) for x, y, z in cone_tips]
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.embed(0, tips, 3, gel[0][1])
     gmsh.model.occ.synchronize()
@@ -58,7 +59,7 @@ def generate_vitactip_mesh():
     gmsh.option.setNumber("Mesh.Algorithm", 6)
     gmsh.model.mesh.generate(3)
     gmsh.write('vitactip.msh')
-    all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles = get_difftactile_variables()
+    all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags = get_difftactile_variables()
     gmsh.model.addPhysicalGroup(2, np.unique(shell_surface_triangles.flatten()).tolist(), name="shell_surface_triangles")
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
@@ -72,6 +73,7 @@ def get_difftactile_variables():
     # Reshape the vertex tags array to get a (num_tetrahedra, 4) array
     # where each row contains the 4 node tags that make up a tetrahedron
     all_tetrahedra = tetrahedra_vertex_tags[0].reshape(-1, 4).astype(int)
+    tetrahedra_tags = tetrahedra_tags[0]  # Get the tags array
     
     # Get all nodes and their coordinates
     node_tags, node_coordinates, _ = gmsh.model.mesh.getNodes()
@@ -125,7 +127,43 @@ def get_difftactile_variables():
     # Apply mask to get shell surface triangles
     shell_surface_triangles = all_surface_triangles[shell_triangles_mask]
     
-    return all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles
+    # Filter tetrahedra that contain any tip nodes
+    tip_tetrahedra_mask = []
+    for tetra in all_tetrahedra:
+        # Get node indices for this tetrahedron
+        node_indices = [node_tag_to_idx[tag] for tag in tetra]
+        # Check if any node belongs to tips group
+        has_tip = any(node_labels[idx, group_to_idx["tips"]] for idx in node_indices)
+        tip_tetrahedra_mask.append(has_tip)
+    
+    # Convert mask to numpy array for boolean indexing
+    tip_tetrahedra_mask = np.array(tip_tetrahedra_mask)
+    
+    # Apply mask to get tip tetrahedra and their tags
+    tip_tetrahedra = all_tetrahedra[tip_tetrahedra_mask]
+    tip_tetrahedra_tags = tetrahedra_tags[tip_tetrahedra_mask]
+    
+    # Create dictionary with all variables
+    mesh_data = {
+        'all_tetrahedra': all_tetrahedra,
+        'all_nodes': all_nodes,
+        'node_labels': node_labels,
+        'all_surface_triangles': all_surface_triangles,
+        'shell_surface_triangles': shell_surface_triangles,
+        'tip_tetrahedra': tip_tetrahedra,
+        'tip_tetrahedra_tags': tip_tetrahedra_tags,
+        'node_tags': node_tags,  # Adding original node tags for reference
+        'group_to_idx': group_to_idx  # Adding group mapping for reference
+    }
+    
+    # Create output directory if it doesn't exist
+    os.makedirs('output', exist_ok=True)
+    
+    # Save to pickle file
+    with open('output/gmsh-mesh.pkl', 'wb') as f:
+        pickle.dump(mesh_data, f)
+    
+    return all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags
 
 def point_to_triangle_distance(point, triangle_vertices):
     # Convert inputs to numpy arrays

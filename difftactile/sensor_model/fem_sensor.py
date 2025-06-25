@@ -509,76 +509,27 @@ class FEMDomeSensor:
         return math.sqrt(r ** 2 - (r - h) ** 2)
 
     def init_mesh(self):
-        points = []
-        materials = []
-        layer_idxs = []
-        
-        # Generate inner shell layer using fibonacci sphere
-        n_shell_points_inner = 2000
-        ratio = (self.outer_radius**2) / (self.inner_radius**2)
-        n_shell_points_outer = int(n_shell_points_inner * ratio)
-        
-        # Generate points for each layer
-        inner_shell_points = self.fibonacci_sphere(n_shell_points_inner, self.inner_radius)
-        outer_shell_points = self.fibonacci_sphere(n_shell_points_outer, self.outer_radius)
-        
-        # Generate gel filling using rejection sampling
-        n_gel_points = int(n_shell_points_inner * 0.5)  # Fewer points for gel
-        gel_points = []
-        gel_radius = self.inner_radius - 0.1  # Slightly smaller than inner shell
-        
-        while len(gel_points) < n_gel_points:
-            # Generate random point in a cube
-            x = np.random.uniform(-gel_radius, gel_radius)
-            y = np.random.uniform(0, gel_radius)  # Only positive y for hemisphere
-            z = np.random.uniform(-gel_radius, gel_radius)
-            
-            # Calculate distance from origin
-            dist = np.sqrt(x**2 + y**2 + z**2)
-            
-            # Check if point is within gel hemisphere
-            if dist <= gel_radius:
-                gel_points.append([x, y, z])
-        
-        gel_points = np.array(gel_points)
-        
-        # Combine all points and track their layers
-        all_nodes = np.vstack([
-            gel_points,           # Layer 0 (gel)
-            inner_shell_points,   # Layer 1 (inner shell)
-            outer_shell_points    # Layer 2 (outer shell)
-        ])
-        
-        # Create layer indices
-        layer_idxs = np.zeros(len(all_nodes), dtype=np.int32)
-        layer_idxs[len(gel_points):len(gel_points) + len(inner_shell_points)] = 1
-        layer_idxs[len(gel_points) + len(inner_shell_points):] = 2
-        
-        # Create materials array (0 for gel, 1 for shell)
-        materials = np.zeros(len(all_nodes), dtype=np.int32)
-        materials[len(gel_points):] = 1  # Both shell layers are material 1
-        
-        # Create Delaunay triangulation for the entire point set
-        tri = Delaunay(all_nodes)
-        all_f2v = tri.simplices
-        
-        # Create surface triangulation using only the outer shell points
-        outer_shell_indices = np.arange(
-            len(gel_points) + len(inner_shell_points),
-            len(all_nodes)
-        )
-        
-        # Project outer shell points onto xz plane for surface triangulation
-        surface_points = all_nodes[outer_shell_indices]
-        surface_tri = Delaunay(surface_points[:,[0,2]])  # Project to xz plane
-        surface_f2v = np.array([outer_shell_indices[i] for i in surface_tri.simplices.flatten()]).reshape(-1, 3)
+        # Load mesh data from gmsh
+        with open('output/gmsh-mesh.pkl', 'rb') as f:
+            mesh_data = pickle.load(f)
+
+        # Unpack mesh data
+        all_tetrahedra = mesh_data['all_tetrahedra']
+        all_nodes = mesh_data['all_nodes']
+        node_labels = mesh_data['node_labels']
+        all_surface_triangles = mesh_data['all_surface_triangles']
+        shell_surface_triangles = mesh_data['shell_surface_triangles']
+        tip_tetrahedra = mesh_data['tip_tetrahedra']
+        tip_tetrahedra_tags = mesh_data['tip_tetrahedra_tags']
+        node_tags = mesh_data['node_tags']
+        group_to_idx = mesh_data['group_to_idx']
         
         # Compute element materials and masses
-        element_materials = np.zeros(len(all_f2v), dtype=np.int32)
+        element_materials = np.zeros(len(all_tetrahedra), dtype=np.int32)
         vertex_masses = np.zeros(len(all_nodes), dtype=np.float32)
         
         # Compute element volumes and assign materials
-        for i, tetra in enumerate(all_f2v):
+        for i, tetra in enumerate(all_tetrahedra):
             v1, v2, v3, v4 = tetra
             pos1, pos2, pos3, pos4 = all_nodes[v1], all_nodes[v2], all_nodes[v3], all_nodes[v4]
             
@@ -598,7 +549,7 @@ class FEMDomeSensor:
             for vertex_idx in tetra:
                 vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
         
-        return all_nodes, all_f2v, surface_f2v, layer_idxs, element_materials, vertex_masses
+        return all_nodes, all_tetrahedra, all_surface_triangles, layer_idxs, element_materials, vertex_masses
 
     @ti.kernel
     def init_pos(self):
