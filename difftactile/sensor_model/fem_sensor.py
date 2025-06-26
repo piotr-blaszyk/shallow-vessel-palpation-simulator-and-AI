@@ -287,7 +287,17 @@ class FEMDomeSensor:
             cam_init_loc = project_3d_2d(cam_init_pos)
             self.predict_markers[i] = cam_loc
             self.virtual_markers[i] = cam_init_loc
-            print(f'marker position: {cam_loc}')
+            print(f'node_ix: {node_ix}')
+            print(f'pos: {pos}')
+            print(f'init_pos: {init_pos}')
+            print(f'hom_pos: {hom_pos}')
+            print(f'hom_init_pos: {hom_init_pos}')
+            print(f'inv_pos: {inv_pos}')
+            print(f'inv_init_pos: {inv_init_pos}')
+            print(f'cam_pos: {cam_pos}')
+            print(f'cam_init_pos: {cam_init_pos}')
+            print(f'cam_loc: {cam_loc}')
+            print(f'cam_init_loc: {cam_init_loc}')
 
     @ti.kernel
     def set_material_params(self, shell_E:ti.f32, shell_nu:ti.f32, gel_E:ti.f32, gel_nu:ti.f32):
@@ -462,6 +472,8 @@ class FEMDomeSensor:
         
         # Compute element volumes and assign materials
         for i, tetra in enumerate(all_tetrahedra):
+            if 0 in tetra:
+                foo = 7
             v1, v2, v3, v4 = tetra
             pos1, pos2, pos3, pos4 = node_coordinates[v1], node_coordinates[v2], node_coordinates[v3], node_coordinates[v4]
             

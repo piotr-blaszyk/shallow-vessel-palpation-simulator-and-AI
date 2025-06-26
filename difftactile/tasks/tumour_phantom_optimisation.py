@@ -70,6 +70,7 @@ class Contact(ContactVisualisation):
 
         # Initialize keypoint indices
         self.keypoint_indices = self.tactile_sensor.get_keypoint_indices(0)
+        self.keypoint_indices = np.concatenate((self.keypoint_indices, self.tactile_sensor.marker_node_tags_np), dtype=int)
 
         self.kn = ti.field(dtype=float, shape=(), needs_grad=False)
         self.kd = ti.field(dtype=float, shape=(), needs_grad=False)
@@ -212,7 +213,7 @@ class Contact(ContactVisualisation):
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         trajectory_npy = np.array([
             [x, y, z, xr+xr_offset, yr+yr_offset, zr+zr_offset],
-            [x, y, z-press_depth, xr+xr_offset, yr+yr_offset, zr+zr_offset],
+            [x, y, z, xr+xr_offset, yr+yr_offset, zr+zr_offset],
         ], dtype=float)
         assert self.trajectory.shape[0] == trajectory_npy.shape[0], f"Set self.trajectory length to {trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(trajectory_npy)
@@ -690,8 +691,8 @@ def main():
                 contact_model.update(ss)
             contact_model.memory_to_cache(0)
 
-            keypoint_coords = contact_model.tactile_sensor.get_keypoint_coordinates(0, contact_model.keypoint_indices)
-            update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords[0, :].reshape((1, 3)))
+            keypoint_coords = contact_model.tactile_sensor.get_keypoint_coordinates(0, contact_model.keypoint_indices[-1].reshape((1,)))
+            update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords)
 
             if contact_model.frames_since_last_target_reached[None] == 500:
                 contact_model.take_snapshot(opts)

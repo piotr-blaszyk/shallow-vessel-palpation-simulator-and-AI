@@ -59,7 +59,7 @@ def generate_vitactip_mesh():
     cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
     cap = gmsh.model.occ.intersect(cap, [(3, cyl_helper)])[0]
 
-    A_point_tags = [gmsh.model.occ.addPoint(x, y, z, meshSize=0.25) for x, y, z in A_points]
+    A_point_geometric_tags = [gmsh.model.occ.addPoint(x, y, z, meshSize=0.1) for x, y, z in A_points]
     # B_point_tags = [gmsh.model.occ.addPoint(x, y, z, meshSize=0.25) for x, y, z in B_points]
 
     A = A_points[0]
@@ -67,7 +67,7 @@ def generate_vitactip_mesh():
     AB = B-A
     tip_cylinder = gmsh.model.occ.addCylinder(0, A[1], 0, AB[0], AB[1], AB[2], 0.25)
     gmsh.model.occ.synchronize()
-    gmsh.model.mesh.embed(dim=0, tags=A_point_tags, inDim=3, inTag=tip_cylinder)
+    gmsh.model.mesh.embed(dim=0, tags=A_point_geometric_tags, inDim=3, inTag=tip_cylinder)
     gmsh.model.occ.synchronize()
     fragments = gmsh.model.occ.fragment(cap, [(3, tip_cylinder)])[0]
 
@@ -104,12 +104,12 @@ def generate_vitactip_mesh():
     gmsh.write('vitactip.msh')
     gmsh.model.addPhysicalGroup(3, [x[1] for x in shell], name="shell")
     # gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
-    gmsh.model.addPhysicalGroup(0, A_point_tags, name="tips")
-    get_difftactile_variables(geometry_data, A_point_tags)
+    gmsh.model.addPhysicalGroup(0, A_point_geometric_tags, name="tips")
+    get_difftactile_variables(geometry_data, A_point_geometric_tags)
     gmsh.fltk.run()
     gmsh.finalize()
 
-def get_difftactile_variables(geometry_data, A_point_tags):
+def get_difftactile_variables(geometry_data, A_point_geometric_tags):
     # Unpack all geometry variables
     stem_wall_radius_outer = geometry_data['stem_wall_radius_outer']
     stem_wall_radius_inner = geometry_data['stem_wall_radius_inner']
@@ -167,6 +167,9 @@ def get_difftactile_variables(geometry_data, A_point_tags):
                 if node_tag in node_tag_to_idx:
                     node_labels[node_tag_to_idx[node_tag], group_to_idx[name]] = True
 
+    A_point_mesh_tags = np.array([gmsh.model.mesh.getNodes(dim=0, tag=x)[0][0] for x in A_point_geometric_tags])
+    assert len([all_tetrahedra[i] for i in range(all_tetrahedra.shape[0]) if A_point_mesh_tags[0] in all_tetrahedra[i]]) > 0, "marker node is not part of any tetrahedron"
+
     mesh_data = {
         'all_tetrahedra': all_tetrahedra-1,
         'node_coordinates': node_coordinates,
@@ -175,7 +178,7 @@ def get_difftactile_variables(geometry_data, A_point_tags):
         'surface_triangles': surface_triangles-1,
         'node_tags': node_tags-1,
         'group_to_idx': group_to_idx,
-        'marker_node_tags': np.array(A_point_tags)-1,
+        'marker_node_tags': A_point_mesh_tags-1,
 
         'y_bottom': y_bottom,
         'R_inner': R_inner,

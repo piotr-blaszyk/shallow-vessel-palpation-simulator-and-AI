@@ -26,7 +26,7 @@ class ContactVisualisation:
             3, dtype=float, shape=(self.tactile_sensor.n_verts)
         )
         
-        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(9,), needs_grad=False)
+        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(1,), needs_grad=False)
         
         self.healthy_tissue_points = ti.Vector.field(
             3, dtype=float, shape=(self.phantom.n_particles)
@@ -309,7 +309,7 @@ def update_gui(contact_model, gui_tuple, num_frames, ts, key_points_coords=None)
         scene.particles(
             contact_model.sensor_points,
             color=(0.0, 1.0, 0.0),
-            radius=0.02,
+            radius=0.002,
         )
         
         if key_points_coords is not None:
