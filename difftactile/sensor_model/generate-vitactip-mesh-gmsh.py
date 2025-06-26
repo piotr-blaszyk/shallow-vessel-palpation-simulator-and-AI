@@ -56,15 +56,16 @@ def generate_vitactip_mesh():
     A = A_points[0]
     B = B_points[0]
     AB = B-A
-    tip_cylinder = gmsh.model.occ.addCylinder(0, A[1], 0, AB[0], AB[1], AB[2], 1)
+    tip_cylinder = gmsh.model.occ.addCylinder(0, A[1], 0, AB[0], AB[1], AB[2], 0.25)
     gmsh.model.occ.synchronize()
-    gmsh.model.mesh.embed(dim=0, tags=B_point_tags, inDim=3, inTag=tip_cylinder)
+    gmsh.model.mesh.embed(dim=0, tags=A_point_tags, inDim=3, inTag=tip_cylinder)
     gmsh.model.occ.synchronize()
     fragments = gmsh.model.occ.fragment(cap, [(3, tip_cylinder)])[0]
 
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
     
+    new_fragments = []
     for dim, tag in fragments:
         node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes(dim=dim, tag=tag, includeBoundary=True)
         node_coordinates = node_coordinates.reshape(-1, 3)
@@ -77,10 +78,24 @@ def generate_vitactip_mesh():
         if largest_magnitude>R_outer+1:
             gmsh.model.occ.remove(dimTags=[(dim, tag)], recursive=True)
             continue
+        new_fragments.append((dim, tag))
     
+    stem_wall_outer = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, stem_wall_radius_outer)
+    stem_wall_inner = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, stem_wall_radius_inner)
+    stem_wall = gmsh.model.occ.cut([(3, stem_wall_outer)], [(3, stem_wall_inner)])[0]
+    shell = gmsh.model.occ.fuse(new_fragments, stem_wall)[0]
+
+    outer_ball = gmsh.model.occ.addSphere(0, 0, 0, R_outer)
+    cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
+    all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
+    gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
+
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
     gmsh.write('vitactip.msh')
+    gmsh.model.addPhysicalGroup(3, [x[1] for x in fragments], name="shell")
+    # gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
+    gmsh.model.addPhysicalGroup(0, A_point_tags, name="tips")
     all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags = get_difftactile_variables(geometry_data)
     gmsh.model.addPhysicalGroup(2, np.unique(shell_surface_triangles.flatten()).tolist(), name="shell_surface_triangles")
     gmsh.model.occ.synchronize()
@@ -97,6 +112,7 @@ def get_difftactile_variables(geometry_data):
     node_labels = np.zeros((len(node_tags), 3), dtype=bool)
     physical_groups = gmsh.model.getPhysicalGroups()
     group_to_idx = {"tips": 0, "shell": 1, "gel": 2}
+
     for dim, tag in physical_groups:
         name = gmsh.model.getPhysicalName(dim, tag)
         if name in group_to_idx:
@@ -105,6 +121,7 @@ def get_difftactile_variables(geometry_data):
             for node_tag in group_node_tags:
                 if node_tag in node_tag_to_idx:
                     node_labels[node_tag_to_idx[node_tag], group_to_idx[name]] = True
+
     element_types_2d, triangle_tags, triangle_nodes = gmsh.model.mesh.getElements(dim=2)
     all_surface_triangles = triangle_nodes[0].reshape(-1, 3).astype(int)
     node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
@@ -113,8 +130,9 @@ def get_difftactile_variables(geometry_data):
         node_indices = [node_tag_to_idx[tag] for tag in triangle]
         all_in_shell = all(node_labels[idx, group_to_idx["shell"]] for idx in node_indices)
         none_in_gel = not any(node_labels[idx, group_to_idx["gel"]] for idx in node_indices)
-        shell_triangles_mask.append(all_in_shell and none_in_gel)
+        shell_triangles_mask.append(all_in_shell)
     shell_surface_triangles = all_surface_triangles[shell_triangles_mask]
+
     tip_tetrahedra_mask = []
     for tetra in all_tetrahedra:
         node_indices = [node_tag_to_idx[tag] for tag in tetra]
@@ -123,6 +141,7 @@ def get_difftactile_variables(geometry_data):
     tip_tetrahedra_mask = np.array(tip_tetrahedra_mask)
     tip_tetrahedra = all_tetrahedra[tip_tetrahedra_mask]
     tip_tetrahedra_tags = tetrahedra_tags[tip_tetrahedra_mask]
+
     R_inner, R_outer, y_bottom = geometry_data
     mesh_data = {
         'all_tetrahedra': all_tetrahedra-1,
