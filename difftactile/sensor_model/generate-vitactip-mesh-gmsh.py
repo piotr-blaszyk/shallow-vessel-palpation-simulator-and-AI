@@ -42,7 +42,16 @@ def generate_vitactip_mesh():
     R_inner = R_outer - 1
     y_cap_base = R_outer - cap_height
     y_bottom = y_cap_base - stem_height
-    geometry_data = (R_inner, R_outer, y_bottom)
+    geometry_data = {
+        'stem_wall_radius_outer': stem_wall_radius_outer,
+        'stem_wall_radius_inner': stem_wall_radius_inner,
+        'cap_height': cap_height,
+        'stem_height': stem_height,
+        'R_outer': R_outer,
+        'R_inner': R_inner,
+        'y_cap_base': y_cap_base,
+        'y_bottom': y_bottom
+    }
 
     outer_ball = gmsh.model.occ.addSphere(0, 0, 0, R_outer)
     inner_ball = gmsh.model.occ.addSphere(0, 0, 0, R_inner)
@@ -96,22 +105,62 @@ def generate_vitactip_mesh():
     gmsh.model.addPhysicalGroup(3, [x[1] for x in fragments], name="shell")
     # gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
     gmsh.model.addPhysicalGroup(0, A_point_tags, name="tips")
-    all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags = get_difftactile_variables(geometry_data)
-    gmsh.model.addPhysicalGroup(2, np.unique(shell_surface_triangles.flatten()).tolist(), name="shell_surface_triangles")
+    all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags, surface_node_tags, surface_coords = get_difftactile_variables(geometry_data)
+    surface_tags = [gmsh.model.occ.addPoint(x, y, z) for x, y, z in surface_coords]
+    gmsh.model.addPhysicalGroup(0, surface_tags, name="surface")
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
     gmsh.fltk.run()
     gmsh.finalize()
 
 def get_difftactile_variables(geometry_data):
+    # Unpack all geometry variables
+    stem_wall_radius_outer = geometry_data['stem_wall_radius_outer']
+    stem_wall_radius_inner = geometry_data['stem_wall_radius_inner']
+    cap_height = geometry_data['cap_height']
+    stem_height = geometry_data['stem_height']
+    R_outer = geometry_data['R_outer']
+    R_inner = geometry_data['R_inner']
+    y_cap_base = geometry_data['y_cap_base']
+    y_bottom = geometry_data['y_bottom']
+
     element_types, tetrahedra_tags, tetrahedra_vertex_tags = gmsh.model.mesh.getElements(dim=3)
     all_tetrahedra = tetrahedra_vertex_tags[0].reshape(-1, 4).astype(int)
     tetrahedra_tags = tetrahedra_tags[0]
+    element_types_2d, triangle_tags, triangle_nodes = gmsh.model.mesh.getElements(dim=2)
+    all_surface_triangles = triangle_nodes[0].reshape(-1, 3).astype(int)
     node_tags, node_coordinates, _ = gmsh.model.mesh.getNodes()
     all_nodes = node_coordinates.reshape(-1, 3).astype(float)
+    node_tags = np.array(node_tags)
+    node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
     node_labels = np.zeros((len(node_tags), 3), dtype=bool)
     physical_groups = gmsh.model.getPhysicalGroups()
     group_to_idx = {"tips": 0, "shell": 1, "gel": 2}
+
+    surface_node_tags = []
+    surface_coords = []
+    for i in range(len(node_tags)):
+        tag = node_tags[i]
+        node = all_nodes[i]
+        x,y,z = node
+        if y > y_cap_base:
+            if np.linalg.norm(node) > R_outer - 0.1:
+                surface_node_tags.append(tag)
+                surface_coords.append(node)
+        else:
+            xz = np.array([x, z])
+            if np.linalg.norm(xz) > stem_wall_radius_outer - 0.1:
+                surface_node_tags.append(tag)
+                surface_coords.append(node)
+    surface_node_tags = np.array(surface_node_tags)
+    surface_coords = np.array(surface_coords).reshape(-1, 3).astype(float)
+    
+    # Compute surface triangles - triangles where all nodes belong to surface_node_tags
+    surface_triangles_mask = []
+    for triangle in all_surface_triangles:
+        all_nodes_surface = all(tag in surface_node_tags for tag in triangle)
+        surface_triangles_mask.append(all_nodes_surface)
+    surface_triangles = all_surface_triangles[surface_triangles_mask]
 
     for dim, tag in physical_groups:
         name = gmsh.model.getPhysicalName(dim, tag)
@@ -122,17 +171,6 @@ def get_difftactile_variables(geometry_data):
                 if node_tag in node_tag_to_idx:
                     node_labels[node_tag_to_idx[node_tag], group_to_idx[name]] = True
 
-    element_types_2d, triangle_tags, triangle_nodes = gmsh.model.mesh.getElements(dim=2)
-    all_surface_triangles = triangle_nodes[0].reshape(-1, 3).astype(int)
-    node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
-    shell_triangles_mask = []
-    for triangle in all_surface_triangles:
-        node_indices = [node_tag_to_idx[tag] for tag in triangle]
-        all_in_shell = all(node_labels[idx, group_to_idx["shell"]] for idx in node_indices)
-        none_in_gel = not any(node_labels[idx, group_to_idx["gel"]] for idx in node_indices)
-        shell_triangles_mask.append(all_in_shell)
-    shell_surface_triangles = all_surface_triangles[shell_triangles_mask]
-
     tip_tetrahedra_mask = []
     for tetra in all_tetrahedra:
         node_indices = [node_tag_to_idx[tag] for tag in tetra]
@@ -142,13 +180,12 @@ def get_difftactile_variables(geometry_data):
     tip_tetrahedra = all_tetrahedra[tip_tetrahedra_mask]
     tip_tetrahedra_tags = tetrahedra_tags[tip_tetrahedra_mask]
 
-    R_inner, R_outer, y_bottom = geometry_data
     mesh_data = {
         'all_tetrahedra': all_tetrahedra-1,
         'all_nodes': all_nodes,
         'node_labels': node_labels,
         'all_surface_triangles': all_surface_triangles-1,
-        'shell_surface_triangles': shell_surface_triangles-1,
+        'surface_triangles': surface_triangles-1,
         'tip_tetrahedra': tip_tetrahedra-1,
         'tip_tetrahedra_tags': tip_tetrahedra_tags-1,
         'node_tags': node_tags-1,
@@ -160,7 +197,7 @@ def get_difftactile_variables(geometry_data):
     os.makedirs('output', exist_ok=True)
     with open('output/gmsh-mesh.pkl', 'wb') as f:
         pickle.dump(mesh_data, f)
-    return all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags
+    return all_tetrahedra, all_nodes, node_labels, all_surface_triangles, surface_triangles, tip_tetrahedra, tip_tetrahedra_tags, surface_node_tags, surface_coords
 
 def point_to_triangle_distance(point, triangle_vertices):
     # Convert inputs to numpy arrays
