@@ -91,6 +91,7 @@ class FEMDomeSensor:
 
         self.predict_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.virtual_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
+        self.initial_virtual_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
 
         # self.interp_weight = ti.Vector.field(self.num_k_closest, float, self.num_markers, needs_grad=False)
         # self.interp_weight.from_numpy(interp_weight.astype(np.float32))
@@ -272,6 +273,26 @@ class FEMDomeSensor:
         cv2.imwrite('output/init-3d-markers.png', img)
 
     @ti.kernel
+    def extract_initial_markers(self, f:ti.i32):
+        for i in range(self.num_markers):
+            node_ix = self.marker_node_tags[i]
+            init_pos = self.virtual_pos[f, node_ix]
+            hom_init_pos = ti.Vector([init_pos[0], init_pos[1], init_pos[2], 1.0])
+            inv_init_pos = self.inv_trans_h[None] @ hom_init_pos
+            cam_init_pos = ti.Vector([inv_init_pos[0], inv_init_pos[2], inv_init_pos[1]])
+            cam_init_loc = project_3d_2d(cam_init_pos)
+            self.initial_virtual_markers[i] = cam_init_loc
+            if True:
+                print('extract_initial_markers')
+                print(f'node_ix: {node_ix}')
+                print(f'init_pos: {init_pos}')
+                print(f'hom_init_pos: {hom_init_pos}')
+                print(f'inv_init_pos: {inv_init_pos}')
+                print(f'cam_init_pos: {cam_init_pos}')
+                print(f'cam_init_loc: {cam_init_loc}')
+                print(0)
+
+    @ti.kernel
     def extract_markers(self, f:ti.i32):
         for i in range(self.num_markers):
             node_ix = self.marker_node_tags[i]
@@ -285,19 +306,26 @@ class FEMDomeSensor:
             cam_init_pos = ti.Vector([inv_init_pos[0], inv_init_pos[2], inv_init_pos[1]])
             cam_loc = project_3d_2d(cam_pos)
             cam_init_loc = project_3d_2d(cam_init_pos)
-            self.predict_markers[i] = cam_loc
-            self.virtual_markers[i] = cam_init_loc
-            print(f'node_ix: {node_ix}')
-            print(f'pos: {pos}')
-            print(f'init_pos: {init_pos}')
-            print(f'hom_pos: {hom_pos}')
-            print(f'hom_init_pos: {hom_init_pos}')
-            print(f'inv_pos: {inv_pos}')
-            print(f'inv_init_pos: {inv_init_pos}')
-            print(f'cam_pos: {cam_pos}')
-            print(f'cam_init_pos: {cam_init_pos}')
-            print(f'cam_loc: {cam_loc}')
-            print(f'cam_init_loc: {cam_init_loc}')
+            drift = cam_init_loc - self.initial_virtual_markers[i]
+            self.predict_markers[i] = cam_loc - drift
+            self.virtual_markers[i] = cam_init_loc - drift
+            if True:
+                print('extract_markers')
+                print(f'node_ix: {node_ix}')
+                print(f'pos: {pos}')
+                print(f'init_pos: {init_pos}')
+                print(f'hom_pos: {hom_pos}')
+                print(f'hom_init_pos: {hom_init_pos}')
+                print(f'inv_pos: {inv_pos}')
+                print(f'inv_init_pos: {inv_init_pos}')
+                print(f'cam_pos: {cam_pos}')
+                print(f'cam_init_pos: {cam_init_pos}')
+                print(f'cam_loc: {cam_loc}')
+                print(f'cam_init_loc: {cam_init_loc}')
+                print(f'drift: {drift}')
+                print(f'cam_loc - drift: {cam_loc - drift}')
+                print(f'cam_init_loc - drift: {cam_init_loc - drift}')
+                print()
 
     @ti.kernel
     def set_material_params(self, shell_E:ti.f32, shell_nu:ti.f32, gel_E:ti.f32, gel_nu:ti.f32):

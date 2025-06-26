@@ -309,7 +309,7 @@ def update_gui(contact_model, gui_tuple, num_frames, ts, key_points_coords=None)
         scene.particles(
             contact_model.sensor_points,
             color=(0.0, 1.0, 0.0),
-            radius=0.002,
+            radius=0.005,
         )
         
         if key_points_coords is not None:
@@ -317,7 +317,7 @@ def update_gui(contact_model, gui_tuple, num_frames, ts, key_points_coords=None)
             scene.particles(
                 contact_model.key_points,
                 color=(1.0, 0.0, 0.0),
-                radius=0.1,
+                radius=0.05,
             )
         
         canvas.scene(scene)

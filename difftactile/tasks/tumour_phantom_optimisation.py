@@ -503,12 +503,12 @@ class Contact(ContactVisualisation):
             self.frames_since_last_target_reached[None] += 1
 
         # If target is reached and not already dwelling, start dwelling (only for non-final targets)
-        if (not self.last_target_reached[None] and not self.is_dwelling[None] and 
+        if (not self.is_dwelling[None] and 
             pos_error_magnitude < self.position_tolerance[None] and 
             ori_error_magnitude < self.orientation_tolerance[None]):
             self.is_dwelling[None] = True
             self.dwell_counter[None] = 0
-            print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
+            # print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
         
         # If dwelling, increment counter and check if dwell time is complete
         if self.is_dwelling[None]:
@@ -572,7 +572,8 @@ class Contact(ContactVisualisation):
 
             # Set control outputs
             self.tactile_sensor.d_pos_global[None] = pos_control
-            self.tactile_sensor.d_ori_global_euler_angles[None] = ori_control
+            # self.tactile_sensor.d_pos_global[None] = ti.Vector([0.0, 0.0, 0.0])
+            self.tactile_sensor.d_ori_global_euler_angles[None] = ti.Vector([0.0, 0.0, 0.0])
         
             if False:
                 # Print all variables used in the function
@@ -675,6 +676,7 @@ def main():
         contact_model.reset_pid_controller()
         contact_model.reset_3d_scene()
         if opts == 0:
+            contact_model.tactile_sensor.extract_initial_markers(0)
             contact_model.tactile_sensor.extract_markers(0)
             initial_markers = contact_model.tactile_sensor.predict_markers.to_numpy()
             with open('output/sim-markers-initial-positions.pkl', 'wb') as f:
