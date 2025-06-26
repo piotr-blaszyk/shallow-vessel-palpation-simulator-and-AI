@@ -22,12 +22,28 @@ print('hello')
 print(node_coordinates.shape)
 print(all_tetrahedra.shape)
 
+i = 7
+with open(f'../tasks/output/tactile_sensor.deformed_node_coordinates.ts={int(100 * i)}.pkl', 'rb') as f:
+    deformed_node_coordinates = pickle.load(f)
+print(f'ts={int(100 * i)}; num nan: {np.sum(np.isnan(deformed_node_coordinates))}')
+foo = 7
+
+nan_nodes = np.where(np.any(np.isnan(deformed_node_coordinates), axis=1))[0]
+
 good_tetrahedra = []
 for tetra in all_tetrahedra:
+    is_nan = False
+    for x in tetra:
+        if x in nan_nodes:
+            is_nan = True
+            break
+    if is_nan:
+        continue
     tetra_node_labels = node_labels[tetra]
     gel_count = np.sum(tetra_node_labels[:, group_to_idx['gel']])
     shell_count = np.sum(tetra_node_labels[:, group_to_idx['shell']])
-    if gel_count <= 2 and shell_count == 4:
+    is_gel = gel_count == 4 and shell_count <= 3
+    if not is_gel:
         a, b, c, d = tetra
         good_tetrahedra.append([a, b, c])
         good_tetrahedra.append([a, b, d])
@@ -36,8 +52,8 @@ for tetra in all_tetrahedra:
 good_tetrahedra = np.array(good_tetrahedra)
 print(len(good_tetrahedra) // 4)
 
-# with open(f'init-marker-positions-3d.pkl', 'rb') as f:
-#     points = pickle.load(f)
+# deformed_node_coordinates = deformed_node_coordinates[1:]
+# good_tetrahedra -= 1
 
 # with open(f'../tasks/output/fem_sensor.interp_idx_flat.pkl', 'rb') as f:
 #     interp_idx_flat = pickle.load(f)
@@ -75,13 +91,13 @@ if False:
 
 if False:
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector([node_coordinates[x] for x in surface_node_tags])
+    pcd.points = o3d.utility.Vector3dVector(deformed_node_coordinates)
     # axes = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
     o3d.visualization.draw_geometries([pcd])
 
 if True:
     mesh = o3d.geometry.TriangleMesh()
-    mesh.vertices = o3d.utility.Vector3dVector(node_coordinates)
+    mesh.vertices = o3d.utility.Vector3dVector(deformed_node_coordinates)
     mesh.triangles = o3d.utility.Vector3iVector(good_tetrahedra)
     mesh.compute_vertex_normals()
     mesh = mesh.remove_duplicated_triangles()

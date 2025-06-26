@@ -177,6 +177,24 @@ def get_difftactile_variables(geometry_data, A_points):
     
     assert min_node_tag is not None, "no marker node found"
 
+    marker_node_tags = np.array([min_node_tag])-1
+
+    node_coordinates = node_coordinates[1:]
+    node_labels = node_labels[1:]
+    all_tetrahedra -= 1
+    surface_triangles -= 1
+    marker_node_tags -= 1
+    all_tetrahedra_temp = []
+    for tetra in all_tetrahedra:
+        if -1 not in tetra:
+            all_tetrahedra_temp.append(tetra)
+    all_tetrahedra = np.array(all_tetrahedra_temp)
+    surface_triangles_temp = []
+    for tetra in surface_triangles:
+        if -1 not in tetra:
+            surface_triangles_temp.append(tetra)
+    surface_triangles = np.array(surface_triangles_temp)
+
     mesh_data = {
         'all_tetrahedra': all_tetrahedra-1,
         'node_coordinates': node_coordinates,
@@ -185,7 +203,7 @@ def get_difftactile_variables(geometry_data, A_points):
         'surface_triangles': surface_triangles-1,
         'node_tags': node_tags-1,
         'group_to_idx': group_to_idx,
-        'marker_node_tags': np.array([min_node_tag])-1,
+        'marker_node_tags': marker_node_tags,
 
         'y_bottom': y_bottom,
         'R_inner': R_inner,

@@ -26,28 +26,28 @@ class FEMDomeSensor:
         self.eps = 1e-11  # Small epsilon value for numerical stability in vector normalization
 
         # Material parameters for shell (Vytaflex 60)
-        self.shell_rho = 1.145  # density [g/cm^3]
-        self.shell_E = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.shell_nu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.shell_rho = 1.075  # density [g/cm^3]
+        self.shell_youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.shell_poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.shell_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.shell_lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         
         # Material parameters for gel (RTV27905)
-        self.gel_rho = 0.97  # density [g/cm^3]
-        self.gel_E = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.gel_nu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.gel_rho = 1.085  # density [g/cm^3]
+        self.gel_youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.gel_poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.gel_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.gel_lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
 
         # Initialize default material parameters
-        self.shell_E[None], self.shell_nu[None] = 5e3, 0.43  # Shell (Vytaflex 60)
-        self.gel_E[None], self.gel_nu[None] = 5e2, 0.49  # Gel (RTV27905)
+        self.shell_youngs_modulus[None], self.shell_poissons_ratio[None] = 13.5e6, 0.49  # Shell (Vytaflex 60)
+        self.gel_youngs_modulus[None], self.gel_poissons_ratio[None] = 12.5e3, 0.49  # Gel (RTV27905)
         
         # Compute Lamé parameters for both materials
-        self.shell_mu[None] = self.shell_E[None] / 2 / (1 + self.shell_nu[None])
-        self.shell_lam[None] = self.shell_E[None] * self.shell_nu[None] / (1 + self.shell_nu[None]) / (1 - 2 * self.shell_nu[None])
-        self.gel_mu[None] = self.gel_E[None] / 2 / (1 + self.gel_nu[None])
-        self.gel_lam[None] = self.gel_E[None] * self.gel_nu[None] / (1 + self.gel_nu[None]) / (1 - 2 * self.gel_nu[None])
+        self.shell_mu[None] = self.shell_youngs_modulus[None] / 2 / (1 + self.shell_poissons_ratio[None])
+        self.shell_lam[None] = self.shell_youngs_modulus[None] * self.shell_poissons_ratio[None] / (1 + self.shell_poissons_ratio[None]) / (1 - 2 * self.shell_poissons_ratio[None])
+        self.gel_mu[None] = self.gel_youngs_modulus[None] / 2 / (1 + self.gel_poissons_ratio[None])
+        self.gel_lam[None] = self.gel_youngs_modulus[None] * self.gel_poissons_ratio[None] / (1 + self.gel_poissons_ratio[None]) / (1 - 2 * self.gel_poissons_ratio[None])
 
         self.all_nodes, self.all_f2v, self.surface_f2v, self.node_labels, element_materials, vertex_masses, self.marker_node_tags_np = self.init_mesh()
 
@@ -330,14 +330,14 @@ class FEMDomeSensor:
     @ti.kernel
     def set_material_params(self, shell_E:ti.f32, shell_nu:ti.f32, gel_E:ti.f32, gel_nu:ti.f32):
         # Set shell material parameters (Vytaflex 60)
-        self.shell_E[None], self.shell_nu[None] = shell_E, shell_nu
-        self.shell_mu[None] = self.shell_E[None] / 2 / (1 + self.shell_nu[None])
-        self.shell_lam[None] = self.shell_E[None] * self.shell_nu[None] / (1 + self.shell_nu[None]) / (1 - 2 * self.shell_nu[None])
+        self.shell_youngs_modulus[None], self.shell_poissons_ratio[None] = shell_E, shell_nu
+        self.shell_mu[None] = self.shell_youngs_modulus[None] / 2 / (1 + self.shell_poissons_ratio[None])
+        self.shell_lam[None] = self.shell_youngs_modulus[None] * self.shell_poissons_ratio[None] / (1 + self.shell_poissons_ratio[None]) / (1 - 2 * self.shell_poissons_ratio[None])
         
         # Set gel material parameters (RTV27905)
-        self.gel_E[None], self.gel_nu[None] = gel_E, gel_nu
-        self.gel_mu[None] = self.gel_E[None] / 2 / (1 + self.gel_nu[None])
-        self.gel_lam[None] = self.gel_E[None] * self.gel_nu[None] / (1 + self.gel_nu[None]) / (1 - 2 * self.gel_nu[None])
+        self.gel_youngs_modulus[None], self.gel_poissons_ratio[None] = gel_E, gel_nu
+        self.gel_mu[None] = self.gel_youngs_modulus[None] / 2 / (1 + self.gel_poissons_ratio[None])
+        self.gel_lam[None] = self.gel_youngs_modulus[None] * self.gel_poissons_ratio[None] / (1 + self.gel_poissons_ratio[None]) / (1 - 2 * self.gel_poissons_ratio[None])
 
     @ti.func
     def eul2mat(self, rot_v, trans_v):
@@ -478,13 +478,9 @@ class FEMDomeSensor:
         all_tetrahedra = mesh_data['all_tetrahedra']
         node_coordinates = mesh_data['node_coordinates']
         node_labels = mesh_data['node_labels']
-        surface_node_tags = mesh_data['surface_node_tags']
         surface_triangles = mesh_data['surface_triangles']
-        node_tags = mesh_data['node_tags']
         group_to_idx = mesh_data['group_to_idx']
         y_bottom = mesh_data['y_bottom']
-        R_inner = mesh_data['R_inner']
-        R_outer = mesh_data['R_outer']
         marker_node_tags = mesh_data['marker_node_tags']
         
         # Compute fixed layer nodes (nodes at the bottom)
@@ -916,7 +912,7 @@ class FEMDomeSensor:
             numpy array of shape (num_points, 3) containing the coordinates
         """
         # Convert positions to numpy array for the given frame
-        positions = self.pos.to_numpy()[f]
+        positions = self.virtual_pos.to_numpy()[f]
         
         # Extract coordinates for the specified indices
         coordinates = positions[keypoint_indices]

@@ -190,7 +190,8 @@ class Contact(ContactVisualisation):
         cylinder_tuple = (cx, cy, cz, theta, h, r)
         stiffness_healthy_tissue = np.random.uniform(2.5e3, 7.5e3)
         stiffness_tumour = np.random.uniform(2.5e4, 7.5e4)
-        stiffness_tuple = (stiffness_healthy_tissue, stiffness_tumour)
+        # stiffness_tuple = (stiffness_healthy_tissue, stiffness_tumour)
+        stiffness_tuple = None
         tumour_present = np.random.rand() < 0.5
         self.tumour_present[None] = tumour_present
         self.phantom.init(
@@ -209,7 +210,7 @@ class Contact(ContactVisualisation):
         yr_offset = 0
         zr_offset = 0
         press_depth = np.random.uniform(0.6, 1.6)
-        press_depth = 0.0 + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET
+        press_depth = 0.4 + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         self.trajectory_npy = np.array([
             [x, y, z, xr, yr, zr],
@@ -484,7 +485,7 @@ class Contact(ContactVisualisation):
     @ti.kernel
     def pid_controller(self, ts: ti.i32):
         # Get current position and orientation using reference keypoint
-        current_pos = self.tactile_sensor.pos[0, self.keypoint_indices[0]]
+        current_pos = self.tactile_sensor.virtual_pos[0, self.keypoint_indices[0]]
         current_ori = self.tactile_sensor.get_euler_angles()
         
         # Get current target position and orientation
@@ -633,9 +634,9 @@ class Contact(ContactVisualisation):
         save_markers_with_empty_rows(virtual_np, 'output/virtual_markers_snapshots.csv')
         np.savetxt('output/ground_truth_labels.csv', labels_np, delimiter=',', fmt='%d')
 
-    def save_tactile_sensor_mesh_to_pickle(self):
+    def save_tactile_sensor_mesh_to_pickle(self, ts):
         particles = self.tactile_sensor.pos.to_numpy()[0]
-        with open(f'output/tactile_sensor.pos.max_deformation.pkl', 'wb') as f:
+        with open(f'output/tactile_sensor.deformed_node_coordinates.ts={ts}.pkl', 'wb') as f:
             pickle.dump(particles, f)
         print('mesh exported!')
     
@@ -697,9 +698,9 @@ def main():
             # keypoint_coords = contact_model.trajectory_npy
             update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords)
 
-            if contact_model.frames_since_last_target_reached[None] == 500:
+            if ts % 100 == 0:
                 contact_model.take_snapshot(opts)
-                contact_model.save_tactile_sensor_mesh_to_pickle()
+                contact_model.save_tactile_sensor_mesh_to_pickle(ts)
                 # break
     # contact_model.save_marker_data_and_ground_truth_labels_to_file()
 

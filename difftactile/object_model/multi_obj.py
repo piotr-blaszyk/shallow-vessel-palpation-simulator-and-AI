@@ -41,12 +41,12 @@ class MultiObj:
         self.particle_mass = self.particle_volume * self.particle_mass_density
         self.eps = 1e-5
         
-        self.E_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.nu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.poissons_ratio_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
         self.lamda_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
         self.mu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
 
-        self.set_stiffness((5e3, 5e4))
+        self.set_stiffness((1e3, 1e3))
 
         self.particle_position = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # position
         self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # velocity
@@ -98,14 +98,16 @@ class MultiObj:
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
 
     def set_stiffness(self, stiffness_tuple):
-        # Material A (normal tissue/fat)
-        self.E_0[0], self.nu_0[0] = stiffness_tuple[0] * self.space_scale, 0.48  # Young's modulus ~5 kPa, nearly incompressible
-        # Material B (tumor)
-        self.E_0[1], self.nu_0[1] = stiffness_tuple[1] * self.space_scale, 0.48  # Young's modulus ~50 kPa, nearly incompressible
+        if stiffness_tuple is None:
+            return
+        # Material A (human soft tissue); broad range from 0.1 kPa to 1 MPa
+        self.youngs_modulus_0[0], self.poissons_ratio_0[0] = stiffness_tuple[0] * self.space_scale, 0.48  # Young's modulus ~5 kPa, nearly incompressible
+        # Material B (tumor); from 1 kPa to 200 kPa
+        self.youngs_modulus_0[1], self.poissons_ratio_0[1] = stiffness_tuple[1] * self.space_scale, 0.48  # Young's modulus ~50 kPa, nearly incompressible
 
         for item in range(2):
-            self.mu_0[item] = self.E_0[item] / 2 / (1 + self.nu_0[item])
-            self.lamda_0[item] = self.E_0[item] * self.nu_0[item] / (1 + self.nu_0[item]) / (1 - 2 * self.nu_0[item])
+            self.mu_0[item] = self.youngs_modulus_0[item] / 2 / (1 + self.poissons_ratio_0[item])
+            self.lamda_0[item] = self.youngs_modulus_0[item] * self.poissons_ratio_0[item] / (1 + self.poissons_ratio_0[item]) / (1 - 2 * self.poissons_ratio_0[item])
     
     def set_tumour_cylinder(self, cylinder_tuple):
         cx, cy, cz, theta, h, r = cylinder_tuple
@@ -404,8 +406,8 @@ class MultiObj:
 
     @ti.kernel
     def clear_loss_grad(self):
-        self.E_0.grad.fill(0.0)
-        self.nu_0.grad.fill(0.0)
+        self.youngs_modulus_0.grad.fill(0.0)
+        self.poissons_ratio_0.grad.fill(0.0)
         self.mu_0.grad.fill(0.0)
         self.lamda_0.grad.fill(0.0)
 
