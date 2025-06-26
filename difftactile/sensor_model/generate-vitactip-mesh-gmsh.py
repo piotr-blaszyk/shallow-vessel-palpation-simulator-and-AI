@@ -60,7 +60,7 @@ def generate_vitactip_mesh():
     cap = gmsh.model.occ.intersect(cap, [(3, cyl_helper)])[0]
 
     A_point_tags = [gmsh.model.occ.addPoint(x, y, z, meshSize=0.25) for x, y, z in A_points]
-    B_point_tags = [gmsh.model.occ.addPoint(x, y, z, meshSize=0.25) for x, y, z in B_points]
+    # B_point_tags = [gmsh.model.occ.addPoint(x, y, z, meshSize=0.25) for x, y, z in B_points]
 
     A = A_points[0]
     B = B_points[0]

@@ -51,12 +51,12 @@ class FEMDomeSensor:
 
         self.all_nodes, self.all_f2v, self.surface_f2v, self.node_labels, element_materials, vertex_masses, self.marker_node_tags_np = self.init_mesh()
 
-        self.marker_node_tags = ti.field(shape=(self.marker_node_tags_np[0],), dtype=int)
+        self.marker_node_tags = ti.field(shape=(self.marker_node_tags_np.shape[0],), dtype=int)
         self.marker_node_tags.from_numpy(self.marker_node_tags_np)
         
         # Create is_fixed_layer field from the last row of node_labels
         self.is_fixed_layer = ti.field(int, len(self.all_nodes))
-        is_fixed_layer_data = self.node_labels[-1, :].astype(np.int32)  # Get the last row
+        is_fixed_layer_data = self.node_labels[:,-1].astype(np.int32)  # Get the last row
         self.is_fixed_layer.from_numpy(is_fixed_layer_data)
         
         self.n_verts = len(self.all_nodes)
@@ -432,7 +432,7 @@ class FEMDomeSensor:
 
     def init_mesh(self):
         # Load mesh data from gmsh
-        with open('output/gmsh-mesh.pkl', 'rb') as f:
+        with open('../sensor_model/output/gmsh-mesh.pkl', 'rb') as f:
             mesh_data = pickle.load(f)
         
         # Unpack mesh data
@@ -450,6 +450,7 @@ class FEMDomeSensor:
         
         # Compute fixed layer nodes (nodes at the bottom)
         is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < 1  # Check if y-coordinate is at bottom
+        node_coordinates /= 10
         
         # Append is_fixed_layer to node_labels
         node_labels = np.column_stack([node_labels, is_fixed_layer])
@@ -490,7 +491,7 @@ class FEMDomeSensor:
                 vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
         
         max_y = np.max(node_coordinates[:, 1])
-        y_translation = 20 - max_y
+        y_translation = 2.0 - max_y
         translation_vector = np.array([0, y_translation, 0])
         node_coordinates = node_coordinates + translation_vector
 

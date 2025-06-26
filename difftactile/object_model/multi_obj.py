@@ -143,8 +143,8 @@ class MultiObj:
             self.titles.fill(0)
         print(f'tumour_present: {tumour_present}, healthy: {self.group_cardinality[0]}, tumour: {self.group_cardinality[1]}')
         tumour_particles_absent = self.group_cardinality[1] == 0
-        if tumour_present and tumour_particles_absent:
-            raise Exception("tumour present but no tumour particles generated!")
+        # if tumour_present and tumour_particles_absent:
+        #     raise Exception("tumour present but no tumour particles generated!")
         tumour_present = not tumour_particles_absent
         self.set_object_params(pos, ori, vel)
         self.init_object()
