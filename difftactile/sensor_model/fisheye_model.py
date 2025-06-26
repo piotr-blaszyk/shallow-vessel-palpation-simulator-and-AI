@@ -348,20 +348,26 @@ def generate_marker_3d_projection():
     with open('init-marker-positions.pkl', 'rb') as f:
         marker_positions_2d = pickle.load(f)
 
-    shell_inner_r = 35 + 1/3
-    shell_outer_r = 36 + 1/3
+    if True:
+        with open('output/gmsh-mesh.pkl', 'rb') as f:
+            gmsh_data = pickle.load(f)
+        shell_inner_r = gmsh_data['R_inner']
+        shell_outer_r = gmsh_data['R_outer']
+    else:
+        shell_inner_r = 35 + 1/3
+        shell_outer_r = 36 + 1/3
     
     # Project to 3D using hemisphere radius of 2.9
-    cone_tips = project_pix_to_points(marker_positions_2d, hemisphere_radius=shell_inner_r-1)
-    cone_base_centres = project_pix_to_points(marker_positions_2d, hemisphere_radius=shell_outer_r+2)
+    A_points = project_pix_to_points(marker_positions_2d, hemisphere_radius=shell_inner_r-1)
+    B_points = project_pix_to_points(marker_positions_2d, hemisphere_radius=shell_outer_r+2)
 
     obj = {
-        'cone_tips': cone_tips,
-        'cone_base_centres': cone_base_centres,
+        'A_points': A_points,
+        'B_points': B_points,
     }
     
     # Save 3D marker positions to pickle file
-    with open('biomimetic-tip-cones.pkl', 'wb') as f:
+    with open('biomimetic-tip-points.pkl', 'wb') as f:
         pickle.dump(obj, f)
 
 if __name__ == '__main__':

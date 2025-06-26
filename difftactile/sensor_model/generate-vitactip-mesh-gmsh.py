@@ -11,12 +11,12 @@ def dome_radius_of_curvature(radius_of_projection, height):
     return (r ** 2 + h ** 2) / (2 * h)
 
 def generate_vitactip_mesh():
-    with open('biomimetic-tip-cones.pkl', 'rb') as f:
-        marker_positions = pickle.load(f)
-    cone_tips = marker_positions['cone_tips']
-    cone_base_centers = marker_positions['cone_base_centres']
-    cone_tips = cone_tips[:, [0, 2, 1]]
-    cone_base_centers = cone_base_centers[:, [0, 2, 1]]
+    with open('biomimetic-tip-points.pkl', 'rb') as f:
+        biomimetic_tip_points = pickle.load(f)
+    A_points = biomimetic_tip_points['A_points']
+    B_points = biomimetic_tip_points['B_points']
+    A_points = A_points[:, [0, 2, 1]]
+    B_points = B_points[:, [0, 2, 1]]
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 1)
     gmsh.model.add("ViTacTip")
@@ -29,6 +29,7 @@ def generate_vitactip_mesh():
     R_inner = R_outer - 1
     y_cap_base = R_outer - cap_height
     y_bottom = y_cap_base - stem_height
+    geometry_data = (R_inner, R_outer, y_bottom)
 
     outer_ball = gmsh.model.occ.addSphere(0, 0, 0, R_outer)
     inner_ball = gmsh.model.occ.addSphere(0, 0, 0, R_inner)
@@ -45,7 +46,7 @@ def generate_vitactip_mesh():
     all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
     gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
 
-    tips = [gmsh.model.occ.addPoint(x, y, z, meshSize=1.0) for x, y, z in cone_tips]
+    tips = [gmsh.model.occ.addPoint(x, y, z, meshSize=1.0) for x, y, z in A_points]
     # gmsh.model.occ.synchronize()
     # gmsh.model.mesh.embed(0, tips, 3, gel[0][1])
     gmsh.model.occ.synchronize()
@@ -59,14 +60,14 @@ def generate_vitactip_mesh():
     gmsh.option.setNumber("Mesh.Algorithm", 6)
     gmsh.model.mesh.generate(3)
     gmsh.write('vitactip.msh')
-    all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags = get_difftactile_variables(y_bottom)
+    all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags = get_difftactile_variables(geometry_data)
     gmsh.model.addPhysicalGroup(2, np.unique(shell_surface_triangles.flatten()).tolist(), name="shell_surface_triangles")
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
     gmsh.fltk.run()
     gmsh.finalize()
 
-def get_difftactile_variables(y_bottom):
+def get_difftactile_variables(geometry_data):
     # Get all tetrahedra elements
     element_types, tetrahedra_tags, tetrahedra_vertex_tags = gmsh.model.mesh.getElements(dim=3)
     
@@ -143,6 +144,7 @@ def get_difftactile_variables(y_bottom):
     tip_tetrahedra = all_tetrahedra[tip_tetrahedra_mask]
     tip_tetrahedra_tags = tetrahedra_tags[tip_tetrahedra_mask]
     
+    R_inner, R_outer, y_bottom = geometry_data
     # Create dictionary with all variables
     mesh_data = {
         'all_tetrahedra': all_tetrahedra-1,
@@ -155,6 +157,8 @@ def get_difftactile_variables(y_bottom):
         'node_tags': node_tags-1,  # Adding original node tags for reference
         'group_to_idx': group_to_idx,  # Adding group mapping for reference
         'y_bottom': y_bottom,
+        'R_inner': R_inner,
+        'R_outer': R_outer,
     }
     
     # Create output directory if it doesn't exist
