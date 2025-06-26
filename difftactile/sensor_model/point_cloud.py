@@ -24,15 +24,10 @@ print(all_tetrahedra.shape)
 
 good_tetrahedra = []
 for tetra in all_tetrahedra:
-    succ_1 = True
-    for x in tetra:
-        if not node_labels[x][2]:
-            succ_1 = False
-            break
-    counter = 0
-    for x in tetra:
-        counter += node_labels[x][1]
-    if succ_1 and counter <= 3:
+    tetra_node_labels = node_labels[tetra]
+    gel_count = np.sum(tetra_node_labels[:, group_to_idx['gel']])
+    shell_count = np.sum(tetra_node_labels[:, group_to_idx['shell']])
+    if gel_count <= 2 and shell_count == 4:
         a, b, c, d = tetra
         good_tetrahedra.append([a, b, c])
         good_tetrahedra.append([a, b, d])

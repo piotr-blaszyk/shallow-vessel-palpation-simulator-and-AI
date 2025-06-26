@@ -104,7 +104,6 @@ def generate_vitactip_mesh():
     gmsh.write('vitactip.msh')
     gmsh.model.addPhysicalGroup(3, [x[1] for x in shell], name="shell")
     gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
-    gmsh.model.addPhysicalGroup(0, A_point_geometric_tags, name="tips")
     get_difftactile_variables(geometry_data, A_points)
     gmsh.fltk.run()
     gmsh.finalize()
@@ -131,7 +130,7 @@ def get_difftactile_variables(geometry_data, A_points):
     node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
     node_labels = np.zeros((len(node_tags), 3), dtype=bool)
     physical_groups = gmsh.model.getPhysicalGroups()
-    group_to_idx = {"tips": 0, "shell": 1, "gel": 2}
+    group_to_idx = {"shell": 0, "gel": 1}
 
     surface_node_tags = []
     surface_coords = []
