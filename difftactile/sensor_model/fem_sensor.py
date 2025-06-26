@@ -287,6 +287,7 @@ class FEMDomeSensor:
             cam_init_loc = project_3d_2d(cam_init_pos)
             self.predict_markers[i] = cam_loc
             self.virtual_markers[i] = cam_init_loc
+            print(f'marker position: {cam_loc}')
 
     @ti.kernel
     def set_material_params(self, shell_E:ti.f32, shell_nu:ti.f32, gel_E:ti.f32, gel_nu:ti.f32):
