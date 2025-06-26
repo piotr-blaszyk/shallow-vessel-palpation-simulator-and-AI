@@ -63,7 +63,7 @@ class Contact(ContactVisualisation):
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
-        self.trajectory = ti.Vector.field(6, dtype=float, shape=2, needs_grad=False)
+        self.trajectory = ti.Vector.field(6, dtype=float, shape=3, needs_grad=False)
         self.tumour_present = ti.field(dtype=bool, shape=(), needs_grad=False)
         self.tumour_present[None] = False
         self.set_up_initial_positions_and_trajectory()
@@ -209,11 +209,12 @@ class Contact(ContactVisualisation):
         yr_offset = 0
         zr_offset = 0
         press_depth = np.random.uniform(0.6, 1.6)
-        press_depth = 1.2 + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET
+        press_depth = 0.6 + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         trajectory_npy = np.array([
-            [x, y, z, xr+xr_offset, yr+yr_offset, zr+zr_offset],
-            [x, y, z, xr+xr_offset, yr+yr_offset, zr+zr_offset],
+            [x, y, z, xr, yr, zr],
+            [x, y, z-press_depth, xr, yr, zr],
+            [x, y+3, z-press_depth, xr, yr, zr],
         ], dtype=float)
         assert self.trajectory.shape[0] == trajectory_npy.shape[0], f"Set self.trajectory length to {trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(trajectory_npy)
@@ -503,12 +504,12 @@ class Contact(ContactVisualisation):
             self.frames_since_last_target_reached[None] += 1
 
         # If target is reached and not already dwelling, start dwelling (only for non-final targets)
-        if (not self.is_dwelling[None] and 
+        if (not self.last_target_reached[None] and not self.is_dwelling[None] and 
             pos_error_magnitude < self.position_tolerance[None] and 
             ori_error_magnitude < self.orientation_tolerance[None]):
             self.is_dwelling[None] = True
             self.dwell_counter[None] = 0
-            # print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
+            print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
         
         # If dwelling, increment counter and check if dwell time is complete
         if self.is_dwelling[None]:
@@ -557,7 +558,7 @@ class Contact(ContactVisualisation):
             
             clamp_speed = True
             # Clamp pos_control to max_speed
-            max_speed_pos = 32.0
+            max_speed_pos = 1.0
             pos_control_norm = pos_control.norm()
             if clamp_speed and pos_control_norm > max_speed_pos:
                 pos_control = pos_control / pos_control_norm * max_speed_pos
@@ -565,15 +566,14 @@ class Contact(ContactVisualisation):
             ori_control = self.pid_controller_kp[None] * ori_error + self.pid_controller_ki[None] * self.ori_error_sum[None] + self.pid_controller_kd[None] * ori_derivative
             
             # Clamp ori_control to max_speed_ori
-            max_speed_ori = max_speed_pos * 10.0
+            max_speed_ori = max_speed_pos * 2.0
             ori_control_norm = ori_control.norm()
             if clamp_speed and ori_control_norm > max_speed_ori:
                 ori_control = ori_control / ori_control_norm * max_speed_ori
 
             # Set control outputs
             self.tactile_sensor.d_pos_global[None] = pos_control
-            # self.tactile_sensor.d_pos_global[None] = ti.Vector([0.0, 0.0, 0.0])
-            self.tactile_sensor.d_ori_global_euler_angles[None] = ti.Vector([0.0, 0.0, 0.0])
+            self.tactile_sensor.d_ori_global_euler_angles[None] = ori_control
         
             if False:
                 # Print all variables used in the function
@@ -658,7 +658,7 @@ def main():
     num_sub_frames = 50
     num_frames = 5_000
     num_opt_steps = 10
-    dt = 5e-5 / 32
+    dt = 5e-5
     contact_model = Contact(
         dt=dt,
         num_frames=num_frames,

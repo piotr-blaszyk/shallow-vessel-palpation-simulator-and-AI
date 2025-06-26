@@ -309,7 +309,7 @@ class FEMDomeSensor:
             drift = cam_init_loc - self.initial_virtual_markers[i]
             self.predict_markers[i] = cam_loc - drift
             self.virtual_markers[i] = cam_init_loc - drift
-            if True:
+            if False:
                 print('extract_markers')
                 print(f'node_ix: {node_ix}')
                 print(f'pos: {pos}')
