@@ -175,7 +175,7 @@ def get_difftactile_variables(geometry_data, A_point_tags):
         'surface_triangles': surface_triangles-1,
         'node_tags': node_tags-1,
         'group_to_idx': group_to_idx,
-        'marker_node_tags': A_point_tags-1,
+        'marker_node_tags': np.array(A_point_tags)-1,
 
         'y_bottom': y_bottom,
         'R_inner': R_inner,
