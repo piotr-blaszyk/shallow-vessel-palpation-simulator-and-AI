@@ -105,11 +105,11 @@ def generate_vitactip_mesh():
     gmsh.model.addPhysicalGroup(3, [x[1] for x in shell], name="shell")
     # gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
     gmsh.model.addPhysicalGroup(0, A_point_tags, name="tips")
-    get_difftactile_variables(geometry_data)
+    get_difftactile_variables(geometry_data, A_point_tags)
     gmsh.fltk.run()
     gmsh.finalize()
 
-def get_difftactile_variables(geometry_data):
+def get_difftactile_variables(geometry_data, A_point_tags):
     # Unpack all geometry variables
     stem_wall_radius_outer = geometry_data['stem_wall_radius_outer']
     stem_wall_radius_inner = geometry_data['stem_wall_radius_inner']
@@ -175,6 +175,7 @@ def get_difftactile_variables(geometry_data):
         'surface_triangles': surface_triangles-1,
         'node_tags': node_tags-1,
         'group_to_idx': group_to_idx,
+        'marker_node_tags': A_point_tags-1,
 
         'y_bottom': y_bottom,
         'R_inner': R_inner,

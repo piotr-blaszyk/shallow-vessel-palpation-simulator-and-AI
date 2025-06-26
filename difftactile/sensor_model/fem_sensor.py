@@ -49,7 +49,10 @@ class FEMDomeSensor:
         self.gel_mu[None] = self.gel_E[None] / 2 / (1 + self.gel_nu[None])
         self.gel_lam[None] = self.gel_E[None] * self.gel_nu[None] / (1 + self.gel_nu[None]) / (1 - 2 * self.gel_nu[None])
 
-        self.all_nodes, self.all_f2v, self.surface_f2v, self.node_labels, element_materials, vertex_masses = self.init_mesh()
+        self.all_nodes, self.all_f2v, self.surface_f2v, self.node_labels, element_materials, vertex_masses, self.marker_node_tags_np = self.init_mesh()
+
+        self.marker_node_tags = ti.field(shape=(self.marker_node_tags_np[0],), dtype=int)
+        self.marker_node_tags.from_numpy(self.marker_node_tags_np)
         
         # Create is_fixed_layer field from the last row of node_labels
         self.is_fixed_layer = ti.field(int, len(self.all_nodes))
@@ -78,22 +81,21 @@ class FEMDomeSensor:
         self.markers_surface_id = ti.field(int, len(self.shell_outer_layer_nodes))
         self.markers_surface_id.from_numpy(self.shell_outer_layer_nodes.astype(np.int32))
         self.num_surface = len(self.shell_outer_layer_nodes)
-        self.surface_cam_loc = ti.Vector.field(2, float, self.num_surface, needs_grad=False)
-        self.surface_cam_virtual_loc = ti.Vector.field(2, float, self.num_surface, needs_grad=False)
 
         # cam model
-        self.num_k_closest = 5
-        self.initial_markers, interp_idx, interp_weight = self.init_cam_model(init_img_path)
-        self.num_markers = len(self.initial_markers)
-        self.visualise_2d(interp_idx)
+        # self.num_k_closest = 5
+        # self.initial_markers, interp_idx, interp_weight = self.init_cam_model(init_img_path)
+        # self.num_markers = len(self.initial_markers)
+        # self.visualise_2d(interp_idx)
+        self.num_markers = self.marker_node_tags_np.shape[0]
 
         self.predict_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.virtual_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
 
-        self.interp_weight = ti.Vector.field(self.num_k_closest, float, self.num_markers, needs_grad=False)
-        self.interp_weight.from_numpy(interp_weight.astype(np.float32))
-        self.interp_idx = ti.Vector.field(self.num_k_closest, int, self.num_markers)
-        self.interp_idx.from_numpy(interp_idx.astype(np.int32))
+        # self.interp_weight = ti.Vector.field(self.num_k_closest, float, self.num_markers, needs_grad=False)
+        # self.interp_weight.from_numpy(interp_weight.astype(np.float32))
+        # self.interp_idx = ti.Vector.field(self.num_k_closest, int, self.num_markers)
+        # self.interp_idx.from_numpy(interp_idx.astype(np.int32))
 
         self.f2v = ti.Vector.field(4, int, self.n_cells)
         self.f2v.from_numpy(self.all_f2v.astype(np.int32))
@@ -271,31 +273,20 @@ class FEMDomeSensor:
 
     @ti.kernel
     def extract_markers(self, f:ti.i32):
-        for i in range(self.num_surface):
-            pos = self.pos[f, self.markers_surface_id[i]]
-            init_pos = self.virtual_pos[f, self.markers_surface_id[i]]
+        for i in range(self.num_markers):
+            node_ix = self.marker_node_tags[i]
+            pos = self.pos[f, node_ix]
+            init_pos = self.virtual_pos[f, node_ix]
             hom_pos = ti.Vector([pos[0], pos[1], pos[2], 1.0])
             hom_init_pos = ti.Vector([init_pos[0], init_pos[1], init_pos[2], 1.0])
             inv_pos = self.inv_trans_h[None] @ hom_pos
             inv_init_pos = self.inv_trans_h[None] @ hom_init_pos
             cam_pos = ti.Vector([inv_pos[0], inv_pos[2], inv_pos[1]])
-
             cam_init_pos = ti.Vector([inv_init_pos[0], inv_init_pos[2], inv_init_pos[1]])
             cam_loc = project_3d_2d(cam_pos)
             cam_init_loc = project_3d_2d(cam_init_pos)
-            self.surface_cam_loc[i] = cam_loc
-            self.surface_cam_virtual_loc[i] = cam_init_loc
-
-        for i in range(self.num_markers):
-            smallest_idx = self.interp_idx[i]
-            weights = self.interp_weight[i]
-            loc_2d = ti.Vector([0.0, 0.0])
-            init_loc_2d = ti.Vector([0.0, 0.0])
-            for j in range(self.num_k_closest):
-                loc_2d += weights[j] * self.surface_cam_loc[smallest_idx[j]]
-                init_loc_2d += weights[j] * self.surface_cam_virtual_loc[smallest_idx[j]]
-            self.predict_markers[i] = loc_2d
-            self.virtual_markers[i] = init_loc_2d
+            self.predict_markers[i] = cam_loc
+            self.virtual_markers[i] = cam_init_loc
 
     @ti.kernel
     def set_material_params(self, shell_E:ti.f32, shell_nu:ti.f32, gel_E:ti.f32, gel_nu:ti.f32):
@@ -455,6 +446,7 @@ class FEMDomeSensor:
         y_bottom = mesh_data['y_bottom']
         R_inner = mesh_data['R_inner']
         R_outer = mesh_data['R_outer']
+        marker_node_tags = mesh_data['marker_node_tags']
         
         # Compute fixed layer nodes (nodes at the bottom)
         is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < 1  # Check if y-coordinate is at bottom
@@ -502,7 +494,7 @@ class FEMDomeSensor:
         translation_vector = np.array([0, y_translation, 0])
         node_coordinates = node_coordinates + translation_vector
 
-        return node_coordinates, all_tetrahedra, surface_triangles, node_labels, element_materials, vertex_masses
+        return node_coordinates, all_tetrahedra, surface_triangles, node_labels, element_materials, vertex_masses, marker_node_tags
 
     @ti.kernel
     def init_pos(self):
@@ -711,7 +703,6 @@ class FEMDomeSensor:
     @ti.kernel
     def clear_loss_grad(self):
         self.predict_markers.grad.fill(0.0)
-        self.surface_cam_loc.grad.fill(0.0)
         self.d_pos_local.grad[None].fill(0.0)
         self.d_ori_local.grad[None].fill(0.0)
         self.rot_h.grad[None].fill(0.0)
