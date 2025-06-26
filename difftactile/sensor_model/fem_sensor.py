@@ -50,6 +50,12 @@ class FEMDomeSensor:
         self.gel_lam[None] = self.gel_E[None] * self.gel_nu[None] / (1 + self.gel_nu[None]) / (1 - 2 * self.gel_nu[None])
 
         self.all_nodes, self.all_f2v, self.surface_f2v, self.node_labels, element_materials, vertex_masses = self.init_mesh()
+        
+        # Create is_fixed_layer field from the last row of node_labels
+        self.is_fixed_layer = ti.field(int, len(self.all_nodes))
+        is_fixed_layer_data = self.node_labels[-1, :].astype(np.int32)  # Get the last row
+        self.is_fixed_layer.from_numpy(is_fixed_layer_data)
+        
         self.n_verts = len(self.all_nodes)
         self.n_cells = len(self.all_f2v)
         self.num_triangles = len(self.surface_f2v)
@@ -621,8 +627,8 @@ class FEMDomeSensor:
             updated_velocity += self.vel[frame,vertex_idx]
             updated_velocity += self.dt * self.external_force_field[frame,vertex_idx] / self.mass_per_vertex[vertex_idx]
 
-            ### stick the bottom layer to be fixed
-            is_fixed_layer = self.layer_id[vertex_idx] % 3 == 0
+            ### stick the bottom layer to be fixed using node_labels information
+            is_fixed_layer = self.is_fixed_layer[vertex_idx] == 1
             if is_fixed_layer:
                 updated_velocity = self.control_vel[vertex_idx]
             self.vel[frame+1, vertex_idx] = updated_velocity
