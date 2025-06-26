@@ -513,14 +513,14 @@ class FEMDomeSensor:
             tetra_node_labels = node_labels[tetra]
             
             # Check if any node is part of the gel
-            has_gel = np.any(tetra_node_labels[:, group_to_idx['gel']])
+            gel_count = np.sum(tetra_node_labels[:, group_to_idx['gel']])
             # Check if all nodes are part of the shell
-            all_shell = np.all(tetra_node_labels[:, group_to_idx['shell']])
+            shell_count = np.sum(tetra_node_labels[:, group_to_idx['shell']])
             
             # Assign material based on node composition
-            if has_gel:
+            if gel_count == 4 and shell_count <= 3:
                 element_materials[i] = 2  # gel material
-            elif all_shell:
+            else:
                 element_materials[i] = 1  # shell material
             
             # Determine density based on material

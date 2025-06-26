@@ -103,7 +103,7 @@ def generate_vitactip_mesh():
     gmsh.model.mesh.generate(3)
     gmsh.write('vitactip.msh')
     gmsh.model.addPhysicalGroup(3, [x[1] for x in shell], name="shell")
-    # gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
+    gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
     gmsh.model.addPhysicalGroup(0, A_point_geometric_tags, name="tips")
     get_difftactile_variables(geometry_data, A_points)
     gmsh.fltk.run()

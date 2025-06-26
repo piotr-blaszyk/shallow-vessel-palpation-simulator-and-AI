@@ -20,6 +20,26 @@ R_outer = mesh_data['R_outer']
 
 print('hello')
 print(node_coordinates.shape)
+print(all_tetrahedra.shape)
+
+good_tetrahedra = []
+for tetra in all_tetrahedra:
+    succ_1 = True
+    for x in tetra:
+        if not node_labels[x][2]:
+            succ_1 = False
+            break
+    counter = 0
+    for x in tetra:
+        counter += node_labels[x][1]
+    if succ_1 and counter <= 3:
+        a, b, c, d = tetra
+        good_tetrahedra.append([a, b, c])
+        good_tetrahedra.append([a, b, d])
+        good_tetrahedra.append([a, c, d])
+        good_tetrahedra.append([b, c, d])
+good_tetrahedra = np.array(good_tetrahedra)
+print(len(good_tetrahedra) // 4)
 
 # with open(f'init-marker-positions-3d.pkl', 'rb') as f:
 #     points = pickle.load(f)
@@ -67,7 +87,7 @@ if False:
 if True:
     mesh = o3d.geometry.TriangleMesh()
     mesh.vertices = o3d.utility.Vector3dVector(node_coordinates)
-    mesh.triangles = o3d.utility.Vector3iVector(surface_triangles)
+    mesh.triangles = o3d.utility.Vector3iVector(good_tetrahedra)
     mesh.compute_vertex_normals()
     mesh = mesh.remove_duplicated_triangles()
     o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
