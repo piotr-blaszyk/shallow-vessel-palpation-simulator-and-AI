@@ -64,38 +64,19 @@ def generate_vitactip_mesh():
 
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
-
-    if False:
-        for dim, tag in fragments:
-            node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes(dim=dim, tag=tag, includeBoundary=False)
-            node_coordinates = node_coordinates.reshape(-1, 3)
-            if node_coordinates.shape[0] == 0:
-                gmsh.model.mesh.setSize([(dim, tag)], 0.1)
-        
-        gmsh.model.occ.synchronize()
-        gmsh.model.mesh.generate(3)
-        
-        for dim, tag in fragments:
-            node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes(dim=dim, tag=tag, includeBoundary=False)
-            node_coordinates = node_coordinates.reshape(-1, 3)
-            assert node_coordinates.shape[0] > 0
-            magnitudes = np.linalg.norm(node_coordinates, axis=1)
-            max_magnitude_index = np.argmax(magnitudes)
-            point_with_largest_magnitude = node_coordinates[max_magnitude_index]
-            largest_magnitude = magnitudes[max_magnitude_index]
-            magnitudes.sort()
-            foo = 7
-            for x, y, z in node_coordinates:
-                if x**2+y**2+z**2>R_outer**2+1:
-                    gmsh.model.occ.remove(dimTags=[(dim, tag)], recursive=True)
-                    break
-
-    if False:
-        gmsh.model.occ.remove(dimTags=[(3, 2)], recursive=True)
-        gmsh.model.occ.remove(dimTags=[(3, 3)], recursive=True)
-
-    for i in range(1, 5):
-        gmsh.model.addPhysicalGroup(dim=3, tags=[i], name=f"{i}")
+    
+    for dim, tag in fragments:
+        node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes(dim=dim, tag=tag, includeBoundary=True)
+        node_coordinates = node_coordinates.reshape(-1, 3)
+        assert node_coordinates.shape[0] > 0
+        magnitudes = np.linalg.norm(node_coordinates, axis=1)
+        max_magnitude_index = np.argmax(magnitudes)
+        point_with_largest_magnitude = node_coordinates[max_magnitude_index]
+        largest_magnitude = magnitudes[max_magnitude_index]
+        magnitudes.sort()
+        if largest_magnitude>R_outer+1:
+            gmsh.model.occ.remove(dimTags=[(dim, tag)], recursive=True)
+            continue
     
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
