@@ -4,6 +4,7 @@ import math
 import sys
 import pickle
 import os
+import itertools
 
 def dome_radius_of_curvature(radius_of_projection, height):
     r = radius_of_projection
@@ -17,8 +18,20 @@ def generate_vitactip_mesh():
     B_points = biomimetic_tip_points['B_points']
     A_points = A_points[:, [0, 2, 1]]
     B_points = B_points[:, [0, 2, 1]]
+    
+    # Find the point closest to (0,0) in the xz plane for A_points
+    distances_A = np.sqrt(A_points[:, 0]**2 + A_points[:, 2]**2)  # xz plane distance
+    closest_A_idx = np.argmin(distances_A)
+    A_points = A_points[closest_A_idx:closest_A_idx+1]  # Keep only the closest point
+    B_points = B_points[closest_A_idx:closest_A_idx+1]  # Keep only the closest point
+    
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 1)
+    gmsh.option.setNumber("Mesh.Algorithm3D", 10)
+    gmsh.option.setNumber("Mesh.Optimize", 1)
+    gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
+    gmsh.option.setNumber("Mesh.Algorithm", 6)
+    # gmsh.option.setNumber("Mesh.CharacteristicLengthFactor", 1.0)
     gmsh.model.add("ViTacTip")
 
     stem_wall_radius_outer = 20
@@ -36,28 +49,55 @@ def generate_vitactip_mesh():
     cap = gmsh.model.occ.cut([(3, outer_ball)], [(3, inner_ball)])[0]
     cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
     cap = gmsh.model.occ.intersect(cap, [(3, cyl_helper)])[0]
-    stem_wall_outer = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, stem_wall_radius_outer)
-    stem_wall_inner = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, stem_wall_radius_inner)
-    stem_wall = gmsh.model.occ.cut([(3, stem_wall_outer)], [(3, stem_wall_inner)])[0]
-    shell = gmsh.model.occ.fuse(cap, stem_wall)[0]
 
-    outer_ball = gmsh.model.occ.addSphere(0, 0, 0, R_outer)
-    cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
-    all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
-    gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
+    A_point_tags = [gmsh.model.occ.addPoint(x, y, z, meshSize=0.25) for x, y, z in A_points]
+    B_point_tags = [gmsh.model.occ.addPoint(x, y, z, meshSize=0.25) for x, y, z in B_points]
 
-    tips = [gmsh.model.occ.addPoint(x, y, z, meshSize=1.0) for x, y, z in A_points]
-    # gmsh.model.occ.synchronize()
-    # gmsh.model.mesh.embed(0, tips, 3, gel[0][1])
+    A = A_points[0]
+    B = B_points[0]
+    AB = B-A
+    tip_cylinder = gmsh.model.occ.addCylinder(0, A[1], 0, AB[0], AB[1], AB[2], 1)
     gmsh.model.occ.synchronize()
-    gmsh.model.addPhysicalGroup(0, tips, name="tips")
-    gmsh.model.addPhysicalGroup(3, [shell[0][1]], name="shell")
-    gmsh.model.addPhysicalGroup(3, [gel[0][1]], name="gel")
+    gmsh.model.mesh.embed(dim=0, tags=B_point_tags, inDim=3, inTag=tip_cylinder)
     gmsh.model.occ.synchronize()
-    gmsh.option.setNumber("Mesh.Algorithm3D", 10)
-    gmsh.option.setNumber("Mesh.Optimize", 1)
-    gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
-    gmsh.option.setNumber("Mesh.Algorithm", 6)
+    fragments = gmsh.model.occ.fragment(cap, [(3, tip_cylinder)])[0]
+
+    gmsh.model.occ.synchronize()
+    gmsh.model.mesh.generate(3)
+
+    if False:
+        for dim, tag in fragments:
+            node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes(dim=dim, tag=tag, includeBoundary=False)
+            node_coordinates = node_coordinates.reshape(-1, 3)
+            if node_coordinates.shape[0] == 0:
+                gmsh.model.mesh.setSize([(dim, tag)], 0.1)
+        
+        gmsh.model.occ.synchronize()
+        gmsh.model.mesh.generate(3)
+        
+        for dim, tag in fragments:
+            node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes(dim=dim, tag=tag, includeBoundary=False)
+            node_coordinates = node_coordinates.reshape(-1, 3)
+            assert node_coordinates.shape[0] > 0
+            magnitudes = np.linalg.norm(node_coordinates, axis=1)
+            max_magnitude_index = np.argmax(magnitudes)
+            point_with_largest_magnitude = node_coordinates[max_magnitude_index]
+            largest_magnitude = magnitudes[max_magnitude_index]
+            magnitudes.sort()
+            foo = 7
+            for x, y, z in node_coordinates:
+                if x**2+y**2+z**2>R_outer**2+1:
+                    gmsh.model.occ.remove(dimTags=[(dim, tag)], recursive=True)
+                    break
+
+    if False:
+        gmsh.model.occ.remove(dimTags=[(3, 2)], recursive=True)
+        gmsh.model.occ.remove(dimTags=[(3, 3)], recursive=True)
+
+    for i in range(1, 5):
+        gmsh.model.addPhysicalGroup(dim=3, tags=[i], name=f"{i}")
+    
+    gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
     gmsh.write('vitactip.msh')
     all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags = get_difftactile_variables(geometry_data)
@@ -68,84 +108,41 @@ def generate_vitactip_mesh():
     gmsh.finalize()
 
 def get_difftactile_variables(geometry_data):
-    # Get all tetrahedra elements
     element_types, tetrahedra_tags, tetrahedra_vertex_tags = gmsh.model.mesh.getElements(dim=3)
-    
-    # Reshape the vertex tags array to get a (num_tetrahedra, 4) array
-    # where each row contains the 4 node tags that make up a tetrahedron
     all_tetrahedra = tetrahedra_vertex_tags[0].reshape(-1, 4).astype(int)
-    tetrahedra_tags = tetrahedra_tags[0]  # Get the tags array
-    
-    # Get all nodes and their coordinates
+    tetrahedra_tags = tetrahedra_tags[0]
     node_tags, node_coordinates, _ = gmsh.model.mesh.getNodes()
-    
-    # Reshape node coordinates into (num_nodes, 3) array
     all_nodes = node_coordinates.reshape(-1, 3).astype(float)
-    
-    # Initialize node labels array with False
-    # Each row corresponds to a node, columns are [tips, shell, gel]
     node_labels = np.zeros((len(node_tags), 3), dtype=bool)
-    
-    # Get all physical groups
     physical_groups = gmsh.model.getPhysicalGroups()
-    
-    # Create a mapping from physical group name to column index
     group_to_idx = {"tips": 0, "shell": 1, "gel": 2}
-    
-    # For each physical group
     for dim, tag in physical_groups:
-        # Get the name of this physical group
         name = gmsh.model.getPhysicalName(dim, tag)
         if name in group_to_idx:
-            # Get nodes in this physical group
             group_node_tags, _ = gmsh.model.mesh.getNodesForPhysicalGroup(dim, tag)
-            # Create mapping from node tag to index
             node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
-            # Set True for these nodes in the appropriate column
             for node_tag in group_node_tags:
                 if node_tag in node_tag_to_idx:
                     node_labels[node_tag_to_idx[node_tag], group_to_idx[name]] = True
-    
-    # Get all surface triangles (2D elements)
     element_types_2d, triangle_tags, triangle_nodes = gmsh.model.mesh.getElements(dim=2)
     all_surface_triangles = triangle_nodes[0].reshape(-1, 3).astype(int)
-    
-    # Create mapping from node tag to index for all nodes
     node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
-    
-    # Filter triangles based on node labels
     shell_triangles_mask = []
     for triangle in all_surface_triangles:
-        # Get node indices for this triangle
         node_indices = [node_tag_to_idx[tag] for tag in triangle]
-        # Check if all nodes belong to shell
         all_in_shell = all(node_labels[idx, group_to_idx["shell"]] for idx in node_indices)
-        # Check if no nodes belong to gel
         none_in_gel = not any(node_labels[idx, group_to_idx["gel"]] for idx in node_indices)
-        # Keep triangle if both conditions are met
         shell_triangles_mask.append(all_in_shell and none_in_gel)
-    
-    # Apply mask to get shell surface triangles
     shell_surface_triangles = all_surface_triangles[shell_triangles_mask]
-    
-    # Filter tetrahedra that contain any tip nodes
     tip_tetrahedra_mask = []
     for tetra in all_tetrahedra:
-        # Get node indices for this tetrahedron
         node_indices = [node_tag_to_idx[tag] for tag in tetra]
-        # Check if any node belongs to tips group
         has_tip = any(node_labels[idx, group_to_idx["tips"]] for idx in node_indices)
         tip_tetrahedra_mask.append(has_tip)
-    
-    # Convert mask to numpy array for boolean indexing
     tip_tetrahedra_mask = np.array(tip_tetrahedra_mask)
-    
-    # Apply mask to get tip tetrahedra and their tags
     tip_tetrahedra = all_tetrahedra[tip_tetrahedra_mask]
     tip_tetrahedra_tags = tetrahedra_tags[tip_tetrahedra_mask]
-    
     R_inner, R_outer, y_bottom = geometry_data
-    # Create dictionary with all variables
     mesh_data = {
         'all_tetrahedra': all_tetrahedra-1,
         'all_nodes': all_nodes,
@@ -154,20 +151,15 @@ def get_difftactile_variables(geometry_data):
         'shell_surface_triangles': shell_surface_triangles-1,
         'tip_tetrahedra': tip_tetrahedra-1,
         'tip_tetrahedra_tags': tip_tetrahedra_tags-1,
-        'node_tags': node_tags-1,  # Adding original node tags for reference
-        'group_to_idx': group_to_idx,  # Adding group mapping for reference
+        'node_tags': node_tags-1,
+        'group_to_idx': group_to_idx,
         'y_bottom': y_bottom,
         'R_inner': R_inner,
         'R_outer': R_outer,
     }
-    
-    # Create output directory if it doesn't exist
     os.makedirs('output', exist_ok=True)
-    
-    # Save to pickle file
     with open('output/gmsh-mesh.pkl', 'wb') as f:
         pickle.dump(mesh_data, f)
-    
     return all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags
 
 def point_to_triangle_distance(point, triangle_vertices):
@@ -223,19 +215,14 @@ def sandbox():
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 1)
     gmsh.model.add("sandbox")
-    
-    # Set mesh size parameters for coarse mesh
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", 2.0)  # Minimum element size
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", 2.0)  # Maximum element size
-    
-    x, y, z = (0.5, 1.5, 0.5)
-    point = np.array([x, y, z])
-    gmsh.model.occ.addBox(x=0, y=0, z=0, dx=1, dy=1, dz=1)
-    gmsh.model.occ.synchronize()
-    gmsh.model.mesh.generate(2)
-    
-    closest_triangle_idx, closest_triangle_nodes, closest_triangle_coords, min_distance = find_closest_triangle(point)
+    outer_ball = gmsh.model.occ.addSphere(0, 0, 0, 10)
+    inner_ball = gmsh.model.occ.addSphere(0, 0, 0, 5)
+    fragments = gmsh.model.occ.fragment([(3, outer_ball)], [(3, inner_ball)])[0]
 
+    for dim, tag in fragments:
+        xmin, ymin, zmin, xmax, ymax, zmax = gmsh.model.occ.getBoundingBox(dim, tag)
+        foo = 7
+    
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
     gmsh.write('sandbox.msh')
@@ -248,5 +235,39 @@ def load_mesh():
     gmsh.fltk.run()
     gmsh.finalize()
 
+def get_fragment_node_tags(fragment_entities):
+    all_node_tags = []
+    all_node_coords = []
+    for dim, tag in fragment_entities:
+        node_tags, node_coords, _ = gmsh.model.mesh.getNodes(dim, tag)
+        all_node_tags.extend(node_tags)
+        all_node_coords.extend(node_coords)
+    all_node_tags = np.array(all_node_tags)
+    all_node_coords = np.array(all_node_coords).reshape(-1, 3)
+    unique_node_tags, unique_indices = np.unique(all_node_tags, return_index=True)
+    unique_node_coords = all_node_coords[unique_indices]
+    return unique_node_tags, unique_node_coords
+
+def example_fragment_usage():
+    outer_ball = gmsh.model.occ.addSphere(0, 0, 0, 10)
+    inner_ball = gmsh.model.occ.addSphere(0, 0, 0, 5)
+    fragments = gmsh.model.occ.fragment([(3, outer_ball)], [(3, inner_ball)])
+    if fragments[0]:
+        node_tags, node_coords = get_fragment_node_tags(fragments[0])
+        print(f"Fragment has {len(node_tags)} unique vertices")
+        print(f"First few vertices: {node_tags[:5]}")
+        print(f"Vertex coordinates shape: {node_coords.shape}")
+
+def fragments_dfs_get_tetrahedra_tags(x):
+    if isinstance(x, int):
+        return []
+    if not (isinstance(x, tuple) or isinstance(x, list)):
+        raise Exception("unexpected structure of fragments data")
+    if len(x) == 2 and isinstance(x[0], int) and isinstance(x[1], int):
+        return [x[1]]
+    res_nested = [fragments_dfs_get_tetrahedra_tags(y) for y in x]
+    return np.unique(np.array(list(itertools.chain.from_iterable(res_nested)))).tolist()
+
 if __name__ == "__main__":
+    np.set_printoptions(formatter={'float_kind': '{:.2f}'.format})
     generate_vitactip_mesh()
