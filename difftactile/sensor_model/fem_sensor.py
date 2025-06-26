@@ -443,33 +443,33 @@ class FEMDomeSensor:
         # Load mesh data from gmsh
         with open('output/gmsh-mesh.pkl', 'rb') as f:
             mesh_data = pickle.load(f)
-
+        
         # Unpack mesh data
         all_tetrahedra = mesh_data['all_tetrahedra']
-        all_nodes = mesh_data['all_nodes']
+        node_coordinates = mesh_data['node_coordinates']
         node_labels = mesh_data['node_labels']
-        all_surface_triangles = mesh_data['all_surface_triangles']
-        shell_surface_triangles = mesh_data['shell_surface_triangles']
-        tip_tetrahedra = mesh_data['tip_tetrahedra']
-        tip_tetrahedra_tags = mesh_data['tip_tetrahedra_tags']
+        surface_node_tags = mesh_data['surface_node_tags']
+        surface_triangles = mesh_data['surface_triangles']
         node_tags = mesh_data['node_tags']
         group_to_idx = mesh_data['group_to_idx']
         y_bottom = mesh_data['y_bottom']
+        R_inner = mesh_data['R_inner']
+        R_outer = mesh_data['R_outer']
         
         # Compute fixed layer nodes (nodes at the bottom)
-        is_fixed_layer = np.abs(all_nodes[:, 1] - y_bottom) < 1  # Check if y-coordinate is at bottom
+        is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < 1  # Check if y-coordinate is at bottom
         
         # Append is_fixed_layer to node_labels
         node_labels = np.column_stack([node_labels, is_fixed_layer])
         
         # Compute element materials and masses
         element_materials = np.full(len(all_tetrahedra), fill_value=-1, dtype=np.int32)
-        vertex_masses = np.zeros(len(all_nodes), dtype=np.float32)
+        vertex_masses = np.zeros(len(node_coordinates), dtype=np.float32)
         
         # Compute element volumes and assign materials
         for i, tetra in enumerate(all_tetrahedra):
             v1, v2, v3, v4 = tetra
-            pos1, pos2, pos3, pos4 = all_nodes[v1], all_nodes[v2], all_nodes[v3], all_nodes[v4]
+            pos1, pos2, pos3, pos4 = node_coordinates[v1], node_coordinates[v2], node_coordinates[v3], node_coordinates[v4]
             
             # Compute tetrahedron volume
             matrix = np.vstack([pos2 - pos1, pos3 - pos1, pos4 - pos1]).T
@@ -497,12 +497,12 @@ class FEMDomeSensor:
             for vertex_idx in tetra:
                 vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
         
-        max_y = np.max(all_nodes[:, 1])
+        max_y = np.max(node_coordinates[:, 1])
         y_translation = 20 - max_y
         translation_vector = np.array([0, y_translation, 0])
-        all_nodes = all_nodes + translation_vector
+        node_coordinates = node_coordinates + translation_vector
 
-        return all_nodes, all_tetrahedra, all_surface_triangles, node_labels, element_materials, vertex_masses
+        return node_coordinates, all_tetrahedra, surface_triangles, node_labels, element_materials, vertex_masses
 
     @ti.kernel
     def init_pos(self):

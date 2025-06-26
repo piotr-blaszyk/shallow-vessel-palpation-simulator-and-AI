@@ -106,8 +106,6 @@ def generate_vitactip_mesh():
     # gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
     gmsh.model.addPhysicalGroup(0, A_point_tags, name="tips")
     get_difftactile_variables(geometry_data)
-    gmsh.model.occ.synchronize()
-    gmsh.model.mesh.generate(3)
     gmsh.fltk.run()
     gmsh.finalize()
 
@@ -128,7 +126,7 @@ def get_difftactile_variables(geometry_data):
     element_types_2d, triangle_tags, triangle_nodes = gmsh.model.mesh.getElements(dim=2)
     all_surface_triangles = triangle_nodes[0].reshape(-1, 3).astype(int)
     node_tags, node_coordinates, _ = gmsh.model.mesh.getNodes()
-    all_nodes = node_coordinates.reshape(-1, 3).astype(float)
+    node_coordinates = node_coordinates.reshape(-1, 3).astype(float)
     node_tags = np.array(node_tags)
     node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
     node_labels = np.zeros((len(node_tags), 3), dtype=bool)
@@ -139,7 +137,7 @@ def get_difftactile_variables(geometry_data):
     surface_coords = []
     for i in range(len(node_tags)):
         tag = node_tags[i]
-        node = all_nodes[i]
+        node = node_coordinates[i]
         x,y,z = node
         if y > y_cap_base:
             if np.linalg.norm(node) > R_outer - 0.1:
@@ -169,25 +167,15 @@ def get_difftactile_variables(geometry_data):
                 if node_tag in node_tag_to_idx:
                     node_labels[node_tag_to_idx[node_tag], group_to_idx[name]] = True
 
-    tip_tetrahedra_mask = []
-    for tetra in all_tetrahedra:
-        node_indices = [node_tag_to_idx[tag] for tag in tetra]
-        has_tip = any(node_labels[idx, group_to_idx["tips"]] for idx in node_indices)
-        tip_tetrahedra_mask.append(has_tip)
-    tip_tetrahedra_mask = np.array(tip_tetrahedra_mask)
-    tip_tetrahedra = all_tetrahedra[tip_tetrahedra_mask]
-    tip_tetrahedra_tags = tetrahedra_tags[tip_tetrahedra_mask]
-
     mesh_data = {
         'all_tetrahedra': all_tetrahedra-1,
-        'all_nodes': all_nodes,
+        'node_coordinates': node_coordinates,
         'node_labels': node_labels,
-        'all_surface_triangles': all_surface_triangles-1,
+        'surface_node_tags': surface_node_tags-1,
         'surface_triangles': surface_triangles-1,
-        'tip_tetrahedra': tip_tetrahedra-1,
-        'tip_tetrahedra_tags': tip_tetrahedra_tags-1,
         'node_tags': node_tags-1,
         'group_to_idx': group_to_idx,
+
         'y_bottom': y_bottom,
         'R_inner': R_inner,
         'R_outer': R_outer,

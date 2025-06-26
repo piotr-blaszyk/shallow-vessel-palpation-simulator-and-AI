@@ -3,20 +3,23 @@ import open3d as o3d
 import pickle
 from collections import Counter
 
-# Load mesh data from gmsh
 with open('output/gmsh-mesh.pkl', 'rb') as f:
     mesh_data = pickle.load(f)
-
+        
 # Unpack mesh data
 all_tetrahedra = mesh_data['all_tetrahedra']
-all_nodes = mesh_data['all_nodes']
+node_coordinates = mesh_data['node_coordinates']
 node_labels = mesh_data['node_labels']
-all_surface_triangles = mesh_data['all_surface_triangles']
-shell_surface_triangles = mesh_data['shell_surface_triangles']
-tip_tetrahedra = mesh_data['tip_tetrahedra']
-tip_tetrahedra_tags = mesh_data['tip_tetrahedra_tags']
+surface_node_tags = mesh_data['surface_node_tags']
+surface_triangles = mesh_data['surface_triangles']
 node_tags = mesh_data['node_tags']
 group_to_idx = mesh_data['group_to_idx']
+y_bottom = mesh_data['y_bottom']
+R_inner = mesh_data['R_inner']
+R_outer = mesh_data['R_outer']
+
+print('hello')
+print(node_coordinates.shape)
 
 # with open(f'init-marker-positions-3d.pkl', 'rb') as f:
 #     points = pickle.load(f)
@@ -57,24 +60,14 @@ if False:
 
 if False:
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points)
-    axes = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
-    o3d.visualization.draw_geometries([pcd, axes])
+    pcd.points = o3d.utility.Vector3dVector([node_coordinates[x] for x in surface_node_tags])
+    # axes = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
+    o3d.visualization.draw_geometries([pcd])
 
 if True:
-    all_triangle_faces = []
-    for tetra in tip_tetrahedra-1:
-        v0, v1, v2, v3 = tetra
-        all_triangle_faces.append([v0, v1, v2])
-        all_triangle_faces.append([v0, v1, v3])
-        all_triangle_faces.append([v0, v2, v3])
-        all_triangle_faces.append([v1, v2, v3])
-
-    triangle_faces_np = np.array(all_triangle_faces, dtype=np.int32)
-
     mesh = o3d.geometry.TriangleMesh()
-    mesh.vertices = o3d.utility.Vector3dVector(all_nodes)
-    mesh.triangles = o3d.utility.Vector3iVector(triangle_faces_np)
+    mesh.vertices = o3d.utility.Vector3dVector(node_coordinates)
+    mesh.triangles = o3d.utility.Vector3iVector(surface_triangles)
     mesh.compute_vertex_normals()
     mesh = mesh.remove_duplicated_triangles()
     o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
