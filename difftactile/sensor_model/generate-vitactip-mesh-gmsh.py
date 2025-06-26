@@ -45,9 +45,9 @@ def generate_vitactip_mesh():
     all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
     gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
 
-    tips = [gmsh.model.occ.addPoint(x, y, z, meshSize=0.125) for x, y, z in cone_tips]
-    gmsh.model.occ.synchronize()
-    gmsh.model.mesh.embed(0, tips, 3, gel[0][1])
+    tips = [gmsh.model.occ.addPoint(x, y, z, meshSize=1.0) for x, y, z in cone_tips]
+    # gmsh.model.occ.synchronize()
+    # gmsh.model.mesh.embed(0, tips, 3, gel[0][1])
     gmsh.model.occ.synchronize()
     gmsh.model.addPhysicalGroup(0, tips, name="tips")
     gmsh.model.addPhysicalGroup(3, [shell[0][1]], name="shell")
@@ -59,14 +59,14 @@ def generate_vitactip_mesh():
     gmsh.option.setNumber("Mesh.Algorithm", 6)
     gmsh.model.mesh.generate(3)
     gmsh.write('vitactip.msh')
-    all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags = get_difftactile_variables()
+    all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags = get_difftactile_variables(y_bottom)
     gmsh.model.addPhysicalGroup(2, np.unique(shell_surface_triangles.flatten()).tolist(), name="shell_surface_triangles")
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
     gmsh.fltk.run()
     gmsh.finalize()
 
-def get_difftactile_variables():
+def get_difftactile_variables(y_bottom):
     # Get all tetrahedra elements
     element_types, tetrahedra_tags, tetrahedra_vertex_tags = gmsh.model.mesh.getElements(dim=3)
     
@@ -145,15 +145,16 @@ def get_difftactile_variables():
     
     # Create dictionary with all variables
     mesh_data = {
-        'all_tetrahedra': all_tetrahedra,
+        'all_tetrahedra': all_tetrahedra-1,
         'all_nodes': all_nodes,
         'node_labels': node_labels,
-        'all_surface_triangles': all_surface_triangles,
-        'shell_surface_triangles': shell_surface_triangles,
-        'tip_tetrahedra': tip_tetrahedra,
-        'tip_tetrahedra_tags': tip_tetrahedra_tags,
-        'node_tags': node_tags,  # Adding original node tags for reference
-        'group_to_idx': group_to_idx  # Adding group mapping for reference
+        'all_surface_triangles': all_surface_triangles-1,
+        'shell_surface_triangles': shell_surface_triangles-1,
+        'tip_tetrahedra': tip_tetrahedra-1,
+        'tip_tetrahedra_tags': tip_tetrahedra_tags-1,
+        'node_tags': node_tags-1,  # Adding original node tags for reference
+        'group_to_idx': group_to_idx,  # Adding group mapping for reference
+        'y_bottom': y_bottom,
     }
     
     # Create output directory if it doesn't exist

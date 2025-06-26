@@ -23,11 +23,6 @@ class FEMDomeSensor:
         np.set_printoptions(precision=3, floatmode='maxprec', suppress=False)
         self.sub_steps = sub_steps
         self.dt = dt
-        self.N_node = 1600 # number of nodes in the most inner layer
-        self.N_t = 2+1 # thickness
-        self.t_res = 0.1 # [cm]; inter-layer distance
-        self.outer_radius = 3.3
-        self.inner_radius = 3.1 # [cm]
         self.eps = 1e-11  # Small epsilon value for numerical stability in vector normalization
 
         # Material parameters for shell (Vytaflex 60)
@@ -54,7 +49,7 @@ class FEMDomeSensor:
         self.gel_mu[None] = self.gel_E[None] / 2 / (1 + self.gel_nu[None])
         self.gel_lam[None] = self.gel_E[None] * self.gel_nu[None] / (1 + self.gel_nu[None]) / (1 - 2 * self.gel_nu[None])
 
-        self.all_nodes, self.all_f2v, self.surface_f2v, self.layer_idxs, element_materials, vertex_masses = self.init_mesh()
+        self.all_nodes, self.all_f2v, self.surface_f2v, self.node_labels, element_materials, vertex_masses = self.init_mesh()
         self.n_verts = len(self.all_nodes)
         self.n_cells = len(self.all_f2v)
         self.num_triangles = len(self.surface_f2v)
@@ -72,13 +67,11 @@ class FEMDomeSensor:
 
         self.init_x = ti.Vector.field(3, float, self.n_verts, needs_grad=False)
         self.init_x.from_numpy(self.all_nodes.astype(np.float32))
-        self.layer_id = ti.field(int, self.n_verts) # indicate layers
-        self.layer_id.from_numpy(self.layer_idxs.astype(np.int32))
-        self.markers_surface_id_np = np.where(self.layer_idxs==1)[0]
 
-        self.markers_surface_id = ti.field(int, len(self.markers_surface_id_np))
-        self.markers_surface_id.from_numpy(self.markers_surface_id_np.astype(np.int32))
-        self.num_surface = len(self.markers_surface_id_np)
+        self.shell_outer_layer_nodes = np.unique(self.surface_f2v.flatten())
+        self.markers_surface_id = ti.field(int, len(self.shell_outer_layer_nodes))
+        self.markers_surface_id.from_numpy(self.shell_outer_layer_nodes.astype(np.int32))
+        self.num_surface = len(self.shell_outer_layer_nodes)
         self.surface_cam_loc = ti.Vector.field(2, float, self.num_surface, needs_grad=False)
         self.surface_cam_virtual_loc = ti.Vector.field(2, float, self.num_surface, needs_grad=False)
 
@@ -204,7 +197,7 @@ class FEMDomeSensor:
             center = (int(round(pos[0])), int(round(pos[1])))
             cv2.circle(overlay_img, center, radius=5, color=(0, 0, 255), thickness=2)  # Red circle
         cv2.imwrite("../tasks/output/init_cam_model.png", overlay_img)
-        surface_nodes = self.all_nodes[self.markers_surface_id_np]
+        surface_nodes = self.all_nodes[self.shell_outer_layer_nodes]
         cam_3D_nodes = np.array([surface_nodes[:,0], surface_nodes[:,2], surface_nodes[:,1]]).T
         with open(f"output/fem_sensor.cam_3d_nodes.pkl", 'wb') as f:
             pickle.dump(cam_3D_nodes, f)
@@ -240,10 +233,10 @@ class FEMDomeSensor:
         interp_idx_flat = interp_idx.flatten()
         with open(f"output/fem_sensor.interp_idx_flat.pkl", 'wb') as f:
             pickle.dump(interp_idx_flat, f)
-        with open(f"output/fem_sensor.markers_surface_id_np.pkl", 'wb') as f:
-            pickle.dump(self.markers_surface_id_np, f)
+        with open(f"output/fem_sensor.shell_outer_layer_nodes.pkl", 'wb') as f:
+            pickle.dump(self.shell_outer_layer_nodes, f)
         np.savetxt('output/fem_sensor.interp_idx_flat.csv', interp_idx_flat, delimiter=",", fmt='%d')
-        np.savetxt('output/fem_sensor.markers_surface_id_np.csv', self.markers_surface_id_np, delimiter=",", fmt='%d')
+        np.savetxt('output/fem_sensor.shell_outer_layer_nodes.csv', self.shell_outer_layer_nodes, delimiter=",", fmt='%d')
 
         return surf_2d, interp_idx, interp_weight
 
@@ -254,7 +247,7 @@ class FEMDomeSensor:
         """
         # Get the relevant 3D marker points
         marker_indices = np.unique(interp_idx.flatten())
-        marker_points_3d = self.all_nodes[self.markers_surface_id_np][marker_indices]
+        marker_points_3d = self.all_nodes[self.shell_outer_layer_nodes][marker_indices]
         # Reorder axes to match camera convention
         cam_3D_nodes = np.array([marker_points_3d[:,0], marker_points_3d[:,2], marker_points_3d[:,1]]).T
         # Project to 2D
@@ -440,74 +433,6 @@ class FEMDomeSensor:
 
         return euler_angles
 
-    def fibonacci_sphere(self, samples, radius_of_curvature):
-        # Generate points on a hemisphere using fibonacci spiral
-        phi = np.pi * (np.sqrt(5.0) - 1.0)  # golden angle in radians
-        
-        # Generate points only for the hemisphere (y >= 0)
-        i = np.arange(samples, dtype=float)
-        y = 1 - (i / (samples - 1)) * 2  # Map to [-1, 1]
-        y = np.clip(y, 0, 1)  # Keep only positive y (hemisphere)
-        
-        # Calculate radius at each y level
-        radius = np.sqrt(1 - y * y)
-        
-        # Calculate x and z coordinates
-        theta = phi * i
-        x = radius * np.cos(theta)
-        z = radius * np.sin(theta)
-        
-        # Stack coordinates and scale by radius
-        points = np.vstack((x, y, z)).T * radius_of_curvature
-        return points
-
-    def generate_cylinder_lateral_surface(self, samples=100, scale=1.0):
-        """
-        Generate evenly distributed points on the lateral surface of a cylinder using the Fibonacci method.
-        The cylinder is centered at the origin, aligned along the y-axis, with height from -0.5 to 0.5 (before scaling).
-        The radius is 0.5 (before scaling).
-        """
-        phi = np.pi * (np.sqrt(5.0) - 1.0)  # golden angle in radians
-        idx = np.arange(samples).astype(float)
-        # y goes from (scale - 0.6 - 1.0) to (scale - 0.6)
-        upper_y = (scale - 0.6) / scale
-        lower_y = (scale - 0.6 - 1.0) / scale
-        y = lower_y + (idx / (samples - 1)) * (upper_y - lower_y)
-        theta = phi * idx
-        x = 0.5 * np.cos(theta)
-        z = 0.5 * np.sin(theta)
-
-        points = scale * np.vstack((x, y, z)).T
-        return points
-
-    def calc_volume(self):
-        inner_spherical_cap_r = self.inner_radius
-        inner_spherical_cap_h = 0.6
-        outer_spherical_cap_r = self.outer_radius
-        outer_spherical_cap_h = 0.6
-
-        inner_cylinder_r = self.calc_spherical_cap_base_radius(inner_spherical_cap_r, inner_spherical_cap_h)
-        inner_cylinder_h = inner_spherical_cap_r - inner_spherical_cap_h
-        outer_cylinder_r = self.calc_spherical_cap_base_radius(outer_spherical_cap_r, outer_spherical_cap_h)
-        outer_cylinder_h = outer_spherical_cap_r - outer_spherical_cap_h
-
-        inner_cylinder_volume = self.calc_cylinder_volume(inner_cylinder_r, inner_cylinder_h)
-        outer_cylinder_volume = self.calc_cylinder_volume(outer_cylinder_r, outer_cylinder_h)
-        inner_spherical_cap_volume = self.calc_spherical_cap_volume(inner_spherical_cap_r, inner_spherical_cap_h)
-        outer_spherical_cap_volume = self.calc_spherical_cap_volume(outer_spherical_cap_r, outer_spherical_cap_h)
-
-        total_volume = (outer_cylinder_volume - inner_cylinder_volume) + (outer_spherical_cap_volume - inner_spherical_cap_volume)
-        return total_volume
-    
-    def calc_cylinder_volume(self, r, h):
-        return math.pi * r ** 2 * h
-
-    def calc_spherical_cap_volume(self, r, h):
-        return 1/3 * math.pi * h ** 2 * (3 * r - h)
-
-    def calc_spherical_cap_base_radius(self, r, h):
-        return math.sqrt(r ** 2 - (r - h) ** 2)
-
     def init_mesh(self):
         # Load mesh data from gmsh
         with open('output/gmsh-mesh.pkl', 'rb') as f:
@@ -523,9 +448,16 @@ class FEMDomeSensor:
         tip_tetrahedra_tags = mesh_data['tip_tetrahedra_tags']
         node_tags = mesh_data['node_tags']
         group_to_idx = mesh_data['group_to_idx']
+        y_bottom = mesh_data['y_bottom']
+        
+        # Compute fixed layer nodes (nodes at the bottom)
+        is_fixed_layer = np.abs(all_nodes[:, 1] - y_bottom) < 1  # Check if y-coordinate is at bottom
+        
+        # Append is_fixed_layer to node_labels
+        node_labels = np.column_stack([node_labels, is_fixed_layer])
         
         # Compute element materials and masses
-        element_materials = np.zeros(len(all_tetrahedra), dtype=np.int32)
+        element_materials = np.full(len(all_tetrahedra), fill_value=-1, dtype=np.int32)
         vertex_masses = np.zeros(len(all_nodes), dtype=np.float32)
         
         # Compute element volumes and assign materials
@@ -537,19 +469,34 @@ class FEMDomeSensor:
             matrix = np.vstack([pos2 - pos1, pos3 - pos1, pos4 - pos1]).T
             volume = abs(np.linalg.det(matrix)) / 6.0
             
-            # Determine material based on average of vertex materials
-            vertex_materials = [materials[v] for v in tetra]
-            is_shell = sum(vertex_materials) > len(vertex_materials) / 2  # Majority vote
+            # Get the node labels for all nodes in this tetrahedron
+            tetra_node_labels = node_labels[tetra]
             
-            element_materials[i] = 1 if is_shell else 0
-            material_density = self.shell_rho if is_shell else self.gel_rho
+            # Check if any node is part of the gel
+            has_gel = np.any(tetra_node_labels[:, group_to_idx['gel']])
+            # Check if all nodes are part of the shell
+            all_shell = np.all(tetra_node_labels[:, group_to_idx['shell']])
+            
+            # Assign material based on node composition
+            if has_gel:
+                element_materials[i] = 2  # gel material
+            elif all_shell:
+                element_materials[i] = 1  # shell material
+            
+            # Determine density based on material
+            material_density = self.shell_rho if element_materials[i] == 1 else self.gel_rho
             element_mass = volume * material_density
             
             # Distribute element mass to vertices
             for vertex_idx in tetra:
                 vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
         
-        return all_nodes, all_tetrahedra, all_surface_triangles, layer_idxs, element_materials, vertex_masses
+        max_y = np.max(all_nodes[:, 1])
+        y_translation = 20 - max_y
+        translation_vector = np.array([0, y_translation, 0])
+        all_nodes = all_nodes + translation_vector
+
+        return all_nodes, all_tetrahedra, all_surface_triangles, node_labels, element_materials, vertex_masses
 
     @ti.kernel
     def init_pos(self):
