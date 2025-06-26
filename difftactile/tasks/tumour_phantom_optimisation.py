@@ -209,17 +209,17 @@ class Contact(ContactVisualisation):
         yr_offset = 0
         zr_offset = 0
         press_depth = np.random.uniform(0.6, 1.6)
-        press_depth = 0.6 + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET
+        press_depth = 0.0 + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
-        trajectory_npy = np.array([
+        self.trajectory_npy = np.array([
             [x, y, z, xr, yr, zr],
             [x, y, z-press_depth, xr, yr, zr],
             [x, y+3, z-press_depth, xr, yr, zr],
         ], dtype=float)
-        assert self.trajectory.shape[0] == trajectory_npy.shape[0], f"Set self.trajectory length to {trajectory_npy.shape[0]} match trajectory_npy"
-        self.trajectory.from_numpy(trajectory_npy)
+        assert self.trajectory.shape[0] == self.trajectory_npy.shape[0], f"Set self.trajectory length to {self.trajectory_npy.shape[0]} match trajectory_npy"
+        self.trajectory.from_numpy(self.trajectory_npy)
 
-        self.sensor_dome_tip_initial_pose = trajectory_npy[0].tolist()
+        self.sensor_dome_tip_initial_pose = self.trajectory_npy[0].tolist()
         self.sensor_dome_tip_initial_pose[2] += camera_lens_to_sensor_tip
         t_dx, t_dy, t_dz, rot_x, rot_y, rot_z = self.sensor_dome_tip_initial_pose
         self.tactile_sensor.init(rot_x, rot_y, rot_z, t_dx, t_dy, t_dz)
@@ -694,6 +694,7 @@ def main():
             contact_model.memory_to_cache(0)
 
             keypoint_coords = contact_model.tactile_sensor.get_keypoint_coordinates(0, contact_model.keypoint_indices[-1].reshape((1,)))
+            # keypoint_coords = contact_model.trajectory_npy
             update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords)
 
             if contact_model.frames_since_last_target_reached[None] == 500:

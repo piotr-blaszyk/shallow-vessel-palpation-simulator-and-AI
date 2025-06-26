@@ -32,19 +32,7 @@ class MultiObj:
         self.particle_density = self.n_grid * mesh_density * obj_scale / space_scale
         self.gravity = ti.Vector([0.0, 0.0, 0.0])
 
-        ## parameters for object
-        self.obj_name = obj_name
-        if self.obj_name is not None:
-            data_path = os.path.join("..", "meshes", "objects", self.obj_name)
-            obj_loader = ObjLoader(data_path, particle_density = int(self.particle_density))
-            obj_loader.generate_particles()
-            self.n_particles = len(obj_loader.particles)
-            self.particles = ti.Vector.field(3, dtype=float, shape=self.n_particles)
-            self.particles.from_numpy((obj_loader.particles * self.obj_scale).astype(np.float32))
-            self.titles = ti.field(dtype=int, shape=self.n_particles)
-            # print("Object model is loaded!")
-        else:
-            print("ERR on loading object model")
+        self.load_obj(obj_name)
 
         self.grid_node_length = float(self.space_scale / self.n_grid)
         self.inverse_grid_node_length =  1 / self.grid_node_length
@@ -87,6 +75,27 @@ class MultiObj:
         self.cylinder_theta = ti.field(dtype=float, shape=(), needs_grad=False)
         self.cylinder_h = ti.field(dtype=float, shape=(), needs_grad=False)
         self.cylinder_r = ti.field(dtype=float, shape=(), needs_grad=False)
+
+    def load_obj(self, obj_name):
+        self.obj_name = obj_name
+        if self.obj_name is None:
+            raise Exception("Please specify the name of the phantom object to load")
+        
+        data_path = os.path.join("..", "meshes", "objects", self.obj_name)
+        obj_loader = ObjLoader(data_path, particle_density = int(self.particle_density))
+        obj_loader.generate_particles()
+        self.n_particles = len(obj_loader.particles)
+        self.particles = ti.Vector.field(3, dtype=float, shape=self.n_particles)
+        self.particles.from_numpy((obj_loader.particles * self.obj_scale).astype(np.float32))
+        self.titles = ti.field(dtype=int, shape=self.n_particles)
+        
+        self.is_fixed = ti.field(dtype=int, shape=(self.n_particles,))
+        particles_np = self.particles.to_numpy()
+        z_coords = particles_np[:, 2]
+        z_min, z_max = np.min(z_coords), np.max(z_coords)
+        z_threshold = z_min + 0.25 * (z_max - z_min)
+        is_fixed_np = (z_coords <= z_threshold)
+        self.is_fixed.from_numpy(is_fixed_np.astype(int))
 
     def set_stiffness(self, stiffness_tuple):
         # Material A (normal tissue/fat)
@@ -324,8 +333,14 @@ class MultiObj:
                 updated_velocity += weight * grid_node_velocity
                 updated_affine += 4 * self.inverse_grid_node_length * weight * grid_node_velocity.outer_product(grid_relative_offset)
 
-            self.particle_velocity[frame+1, particle_id], self.affine_velocity[frame+1, particle_id] = updated_velocity, updated_affine
-            self.particle_position[frame+1, particle_id] = self.particle_position[frame, particle_id] + self.dt * updated_velocity  # advection
+            fixed_particle = self.is_fixed[particle_id] == 1
+            if fixed_particle:
+                self.particle_velocity[frame+1, particle_id] = ti.Vector([0.0, 0.0, 0.0])
+                self.affine_velocity[frame+1, particle_id] = ti.Matrix.zero(float, 3, 3)
+                self.particle_position[frame+1, particle_id] = self.particle_position[frame, particle_id]
+            else:
+                self.particle_velocity[frame+1, particle_id], self.affine_velocity[frame+1, particle_id] = updated_velocity, updated_affine
+                self.particle_position[frame+1, particle_id] = self.particle_position[frame, particle_id] + self.dt * updated_velocity  # advection
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):

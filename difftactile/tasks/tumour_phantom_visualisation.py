@@ -312,6 +312,7 @@ def update_gui(contact_model, gui_tuple, num_frames, ts, key_points_coords=None)
             radius=0.005,
         )
         
+        assert key_points_coords.shape[0] == contact_model.key_points.shape[0], f"Set contact_model.key_points to shape ({key_points_coords.shape[0]},)"
         if key_points_coords is not None:
             contact_model.key_points.from_numpy(key_points_coords)
             scene.particles(
