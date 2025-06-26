@@ -102,12 +102,10 @@ def generate_vitactip_mesh():
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
     gmsh.write('vitactip.msh')
-    gmsh.model.addPhysicalGroup(3, [x[1] for x in fragments], name="shell")
+    gmsh.model.addPhysicalGroup(3, [x[1] for x in shell], name="shell")
     # gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
     gmsh.model.addPhysicalGroup(0, A_point_tags, name="tips")
-    all_tetrahedra, all_nodes, node_labels, all_surface_triangles, shell_surface_triangles, tip_tetrahedra, tip_tetrahedra_tags, surface_node_tags, surface_coords = get_difftactile_variables(geometry_data)
-    surface_tags = [gmsh.model.occ.addPoint(x, y, z) for x, y, z in surface_coords]
-    gmsh.model.addPhysicalGroup(0, surface_tags, name="surface")
+    get_difftactile_variables(geometry_data)
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
     gmsh.fltk.run()
@@ -197,7 +195,6 @@ def get_difftactile_variables(geometry_data):
     os.makedirs('output', exist_ok=True)
     with open('output/gmsh-mesh.pkl', 'wb') as f:
         pickle.dump(mesh_data, f)
-    return all_tetrahedra, all_nodes, node_labels, all_surface_triangles, surface_triangles, tip_tetrahedra, tip_tetrahedra_tags, surface_node_tags, surface_coords
 
 def point_to_triangle_distance(point, triangle_vertices):
     # Convert inputs to numpy arrays
