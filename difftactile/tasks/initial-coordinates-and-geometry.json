@@ -1,0 +1,30 @@
+{
+  "phantom_closest_vertex": [
+    0.0225,
+    0.0225,
+    0.0225
+  ],
+  "phantom_centroid_pose": [
+    0.0625,
+    0.0625,
+    0.0335,
+    0,
+    0,
+    0
+  ],
+  "vitactip_tip_position": [
+    0.0625,
+    0.0625,
+    0.0545
+  ],
+  "vitactip_tip_pose": [
+    0.0625,
+    0.0625,
+    0.0545,
+    -90,
+    0,
+    0
+  ],
+  "gap": 0.01,
+  "phantom_volume": 0.0001105840614063607
+}

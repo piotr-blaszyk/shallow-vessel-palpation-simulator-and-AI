@@ -14,20 +14,20 @@ class ContactVisualisation:
         self.table_height = 0.0
 
     def init_visualisation(self):
-        self.draw_pos2 = ti.Vector.field(2, float, self.vitactip.n_verts)
-        self.draw_pos3 = ti.Vector.field(2, float, self.phantom.n_particles)
+        self.draw_pos2 = ti.Vector.field(2, float, self.vitactip.num_vertices)
+        self.draw_pos3 = ti.Vector.field(2, float, self.phantom.actual_total_num_particles)
         self.draw_tableline = ti.Vector.field(3, dtype=float, shape=(2 * 4))
         self.sensor_points = ti.Vector.field(
-            3, dtype=float, shape=(self.vitactip.n_verts)
+            3, dtype=float, shape=(self.vitactip.num_vertices)
         )
         
         self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(1,), needs_grad=False)
         
         self.healthy_tissue_points = ti.Vector.field(
-            3, dtype=float, shape=(self.phantom.n_particles)
+            3, dtype=float, shape=(self.phantom.actual_total_num_particles)
         )
         self.tumour_points = ti.Vector.field(
-            3, dtype=float, shape=(self.phantom.n_particles)
+            3, dtype=float, shape=(self.phantom.actual_total_num_particles)
         )
 
     @ti.kernel
@@ -37,14 +37,14 @@ class ContactVisualisation:
 
     @ti.kernel
     def draw_3d_scene(self, f: ti.i32):
-        for p in range(self.phantom.n_particles):
+        for p in range(self.phantom.actual_total_num_particles):
             if self.phantom.titles[p] == 0:
                 self.healthy_tissue_points[p] = self.phantom.particle_position[f, p]
             elif self.phantom.titles[p] == 1:
                 self.tumour_points[p] = self.phantom.particle_position[f, p]
 
-        for p in range(self.vitactip.n_verts):
-            self.sensor_points[p] = self.vitactip.pos[f, p]
+        for p in range(self.vitactip.num_vertices):
+            self.sensor_points[p] = self.vitactip.vertex_positions_deformed[f, p]
 
     def draw_markers(self, init_markers, cur_markers, gui):
         img_height = 480
@@ -92,17 +92,17 @@ class ContactVisualisation:
         c_p, s_p = ti.math.cos(phi), ti.math.sin(phi)
         c_t, s_t = ti.math.cos(theta), ti.math.sin(theta)
         offset = 0.2
-        for i in range(self.vitactip.n_verts):
+        for i in range(self.vitactip.num_vertices):
             x, y, z = (
-                self.vitactip.pos[f, i][0] - offset,
-                self.vitactip.pos[f, i][1] - offset,
-                self.vitactip.pos[f, i][2] - offset,
+                self.vitactip.vertex_positions_deformed[f, i][0] - offset,
+                self.vitactip.vertex_positions_deformed[f, i][1] - offset,
+                self.vitactip.vertex_positions_deformed[f, i][2] - offset,
             )
             xx, zz = x * c_p + z * s_p, z * c_p - x * s_p
             u, v = xx, y * c_t + zz * s_t
             self.draw_pos2[i][0] = u + 0.2
             self.draw_pos2[i][1] = v + 0.5
-        for i in range(self.phantom.n_particles):
+        for i in range(self.phantom.actual_total_num_particles):
             x, y, z = (
                 self.phantom.particle_position[f, i][0] - offset,
                 self.phantom.particle_position[f, i][1] - offset,
@@ -115,7 +115,7 @@ class ContactVisualisation:
 
     def draw_triangles(self, sensor, gui, f, tphi, ttheta, viz_scale, viz_offset):
         inv_trans_h = sensor.trans_h[None].inverse()
-        pos_ = sensor.pos.to_numpy()[f, :]
+        pos_ = sensor.vertex_positions_deformed.to_numpy()[f, :]
         init_pos_ = sensor.virtual_pos.to_numpy()[f, :]
         ones = np.ones((pos_.shape[0], 1))
         hom_pos_ = np.hstack((pos_, ones))
@@ -243,8 +243,8 @@ class ContactVisualisation:
         r2_deformation = 90
         if not self.off_screen:
             self.vitactip.extract_markers(0)
-            init_2d = self.vitactip.virtual_markers.to_numpy()
-            marker_2d = self.vitactip.predict_markers.to_numpy()
+            init_2d = self.vitactip.undeformed_markers.to_numpy()
+            marker_2d = self.vitactip.deformed_markers.to_numpy()
             if self.enable_gui2:
                 self.draw_markers(init_2d, marker_2d, gui2)
         if not self.off_screen:

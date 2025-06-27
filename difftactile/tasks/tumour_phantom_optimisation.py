@@ -510,9 +510,7 @@ def main():
         ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cuda, device_memory_GB=9)
     else:
         ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)
-
-    contact_model.set_up_gui()
-
+    
     with open('../tasks/system-params.json', 'r') as f:
         params = json.load(f)
         contact_params = params['contact']
@@ -521,8 +519,7 @@ def main():
     num_opt_steps = contact_params['num_opt_steps']
 
     contact_model = Contact()
-    np.savetxt(f'output/trajectory.p_sensor1.csv', contact_model.p_sensor1.to_numpy(), delimiter=",", fmt='%.2f')
-    np.savetxt(f'output/trajectory.o_sensor1.csv', contact_model.o_sensor1.to_numpy(), delimiter=",", fmt='%.2f')
+    contact_model.set_up_gui()
     contact_model.save_tactile_sensor_mesh_node_mapping_to_pickle()
     
     for opts in range(num_opt_steps):

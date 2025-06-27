@@ -16,14 +16,13 @@ NP_TYPE = np.float32
 @ti.data_oriented
 class Phantom:
     def __init__(self):
-        self.set_up_system_params_1()
+        self.set_up_system_params()
         self.load_obj()
-        self.set_up_system_params_2()
         self.set_up_physical_state()
         self.set_up_domain_randomisation()
         self.cache = dict() # for grad backward
 
-    def set_up_system_params_1(self):
+    def set_up_system_params(self):
         with open('../tasks/system-params.json', 'r') as f:
             self.params = json.load(f)
             self.phantom_params = self.params['phantom']
@@ -31,6 +30,30 @@ class Phantom:
         
         with open('../tasks/initial-coordinates-and-geometry.json', 'r') as f:
             self.coordinates = json.load(f)
+        
+        self.target_total_num_particles = self.phantom_params['target_total_num_particles']
+
+        self.total_volume = self.coordinates['phantom_volume']
+
+        self.sub_steps = self.contact_params['num_sub_frames']
+        self.dt = self.contact_params['dt']
+        self.bound = 3
+        self.n_grid = 64
+        self.space_scale = self.phantom_params['space_scale']
+        self.obj_scale = self.phantom_params['object_scale']
+        self.mass_density = self.phantom_params['mass_density']
+        self.gravity = ti.Vector(self.phantom_params['gravity'])
+
+        self.mpm_grid_cube_size = float(self.space_scale / self.n_grid)
+        self.inverse_mpm_grid_cube_size =  1 / self.mpm_grid_cube_size
+        self.eps = 1e-5
+        
+        self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.poissons_ratio_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.lamda_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.mu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+
+        self.set_stiffness()
 
     def load_obj(self):
         self.obj_name = self.params['contact']['phantom_name']
@@ -53,32 +76,8 @@ class Phantom:
         is_fixed_np = (z_coords <= z_threshold)
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
 
-    def set_up_system_params_2(self):
-        self.total_volume = self.coordinates['phantom_volume']
         self.initial_particle_volume = self.total_volume / self.actual_total_num_particles
         self.particle_mass = self.initial_particle_volume * self.mass_density
-
-        self.sub_steps = self.contact_params['num_sub_frames']
-        self.dt = self.contact_params['dt']
-
-        self.bound = 3
-        self.n_grid = 64
-        self.space_scale = self.phantom_params['space_scale']
-        self.obj_scale = self.phantom_params['object_scale']
-        self.mass_density = self.phantom_params['mass_density']
-        self.target_total_num_particles = self.phantom_params['target_total_num_particles']
-        self.gravity = ti.Vector(self.phantom_params['gravity'])
-
-        self.mpm_grid_cube_size = float(self.space_scale / self.n_grid)
-        self.inverse_mpm_grid_cube_size =  1 / self.mpm_grid_cube_size
-        self.eps = 1e-5
-        
-        self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.poissons_ratio_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.lamda_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.mu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-
-        self.set_stiffness()
 
     def set_stiffness(self):
         healthy_tissue = self.phantom_params['healthy_tissue']

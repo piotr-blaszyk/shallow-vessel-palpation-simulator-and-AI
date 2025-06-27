@@ -77,7 +77,6 @@ class ViTacTip:
         
         # Compute fixed layer nodes (nodes at the bottom)
         is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < 1  # Check if y-coordinate is at bottom
-        node_coordinates /= 10
         
         # Append is_fixed_layer to node_labels
         node_labels = np.column_stack([node_labels, is_fixed_layer])
