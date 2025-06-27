@@ -214,26 +214,47 @@ class Contact(ContactVisualisation):
             self.phantom.grid_node_mass.grad[f, i, j, k] = ti.math.clamp(
                 self.phantom.grid_node_mass.grad[f, i, j, k], -1000.0, 1000.0
             )
-        for i in range(self.vitactip.n_verts):
-            self.vitactip.pos.grad[f, i] = ti.math.clamp(
-                self.vitactip.pos.grad[f, i], -1000.0, 1000.0
+        for i in range(self.vitactip.num_vertices):
+            self.vitactip.vertex_positions_deformed.grad[f, i] = ti.math.clamp(
+                self.vitactip.vertex_positions_deformed.grad[f, i], -1000.0, 1000.0
             )
-            self.vitactip.vel.grad[f, i] = ti.math.clamp(
-                self.vitactip.vel.grad[f, i], -1000.0, 1000.0
+            self.vitactip.vertex_velocities.grad[f, i] = ti.math.clamp(
+                self.vitactip.vertex_velocities.grad[f, i], -1000.0, 1000.0
             )
 
     @ti.func
     def calculate_contact_force(self, signed_distance, surface_normal, relative_velocity):
+        """
+        Calculate contact forces between phantom and vitactip sensor.
+        
+        Args:
+            signed_distance: penetration depth in meters (m)
+            surface_normal: unit normal vector (dimensionless)
+            relative_velocity: relative velocity vector in m/s
+            
+        Returns:
+            total_contact_force: total contact force vector in N
+            normal_force: normal force vector in N  
+            tangential_force: tangential force vector in N
+        """
+        # tangential_force: force vector in N
         tangential_force = ti.Vector([0.0, 0.0, 0.0])
+        # tangential_velocity: velocity vector in m/s
         tangential_velocity = ti.Vector([0.0, 0.0, 0.0])
+        # contact_relative_velocity: relative velocity vector in m/s
         contact_relative_velocity = relative_velocity
+        # normal_velocity_magnitude: velocity magnitude in m/s
         normal_velocity_magnitude = ti.max(surface_normal.dot(contact_relative_velocity), 0)
+        # normal_force: force vector in N
         normal_force = (
             -(self.normal_stiffness[None] + self.normal_damping[None] * normal_velocity_magnitude) * signed_distance * surface_normal
         )
+        # tangential_velocity: velocity vector in m/s
         tangential_velocity = contact_relative_velocity - surface_normal.dot(contact_relative_velocity) * surface_normal
+        # tangential_velocity_magnitude: velocity magnitude in m/s
         tangential_velocity_magnitude = tangential_velocity.norm(self.norm_eps)
         if tangential_velocity_magnitude > 1e-4:
+            # tangential_force: force vector in N
             tangential_force = (
                 1.0
                 * (tangential_velocity / tangential_velocity_magnitude)
@@ -242,15 +263,24 @@ class Contact(ContactVisualisation):
                     self.coulomb_friction_coeff[None] * normal_force.norm(self.norm_eps),
                 )
             )
+        # total_contact_force: force vector in N
         total_contact_force = normal_force + tangential_force
         return total_contact_force, normal_force, tangential_force
 
     @ti.kernel
     def check_collision(self, frame: ti.i32):
+        """
+        Check for potential collisions between phantom grid nodes and vitactip sensor.
+        Finds the closest sensor vertex for each occupied grid node.
+        
+        Args:
+            frame: current simulation frame (dimensionless)
+        """
         for i, j, k in ti.ndrange(
             self.phantom.n_grid, self.phantom.n_grid, self.phantom.n_grid
         ):
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
+                # grid_node_position: position vector in m
                 grid_node_position = ti.Vector(
                     [
                         (i + 0.5) * self.phantom.grid_cube_size,
@@ -258,15 +288,24 @@ class Contact(ContactVisualisation):
                         (k + 0.5) * self.phantom.grid_cube_size,
                     ]
                 )
+                # closest_sensor_vertex_idx: vertex index (dimensionless)
                 closest_sensor_vertex_idx = self.vitactip.find_closest(grid_node_position, frame)
                 self.contact_idx[frame, i, j, k] = closest_sensor_vertex_idx
 
     @ti.kernel
     def collision(self, frame: ti.i32):
+        """
+        Handle collision response between phantom grid nodes and vitactip sensor.
+        Calculates contact forces and applies them to both objects.
+        
+        Args:
+            frame: current simulation frame (dimensionless)
+        """
         for i, j, k in ti.ndrange(
             self.phantom.n_grid, self.phantom.n_grid, self.phantom.n_grid
         ):
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
+                # grid_node_position: position vector in m
                 grid_node_position = ti.Vector(
                     [
                         (i + 0.5) * self.phantom.grid_cube_size,
@@ -274,14 +313,19 @@ class Contact(ContactVisualisation):
                         (k + 0.5) * self.phantom.grid_cube_size,
                     ]
                 )
+                # grid_node_velocity: velocity vector in m/s
                 grid_node_velocity = self.phantom.grid_node_momentum_in[frame, i, j, k] / (
                     self.phantom.grid_node_mass[frame, i, j, k] + self.phantom.eps
                 )
+                # closest_sensor_vertex_idx: vertex index (dimensionless)
                 closest_sensor_vertex_idx = self.contact_idx[frame, i, j, k]
+                # penetration_depth: depth in m, surface_normal: unit vector (dimensionless), 
+                # relative_velocity: velocity vector in m/s, is_in_contact: boolean (dimensionless)
                 penetration_depth, surface_normal, relative_velocity, is_in_contact = (
                     self.vitactip.find_sdf(grid_node_position, grid_node_velocity, closest_sensor_vertex_idx, frame)
                 )
                 if is_in_contact:
+                    # total_contact_force: force vector in N
                     total_contact_force, _, _ = self.calculate_contact_force(
                         penetration_depth, -1 * surface_normal, -1 * relative_velocity
                     )
@@ -299,7 +343,7 @@ class Contact(ContactVisualisation):
     @ti.kernel
     def pid_controller(self, ts: ti.i32):
         # Get current position and orientation using reference keypoint
-        current_pos = self.vitactip.virtual_pos[0, self.keypoint_indices[0]]
+        current_pos = self.vitactip.vertex_positions_undeformed[0, self.keypoint_indices[0]]
         current_ori = self.vitactip.get_euler_angles()
         
         # Get current target position and orientation
@@ -353,8 +397,8 @@ class Contact(ContactVisualisation):
         # If dwelling, set control outputs to zero to maintain position
         # But if at final target, never dwell, always actively control
         if self.is_dwelling[None]:
-            self.vitactip.translational_velocity_global[None] = ti.Vector([0.0, 0.0, 0.0])
-            self.vitactip.angular_velocity_global_degrees[None] = ti.Vector([0.0, 0.0, 0.0])
+            self.vitactip.global_translational_velocity[None] = ti.Vector([0.0, 0.0, 0.0])
+            self.vitactip.global_angular_velocity_degrees[None] = ti.Vector([0.0, 0.0, 0.0])
         else:
             # Update error sums for integral term
             self.pos_error_sum[None] += pos_error
@@ -387,8 +431,8 @@ class Contact(ContactVisualisation):
                 ori_control = ori_control / ori_control_norm * max_speed_ori
 
             # Set control outputs
-            self.vitactip.translational_velocity_global[None] = pos_control
-            self.vitactip.angular_velocity_global_degrees[None] = ori_control
+            self.vitactip.global_translational_velocity[None] = pos_control
+            self.vitactip.global_angular_velocity_degrees[None] = ori_control
         
             if False:
                 # Print all variables used in the function
@@ -417,8 +461,8 @@ class Contact(ContactVisualisation):
     @ti.kernel
     def take_snapshot(self, opts: ti.i32):
         for i in range(self.vitactip.num_markers):
-            self.predict_markers_snapshots[opts, i] = self.vitactip.predict_markers[i]
-            self.virtual_markers_snapshots[opts, i] = self.vitactip.virtual_markers[i]
+            self.predict_markers_snapshots[opts, i] = self.vitactip.deformed_markers[i]
+            self.virtual_markers_snapshots[opts, i] = self.vitactip.undeformed_markers[i]
         self.ground_truth_labels[opts] = self.tumour_present[None]
 
     def save_marker_data_and_ground_truth_labels_to_file(self):
@@ -449,13 +493,13 @@ class Contact(ContactVisualisation):
         np.savetxt('output/ground_truth_labels.csv', labels_np, delimiter=',', fmt='%d')
 
     def save_tactile_sensor_mesh_to_pickle(self, ts):
-        particles = self.vitactip.pos.to_numpy()[0]
+        particles = self.vitactip.vertex_positions_deformed.to_numpy()[0]
         with open(f'output/tactile_sensor.deformed_node_coordinates.ts={ts}.pkl', 'wb') as f:
             pickle.dump(particles, f)
         print('mesh exported!')
     
     def save_tactile_sensor_mesh_node_mapping_to_pickle(self):
-        f2v = self.vitactip.f2v.to_numpy()
+        f2v = self.vitactip.tetrahedra.to_numpy()
         with open(f'output/tactile_sensor.f2v.pkl', 'wb') as f:
             pickle.dump(f2v, f)
         print('mesh node mapping exported!')
@@ -489,7 +533,7 @@ def main():
         if opts == 0:
             contact_model.vitactip.extract_initial_markers(0)
             contact_model.vitactip.extract_markers(0)
-            initial_markers = contact_model.vitactip.predict_markers.to_numpy()
+            initial_markers = contact_model.vitactip.deformed_markers.to_numpy()
             with open('output/sim-markers-initial-positions.pkl', 'wb') as f:
                 pickle.dump(initial_markers, f)
         print('forward')

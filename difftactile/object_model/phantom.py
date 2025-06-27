@@ -87,27 +87,46 @@ class Phantom:
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
 
     def set_up_physical_state(self):
-        self.init_pos = ti.Vector.field(3, dtype=ti.f32, shape=())
-        self.init_ori = ti.Vector.field(3, dtype=ti.f32, shape=())
-        self.init_vel = ti.Vector.field(3, dtype=ti.f32, shape=())
-        self.rot_h = ti.Matrix.field(3, 3, ti.f32, shape=())
-        self.trans_h = ti.Matrix.field(4, 4, ti.f32, shape=())
+        # initial_position: position vector in m
+        self.initial_position = ti.Vector.field(3, dtype=ti.f32, shape=())
+        # initial_orientation: orientation vector in degrees
+        self.initial_orientation = ti.Vector.field(3, dtype=ti.f32, shape=())
+        # initial_velocity: velocity vector in m/s
+        self.initial_velocity = ti.Vector.field(3, dtype=ti.f32, shape=())
+        # rotation_matrix: 3x3 rotation matrix (dimensionless)
+        self.rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape=())
+        # transformation_matrix: 4x4 transformation matrix (dimensionless)
+        self.transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape=())
 
-        self.particle_position = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # position
-        self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # velocity
+        # particle_position: position vectors in m
+        self.particle_position = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        # particle_velocity: velocity vectors in m/s
+        self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
 
-        self.affine_velocity = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # affine velocity field
+        # affine_velocity: affine velocity field matrix (m/s)
+        self.affine_velocity_field = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        # trial_deformation_gradient: trial deformation gradient matrix (dimensionless)
         self.trial_deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
-        self.deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # deformation gradient
+        # deformation_gradient: deformation gradient matrix (dimensionless)
+        self.deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        # U_svd: left singular vectors matrix (dimensionless)
         self.U_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        # V_svd: right singular vectors matrix (dimensionless)
         self.V_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        # S_svd: singular values matrix (dimensionless)
         self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
 
-        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)  # grid node momentum/velocity
-        self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)  # grid node momentum/velocity
-        self.grid_node_mass = ti.field(dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)  # grid node mass
-        self.grid_node_external_force = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)  # grid node external force
+        # grid_node_momentum_in: momentum vectors in kg⋅m/s
+        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
+        # grid_node_velocity_out: velocity vectors in m/s
+        self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
+        # grid_node_mass: mass values in kg
+        self.grid_node_mass = ti.field(dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
+        # grid_node_external_force: force vectors in N
+        self.grid_node_external_force = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
+        # grid_occupy: occupancy flags (dimensionless)
         self.grid_occupy = ti.field(dtype=int, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid))
+        # total_surface_external_force: total surface force vector in N
         self.total_surface_external_force = ti.Vector.field(3, float, shape=(self.sub_steps), needs_grad=False)
     
     def set_up_domain_randomisation(self):
@@ -171,25 +190,27 @@ class Phantom:
                 self.group_cardinality[0] += 1
 
     def set_pose_and_velocity(self, position, orientation, velocity):
-        self.init_pos[None] = position
-        self.init_ori[None] = orientation
-        self.init_vel[None] = velocity
+        self.initial_position[None] = position
+        self.initial_orientation[None] = orientation
+        self.initial_velocity[None] = velocity
 
-        rot = R.from_rotvec(np.deg2rad([orientation[0], orientation[1], orientation[2]]))
-        rot_mat = rot.as_matrix()
-        trans_mat = np.eye(4)
-        trans_mat[0:3,0:3] = rot_mat
-        trans_mat[0,3] = position[0]; trans_mat[1,3] = position[1]; trans_mat[2,3] = position[2]
-        self.rot_h[None] = rot_mat.tolist()
-        self.trans_h[None] = trans_mat.tolist()
+        rotation_object = R.from_rotvec(np.deg2rad([orientation[0], orientation[1], orientation[2]]))
+        rotation_matrix = rotation_object.as_matrix()
+        transformation_matrix = np.eye(4)
+        transformation_matrix[0:3,0:3] = rotation_matrix
+        transformation_matrix[0,3] = position[0]; transformation_matrix[1,3] = position[1]; transformation_matrix[2,3] = position[2]
+        self.rotation_matrix[None] = rotation_matrix.tolist()
+        self.transformation_matrix[None] = transformation_matrix.tolist()
 
     @ti.kernel
     def initialise_point_cloud(self):
         for i in range(self.n_particles):
-            before_t_pos = self.particles[i]
-            after_t_pos = self.trans_h[None] @ ti.Vector([before_t_pos[0], before_t_pos[1], before_t_pos[2], 1.0]) # 4 x 1 homogeneous
-            self.particle_position[0,i] = ti.Vector([after_t_pos[0], after_t_pos[1], after_t_pos[2]])
-            self.particle_velocity[0,i] = ti.Matrix([self.init_vel[None][0], self.init_vel[None][1], self.init_vel[None][2]])
+            # particle_position_reference: reference particle position in m
+            current_particle_position = self.particles[i]
+            # particle_position_transformed: transformed particle position in homogeneous coordinates
+            target_particle_position = self.transformation_matrix[None] @ ti.Vector([current_particle_position[0], current_particle_position[1], current_particle_position[2], 1.0]) # 4 x 1 homogeneous
+            self.particle_position[0,i] = ti.Vector([target_particle_position[0], target_particle_position[1], target_particle_position[2]])
+            self.particle_velocity[0,i] = ti.Matrix([self.initial_velocity[None][0], self.initial_velocity[None][1], self.initial_velocity[None][2]])
             self.deformation_gradient[0,i] = ti.Matrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
 
     @ti.kernel
@@ -213,7 +234,7 @@ class Phantom:
     @ti.kernel
     def compute_new_F(self, f: ti.i32):
         for p in range(self.n_particles):
-            self.trial_deformation_gradient[f, p] = (ti.Matrix.diag(dim=3, val=1) + self.dt * self.affine_velocity[f, p]) @ self.deformation_gradient[f, p]
+            self.trial_deformation_gradient[f, p] = (ti.Matrix.diag(dim=3, val=1) + self.dt * self.affine_velocity_field[f, p]) @ self.deformation_gradient[f, p]
 
     @ti.kernel
     def svd(self, f: ti.i32):
@@ -271,25 +292,45 @@ class Phantom:
 
     @ti.kernel
     def p2g(self, frame:ti.i32):
+        """
+        Particle to grid (P2G) step in MPM.
+        Transfers particle properties to grid nodes using interpolation kernels.
+        
+        Args:
+            frame: current simulation frame (dimensionless)
+        """
         for particle_id in range(self.n_particles):
+            # shear_modulus: shear modulus in Pa
+            # bulk_modulus: bulk modulus in Pa
             shear_modulus, bulk_modulus = self.mu_0[self.titles[particle_id]], self.lamda_0[self.titles[particle_id]]
+            # grid_base_index: grid cell indices (dimensionless)
             grid_base_index = (self.particle_position[frame, particle_id] * self.inverse_grid_cube_size - 0.5).cast(int)
+            # particle_grid_diff: fractional position within grid cell (dimensionless)
             particle_grid_diff = self.particle_position[frame, particle_id] * self.inverse_grid_cube_size - grid_base_index.cast(float)
             # Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=particle_grid_diff, particle_grid_diff-1,particle_grid_diff-2]
+            # weight_functions: interpolation weights (dimensionless)
             weight_functions = [0.5 * (1.5 - particle_grid_diff) ** 2, 0.75 - (particle_grid_diff - 1) ** 2, 0.5 * (particle_grid_diff - 0.5) ** 2]
 
+            # volume_ratio: volume ratio (dimensionless)
             volume_ratio = (self.S_svd[frame, particle_id]).determinant()
+            # rotation_matrix: rotation matrix (dimensionless)
             rotation_matrix = self.U_svd[frame, particle_id] @ self.V_svd[frame, particle_id].transpose()
+            # cauchy_stress: stress tensor in Pa
             cauchy_stress = 2 * shear_modulus * (self.trial_deformation_gradient[frame, particle_id] - rotation_matrix) @ self.trial_deformation_gradient[frame, particle_id].transpose() + ti.Matrix.identity(float, 3) * bulk_modulus * volume_ratio * (volume_ratio - 1)
 
+            # force_term: force contribution in N
             force_term = (-self.dt * self.particle_volume * 4 * self.inverse_grid_cube_size * self.inverse_grid_cube_size) * cauchy_stress
 
-            momentum_contrib = force_term + self.particle_mass * self.affine_velocity[frame, particle_id]
+            # momentum_contrib: momentum contribution in kg⋅m/s
+            momentum_contrib = force_term + self.particle_mass * self.affine_velocity_field[frame, particle_id]
 
             # Loop over 3x3 grid node neighborhood
             for i, j, k in ti.static(ti.ndrange(3, 3, 3)):
+                # grid_offset: grid offset vector (dimensionless)
                 grid_offset = ti.Vector([i, j, k])
+                # dist_to_grid: distance to grid node in m
                 dist_to_grid = (grid_offset.cast(float) - particle_grid_diff) * self.grid_cube_size
+                # weight: interpolation weight (dimensionless)
                 weight = weight_functions[i][0] * weight_functions[j][1] * weight_functions[k][2]
                 self.grid_node_momentum_in[frame, grid_base_index + grid_offset] += weight * (self.particle_mass * self.particle_velocity[frame, particle_id] + momentum_contrib @ dist_to_grid)
                 self.grid_node_mass[frame, grid_base_index + grid_offset] += weight * self.particle_mass
@@ -298,16 +339,30 @@ class Phantom:
 
     @ti.kernel
     def check_grid_occupy(self, f:ti.i32):
+        """
+        Check which grid nodes are occupied by particles.
+        
+        Args:
+            f: current simulation frame (dimensionless)
+        """
         for i, j, k in ti.ndrange(self.n_grid, self.n_grid, self.n_grid):
             if self.grid_node_mass[f, i, j, k] > self.eps:
                 self.grid_occupy[f, i, j, k] = 1
 
     @ti.kernel
     def grid_op(self, frame:ti.i32):
+        """
+        Grid operations: update grid velocities and apply boundary conditions.
+        
+        Args:
+            frame: current simulation frame (dimensionless)
+        """
         for grid_x, grid_y, grid_z in ti.ndrange(self.n_grid, self.n_grid, self.n_grid):
             if self.grid_occupy[frame, grid_x, grid_y, grid_z] == 1:
+                # inverse_mass: inverse mass in kg^-1
                 inverse_mass = 1 / (self.grid_node_mass[frame, grid_x, grid_y, grid_z] + self.eps)
 
+                # grid_velocity: grid node velocity in m/s
                 grid_velocity = ti.Vector([0.0, 0.0, 0.0])
                 grid_velocity += inverse_mass * self.grid_node_momentum_in[frame, grid_x, grid_y, grid_z] # Momentum to velocity
                 grid_velocity += inverse_mass * self.grid_node_external_force[frame, grid_x, grid_y, grid_z]
@@ -331,28 +386,44 @@ class Phantom:
 
     @ti.kernel
     def g2p(self, frame:ti.i32):
+        """
+        Grid to particle (G2P) step in MPM.
+        Updates particle properties from grid node values using interpolation.
+        
+        Args:
+            frame: current simulation frame (dimensionless)
+        """
         for particle_id in range(self.n_particles): # grid to particle (G2P)
+            # grid_base_index: grid cell indices (dimensionless)
             grid_base_index = (self.particle_position[frame, particle_id] * self.inverse_grid_cube_size - 0.5).cast(int)
+            # particle_grid_diff: fractional position within grid cell (dimensionless)
             particle_grid_diff = self.particle_position[frame, particle_id] * self.inverse_grid_cube_size - grid_base_index.cast(float)
+            # weight_functions: interpolation weights (dimensionless)
             weight_functions = [0.5 * (1.5 - particle_grid_diff) ** 2, 0.75 - (particle_grid_diff - 1.0) ** 2, 0.5 * (particle_grid_diff - 0.5) ** 2]
+            # updated_velocity: updated particle velocity in m/s
             updated_velocity = ti.Vector.zero(float, 3)
+            # updated_affine: updated affine velocity field (dimensionless)
             updated_affine = ti.Matrix.zero(float, 3, 3)
             for i, j, k in ti.static(ti.ndrange(3, 3, 3)):
                 # loop over 3x3 grid node neighborhood
+                # grid_relative_offset: relative offset to grid node (dimensionless)
                 grid_relative_offset = ti.Vector([i, j, k]).cast(float) - particle_grid_diff
+                # grid_node_velocity: grid node velocity in m/s
                 grid_node_velocity = self.grid_node_velocity_out[frame, grid_base_index + ti.Vector([i, j, k])]
+                # weight: interpolation weight (dimensionless)
                 weight = weight_functions[i][0] * weight_functions[j][1] * weight_functions[k][2]
                 updated_velocity += weight * grid_node_velocity
                 updated_affine += 4 * self.inverse_grid_cube_size * weight * grid_node_velocity.outer_product(grid_relative_offset)
 
+            # fixed_particle: flag for fixed particles (dimensionless)
             # fixed_particle = self.is_fixed[particle_id] == 1
             fixed_particle = False
             if fixed_particle:
                 self.particle_velocity[frame+1, particle_id] = ti.Vector([0.0, 0.0, 0.0])
-                self.affine_velocity[frame+1, particle_id] = ti.Matrix.zero(float, 3, 3)
+                self.affine_velocity_field[frame+1, particle_id] = ti.Matrix.zero(float, 3, 3)
                 self.particle_position[frame+1, particle_id] = self.particle_position[frame, particle_id]
             else:
-                self.particle_velocity[frame+1, particle_id], self.affine_velocity[frame+1, particle_id] = updated_velocity, updated_affine
+                self.particle_velocity[frame+1, particle_id], self.affine_velocity_field[frame+1, particle_id] = updated_velocity, updated_affine
                 self.particle_position[frame+1, particle_id] = self.particle_position[frame, particle_id] + self.dt * updated_velocity  # advection
 
     @ti.kernel
@@ -360,7 +431,7 @@ class Phantom:
         for p in range(self.n_particles):
             self.particle_position[target, p] = self.particle_position[source, p]
             self.particle_velocity[target, p] = self.particle_velocity[source, p]
-            self.affine_velocity[target, p] = self.affine_velocity[source, p]
+            self.affine_velocity_field[target, p] = self.affine_velocity_field[source, p]
             self.deformation_gradient[target, p] = self.deformation_gradient[source, p]
 
     @ti.kernel
@@ -368,7 +439,7 @@ class Phantom:
         for p in range(self.n_particles):
             self.particle_position.grad[target, p] = self.particle_position.grad[source, p]
             self.particle_velocity.grad[target, p] = self.particle_velocity.grad[source, p]
-            self.affine_velocity.grad[target, p] = self.affine_velocity.grad[source, p]
+            self.affine_velocity_field.grad[target, p] = self.affine_velocity_field.grad[source, p]
             self.deformation_gradient.grad[target, p] = self.deformation_gradient.grad[source, p]
 
     @ti.kernel
@@ -379,7 +450,7 @@ class Phantom:
                 self.particle_velocity[f, p][i] = cache_v_0[p,i]
 
             for i, j in ti.ndrange(3, 3):
-                self.affine_velocity[f, p][i, j] = cache_C_0[p, i, j]
+                self.affine_velocity_field[f, p][i, j] = cache_C_0[p, i, j]
                 self.deformation_gradient[f, p][i, j] = cache_F_0[p, i, j]
 
     @ti.kernel
@@ -390,7 +461,7 @@ class Phantom:
                 cache_v_0[p,i] = self.particle_velocity[f, p][i]
 
             for i, j in ti.ndrange(3, 3):
-                cache_C_0[p, i, j] = self.affine_velocity[f, p][i, j]
+                cache_C_0[p, i, j] = self.affine_velocity_field[f, p][i, j]
                 cache_F_0[p, i, j] = self.deformation_gradient[f, p][i, j]
 
     def memory_to_cache(self, t):
@@ -436,5 +507,5 @@ class Phantom:
             for t in range(f):
                 self.particle_position.grad[t,p].fill(0.0)
                 self.particle_velocity.grad[t,p].fill(0.0)
-                self.affine_velocity.grad[t,p].fill(0.0)
+                self.affine_velocity_field.grad[t,p].fill(0.0)
                 self.deformation_gradient.grad[t,p].fill(0.0)

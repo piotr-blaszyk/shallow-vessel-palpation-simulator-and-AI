@@ -1,0 +1,47 @@
+{
+    "vitactip": {
+        "shell": {
+            "density": "kg/m^3",
+            "youngs_modulus": "Pa",
+            "poissons_ratio": "dimensionless"
+        },
+        "gel": {
+            "density": "kg/m^3",
+            "youngs_modulus": "Pa",
+            "poissons_ratio": "dimensionless"
+        }
+    },
+    "phantom": {
+        "space_scale": "m",
+        "object_scale": "m",
+        "particle_density": "kg/m^3",
+        "mass_density": "kg/m^3",
+        "gravity": "m/s^2",
+        "healthy_tissue": {
+            "youngs_modulus": "Pa",
+            "poissons_ratio": "dimensionless"
+        },
+        "tumour": {
+            "youngs_modulus": "Pa",
+            "poissons_ratio": "dimensionless"
+        }
+    },
+    "contact": {
+        "dt": "s",
+        "normal_stiffness": "N/m",
+        "normal_damping": "N*s/m",
+        "tangential_stiffness": "N/m",
+        "coulomb_friction_coeff": "dimensionless",
+        "num_sub_frames": "dimensionless",
+        "num_frames": "dimensionless",
+        "num_opt_steps": "dimensionless",
+        "phantom_name": "n/a",
+        "pid_kp": "dimensionless",
+        "pid_ki": "dimensionless",
+        "pid_kd": "dimensionless",
+        "dwell_frames": "dimensionless"
+    },
+    "mesh": {
+        "density": "dimensionless"
+    }
+}
