@@ -207,8 +207,8 @@ class Contact(ContactVisualisation):
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         self.trajectory_npy = np.array([
             [x, y, z, xr, yr, zr],
-            [x, y, z-press_depth, xr, yr, zr],
-            [x, y+3, z-press_depth, xr, yr, zr],
+            [x, y, z, xr, yr, zr],
+            [x, y, z, xr, yr, zr],
         ], dtype=float)
         assert self.trajectory.shape[0] == self.trajectory_npy.shape[0], f"Set self.trajectory length to {self.trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(self.trajectory_npy)
