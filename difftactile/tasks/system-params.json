@@ -18,7 +18,7 @@
         "mass_density": 1000.0,
         "gravity": [0.0, 0.0, -9.81],
         "healthy_tissue": {
-            "youngs_modulus": 1.0e4,
+            "youngs_modulus": 1.0e6,
             "poissons_ratio": 0.48
         },
         "tumour": {
@@ -27,11 +27,11 @@
         }
     },
     "contact": {
-        "dt": 1.0e-4,
-        "normal_stiffness": 1.0e4,
-        "normal_damping": 10.0,
-        "tangential_stiffness": 1.0e3,
-        "coulomb_friction_coeff": 0.3,
+        "dt": 2.0e-5,
+        "normal_stiffness": 1.0e6,
+        "normal_damping": 105.0,
+        "tangential_stiffness": 1.0e5,
+        "coulomb_friction_coeff": 0.7,
         "num_sub_frames": 50,
         "num_frames": 5000,
         "num_opt_steps": 10,

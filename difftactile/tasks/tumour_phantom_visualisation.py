@@ -206,11 +206,11 @@ class ContactVisualisation:
             scene = ti.ui.Scene()
             camera = ti.ui.Camera()
             camera.projection_mode(ti.ui.ProjectionMode.Perspective)
-            x, y, z = self.vitactip_tip_pose[:3]
-            camera.position(x-1.0, y, z)
+            x, y, z = self.phantom_centroid_pose[:3]
+            camera.position(x-1.0, y, z * 1/3)
             camera.up(0, 0, 1)
-            camera.lookat(x, y, z)
-            camera.fov(10)
+            camera.lookat(x, y, z * 1/3)
+            camera.fov(3)
             if self.enable_low_level_camera:
                 gui1 = ti.GUI("low-level camera", res=window_res)
             else:

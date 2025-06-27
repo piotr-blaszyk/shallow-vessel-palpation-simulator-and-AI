@@ -34,7 +34,7 @@ print(f'dx_0: {dx_0}')
 print(f'min_z: {min_z}')
 print(f'max_z: {max_z}')
 
-phantom_closest_vertex = np.array([min_z*3, min_z*3, min_z*3], dtype=float)
+phantom_closest_vertex = np.array([min_z+dx_0, min_z+dx_0, min_z+dx_0], dtype=float)
 
 phantom_h = 0.022
 phantom_r = 0.040
