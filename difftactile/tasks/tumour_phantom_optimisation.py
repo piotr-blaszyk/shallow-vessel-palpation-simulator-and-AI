@@ -9,9 +9,6 @@ from difftactile.object_model.phantom import Phantom
 import taichi as ti
 import numpy as np
 import pickle
-from scipy.optimize import linear_sum_assignment
-from scipy.spatial.distance import cdist
-import sys
 import json
 
 RUN_ON_LAB_MACHINE = True

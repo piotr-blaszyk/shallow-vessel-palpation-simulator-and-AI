@@ -1,8 +1,6 @@
 import taichi as ti
 import numpy as np
 
-import math
-
 off_screen = False
 enable_gui1 = False
 enable_gui2 = True
@@ -232,18 +230,6 @@ def update_gui(contact_model, gui_tuple, num_frames, ts, key_points_coords=None)
     if off_screen:
         return
     gui1, gui2, gui3, camera, scene, window, canvas = gui_tuple
-
-    if False:
-        a = 12.50
-        b = 11.50
-        r = 20.0
-        p = ts / num_frames
-
-        theta = p * 2 * math.pi
-        x = a + r * math.cos(theta)
-        y = b + r * math.sin(theta)
-
-        camera.position(x, y, 6.30)
 
     viz_scale = 0.1
     viz_offset = [0.25, 0.25]

@@ -5,12 +5,9 @@ a class to describe sensor elastomer with FEM
 import taichi as ti
 import torch
 import cv2
-from math import pi
 import numpy as np
-from scipy.spatial import Delaunay
 from scipy.spatial.transform import Rotation as R
 import pickle
-import sys
 import json
 from difftactile.sensor_model.fisheye_model import * 
 
