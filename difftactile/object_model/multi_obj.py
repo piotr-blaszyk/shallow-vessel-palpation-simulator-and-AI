@@ -53,6 +53,8 @@ class MultiObj:
         self.lamda_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
         self.mu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
 
+        self.set_stiffness()
+
         self.particle_position = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # position
         self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # velocity
 
@@ -102,13 +104,17 @@ class MultiObj:
         is_fixed_np = (z_coords <= z_threshold)
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
 
-    def set_stiffness(self, stiffness_tuple):
-        return
+    def set_stiffness(self):
+        with open('../tasks/system-params.json', 'r') as f:
+            params = json.load(f)
+            obj_params = params['multi_obj']
 
-        # Material A (human soft tissue); broad range from 0.1 kPa to 1 MPa
-        self.youngs_modulus_0[0], self.poissons_ratio_0[0] = stiffness_tuple[0] * self.space_scale, 0.48  # Young's modulus ~5 kPa, nearly incompressible
-        # Material B (tumor); from 1 kPa to 200 kPa
-        self.youngs_modulus_0[1], self.poissons_ratio_0[1] = stiffness_tuple[1] * self.space_scale, 0.48  # Young's modulus ~50 kPa, nearly incompressible
+        healthy_tissue = obj_params['healthy_tissue']
+        tumour = obj_params['tumour']
+        self.youngs_modulus_0[0] = healthy_tissue['youngs_modulus'] * self.space_scale
+        self.poissons_ratio_0[0] = healthy_tissue['poissons_ratio']
+        self.youngs_modulus_0[1] = tumour['youngs_modulus'] * self.space_scale
+        self.poissons_ratio_0[1] = tumour['poissons_ratio']
 
         for item in range(2):
             self.mu_0[item] = self.youngs_modulus_0[item] / 2 / (1 + self.poissons_ratio_0[item])
@@ -147,7 +153,6 @@ class MultiObj:
                 self.group_cardinality[0] += 1
 
     def init(self, pos, ori, vel, cylinder_tuple, stiffness_tuple, tumour_present):
-        self.set_stiffness(stiffness_tuple)
         if tumour_present:
             self.titles.fill(-1)
             self.group_cardinality.fill(0)
