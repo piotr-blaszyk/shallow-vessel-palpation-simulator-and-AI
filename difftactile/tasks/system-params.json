@@ -12,8 +12,8 @@
         }
     },
     "phantom": {
-        "space_scale": 0.016,
-        "object_scale": 0.008,
+        "space_scale": 0.16,
+        "object_scale": 0.08,
         "particle_density": 0.5,
         "mass_density": 1000.0,
         "gravity": [0.0, -9.81, 0.0],
@@ -38,7 +38,7 @@
         "phantom_name": "cylinder.stl",
         "pid_kp": 1000.0,
         "pid_ki": 0.0,
-        "pid_kd": 10.0,
+        "pid_kd": 0.0,
         "dwell_frames": 0
     },
     "mesh": {

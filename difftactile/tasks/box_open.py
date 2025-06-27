@@ -182,8 +182,8 @@ class Contact:
     def set_pos_control(self, f:ti.i32):
         # print(self.p_sensor1[f], self.o_sensor1[f])
         # self.fem_sensor1.set_pose_control(self.p_sensor1[f], self.o_sensor1[f])
-        self.fem_sensor1.d_pos_local[None] = self.p_sensor1[f]
-        self.fem_sensor1.d_ori_local[None] = self.o_sensor1[f]
+        self.fem_sensor1.translational_velocity_local[None] = self.p_sensor1[f]
+        self.fem_sensor1.angular_velocity_local[None] = self.o_sensor1[f]
 
 
     def update(self, f):
@@ -287,7 +287,7 @@ class Contact:
 
     @ti.kernel
     def compute_force_loss(self):
-        self.predict_force1[None] = self.fem_sensor1.inv_rot[None] @ self.contact_force1[None]
+        self.predict_force1[None] = self.fem_sensor1.inverse_rotation_matrix[None] @ self.contact_force1[None]
 
         self.loss[None] += self.beta[None] *((self.predict_force1[None][1] - self.target_force1[None][1])**2 + (self.predict_force1[None][0] - self.target_force1[None][0])**2)
 
@@ -346,8 +346,8 @@ class Contact:
 
     @ti.kernel
     def draw_external_force(self, f:ti.i32):
-        inv_rot_h1 = self.fem_sensor1.rot_h[None].inverse()
-        inv_trans_h1 = self.fem_sensor1.inv_trans_h[None]
+        inv_rot_h1 = self.fem_sensor1.rotation_matrix_homogeneous[None].inverse()
+        inv_trans_h1 = self.fem_sensor1.inverse_transformation_matrix_homogeneous[None]
         half_seg = self.fem_sensor1.num_triangles #//2
         for i in range(half_seg):
             f_1 = self.fem_sensor1.external_force_field[f, self.fem_sensor1.contact_seg[i][0]]
@@ -384,8 +384,8 @@ class Contact:
 
     def apply_action(self, action, ts):
         d_pos1, d_ori1, d_pos2, d_ori2 = np.split(action, 4)
-        self.fem_sensor1.d_pos_local.from_numpy(d_pos1)
-        self.fem_sensor1.d_ori_local.from_numpy(d_ori1)
+        self.fem_sensor1.translational_velocity_local.from_numpy(d_pos1)
+        self.fem_sensor1.angular_velocity_local.from_numpy(d_ori1)
         self.fem_sensor1.set_pose_control()
         self.fem_sensor1.set_control_vel(0)
         self.fem_sensor1.set_vel(0)
@@ -414,7 +414,7 @@ class Contact:
 
     @ti.kernel
     def draw_surface(self, f:ti.i32):
-        inv_trans_h1 = self.fem_sensor1.inv_trans_h[None]
+        inv_trans_h1 = self.fem_sensor1.inverse_transformation_matrix_homogeneous[None]
         half_seg = self.fem_sensor1.num_triangles #//2
         for i in range(half_seg):
             p_1 = self.fem_sensor1.pos[f, self.fem_sensor1.contact_seg[i][0]] # triangle's 1st node
@@ -517,8 +517,8 @@ class Contact:
         else:
             d_pos = np.array([action[0] + 0.8, action[1], action[2]])
             d_ori = np.array([action[3], action[4], action[5]])
-        self.fem_sensor1.d_pos_local.from_numpy(d_pos)
-        self.fem_sensor1.d_ori_local.from_numpy(d_ori)
+        self.fem_sensor1.translational_velocity_local.from_numpy(d_pos)
+        self.fem_sensor1.angular_velocity_local.from_numpy(d_ori)
         self.fem_sensor1.set_pose_control()
         self.fem_sensor1.set_control_vel(0)
         self.fem_sensor1.set_vel(0)

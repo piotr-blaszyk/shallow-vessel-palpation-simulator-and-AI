@@ -1,10 +1,15 @@
 import taichi as ti
 import numpy as np
+import json
 
 off_screen = False
 enable_gui1 = False
 enable_gui2 = True
 enable_gui3 = False
+
+# Load coordinates from JSON file
+with open('../tasks/initial-coordinates.json', 'r') as f:
+    coordinates = json.load(f)
 
 class ContactVisualisation:
     def __init__(self):
@@ -189,120 +194,120 @@ class ContactVisualisation:
         self.draw_tableline[6] = c4
         self.draw_tableline[7] = c1
 
-def set_up_gui(phantom_initial_pose, vitactip_initial_pose):
-    if off_screen:
-        return None
-    else:
-        screen_width = 1920
-        screen_height = 1080
-        grid_rows = 2
-        grid_cols = 2
-        window_width = screen_width // grid_cols
-        window_height = screen_height // grid_rows
-        window_res = (int(window_width * 0.75), int(window_height * 0.75))
-        window = ti.ui.Window("high-level camera", (int(screen_width * 0.8), screen_height // 2))
-        canvas = window.get_canvas()
-        canvas.set_background_color((0, 0, 0))
-        scene = ti.ui.Scene()
-        camera = ti.ui.Camera()
-        camera.projection_mode(ti.ui.ProjectionMode.Perspective)
-        x, y, z = vitactip_initial_pose[:3]
-        camera.position(x-50, y, z)
-        camera.up(0, 0, 1)
-        camera.lookat(x, y, z)
-        camera.fov(15)
-        if enable_gui1:
-            gui1 = ti.GUI("low-level camera", res=window_res)
+    def set_up_gui(self):
+        if off_screen:
+            return None
         else:
-            gui1 = None
-        if enable_gui2:
-            gui2 = ti.GUI("tactile readout 1", res=window_res)
-        else:
-            gui2 = None
-        if enable_gui3:
-            gui3 = ti.GUI("tactile readout 2", res=window_res)
-        else:
-            gui3 = None
-        
-        return (gui1, gui2, gui3, camera, scene, window, canvas)
+            screen_width = 1920
+            screen_height = 1080
+            grid_rows = 2
+            grid_cols = 2
+            window_width = screen_width // grid_cols
+            window_height = screen_height // grid_rows
+            window_res = (int(window_width * 0.75), int(window_height * 0.75))
+            window = ti.ui.Window("high-level camera", (int(screen_width * 0.8), screen_height // 2))
+            canvas = window.get_canvas()
+            canvas.set_background_color((0, 0, 0))
+            scene = ti.ui.Scene()
+            camera = ti.ui.Camera()
+            camera.projection_mode(ti.ui.ProjectionMode.Perspective)
+            x, y, z = self.vitactip_tip_pose[:3]
+            camera.position(x-50, y, z)
+            camera.up(0, 0, 1)
+            camera.lookat(x, y, z)
+            camera.fov(15)
+            if enable_gui1:
+                gui1 = ti.GUI("low-level camera", res=window_res)
+            else:
+                gui1 = None
+            if enable_gui2:
+                gui2 = ti.GUI("tactile readout 1", res=window_res)
+            else:
+                gui2 = None
+            if enable_gui3:
+                gui3 = ti.GUI("tactile readout 2", res=window_res)
+            else:
+                gui3 = None
+            
+            self.gui_tuple = (gui1, gui2, gui3, camera, scene, window, canvas)
 
-def update_gui(contact_model, gui_tuple, num_frames, ts, key_points_coords=None):
-    if off_screen:
-        return
-    gui1, gui2, gui3, camera, scene, window, canvas = gui_tuple
+    def update_gui(self, key_points_coords=None):
+        if off_screen:
+            return
+        gui1, gui2, gui3, camera, scene, window, canvas = self.gui_tuple
 
-    viz_scale = 0.1
-    viz_offset = [0.25, 0.25]
-    viz_scale_deformation_map = viz_scale * 3
-    viz_offset_deformation_map = [0.5, 0.5]
-    f_deformation = 0
-    r1_deformation = -90
-    r2_deformation = 90
-    if not off_screen:
-        contact_model.vitactip.extract_markers(0)
-        init_2d = contact_model.vitactip.virtual_markers.to_numpy()
-        marker_2d = contact_model.vitactip.predict_markers.to_numpy()
-        if enable_gui2:
-            contact_model.draw_markers(init_2d, marker_2d, gui2)
-    if not off_screen:
-        contact_model.draw_perspective(0)
-        if enable_gui1:
-            gui1.circles(
-                viz_scale * contact_model.draw_pos3.to_numpy() + viz_offset,
-                radius=2,
-                color=0x039DFC,
-            )
-            gui1.circles(
-                viz_scale * contact_model.draw_pos2.to_numpy() + viz_offset,
-                radius=2,
-                color=0xE6C949,
-            )
-        if enable_gui3:
-            contact_model.draw_triangles(
-                contact_model.vitactip,
-                gui3,
-                f_deformation,
-                r1_deformation,
-                r2_deformation,
-                viz_scale_deformation_map,
-                viz_offset_deformation_map,
-            )
-        if enable_gui1:
-            gui1.show()
-        if enable_gui2:
-            gui2.show()
-        if enable_gui3:
-            gui3.show()
-        
-        scene.set_camera(camera)
-        scene.ambient_light((0.8, 0.8, 0.8))
-        scene.point_light(pos=(0.5, 1.5, 1.5), color=(1, 1, 1))
-        contact_model.draw_3d_scene(0)
-        
-        scene.particles(
-            contact_model.healthy_tissue_points,
-            color=(0.0, 0.0, 1.0),
-            radius=0.01,
-        )
-        scene.particles(
-            contact_model.tumour_points,
-            color=(1.0, 1.0, 0.0),
-            radius=0.02,
-        )
-        scene.particles(
-            contact_model.sensor_points,
-            color=(0.0, 1.0, 0.0),
-            radius=0.005,
-        )
-        
-        assert key_points_coords.shape[0] == contact_model.key_points.shape[0], f"Set contact_model.key_points to shape ({key_points_coords.shape[0]},)"
-        if key_points_coords is not None:
-            contact_model.key_points.from_numpy(key_points_coords)
+        viz_scale = 0.1
+        viz_offset = [0.25, 0.25]
+        viz_scale_deformation_map = viz_scale * 3
+        viz_offset_deformation_map = [0.5, 0.5]
+        f_deformation = 0
+        r1_deformation = -90
+        r2_deformation = 90
+        if not off_screen:
+            contact_model.vitactip.extract_markers(0)
+            init_2d = contact_model.vitactip.virtual_markers.to_numpy()
+            marker_2d = contact_model.vitactip.predict_markers.to_numpy()
+            if enable_gui2:
+                contact_model.draw_markers(init_2d, marker_2d, gui2)
+        if not off_screen:
+            contact_model.draw_perspective(0)
+            if enable_gui1:
+                gui1.circles(
+                    viz_scale * contact_model.draw_pos3.to_numpy() + viz_offset,
+                    radius=2,
+                    color=0x039DFC,
+                )
+                gui1.circles(
+                    viz_scale * contact_model.draw_pos2.to_numpy() + viz_offset,
+                    radius=2,
+                    color=0xE6C949,
+                )
+            if enable_gui3:
+                contact_model.draw_triangles(
+                    contact_model.vitactip,
+                    gui3,
+                    f_deformation,
+                    r1_deformation,
+                    r2_deformation,
+                    viz_scale_deformation_map,
+                    viz_offset_deformation_map,
+                )
+            if enable_gui1:
+                gui1.show()
+            if enable_gui2:
+                gui2.show()
+            if enable_gui3:
+                gui3.show()
+            
+            scene.set_camera(camera)
+            scene.ambient_light((0.8, 0.8, 0.8))
+            scene.point_light(pos=(0.5, 1.5, 1.5), color=(1, 1, 1))
+            contact_model.draw_3d_scene(0)
+            
             scene.particles(
-                contact_model.key_points,
-                color=(1.0, 0.0, 0.0),
-                radius=0.05,
+                contact_model.healthy_tissue_points,
+                color=(0.0, 0.0, 1.0),
+                radius=0.01,
             )
-        
-        canvas.scene(scene)
-        window.show()
+            scene.particles(
+                contact_model.tumour_points,
+                color=(1.0, 1.0, 0.0),
+                radius=0.02,
+            )
+            scene.particles(
+                contact_model.sensor_points,
+                color=(0.0, 1.0, 0.0),
+                radius=0.005,
+            )
+            
+            assert key_points_coords.shape[0] == contact_model.key_points.shape[0], f"Set contact_model.key_points to shape ({key_points_coords.shape[0]},)"
+            if key_points_coords is not None:
+                contact_model.key_points.from_numpy(key_points_coords)
+                scene.particles(
+                    contact_model.key_points,
+                    color=(1.0, 0.0, 0.0),
+                    radius=0.05,
+                )
+            
+            canvas.scene(scene)
+            window.show()

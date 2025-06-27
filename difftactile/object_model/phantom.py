@@ -25,7 +25,7 @@ class Phantom:
     def set_up_system_params(self):
         with open('../tasks/system-params.json', 'r') as f:
             self.params = json.load(f)
-            self.obj_params = self.params['phantom']
+            self.phantom_params = self.params['phantom']
             self.contact_params = self.params['contact']
 
         self.sub_steps = self.contact_params['num_sub_frames']
@@ -33,11 +33,11 @@ class Phantom:
 
         self.bound = 3
         self.n_grid = 64
-        self.space_scale = self.obj_params['space_scale']
-        self.obj_scale = self.obj_params['object_scale']
-        self.mass_density = self.obj_params['mass_density'] * self.obj_scale
-        self.particle_density = self.n_grid * self.obj_params['particle_density'] * self.obj_scale / self.space_scale
-        self.gravity = ti.Vector(self.obj_params['gravity'])
+        self.space_scale = self.phantom_params['space_scale']
+        self.obj_scale = self.phantom_params['object_scale']
+        self.mass_density = self.phantom_params['mass_density'] * self.obj_scale
+        self.particle_density = self.n_grid * self.phantom_params['particle_density'] * self.obj_scale / self.space_scale
+        self.gravity = ti.Vector(self.phantom_params['gravity'])
 
         self.grid_cube_size = float(self.space_scale / self.n_grid)
         self.inverse_grid_cube_size =  1 / self.grid_cube_size
@@ -54,8 +54,8 @@ class Phantom:
         self.set_stiffness()
 
     def set_stiffness(self):
-        healthy_tissue = self.obj_params['healthy_tissue']
-        tumour = self.obj_params['tumour']
+        healthy_tissue = self.phantom_params['healthy_tissue']
+        tumour = self.phantom_params['tumour']
         self.youngs_modulus_0[0] = healthy_tissue['youngs_modulus'] * self.space_scale
         self.poissons_ratio_0[0] = healthy_tissue['poissons_ratio']
         self.youngs_modulus_0[1] = tumour['youngs_modulus'] * self.space_scale

@@ -12,12 +12,6 @@ import pickle
 import json
 
 RUN_ON_LAB_MACHINE = True
-GLOBAL_Z_OFFSET = 0.01  # 10mm = 0.01m
-PHANTOM_CLOSEST_VERTEX = [0.00575, 0.00575, 0.00075 + GLOBAL_Z_OFFSET]  # meters
-PHANTOM_INITIAL_POSE = [0.00975, 0.00975, 0.00185 + GLOBAL_Z_OFFSET, 0, 0, 0]  # meters and degrees
-SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET = 0.002  # 2mm = 0.002m
-SENSOR_DOME_TIP_INITIAL_POSE = [0.00975, 0.00975, 0.00295 + GLOBAL_Z_OFFSET + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET, -90, 0, 0]
-
 @ti.data_oriented
 class Contact(ContactVisualisation):
     def __init__(self):
@@ -111,6 +105,14 @@ class Contact(ContactVisualisation):
         self.frames_since_last_target_reached[None] = 0
 
     def set_up_initial_positions_and_trajectory_first_init_only(self):
+        with open('../tasks/initial-coordinates.json', 'r') as f:
+            self.coordinates = json.load(f)
+
+        self.phantom_closest_vertex = self.coordinates['phantom_closest_vertex']
+        self.phantom_centroid_pose = self.coordinates['phantom_centroid_pose']
+        self.vitactip_tip_pose = self.coordinates['vitactip_tip_pose']
+        self.gap = self.coordinates['gap']
+
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.trajectory = ti.Vector.field(6, dtype=float, shape=1, needs_grad=False)
@@ -124,18 +126,17 @@ class Contact(ContactVisualisation):
     def set_up_initial_positions_and_trajectory(self):
         ix = self.vitactip.get_keypoint_indices_numpy_point_a()
         camera_lens_to_sensor_tip = self.vitactip.nodes[ix, 1]
-        self.phantom_pose = PHANTOM_INITIAL_POSE.copy()
         tumour_present = False
         self.tumour_present[None] = tumour_present
         self.phantom.set_state_from_outside(
-            pos=self.phantom_pose[:3],
-            ori=self.phantom_pose[3:],
+            pos=self.phantom_centroid_pose[:3],
+            ori=self.phantom_centroid_pose[3:],
             vel=[0.0, 0.0, 0.0],
             cylinder_tuple=None,
             stiffness_tuple=None,
             tumour_present=tumour_present,
         )
-        x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
+        x, y, z, xr, yr, zr = self.vitactip_tip_pose
         self.trajectory_npy = np.array([
             [x, y, z, xr, yr, zr],
         ], dtype=float)
@@ -147,7 +148,7 @@ class Contact(ContactVisualisation):
         t_dx, t_dy, t_dz, rot_x, rot_y, rot_z = self.sensor_dome_tip_initial_pose
         self.vitactip.set_up_pose(rot_x, rot_y, rot_z, t_dx, t_dy, t_dz)
         self.tactile_sensor_initial_position[0] = ti.Vector(self.sensor_dome_tip_initial_pose[:3])
-        self.phantom_initial_position[0] = ti.Vector(self.phantom_pose[:3])
+        self.phantom_initial_position[0] = ti.Vector(self.phantom_centroid_pose[:3])
     
     def reset_pid_controller(self):
         self.pos_error_sum.fill(0)
@@ -354,8 +355,8 @@ class Contact(ContactVisualisation):
         # If dwelling, set control outputs to zero to maintain position
         # But if at final target, never dwell, always actively control
         if self.is_dwelling[None]:
-            self.vitactip.d_pos_global[None] = ti.Vector([0.0, 0.0, 0.0])
-            self.vitactip.d_ori_global_euler_angles[None] = ti.Vector([0.0, 0.0, 0.0])
+            self.vitactip.translational_velocity_global[None] = ti.Vector([0.0, 0.0, 0.0])
+            self.vitactip.angular_velocity_global_degrees[None] = ti.Vector([0.0, 0.0, 0.0])
         else:
             # Update error sums for integral term
             self.pos_error_sum[None] += pos_error
@@ -374,7 +375,7 @@ class Contact(ContactVisualisation):
             
             clamp_speed = True
             # Clamp pos_control to max_speed
-            max_speed_pos = 0.01  # 10 mm/s = 0.01 m/s
+            max_speed_pos = 0.01  # 1 cm/s = 0.01 m/s
             pos_control_norm = pos_control.norm()
             if clamp_speed and pos_control_norm > max_speed_pos:
                 pos_control = pos_control / pos_control_norm * max_speed_pos
@@ -388,8 +389,8 @@ class Contact(ContactVisualisation):
                 ori_control = ori_control / ori_control_norm * max_speed_ori
 
             # Set control outputs
-            self.vitactip.d_pos_global[None] = pos_control
-            self.vitactip.d_ori_global_euler_angles[None] = ori_control
+            self.vitactip.translational_velocity_global[None] = pos_control
+            self.vitactip.angular_velocity_global_degrees[None] = ori_control
         
             if False:
                 # Print all variables used in the function
@@ -468,7 +469,7 @@ def main():
     else:
         ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)
 
-    gui_tuple = set_up_gui(PHANTOM_INITIAL_POSE.copy(), SENSOR_DOME_TIP_INITIAL_POSE.copy())
+    gui_tuple = set_up_gui()
 
     with open('../tasks/system-params.json', 'r') as f:
         params = json.load(f)

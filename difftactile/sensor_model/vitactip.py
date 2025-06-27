@@ -178,21 +178,21 @@ class ViTacTip:
         self.out_direction = ti.Vector.field(3, float, (), needs_grad=False)
 
         ## control parameters
-        self.d_pos_global = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
-        self.d_ori_global_euler_angles = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
+        self.translational_velocity_global = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
+        self.angular_velocity_global_degrees = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
 
-        self.d_pos_local = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
-        self.d_ori_local = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
+        self.translational_velocity_local = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
+        self.angular_velocity_local = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
 
-        self.rot_h = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=False)
+        self.rotation_matrix_homogeneous = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=False)
         self.rot_world = ti.Matrix.field(3, 3, ti.f32, shape = ())
-        self.rot_local = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=False)
-        self.inv_rot = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=False)
+        self.rotation_matrix_local = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=False)
+        self.inverse_rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=False)
 
-        self.trans_h = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False) ##
+        self.transformation_matrix_homogeneous = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False) ##
         self.trans_world = ti.Matrix.field(4, 4, ti.f32, shape = ()) ## ee to world
-        self.trans_local = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False) ## ee1 -> ee2
-        self.inv_trans_h = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False)
+        self.transformation_matrix_local = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False) ## ee1 -> ee2
+        self.inverse_transformation_matrix_homogeneous = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False)
         self.dtrans_h = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False)
         self.control_vel = ti.Vector.field(3, float, shape = (self.n_verts), needs_grad=False)
         self.sdf = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
@@ -200,9 +200,9 @@ class ViTacTip:
         self.first = ti.field(dtype=bool, shape=(), needs_grad=False)
         self.first[None] = True
 
-        self.my_rot_v = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
-        self.my_trans_v = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
-        self.my_trans_mat = ti.Matrix.field(4, 4, dtype=float, shape=(), needs_grad=False)
+        self.rotation_vector = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
+        self.translation_vector = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
+        self.transformation_matrix = ti.Matrix.field(4, 4, dtype=float, shape=(), needs_grad=False)
         self.my_rot_mat = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
 
     def set_up_pose(self, rot_x, rot_y, rot_z, t_dx, t_dy, t_dz):
@@ -212,15 +212,15 @@ class ViTacTip:
         trans_mat[0:3,0:3] = init_rot
         trans_mat[0,3] = t_dx; trans_mat[1,3] = t_dy; trans_mat[2,3] = t_dz
 
-        self.rot_local[None] = np.eye(3)
+        self.rotation_matrix_local[None] = np.eye(3)
         self.rot_world[None] = init_rot
-        self.rot_h[None] = self.rot_world[None] @ self.rot_local[None]
-        self.inv_rot[None] = self.rot_h[None].inverse()
+        self.rotation_matrix_homogeneous[None] = self.rot_world[None] @ self.rotation_matrix_local[None]
+        self.inverse_rotation_matrix[None] = self.rotation_matrix_homogeneous[None].inverse()
 
-        self.trans_local[None] = np.eye(4)
+        self.transformation_matrix_local[None] = np.eye(4)
         self.trans_world[None] = trans_mat
-        self.trans_h[None] = self.trans_world[None] @ self.trans_local[None]
-        self.inv_trans_h[None] = self.trans_local[None].inverse() @ self.trans_world[None].inverse()
+        self.transformation_matrix_homogeneous[None] = self.trans_world[None] @ self.transformation_matrix_local[None]
+        self.inverse_transformation_matrix_homogeneous[None] = self.transformation_matrix_local[None].inverse() @ self.trans_world[None].inverse()
 
         if False and self.first[None]:
             print("\nInitial rotation matrix (init_rot):")
@@ -228,21 +228,21 @@ class ViTacTip:
             print("\nInitial transformation matrix (trans_mat):")
             print(trans_mat)
             print("\nLocal rotation matrix (rot_local):")
-            print(self.rot_local[None].to_numpy())
+            print(self.rotation_matrix_local[None].to_numpy())
             print("\nWorld rotation matrix (rot_world):")
             print(self.rot_world[None].to_numpy())
             print("\nHomogeneous rotation matrix (rot_h):")
-            print(self.rot_h[None].to_numpy())
+            print(self.rotation_matrix_homogeneous[None].to_numpy())
             print("\nInverse rotation matrix (inv_rot):")
-            print(self.inv_rot[None].to_numpy())
+            print(self.inverse_rotation_matrix[None].to_numpy())
             print("\nLocal transformation matrix (trans_local):")
-            print(self.trans_local[None].to_numpy())
+            print(self.transformation_matrix_local[None].to_numpy())
             print("\nWorld transformation matrix (trans_world):")
             print(self.trans_world[None].to_numpy())
             print("\nHomogeneous transformation matrix (trans_h):")
-            print(self.trans_h[None].to_numpy())
+            print(self.transformation_matrix_homogeneous[None].to_numpy())
             print("\nInverse transformation matrix (inv_trans_h):")
-            print(self.inv_trans_h[None].to_numpy())
+            print(self.inverse_transformation_matrix_homogeneous[None].to_numpy())
             print()
         
         self.first[None] = False
@@ -268,7 +268,7 @@ class ViTacTip:
             node_ix = self.marker_node_tags[i]
             init_pos = self.virtual_pos[f, node_ix]
             hom_init_pos = ti.Vector([init_pos[0], init_pos[1], init_pos[2], 1.0])
-            inv_init_pos = self.inv_trans_h[None] @ hom_init_pos
+            inv_init_pos = self.inverse_transformation_matrix_homogeneous[None] @ hom_init_pos
             cam_init_pos = ti.Vector([inv_init_pos[0], inv_init_pos[2], inv_init_pos[1]])
             cam_init_loc = project_3d_2d(cam_init_pos)
             self.initial_virtual_markers[i] = cam_init_loc
@@ -290,8 +290,8 @@ class ViTacTip:
             init_pos = self.virtual_pos[f, node_ix]
             hom_pos = ti.Vector([pos[0], pos[1], pos[2], 1.0])
             hom_init_pos = ti.Vector([init_pos[0], init_pos[1], init_pos[2], 1.0])
-            inv_pos = self.inv_trans_h[None] @ hom_pos
-            inv_init_pos = self.inv_trans_h[None] @ hom_init_pos
+            inv_pos = self.inverse_transformation_matrix_homogeneous[None] @ hom_pos
+            inv_init_pos = self.inverse_transformation_matrix_homogeneous[None] @ hom_init_pos
             cam_pos = ti.Vector([inv_pos[0], inv_pos[2], inv_pos[1]])
             cam_init_pos = ti.Vector([inv_init_pos[0], inv_init_pos[2], inv_init_pos[1]])
             cam_loc = project_3d_2d(cam_pos)
@@ -356,65 +356,65 @@ class ViTacTip:
     @ti.kernel
     def set_pose_control(self):
         # this is in local coord
-        self.d_pos_local[None] = self.inv_rot[None] @ self.d_pos_global[None]
-        self.d_ori_local[None] = self.inv_rot[None] @ self.d_ori_global_euler_angles[None]
+        self.translational_velocity_local[None] = self.inverse_rotation_matrix[None] @ self.translational_velocity_global[None]
+        self.angular_velocity_local[None] = self.inverse_rotation_matrix[None] @ self.angular_velocity_global_degrees[None]
 
-        self.my_rot_v[None] = self.d_ori_local[None] * self.dt * (self.sub_steps -1)
-        self.my_trans_v[None] = self.d_pos_local[None] * self.dt * (self.sub_steps -1)
-        self.my_trans_mat[None], self.my_rot_mat[None] = self.eul2mat(self.my_rot_v[None], self.my_trans_v[None])
+        self.rotation_vector[None] = self.angular_velocity_local[None] * self.dt * (self.sub_steps -1)
+        self.translation_vector[None] = self.translational_velocity_local[None] * self.dt * (self.sub_steps -1)
+        self.transformation_matrix[None], self.my_rot_mat[None] = self.eul2mat(self.rotation_vector[None], self.translation_vector[None])
 
-        self.dtrans_h[None] = self.trans_world[None] @ self.my_trans_mat[None] @ (self.trans_world[None].inverse())
+        self.dtrans_h[None] = self.trans_world[None] @ self.transformation_matrix[None] @ (self.trans_world[None].inverse())
 
-        self.trans_local[None] = self.my_trans_mat[None] @ self.trans_local[None]
-        self.trans_h[None] = self.trans_world[None] @ self.trans_local[None]
-        self.inv_trans_h[None] = self.trans_h[None].inverse()
+        self.transformation_matrix_local[None] = self.transformation_matrix[None] @ self.transformation_matrix_local[None]
+        self.transformation_matrix_homogeneous[None] = self.trans_world[None] @ self.transformation_matrix_local[None]
+        self.inverse_transformation_matrix_homogeneous[None] = self.transformation_matrix_homogeneous[None].inverse()
 
-        self.rot_local[None] = self.my_rot_mat[None] @ self.rot_local[None]
-        self.rot_h[None] = self.rot_world[None] @ self.rot_local[None]
-        self.inv_rot[None] = self.rot_h[None].inverse()
+        self.rotation_matrix_local[None] = self.my_rot_mat[None] @ self.rotation_matrix_local[None]
+        self.rotation_matrix_homogeneous[None] = self.rot_world[None] @ self.rotation_matrix_local[None]
+        self.inverse_rotation_matrix[None] = self.rotation_matrix_homogeneous[None].inverse()
 
         if False:
-            print(f'self.d_pos_global[None]: {self.d_pos_global[None]}')
-            print(f'self.d_pos_local[None]: {self.d_pos_local[None]}')
+            print(f'self.d_pos_global[None]: {self.translational_velocity_global[None]}')
+            print(f'self.d_pos_local[None]: {self.translational_velocity_local[None]}')
             print(f'target angular speed (rotation matrix): self.my_rot_mat[None]: {self.my_rot_mat[None]}')
             print()
 
     def set_pose_control_maybe_print(self):
         if False:
             print("\nInput rotation vector (self.my_rot_v[None]):")
-            print(self.my_rot_v[None].to_numpy())
+            print(self.rotation_vector[None].to_numpy())
             print("\nInput translation vector (self.my_trans_v[None]):")
-            print(self.my_trans_v[None].to_numpy())
+            print(self.translation_vector[None].to_numpy())
             print("\nComputed transformation matrix (self.my_trans_mat[None]):")
-            print(self.my_trans_mat[None].to_numpy())
+            print(self.transformation_matrix[None].to_numpy())
             print("\nComputed rotation matrix (self.my_rot_mat[None]):")
             print(self.my_rot_mat[None].to_numpy())
             print("\nDelta transformation matrix (dtrans_h):")
             print(self.dtrans_h[None].to_numpy())
             print("\nLocal transformation matrix (trans_local):")
-            print(self.trans_local[None].to_numpy())
+            print(self.transformation_matrix_local[None].to_numpy())
             print("\nHomogeneous transformation matrix (trans_h):")
-            print(self.trans_h[None].to_numpy())
+            print(self.transformation_matrix_homogeneous[None].to_numpy())
             print("\nInverse transformation matrix (inv_trans_h):")
-            print(self.inv_trans_h[None].to_numpy())
+            print(self.inverse_transformation_matrix_homogeneous[None].to_numpy())
             print("\nLocal rotation matrix (rot_local):")
-            print(self.rot_local[None].to_numpy())
+            print(self.rotation_matrix_local[None].to_numpy())
             print("\nHomogeneous rotation matrix (rot_h):")
-            print(self.rot_h[None].to_numpy())
+            print(self.rotation_matrix_homogeneous[None].to_numpy())
             print("\nInverse rotation matrix (inv_rot):")
-            print(self.inv_rot[None].to_numpy())
+            print(self.inverse_rotation_matrix[None].to_numpy())
             print()
 
     @ti.kernel
     def set_pose_control_bp(self):
 
-        rot_v = self.d_ori_local[None] * self.dt * (self.sub_steps -1)
-        trans_v = self.d_pos_local[None] * self.dt * (self.sub_steps -1)
+        rot_v = self.angular_velocity_local[None] * self.dt * (self.sub_steps -1)
+        trans_v = self.translational_velocity_local[None] * self.dt * (self.sub_steps -1)
         trans_mat, rot_mat = self.eul2mat(rot_v, trans_v)
         self.dtrans_h[None] = self.trans_world[None] @ trans_mat @ (self.trans_world[None].inverse())
 
-        self.inv_trans_h[None] = self.trans_h[None].inverse()
-        self.inv_rot[None] = self.rot_h[None].inverse()
+        self.inverse_transformation_matrix_homogeneous[None] = self.transformation_matrix_homogeneous[None].inverse()
+        self.inverse_rotation_matrix[None] = self.rotation_matrix_homogeneous[None].inverse()
 
     @ti.kernel
     def set_control_vel(self, f:ti.i32):
@@ -436,7 +436,7 @@ class ViTacTip:
     @ti.func
     def get_euler_angles(self) -> ti.types.vector(3, ti.f32):
         # Extract Euler angles from rotation matrix
-        rot_mat = self.rot_h[None]
+        rot_mat = self.rotation_matrix_homogeneous[None]
         
         # Extract roll (x-axis rotation)
         roll = ti.math.atan2(rot_mat[2, 1], rot_mat[2, 2])
@@ -455,7 +455,7 @@ class ViTacTip:
         euler_angles = ti.Vector([roll_deg, pitch_deg, yaw_deg])
 
         if False:
-            print(f'rotation matrix (self.rot_h[None]): {self.rot_h[None]}')
+            print(f'rotation matrix (self.rot_h[None]): {self.rotation_matrix_homogeneous[None]}')
             print(f'euler angles (euler_angles): {euler_angles}')
             print()
 
@@ -465,7 +465,7 @@ class ViTacTip:
     def set_up_pose_helper(self):
         for idx in range(self.n_verts):
             before_t_pos = self.init_x[idx] # before any world transformation
-            after_t_pos = self.trans_h[None] @ ti.Vector([before_t_pos[0], before_t_pos[1], before_t_pos[2], 1.0]) # 4 x 1 homogeneous
+            after_t_pos = self.transformation_matrix_homogeneous[None] @ ti.Vector([before_t_pos[0], before_t_pos[1], before_t_pos[2], 1.0]) # 4 x 1 homogeneous
 
             self.pos[0, idx] = ti.Vector([after_t_pos[0], after_t_pos[1], after_t_pos[2]])
             # reset init x to track the whole body movement
@@ -477,7 +477,7 @@ class ViTacTip:
             B_i_inv = ti.Matrix.cols([a - d, b - d, c - d])
             self.B[i] = B_i_inv.inverse()
 
-        self.out_direction[None] = self.rot_h[None] @ ti.Vector([0.0, 1.0, 0.0])
+        self.out_direction[None] = self.rotation_matrix_homogeneous[None] @ ti.Vector([0.0, 1.0, 0.0])
 
     @ti.func
     def find_closest(self, grid_p, f):
@@ -612,10 +612,10 @@ class ViTacTip:
     def load_step_from_cache(self, f: ti.i32, cache_pos: ti.types.ndarray(), cache_vel: ti.types.ndarray(), cache_trans: ti.types.ndarray(), cache_virtual_pos: ti.types.ndarray(), cache_rot: ti.types.ndarray(), cache_predict_markers: ti.types.ndarray()):
         for j in range(4):
             for k in range(4):
-                self.trans_h[None][j,k] = cache_trans[j,k]
+                self.transformation_matrix_homogeneous[None][j,k] = cache_trans[j,k]
         for j in range(3):
             for k in range(3):
-                self.rot_h[None][j,k] = cache_rot[j,k]
+                self.rotation_matrix_homogeneous[None][j,k] = cache_rot[j,k]
         for p in range(self.n_verts):
             for i in ti.static(range(3)):
                 self.pos[f, p][i] = cache_pos[p,i]
@@ -629,10 +629,10 @@ class ViTacTip:
     def add_step_to_cache(self, f: ti.i32, cache_pos: ti.types.ndarray(), cache_vel: ti.types.ndarray(), cache_trans: ti.types.ndarray(), cache_virtual_pos: ti.types.ndarray(), cache_rot: ti.types.ndarray(), cache_predict_markers: ti.types.ndarray()):
         for j in range(4):
             for k in range(4):
-                cache_trans[j,k] = self.trans_h[None][j,k]
+                cache_trans[j,k] = self.transformation_matrix_homogeneous[None][j,k]
         for j in range(3):
             for k in range(3):
-                cache_rot[j,k] = self.rot_h[None][j,k]
+                cache_rot[j,k] = self.rotation_matrix_homogeneous[None][j,k]
         for p in range(self.n_verts):
             for i in ti.static(range(3)):
                 cache_pos[p,i] = self.pos[f, p][i]
@@ -668,14 +668,14 @@ class ViTacTip:
     @ti.kernel
     def clear_loss_grad(self):
         self.predict_markers.grad.fill(0.0)
-        self.d_pos_local.grad[None].fill(0.0)
-        self.d_ori_local.grad[None].fill(0.0)
-        self.rot_h.grad[None].fill(0.0)
-        self.rot_local.grad[None].fill(0.0)
-        self.inv_rot.grad[None].fill(0.0)
-        self.trans_h.grad[None].fill(0.0)
-        self.trans_local.grad[None].fill(0.0)
-        self.inv_trans_h.grad[None].fill(0.0)
+        self.translational_velocity_local.grad[None].fill(0.0)
+        self.angular_velocity_local.grad[None].fill(0.0)
+        self.rotation_matrix_homogeneous.grad[None].fill(0.0)
+        self.rotation_matrix_local.grad[None].fill(0.0)
+        self.inverse_rotation_matrix.grad[None].fill(0.0)
+        self.transformation_matrix_homogeneous.grad[None].fill(0.0)
+        self.transformation_matrix_local.grad[None].fill(0.0)
+        self.inverse_transformation_matrix_homogeneous.grad[None].fill(0.0)
         self.dtrans_h.grad[None].fill(0.0)
         self.control_vel.grad.fill(0.0)
 
