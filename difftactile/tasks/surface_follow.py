@@ -121,7 +121,7 @@ class Contact:
         t_dy1 = self.init_h  #+ 0.5 #- 1.50 #+ (0.5 - 0.328)
         t_dz1 = 0.0
 
-        self.fem_sensor1.init(rx1, ry1, rz1, t_dx1, t_dy1, t_dz1)
+        self.fem_sensor1.set_up_pose(rx1, ry1, rz1, t_dx1, t_dy1, t_dz1)
 
         self.in_contact = False
         self.contact_timestamp = 0

@@ -154,7 +154,7 @@ class Contact:
         t_dy1 = 1.5
         t_dz1 = 5.0
 
-        self.fem_sensor1.init(rx1, ry1, rz1, t_dx1, t_dy1, t_dz1)
+        self.fem_sensor1.set_up_pose(rx1, ry1, rz1, t_dx1, t_dy1, t_dz1)
 
         self.in_contact = False
         self.contact_timestamp = 0

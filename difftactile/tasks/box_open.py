@@ -119,7 +119,7 @@ class Contact:
         self.ball_pos = [4.9, 3.00, 5.0]
         self.ball_ori = [0.0, 90.0, 0.0]
         self.ball_vel = [0.0, 0.0, 0.0]
-        self.mpm_object.init(self.ball_pos, self.ball_ori, self.ball_vel)
+        self.mpm_object.set_state_from_outside(self.ball_pos, self.ball_ori, self.ball_vel)
 
         ### extract the height of the obj
         obj_pos = self.mpm_object.particle_position.to_numpy()[0,:]
@@ -137,7 +137,7 @@ class Contact:
         t_dy1 = 4.5
         t_dz1 = 5.0
 
-        self.fem_sensor1.init(rx1, ry1, rz1, t_dx1, t_dy1, t_dz1)
+        self.fem_sensor1.set_up_pose(rx1, ry1, rz1, t_dx1, t_dy1, t_dz1)
 
         self.in_contact = False
         self.contact_timestamp = 0
@@ -318,7 +318,7 @@ class Contact:
         for i, j, k in ti.ndrange(self.mpm_object.n_grid, self.mpm_object.n_grid, self.mpm_object.n_grid):
             # if self.mpm_object.grid_m[f, i, j, k] > self.mpm_object.eps:
             if self.mpm_object.grid_occupy[f, i, j, k] == 1:
-                cur_p = ti.Vector([(i+0.5)*self.mpm_object.grid_node_length, (j+0.5)*self.mpm_object.grid_node_length, (k+0.5)*self.mpm_object.grid_node_length])
+                cur_p = ti.Vector([(i+0.5)*self.mpm_object.grid_cube_size, (j+0.5)*self.mpm_object.grid_cube_size, (k+0.5)*self.mpm_object.grid_cube_size])
                 min_idx1 = self.fem_sensor1.find_closest(cur_p, f)
                 self.contact_idx[f, i, j, k] = min_idx1
 
@@ -327,7 +327,7 @@ class Contact:
     def collision(self, f:ti.i32):
         for i, j, k in ti.ndrange(self.mpm_object.n_grid, self.mpm_object.n_grid, self.mpm_object.n_grid):
             if self.mpm_object.grid_occupy[f, i, j, k] == 1:
-                cur_p = ti.Vector([(i+0.5)*self.mpm_object.grid_node_length, (j+0.5)*self.mpm_object.grid_node_length, (k+0.5)*self.mpm_object.grid_node_length])
+                cur_p = ti.Vector([(i+0.5)*self.mpm_object.grid_cube_size, (j+0.5)*self.mpm_object.grid_cube_size, (k+0.5)*self.mpm_object.grid_cube_size])
                 cur_v = self.mpm_object.grid_node_momentum_in[f, i, j, k] / (self.mpm_object.grid_node_mass[f, i, j, k]+self.mpm_object.eps)
                 min_idx1 = self.contact_idx[f, i, j, k]
                 cur_sdf1, cur_norm_v1, cur_relative_v1, contact_flag1 = self.fem_sensor1.find_sdf(cur_p, cur_v, min_idx1, f)

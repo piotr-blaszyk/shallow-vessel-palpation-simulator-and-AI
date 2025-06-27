@@ -22,25 +22,29 @@ NP_TYPE = np.float32
 class ViTacTip:
     def __init__(self):
         np.set_printoptions(precision=3, floatmode='maxprec', suppress=False)
-        # Load system parameters from JSON
+        self.set_up_system_params()
+        self.init_mesh()
+        self.set_up_physical_state()
+    
+    def set_up_system_params(self):
         with open('../tasks/system-params.json', 'r') as f:
-            params = json.load(f)
-            fem_params = params['vitactip']
-            contact_params = params['contact']
+            self.params = json.load(f)
+            self.fem_params = self.params['vitactip']
+            self.contact_params = self.params['contact']
         
-        self.sub_steps = contact_params['num_sub_frames']
-        self.dt = contact_params['dt']
+        self.sub_steps = self.contact_params['num_sub_frames']
+        self.dt = self.contact_params['dt']
         self.eps = 1e-11  # Small epsilon value for numerical stability in vector normalization
 
         # Material parameters for shell (Vytaflex 60)
-        self.shell_rho = fem_params['shell']['density']  # density [g/cm^3]
+        self.shell_rho = self.fem_params['shell']['density']  # density [g/cm^3]
         self.shell_youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.shell_poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.shell_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.shell_lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         
         # Material parameters for gel (RTV27905)
-        self.gel_rho = fem_params['gel']['density']  # density [g/cm^3]
+        self.gel_rho = self.fem_params['gel']['density']  # density [g/cm^3]
         self.gel_youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.gel_poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.gel_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
@@ -48,11 +52,11 @@ class ViTacTip:
 
         # Initialize default material parameters
         # Shell (Vytaflex 60)
-        self.shell_youngs_modulus[None] = fem_params['shell']['youngs_modulus']
-        self.shell_poissons_ratio[None] = fem_params['shell']['poissons_ratio']
+        self.shell_youngs_modulus[None] = self.fem_params['shell']['youngs_modulus']
+        self.shell_poissons_ratio[None] = self.fem_params['shell']['poissons_ratio']
         # Gel (RTV27905)
-        self.gel_youngs_modulus[None] = fem_params['gel']['youngs_modulus']
-        self.gel_poissons_ratio[None] = fem_params['gel']['poissons_ratio']
+        self.gel_youngs_modulus[None] = self.fem_params['gel']['youngs_modulus']
+        self.gel_poissons_ratio[None] = self.fem_params['gel']['poissons_ratio']
         
         # Compute Lamé parameters for both materials
         self.shell_mu[None] = self.shell_youngs_modulus[None] / 2 / (1 + self.shell_poissons_ratio[None])
@@ -60,49 +64,109 @@ class ViTacTip:
         self.gel_mu[None] = self.gel_youngs_modulus[None] / 2 / (1 + self.gel_poissons_ratio[None])
         self.gel_lam[None] = self.gel_youngs_modulus[None] * self.gel_poissons_ratio[None] / (1 + self.gel_poissons_ratio[None]) / (1 - 2 * self.gel_poissons_ratio[None])
 
-        self.all_nodes, self.all_f2v, self.surface_f2v, self.node_labels, element_materials, vertex_masses, self.marker_node_tags_np = self.init_mesh()
+    def init_mesh(self):
+        # Load mesh data from gmsh
+        with open('../sensor_model/output/gmsh-mesh.pkl', 'rb') as f:
+            mesh_data = pickle.load(f)
+        
+        # Unpack mesh data
+        all_tetrahedra = mesh_data['all_tetrahedra']
+        node_coordinates = mesh_data['node_coordinates']
+        node_labels = mesh_data['node_labels']
+        surface_triangles = mesh_data['surface_triangles']
+        group_to_idx = mesh_data['group_to_idx']
+        y_bottom = mesh_data['y_bottom']
+        marker_node_tags = mesh_data['marker_node_tags']
+        
+        # Compute fixed layer nodes (nodes at the bottom)
+        is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < 1  # Check if y-coordinate is at bottom
+        node_coordinates /= 10
+        
+        # Append is_fixed_layer to node_labels
+        node_labels = np.column_stack([node_labels, is_fixed_layer])
+        
+        # Compute element materials and masses
+        element_materials = np.full(len(all_tetrahedra), fill_value=-1, dtype=np.int32)
+        vertex_masses = np.zeros(len(node_coordinates), dtype=np.float32)
+        
+        # Compute element volumes and assign materials
+        for i, tetra in enumerate(all_tetrahedra):
+            if 0 in tetra:
+                foo = 7
+            v1, v2, v3, v4 = tetra
+            pos1, pos2, pos3, pos4 = node_coordinates[v1], node_coordinates[v2], node_coordinates[v3], node_coordinates[v4]
+            
+            # Compute tetrahedron volume
+            matrix = np.vstack([pos2 - pos1, pos3 - pos1, pos4 - pos1]).T
+            volume = abs(np.linalg.det(matrix)) / 6.0
+            
+            # Get the node labels for all nodes in this tetrahedron
+            tetra_node_labels = node_labels[tetra]
+            
+            # Check if any node is part of the gel
+            gel_count = np.sum(tetra_node_labels[:, group_to_idx['gel']])
+            # Check if all nodes are part of the shell
+            shell_count = np.sum(tetra_node_labels[:, group_to_idx['shell']])
+            
+            # Assign material based on node composition
+            if gel_count == 4 and shell_count <= 3:
+                element_materials[i] = 2  # gel material
+            else:
+                element_materials[i] = 1  # shell material
+            
+            # Determine density based on material
+            material_density = self.shell_rho if element_materials[i] == 1 else self.gel_rho
+            element_mass = volume * material_density
+            
+            # Distribute element mass to vertices
+            for vertex_idx in tetra:
+                vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
+        
+        max_y = np.max(node_coordinates[:, 1])
+        y_translation = 2.0 - max_y
+        translation_vector = np.array([0, y_translation, 0])
+        node_coordinates = node_coordinates + translation_vector
 
-        self.marker_node_tags = ti.field(shape=(self.marker_node_tags_np.shape[0],), dtype=int)
+        self.nodes = node_coordinates
+        self.tetrahedra = all_tetrahedra
+        self.outer_surface_triangles = surface_triangles
+        self.node_labels = node_labels
+        self.element_materials_npy = element_materials
+        self.vertex_masses_npy = vertex_masses
+        self.marker_node_tags_np = marker_node_tags
+
+        self.num_markers = self.marker_node_tags_np.shape[0]
+        self.marker_node_tags = ti.field(shape=(self.num_markers,), dtype=int)
         self.marker_node_tags.from_numpy(self.marker_node_tags_np)
         
-        # Create is_fixed_layer field from the last row of node_labels
-        self.is_fixed_layer = ti.field(int, len(self.all_nodes))
-        is_fixed_layer_data = self.node_labels[:,-1].astype(np.int32)  # Get the last row
+        self.is_fixed_layer = ti.field(int, len(self.nodes))
+        is_fixed_layer_data = self.node_labels[:,-1].astype(np.int32)
         self.is_fixed_layer.from_numpy(is_fixed_layer_data)
         
-        self.n_verts = len(self.all_nodes)
-        self.n_cells = len(self.all_f2v)
-        self.num_triangles = len(self.surface_f2v)
+        self.n_verts = len(self.nodes)
+        self.n_cells = len(self.tetrahedra)
+        self.num_triangles = len(self.outer_surface_triangles)
 
-        # Track material type for each tetrahedron (0 for gel, 1 for shell)
         self.element_material = ti.field(dtype=ti.i32, shape=(self.n_cells,), needs_grad=False)
-        # Compute mass per vertex based on material distribution
         self.mass_per_vertex = ti.field(dtype=ti.f32, shape=(self.n_verts,), needs_grad=False)
-        
-        # Transfer material assignments to Taichi fields
-        self.element_material.from_numpy(element_materials)
-        self.mass_per_vertex.from_numpy(vertex_masses)
-
-        self.dim = 3
+        self.element_material.from_numpy(self.element_materials_npy)
+        self.mass_per_vertex.from_numpy(self.vertex_masses_npy)
 
         self.init_x = ti.Vector.field(3, float, self.n_verts, needs_grad=False)
-        self.init_x.from_numpy(self.all_nodes.astype(np.float32))
-
-        self.shell_outer_layer_nodes = np.unique(self.surface_f2v.flatten())
-        self.markers_surface_id = ti.field(int, len(self.shell_outer_layer_nodes))
-        self.markers_surface_id.from_numpy(self.shell_outer_layer_nodes.astype(np.int32))
-        self.num_surface = len(self.shell_outer_layer_nodes)
-        self.num_markers = self.marker_node_tags_np.shape[0]
+        self.init_x.from_numpy(self.nodes.astype(np.float32))
 
         self.predict_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.virtual_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.initial_virtual_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
 
         self.f2v = ti.Vector.field(4, int, self.n_cells)
-        self.f2v.from_numpy(self.all_f2v.astype(np.int32))
+        self.f2v.from_numpy(self.tetrahedra.astype(np.int32))
         self.contact_seg = ti.Vector.field(3, int, self.num_triangles) # surface triangle mesh
-        self.contact_seg.from_numpy(self.surface_f2v.astype(np.int32))
+        self.contact_seg.from_numpy(self.outer_surface_triangles.astype(np.int32))
 
+        self.validate_markers_via_2d_projection()
+
+    def set_up_physical_state(self):
         self.virtual_pos = ti.Vector.field(3, float, shape=(self.sub_steps, self.n_verts), needs_grad=False)
         self.pos = ti.Vector.field(3, float, shape=(self.sub_steps, self.n_verts), needs_grad=False)
         self.vel = ti.Vector.field(3, float, shape=(self.sub_steps, self.n_verts), needs_grad=False)
@@ -144,7 +208,7 @@ class ViTacTip:
         self.my_trans_mat = ti.Matrix.field(4, 4, dtype=float, shape=(), needs_grad=False)
         self.my_rot_mat = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
 
-    def init(self, rot_x, rot_y, rot_z, t_dx, t_dy, t_dz):
+    def set_up_pose(self, rot_x, rot_y, rot_z, t_dx, t_dy, t_dz):
         rot = R.from_rotvec(np.deg2rad([rot_x, rot_y, rot_z]))
         init_rot = rot.as_matrix()
         trans_mat = np.eye(4)
@@ -185,84 +249,13 @@ class ViTacTip:
             print()
         
         self.first[None] = False
+        self.set_up_pose_helper()
 
-        self.init_pos()
-        with open(f"output/tactile_sensor.pos.init.pkl", 'wb') as f:
-            pickle.dump(self.pos.to_numpy()[0], f)
-        np.savetxt(f'output/tactile_sensor.pos.init.csv', self.pos.to_numpy()[0], delimiter=",", fmt='%.2f')
-        # with open(f"./output/tactile_sensor.init_x.pkl", 'wb') as f:
-        #     pickle.dump(self.init_x.to_numpy(), f)
-        # np.savetxt(f'output/tactile_sensor.init_x.csv', self.init_x.to_numpy()[0], delimiter=",", fmt='%.2f')
+    def validate_markers_via_2d_projection(self):
+        marker_points_3d = self.nodes[self.marker_node_tags_np]
+        camera_3D_points = np.array([marker_points_3d[:,0], marker_points_3d[:,2], marker_points_3d[:,1]]).T
+        marker_points_2d = project_points_to_pix(camera_3D_points)
 
-    def init_cam_model(self, init_img_path=None):
-        if init_img_path is None:
-            init_img = cv2.imread("./init.png")
-        else:
-            init_img = cv2.imread(init_img_path)
-        initial_markers, _, _ = get_marker_image(init_img)
-        # Overlay initial_markers on the image and save
-        overlay_img = init_img.copy()
-        for pos in initial_markers:
-            center = (int(round(pos[0])), int(round(pos[1])))
-            cv2.circle(overlay_img, center, radius=5, color=(0, 0, 255), thickness=2)  # Red circle
-        cv2.imwrite("../tasks/output/init_cam_model.png", overlay_img)
-        surface_nodes = self.all_nodes[self.shell_outer_layer_nodes]
-        cam_3D_nodes = np.array([surface_nodes[:,0], surface_nodes[:,2], surface_nodes[:,1]]).T
-        with open(f"output/vitactip.cam_3d_nodes.pkl", 'wb') as f:
-            pickle.dump(cam_3D_nodes, f)
-        np.savetxt(f'output/vitactip.cam_3d_nodes.csv', cam_3D_nodes, delimiter=",", fmt='%.2f')
-        cam_points = project_points_to_pix(cam_3D_nodes)
-        # Overlay cam_points as green circles and save
-        cam_points_img = init_img.copy()
-        for pt in cam_points:
-            center = (int(round(pt[0])), int(round(pt[1])))
-            cv2.circle(cam_points_img, center, radius=3, color=(0, 255, 0), thickness=2)  # Green circle
-        cv2.imwrite("../tasks/output/cam_points.png", cam_points_img)
-        # interpolated markers in 2d & 3d
-        interp_idx = []
-        interp_weight = []
-        surf_2d = []
-        for i in range(initial_markers.shape[0]):
-            offset = np.linalg.norm(initial_markers[i,0:2] - cam_points,axis=1)
-            idx = np.argpartition(offset, self.num_k_closest)
-            smallest_idx = idx[:self.num_k_closest]
-            inv_offset = 1/offset[smallest_idx]
-            total_offset = np.sum(inv_offset)
-            weights = inv_offset / total_offset
-            loc_2d = np.matmul(cam_points[smallest_idx].T, weights).T
-            surf_2d.append(loc_2d)
-            interp_idx.append(smallest_idx)
-            interp_weight.append(weights)
-
-        surf_2d = np.array(surf_2d)
-        interp_idx = np.array(interp_idx)
-        interp_weight = np.array(interp_weight)
-
-        # Flatten interp_idx before saving
-        interp_idx_flat = interp_idx.flatten()
-        with open(f"output/vitactip.interp_idx_flat.pkl", 'wb') as f:
-            pickle.dump(interp_idx_flat, f)
-        with open(f"output/vitactip.shell_outer_layer_nodes.pkl", 'wb') as f:
-            pickle.dump(self.shell_outer_layer_nodes, f)
-        np.savetxt('output/vitactip.interp_idx_flat.csv', interp_idx_flat, delimiter=",", fmt='%d')
-        np.savetxt('output/vitactip.shell_outer_layer_nodes.csv', self.shell_outer_layer_nodes, delimiter=",", fmt='%d')
-
-        return surf_2d, interp_idx, interp_weight
-
-    def visualise_2d(self, interp_idx):
-        """
-        Project selected 3D marker points to the image plane and overlay them as red dots on './init.png'.
-        Save the result as 'output/init-3d-markers.png'.
-        """
-        # Get the relevant 3D marker points
-        marker_indices = np.unique(interp_idx.flatten())
-        marker_points_3d = self.all_nodes[self.shell_outer_layer_nodes][marker_indices]
-        # Reorder axes to match camera convention
-        cam_3D_nodes = np.array([marker_points_3d[:,0], marker_points_3d[:,2], marker_points_3d[:,1]]).T
-        # Project to 2D
-        marker_points_2d = project_points_to_pix(cam_3D_nodes)
-
-        # Load the image
         img = cv2.imread('./init.png')
         if img is None:
             print('Error: Could not load ./init.png')
@@ -282,7 +275,7 @@ class ViTacTip:
             cam_init_pos = ti.Vector([inv_init_pos[0], inv_init_pos[2], inv_init_pos[1]])
             cam_init_loc = project_3d_2d(cam_init_pos)
             self.initial_virtual_markers[i] = cam_init_loc
-            if True:
+            if False:
                 print('extract_initial_markers')
                 print(f'node_ix: {node_ix}')
                 print(f'init_pos: {init_pos}')
@@ -471,73 +464,8 @@ class ViTacTip:
 
         return euler_angles
 
-    def init_mesh(self):
-        # Load mesh data from gmsh
-        with open('../sensor_model/output/gmsh-mesh.pkl', 'rb') as f:
-            mesh_data = pickle.load(f)
-        
-        # Unpack mesh data
-        all_tetrahedra = mesh_data['all_tetrahedra']
-        node_coordinates = mesh_data['node_coordinates']
-        node_labels = mesh_data['node_labels']
-        surface_triangles = mesh_data['surface_triangles']
-        group_to_idx = mesh_data['group_to_idx']
-        y_bottom = mesh_data['y_bottom']
-        marker_node_tags = mesh_data['marker_node_tags']
-        
-        # Compute fixed layer nodes (nodes at the bottom)
-        is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < 1  # Check if y-coordinate is at bottom
-        node_coordinates /= 10
-        
-        # Append is_fixed_layer to node_labels
-        node_labels = np.column_stack([node_labels, is_fixed_layer])
-        
-        # Compute element materials and masses
-        element_materials = np.full(len(all_tetrahedra), fill_value=-1, dtype=np.int32)
-        vertex_masses = np.zeros(len(node_coordinates), dtype=np.float32)
-        
-        # Compute element volumes and assign materials
-        for i, tetra in enumerate(all_tetrahedra):
-            if 0 in tetra:
-                foo = 7
-            v1, v2, v3, v4 = tetra
-            pos1, pos2, pos3, pos4 = node_coordinates[v1], node_coordinates[v2], node_coordinates[v3], node_coordinates[v4]
-            
-            # Compute tetrahedron volume
-            matrix = np.vstack([pos2 - pos1, pos3 - pos1, pos4 - pos1]).T
-            volume = abs(np.linalg.det(matrix)) / 6.0
-            
-            # Get the node labels for all nodes in this tetrahedron
-            tetra_node_labels = node_labels[tetra]
-            
-            # Check if any node is part of the gel
-            gel_count = np.sum(tetra_node_labels[:, group_to_idx['gel']])
-            # Check if all nodes are part of the shell
-            shell_count = np.sum(tetra_node_labels[:, group_to_idx['shell']])
-            
-            # Assign material based on node composition
-            if gel_count == 4 and shell_count <= 3:
-                element_materials[i] = 2  # gel material
-            else:
-                element_materials[i] = 1  # shell material
-            
-            # Determine density based on material
-            material_density = self.shell_rho if element_materials[i] == 1 else self.gel_rho
-            element_mass = volume * material_density
-            
-            # Distribute element mass to vertices
-            for vertex_idx in tetra:
-                vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
-        
-        max_y = np.max(node_coordinates[:, 1])
-        y_translation = 2.0 - max_y
-        translation_vector = np.array([0, y_translation, 0])
-        node_coordinates = node_coordinates + translation_vector
-
-        return node_coordinates, all_tetrahedra, surface_triangles, node_labels, element_materials, vertex_masses, marker_node_tags
-
     @ti.kernel
-    def init_pos(self):
+    def set_up_pose_helper(self):
         for idx in range(self.n_verts):
             before_t_pos = self.init_x[idx] # before any world transformation
             after_t_pos = self.trans_h[None] @ ti.Vector([before_t_pos[0], before_t_pos[1], before_t_pos[2], 1.0]) # 4 x 1 homogeneous
@@ -692,7 +620,7 @@ class ViTacTip:
             for k in range(3):
                 self.rot_h[None][j,k] = cache_rot[j,k]
         for p in range(self.n_verts):
-            for i in ti.static(range(self.dim)):
+            for i in ti.static(range(3)):
                 self.pos[f, p][i] = cache_pos[p,i]
                 self.vel[f, p][i] = cache_vel[p,i]
                 self.virtual_pos[f, p][i] = cache_virtual_pos[p, i]
@@ -709,7 +637,7 @@ class ViTacTip:
             for k in range(3):
                 cache_rot[j,k] = self.rot_h[None][j,k]
         for p in range(self.n_verts):
-            for i in ti.static(range(self.dim)):
+            for i in ti.static(range(3)):
                 cache_pos[p,i] = self.pos[f, p][i]
                 cache_vel[p,i] = self.vel[f, p][i]
                 cache_virtual_pos[p, i] = self.virtual_pos[f, p][i]
@@ -722,11 +650,11 @@ class ViTacTip:
         device = 'cpu'
         self.cache[cur_step_name] = dict()
 
-        self.cache[cur_step_name]['pos'] = torch.zeros((self.n_verts, self.dim), dtype=TC_TYPE, device=device)
-        self.cache[cur_step_name]['vel'] = torch.zeros((self.n_verts, self.dim), dtype=TC_TYPE, device=device)
+        self.cache[cur_step_name]['pos'] = torch.zeros((self.n_verts, 3), dtype=TC_TYPE, device=device)
+        self.cache[cur_step_name]['vel'] = torch.zeros((self.n_verts, 3), dtype=TC_TYPE, device=device)
         self.cache[cur_step_name]['trans_h'] = torch.zeros((4,4), dtype=TC_TYPE, device=device)
         self.cache[cur_step_name]['rot_h'] = torch.zeros((3,3), dtype=TC_TYPE, device=device)
-        self.cache[cur_step_name]['virtual_pos'] = torch.zeros((self.n_verts, self.dim), dtype=TC_TYPE, device=device)
+        self.cache[cur_step_name]['virtual_pos'] = torch.zeros((self.n_verts, 3), dtype=TC_TYPE, device=device)
         self.cache[cur_step_name]['predict_markers'] = torch.zeros((self.num_markers, 2), dtype=TC_TYPE, device=device)
         self.add_step_to_cache(0, self.cache[cur_step_name]['pos'], self.cache[cur_step_name]['vel'], self.cache[cur_step_name]['trans_h'], self.cache[cur_step_name]['virtual_pos'], self.cache[cur_step_name]['rot_h'], self.cache[cur_step_name]['predict_markers'])
         self.copy_frame(self.sub_steps-1, 0)
@@ -894,7 +822,7 @@ class ViTacTip:
 
     def get_keypoint_indices_numpy_point_a(self):
         # Convert positions to numpy array
-        positions = self.all_nodes
+        positions = self.nodes
         
         # Point A: max y coordinate
         y_coords = positions[:, 1]

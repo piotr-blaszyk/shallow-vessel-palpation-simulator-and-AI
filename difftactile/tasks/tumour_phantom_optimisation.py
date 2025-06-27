@@ -15,64 +15,28 @@ import sys
 import json
 
 RUN_ON_LAB_MACHINE = True
-SLOW_DOWN = 0.5
-SPEED_1_MM_S = 4.0828765820486765 / SLOW_DOWN
-SPEED_2_DEG_S = 81.63 / SLOW_DOWN
-TIME_STEPS_PER_S = 10 * SLOW_DOWN
 GLOBAL_Z_OFFSET = 0.01  # 10mm = 0.01m
 PHANTOM_CLOSEST_VERTEX = [0.00575, 0.00575, 0.00075 + GLOBAL_Z_OFFSET]  # meters
 PHANTOM_INITIAL_POSE = [0.00975, 0.00975, 0.00185 + GLOBAL_Z_OFFSET, 0, 0, 0]  # meters and degrees
 SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET = 0.002  # 2mm = 0.002m
 SENSOR_DOME_TIP_INITIAL_POSE = [0.00975, 0.00975, 0.00295 + GLOBAL_Z_OFFSET + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET, -90, 0, 0]
 
-def print_point_cloud(arr):
-    # Print the shape for verification
-    print('Shape:', arr.shape)
-
-    # Print min and max along axis 1
-    min_vals = np.min(arr, axis=0)
-    max_vals = np.max(arr, axis=0)
-    print('Min along axis 0:', min_vals)
-    print('Max along axis 0:', max_vals)
-    print('diff', max_vals - min_vals)
-
 @ti.data_oriented
 class Contact(ContactVisualisation):
     def __init__(self):
         super().__init__()
-
-        # Load system parameters from JSON
-        with open('../tasks/system-params.json', 'r') as f:
-            params = json.load(f)
-            contact_params = params['contact']
-
-        self.dt = contact_params['dt']
-
-        self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.normal_stiffness[None] = contact_params['normal_stiffness']
-        self.normal_damping[None] = contact_params['normal_damping']
-        self.tangential_stiffness[None] = contact_params['tangential_stiffness']
-        self.coulomb_friction_coeff[None] = contact_params['coulomb_friction_coeff']
-
-        self.num_frames = contact_params['num_frames']
-        self.num_sub_frames = contact_params['num_sub_frames']
+        self.set_up_system_params()
         self.vitactip = ViTacTip()
         self.phantom = Phantom()
-
-        self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
-        self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
-        self.trajectory = ti.Vector.field(6, dtype=float, shape=3, needs_grad=False)
-        self.tumour_present = ti.field(dtype=bool, shape=(), needs_grad=False)
-        self.tumour_present[None] = False
+        self.set_up_initial_positions_and_trajectory_first_init_only()
         self.set_up_initial_positions_and_trajectory()
+        self.set_up_keypoints()
+        self.set_up_collision_detection()
+        self.init_visualisation()
+        self.set_up_pid()
+        self.set_up_snapshot()
 
-        # Initialize keypoint indices
-        self.keypoint_indices = self.vitactip.get_keypoint_indices(0)
-        self.keypoint_indices = np.concatenate((self.keypoint_indices, self.vitactip.marker_node_tags_np), dtype=int)
-
+    def set_up_collision_detection(self):
         self.num_sensor = 1
         self.contact_idx = ti.Vector.field(
             self.num_sensor,
@@ -84,54 +48,42 @@ class Contact(ContactVisualisation):
                 self.phantom.n_grid,
             ),
         )
-        self.dim = 3
-        self.p_sensor1 = ti.Vector.field(
-            self.dim, dtype=ti.f32, shape=(self.num_frames), needs_grad=False
-        )
-        self.o_sensor1 = ti.Vector.field(
-            self.dim, dtype=ti.f32, shape=(self.num_frames), needs_grad=False
-        )
-        self.loss = ti.field(float, (), needs_grad=False)
         self.contact_detect_flag = ti.field(float, (), needs_grad=False)
+
+    def set_up_system_params(self):
+        with open('../tasks/system-params.json', 'r') as f:
+            self.params = json.load(f)
+            self.contact_params = self.params['contact']
+
+        self.num_opt_steps = self.contact_params['num_opt_steps']
+        self.num_frames = self.contact_params['num_frames']
+        self.num_sub_frames = self.contact_params['num_sub_frames']
+        self.dt = self.contact_params['dt']
+
+        self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.normal_stiffness[None] = self.contact_params['normal_stiffness']
+        self.normal_damping[None] = self.contact_params['normal_damping']
+        self.tangential_stiffness[None] = self.contact_params['tangential_stiffness']
+        self.coulomb_friction_coeff[None] = self.contact_params['coulomb_friction_coeff']
+
         self.norm_eps = 1e-11
-        self.squared_error_sum = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.squared_error_sum[None] = 0
 
-        self.set_up_target_marker_positions()
-        self.init_visualisation()
+    def set_up_snapshot(self):        # Allocate snapshot fields (num_opt_steps, num_markers, 2)
+        self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
+        self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
+        self.ground_truth_labels = ti.field(dtype=bool, shape=(self.num_opt_steps,), needs_grad=False)
 
-        self.trajectory_frame_ix = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.trajectory_frame_ix[None] = 0
-
-        self.skip_frames = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.skip_frames[None] = 0
-
-        self.velocities_npy = np.array([
-            [0, SPEED_1_MM_S, 0, 0, 0, 0],
-            [SPEED_1_MM_S, 0, 0, 0, 0, 0],
-        ], dtype=float)
-        self.time_durations_s_npy = np.array([
-            10,
-            10,
-        ], dtype=float)
-        self.velocities = ti.Vector.field(6, dtype=float, shape=self.velocities_npy.shape[0], needs_grad=False)
-        self.time_durations_s = ti.field(dtype=float, shape=self.time_durations_s_npy.shape[0], needs_grad=False)
-        self.velocities.from_numpy(self.velocities_npy)
-        self.time_durations_s.from_numpy(self.time_durations_s_npy)
-
-        self.fill_out_motion_start_end_ixs()
-
-        self.interpolation_exp_frame_start = ti.field(dtype=ti.i32, shape=(), needs_grad=False)
-        self.interpolation_exp_frame_end = ti.field(dtype=ti.i32, shape=(), needs_grad=False)
-        self.interpolation_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-
+    def set_up_pid(self):
         # PID controller parameters
         self.pid_controller_kp = ti.field(dtype=float, shape=(), needs_grad=False)  # Proportional gain
         self.pid_controller_ki = ti.field(dtype=float, shape=(), needs_grad=False)  # Integral gain
         self.pid_controller_kd = ti.field(dtype=float, shape=(), needs_grad=False)  # Derivative gain
-        self.pid_controller_kp[None] = contact_params['pid_kp']
-        self.pid_controller_ki[None] = contact_params['pid_ki']
-        self.pid_controller_kd[None] = contact_params['pid_kd']
+        self.pid_controller_kp[None] = self.contact_params['pid_kp']
+        self.pid_controller_ki[None] = self.contact_params['pid_ki']
+        self.pid_controller_kd[None] = self.contact_params['pid_kd']
         
         # Error accumulation for integral term
         self.pos_error_sum = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
@@ -151,7 +103,7 @@ class Contact(ContactVisualisation):
         
         # Add fields for dwell time control
         self.dwell_frames = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.dwell_frames[None] = contact_params['dwell_frames'] # Number of frames to stay at each target
+        self.dwell_frames[None] = self.contact_params['dwell_frames'] # Number of frames to stay at each target
         self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dwell_counter[None] = 0
         self.is_dwelling = ti.field(dtype=bool, shape=(), needs_grad=False)
@@ -161,56 +113,34 @@ class Contact(ContactVisualisation):
         self.frames_since_last_target_reached = ti.field(dtype=int, shape=(), needs_grad=False)
         self.frames_since_last_target_reached[None] = 0
 
-        self.num_opt_steps = contact_params['num_opt_steps']
-        # Allocate snapshot fields (num_opt_steps, num_markers, 2)
-        num_markers = self.vitactip.num_markers
-        self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, num_markers), needs_grad=False)
-        self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, num_markers), needs_grad=False)
-        self.ground_truth_labels = ti.field(dtype=bool, shape=(self.num_opt_steps,), needs_grad=False)
+    def set_up_initial_positions_and_trajectory_first_init_only(self):
+        self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
+        self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
+        self.trajectory = ti.Vector.field(6, dtype=float, shape=1, needs_grad=False)
+        self.tumour_present = ti.field(dtype=bool, shape=(), needs_grad=False)
+        self.tumour_present[None] = False
+    
+    def set_up_keypoints(self):
+        self.keypoint_indices = self.vitactip.get_keypoint_indices(0)
+        self.keypoint_indices = np.concatenate((self.keypoint_indices, self.vitactip.marker_node_tags_np), dtype=int)
 
     def set_up_initial_positions_and_trajectory(self):
         ix = self.vitactip.get_keypoint_indices_numpy_point_a()
-        camera_lens_to_sensor_tip = self.vitactip.all_nodes[ix, 1]
+        camera_lens_to_sensor_tip = self.vitactip.nodes[ix, 1]
         self.phantom_pose = PHANTOM_INITIAL_POSE.copy()
-        
-        cx = np.random.uniform(-1.0, 1.0)
-        cy = np.random.uniform(-1.0, 1.0)
-        cz = np.random.uniform(-0.9, 0.9)
-        theta = np.random.uniform(0, 90)
-        h = np.random.uniform(1, 6)
-        r = np.random.uniform(0.1, 0.4)
-        cylinder_tuple = (cx, cy, cz, theta, h, r)
-        # stiffness_healthy_tissue = np.random.uniform(2.5e3, 7.5e3)
-        # stiffness_tumour = np.random.uniform(2.5e4, 7.5e4)
-        # stiffness_tuple = (stiffness_healthy_tissue, stiffness_tumour)
-        stiffness_tuple = None
-        # tumour_present = np.random.rand() < 0.5
         tumour_present = False
         self.tumour_present[None] = tumour_present
-        self.phantom.init(
+        self.phantom.set_state_from_outside(
             pos=self.phantom_pose[:3],
             ori=self.phantom_pose[3:],
             vel=[0.0, 0.0, 0.0],
-            cylinder_tuple=cylinder_tuple,
-            stiffness_tuple=stiffness_tuple,
+            cylinder_tuple=None,
+            stiffness_tuple=None,
             tumour_present=tumour_present,
         )
-
-        xr_offset = np.random.uniform(-15, 15)
-        yr_offset = np.random.uniform(-15, 15)
-        zr_offset = np.random.uniform(-15, 15)
-        xr_offset = 0
-        yr_offset = 0
-        zr_offset = 0
-        press_depth = np.random.uniform(0.6, 1.6)
-        press_depth = 0.4 + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET
         x, y, z, xr, yr, zr = SENSOR_DOME_TIP_INITIAL_POSE
         self.trajectory_npy = np.array([
             [x, y, z, xr, yr, zr],
-            [x, y, z, xr, yr, zr],
-            [x, y, z, xr, yr, zr],
-            # [x, y, z-press_depth, xr, yr, zr],
-            # [x, y+3, z-press_depth, xr, yr, zr],
         ], dtype=float)
         assert self.trajectory.shape[0] == self.trajectory_npy.shape[0], f"Set self.trajectory length to {self.trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(self.trajectory_npy)
@@ -218,7 +148,7 @@ class Contact(ContactVisualisation):
         self.sensor_dome_tip_initial_pose = self.trajectory_npy[0].tolist()
         self.sensor_dome_tip_initial_pose[2] += camera_lens_to_sensor_tip
         t_dx, t_dy, t_dz, rot_x, rot_y, rot_z = self.sensor_dome_tip_initial_pose
-        self.vitactip.init(rot_x, rot_y, rot_z, t_dx, t_dy, t_dz)
+        self.vitactip.set_up_pose(rot_x, rot_y, rot_z, t_dx, t_dy, t_dz)
         self.tactile_sensor_initial_position[0] = ti.Vector(self.sensor_dome_tip_initial_pose[:3])
         self.phantom_initial_position[0] = ti.Vector(self.phantom_pose[:3])
     
@@ -232,34 +162,6 @@ class Contact(ContactVisualisation):
         self.is_dwelling[None] = False
         self.last_target_reached[None] = False
         self.frames_since_last_target_reached[None] = 0
-
-    def fill_out_motion_start_end_ixs(self):
-        self.motion_start_end_ixs = ti.field(dtype=int, shape=self.velocities_npy.shape[0] + 1, needs_grad=False)
-        i = self.skip_frames[None]
-        res = [i]
-        for j in range(self.time_durations_s_npy.shape[0]):
-            i += self.time_durations_s_npy[j] * TIME_STEPS_PER_S
-            res.append(i)
-        res_npy = np.array(res, dtype=int)
-        self.motion_start_end_ixs.from_numpy(res_npy)
-
-        arr = np.array([
-            3, 8, 13
-        ], dtype=int)
-        self.motion_start_end_experimental_video_frame_ixs = ti.field(dtype=int, shape=self.velocities_npy.shape[0] + 1, needs_grad=False)
-        self.motion_start_end_experimental_video_frame_ixs.from_numpy(arr)
-
-    def set_pos_control_maybe_print(self, f: int):
-        if False:
-            print("\nInput position vector (p_sensor1):")
-            print(self.p_sensor1[f].to_numpy())
-            print("\nInput orientation vector (o_sensor1):")
-            print(self.o_sensor1[f].to_numpy())
-            print("\nSet position vector (d_pos):")
-            print(self.vitactip.d_pos_global[None].to_numpy())
-            print("\nSet orientation vector (d_ori):")
-            print(self.vitactip.d_ori_global_euler_angles[None].to_numpy())
-            print()
 
     def update(self, f):
         self.phantom.compute_new_F(f)
@@ -291,11 +193,6 @@ class Contact(ContactVisualisation):
         self.tangential_stiffness.grad[None] = 0.0
         self.coulomb_friction_coeff.grad[None] = 0.0
         self.contact_detect_flag.grad[None] = 0.0
-        self.loss[None] = 0.0
-        self.loss.grad[None] = 0.0
-        self.p_sensor1.grad.fill(0.0)
-        self.o_sensor1.grad.fill(0.0)
-        self.squared_error_sum.grad[None] = 0.0
 
     def clear_traj_grad(self):
         self.vitactip.clear_loss_grad()
@@ -312,7 +209,6 @@ class Contact(ContactVisualisation):
         self.phantom.reset()
         self.contact_idx.fill(-1)
         self.contact_detect_flag[None] = 0.0
-        self.squared_error_sum[None] = 0.0
 
     @ti.kernel
     def clamp_grid(self, f: ti.i32):
@@ -361,9 +257,9 @@ class Contact(ContactVisualisation):
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 grid_node_position = ti.Vector(
                     [
-                        (i + 0.5) * self.phantom.grid_node_length,
-                        (j + 0.5) * self.phantom.grid_node_length,
-                        (k + 0.5) * self.phantom.grid_node_length,
+                        (i + 0.5) * self.phantom.grid_cube_size,
+                        (j + 0.5) * self.phantom.grid_cube_size,
+                        (k + 0.5) * self.phantom.grid_cube_size,
                     ]
                 )
                 closest_sensor_vertex_idx = self.vitactip.find_closest(grid_node_position, frame)
@@ -377,9 +273,9 @@ class Contact(ContactVisualisation):
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 grid_node_position = ti.Vector(
                     [
-                        (i + 0.5) * self.phantom.grid_node_length,
-                        (j + 0.5) * self.phantom.grid_node_length,
-                        (k + 0.5) * self.phantom.grid_node_length,
+                        (i + 0.5) * self.phantom.grid_cube_size,
+                        (j + 0.5) * self.phantom.grid_cube_size,
+                        (k + 0.5) * self.phantom.grid_cube_size,
                     ]
                 )
                 grid_node_velocity = self.phantom.grid_node_momentum_in[frame, i, j, k] / (
@@ -403,79 +299,6 @@ class Contact(ContactVisualisation):
     def memory_from_cache(self, t):
         self.vitactip.memory_from_cache(t)
         self.phantom.memory_from_cache(t)
-    
-    def set_up_target_marker_positions(self):
-        """
-        Reorders the experimental marker positions to match the simulation marker indexing convention.
-        Uses the Hungarian algorithm to find optimal marker-to-marker mapping based on squared Euclidean distances
-        between markers in the base frame (frame 0).
-        """
-        with open(f'../sensor_model/markers-paired.pkl', 'rb') as f:
-            marker_data = pickle.load(f)
-        self.experiment_num_frames = marker_data.shape[0]
-        self.experiment_num_markers = marker_data.shape[1]
-        cost_matrix = cdist(marker_data[0], self.vitactip.virtual_markers.to_numpy(), metric='sqeuclidean')
-        exp_indices, sim_indices = linear_sum_assignment(cost_matrix)
-        index_mapping = {exp_idx: sim_idx for exp_idx, sim_idx in zip(exp_indices, sim_indices)}
-        reordered_markers = np.zeros_like(marker_data)
-        for frame_idx in range(self.experiment_num_frames):
-            for exp_idx, sim_idx in index_mapping.items():
-                reordered_markers[frame_idx, sim_idx] = marker_data[frame_idx, exp_idx]
-
-        self.target_marker_positions = ti.Vector.field(
-            2, dtype=ti.f32, shape=(self.experiment_num_frames, self.experiment_num_markers), needs_grad=False
-        )
-        self.target_marker_positions.from_numpy(reordered_markers)
-
-    @ti.kernel
-    def interpolate_experimental_video(self, f: ti.i32):
-        # Find which motion segment this frame falls into
-        motion_segment = -1
-        for i in range(self.motion_start_end_ixs.shape[0] - 1):
-            if f >= self.motion_start_end_ixs[i] and f < self.motion_start_end_ixs[i + 1] and motion_segment == -1:
-                motion_segment = i
-        
-        # Get the experimental video frame indices for this motion segment
-        self.interpolation_exp_frame_start[None] = self.motion_start_end_experimental_video_frame_ixs[motion_segment]
-        self.interpolation_exp_frame_end[None] = self.motion_start_end_experimental_video_frame_ixs[motion_segment + 1]
-        
-        # Calculate interpolation factor based on relative position in motion segment
-        sim_segment_start = self.motion_start_end_ixs[motion_segment]
-        sim_segment_end = self.motion_start_end_ixs[motion_segment + 1]
-        self.interpolation_alpha[None] = (f - sim_segment_start) / (sim_segment_end - sim_segment_start)
-
-    @ti.kernel
-    def compute_marker_loss_1(self, f: ti.i32):
-        """
-        Compute RMSE loss between experimental and simulated marker positions for a given frame.
-        Uses linear interpolation between experimental video frames based on motion segments.
-        
-        Args:
-            f: Index of the frame to compute loss for
-        """
-        # Iterate through all markers and accumulate squared errors
-        for i in range(self.vitactip.num_markers):
-            # Get experimental marker positions at start and end of segment
-            exp_marker_start = self.target_marker_positions[self.interpolation_exp_frame_start[None], i]
-            exp_marker_end = self.target_marker_positions[self.interpolation_exp_frame_end[None], i]
-            
-            # Interpolate experimental marker position
-            exp_marker = exp_marker_start * (1 - self.interpolation_alpha[None]) + exp_marker_end * self.interpolation_alpha[None]
-            
-            # Get simulated marker position
-            sim_marker = self.vitactip.predict_markers[i]
-            
-            # Compute squared error for this marker pair
-            dx = exp_marker[0] - sim_marker[0]
-            dy = exp_marker[1] - sim_marker[1]
-            squared_error = dx * dx + dy * dy
-            self.squared_error_sum[None] += squared_error
-
-    @ti.kernel
-    def compute_marker_loss_2(self):
-        # Compute RMSE and add to total loss
-        rmse = ti.sqrt(self.squared_error_sum[None] / self.vitactip.num_markers)
-        self.loss[None] += rmse
 
     @ti.kernel
     def pid_controller(self, ts: ti.i32):
