@@ -55,8 +55,8 @@ class Phantom:
 
     def set_up_system_params_2(self):
         self.total_volume = self.coordinates['phantom_volume']
-        self.particle_volume = self.total_volume / self.actual_total_num_particles
-        self.particle_mass = self.particle_volume * self.mass_density
+        self.initial_particle_volume = self.total_volume / self.actual_total_num_particles
+        self.particle_mass = self.initial_particle_volume * self.mass_density
 
         self.sub_steps = self.contact_params['num_sub_frames']
         self.dt = self.contact_params['dt']
@@ -129,7 +129,7 @@ class Phantom:
         # grid_node_mass: mass values in kg
         self.grid_node_mass = ti.field(dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
         # grid_node_external_force: force vectors in N
-        self.grid_node_external_force = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
+        self.grid_node_external_impulse = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
         # grid_occupy: occupancy flags (dimensionless)
         self.grid_occupy = ti.field(dtype=int, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid))
         # total_surface_external_force: total surface force vector in N
@@ -224,27 +224,28 @@ class Phantom:
         self.grid_node_momentum_in.fill(0.0)
         self.grid_node_velocity_out.fill(0.0)
         self.grid_node_mass.fill(0.0)
-        self.grid_node_external_force.fill(0.0)
+        self.grid_node_external_impulse.fill(0.0)
         self.grid_occupy.fill(0.0)
         self.total_surface_external_force.fill(0.0)
 
     @ti.kernel
     def get_external_force(self, f:ti.i32):
         for i, j, k in ti.ndrange(self.n_grid, self.n_grid, self.n_grid):
-            self.total_surface_external_force[f] += self.grid_node_external_force[f, i, j, k] / self.dt
+            # external force in N
+            self.total_surface_external_force[f] += self.grid_node_external_impulse[f, i, j, k] / self.dt
 
     @ti.func
-    def update_contact_force(self, external_force, f, i, j, k):
-        # extrnal_force in N
-        self.grid_node_external_force[f, i, j, k] += external_force * self.dt
+    def update_contact_impulse(self, external_force, f, i, j, k):
+        # extrnal impulse in N * s
+        self.grid_node_external_impulse[f, i, j, k] += external_force * self.dt
 
     @ti.kernel
-    def compute_new_F(self, f: ti.i32):
+    def compute_trial_deformation_gradient(self, f: ti.i32):
         for p in range(self.actual_total_num_particles):
             self.trial_deformation_gradient[f, p] = (ti.Matrix.diag(dim=3, val=1) + self.dt * self.affine_velocity_field[f, p]) @ self.deformation_gradient[f, p]
 
     @ti.kernel
-    def svd(self, f: ti.i32):
+    def svd_of_trial_deformation_gradient(self, f: ti.i32):
         for p in range(self.actual_total_num_particles):
             self.U_svd[f, p], self.S_svd[f, p], self.V_svd[f, p] = ti.svd(self.trial_deformation_gradient[f, p])
 
@@ -327,7 +328,7 @@ class Phantom:
             cauchy_stress = 2 * shear_modulus * (self.trial_deformation_gradient[frame, particle_id] - rotation_matrix) @ self.trial_deformation_gradient[frame, particle_id].transpose() + ti.Matrix.identity(float, 3) * bulk_modulus * volume_ratio * (volume_ratio - 1)
 
             # force_term: force contribution in N
-            force_term = cauchy_stress * self.particle_volume
+            force_term = cauchy_stress * self.initial_particle_volume
             # impulse_term: kg * m / s
             impulse_term = force_term * -self.dt
             # impulse_term_scaled: kg * m / s
@@ -377,7 +378,7 @@ class Phantom:
                 # grid_velocity: grid node velocity in m/s
                 grid_velocity = ti.Vector([0.0, 0.0, 0.0])
                 grid_velocity += inverse_mass * self.grid_node_momentum_in[frame, grid_x, grid_y, grid_z] # Momentum to velocity
-                grid_velocity += inverse_mass * self.grid_node_external_force[frame, grid_x, grid_y, grid_z]
+                grid_velocity += inverse_mass * self.grid_node_external_impulse[frame, grid_x, grid_y, grid_z]
                 grid_velocity += self.dt * self.gravity  # gravity
 
                 # Apply boundary conditions at domain edges
@@ -435,7 +436,8 @@ class Phantom:
                 self.affine_velocity_field[frame+1, particle_id] = ti.Matrix.zero(float, 3, 3)
                 self.particle_position[frame+1, particle_id] = self.particle_position[frame, particle_id]
             else:
-                self.particle_velocity[frame+1, particle_id], self.affine_velocity_field[frame+1, particle_id] = updated_velocity, updated_affine
+                self.particle_velocity[frame+1, particle_id] = updated_velocity
+                self.affine_velocity_field[frame+1, particle_id] = updated_affine
                 self.particle_position[frame+1, particle_id] = self.particle_position[frame, particle_id] + self.dt * updated_velocity  # advection
 
     @ti.kernel
@@ -510,7 +512,7 @@ class Phantom:
         self.grid_node_momentum_in.grad.fill(0.0)
         self.grid_node_velocity_out.grad.fill(0.0)
         self.grid_node_mass.grad.fill(0.0)
-        self.grid_node_external_force.grad.fill(0.0)
+        self.grid_node_external_impulse.grad.fill(0.0)
         self.trial_deformation_gradient.grad.fill(0.0)
         self.U_svd.grad.fill(0.0)
         self.V_svd.grad.fill(0.0)

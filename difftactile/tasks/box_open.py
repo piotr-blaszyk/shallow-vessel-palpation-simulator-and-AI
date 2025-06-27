@@ -188,8 +188,8 @@ class Contact:
 
     def update(self, f):
 
-        self.mpm_object.compute_new_F(f)
-        self.mpm_object.svd(f)
+        self.mpm_object.compute_trial_deformation_gradient(f)
+        self.mpm_object.svd_of_trial_deformation_gradient(f)
         self.mpm_object.p2g(f)
         self.fem_sensor1.update_internal_forces(f)
         # calculate the collision based on current updated status, and then update external forces for next time step
@@ -220,7 +220,7 @@ class Contact:
         self.fem_sensor1.update_internal_forces.grad(f)
         self.mpm_object.p2g.grad(f)
         self.mpm_object.svd_grad(f)
-        self.mpm_object.compute_new_F.grad(f)
+        self.mpm_object.compute_trial_deformation_gradient.grad(f)
 
     @ti.kernel
     def clamp_grid(self, f:ti.i32):
@@ -333,7 +333,7 @@ class Contact:
                 cur_sdf1, cur_norm_v1, cur_relative_v1, contact_flag1 = self.fem_sensor1.find_sdf(cur_p, cur_v, min_idx1, f)
                 if contact_flag1:
                     ext_v1, ext_n1, ext_t1 = self.calculate_contact_force(cur_sdf1, -1*cur_norm_v1, -1*cur_relative_v1)
-                    self.mpm_object.update_contact_force(ext_v1, f, i, j, k)
+                    self.mpm_object.update_contact_impulse(ext_v1, f, i, j, k)
                     self.fem_sensor1.update_contact_force(min_idx1, -1*ext_v1, f)
 
     def memory_to_cache(self, t):

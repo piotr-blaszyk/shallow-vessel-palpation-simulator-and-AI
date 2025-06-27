@@ -94,7 +94,7 @@ class ViTacTip:
             pos1, pos2, pos3, pos4 = node_coordinates[v1], node_coordinates[v2], node_coordinates[v3], node_coordinates[v4]
             
             # Compute tetrahedron volume
-            matrix = np.vstack([pos2 - pos1, pos3 - pos1, pos4 - pos1]).T
+            matrix = np.vstack([pos1 - pos4, pos2 - pos4, pos3 - pos4]).T
             volume = abs(np.linalg.det(matrix)) / 6.0
             
             # Get the node labels for all nodes in this tetrahedron

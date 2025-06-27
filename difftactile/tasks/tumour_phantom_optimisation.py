@@ -160,8 +160,8 @@ class Contact(ContactVisualisation):
         self.frames_since_last_target_reached[None] = 0
 
     def update(self, f):
-        self.phantom.compute_new_F(f)
-        self.phantom.svd(f)
+        self.phantom.compute_trial_deformation_gradient(f)
+        self.phantom.svd_of_trial_deformation_gradient(f)
         self.phantom.p2g(f)
         self.vitactip.update_internal_forces(f)
         self.phantom.check_grid_occupy(f)
@@ -180,7 +180,7 @@ class Contact(ContactVisualisation):
         self.vitactip.update_internal_forces.grad(f)
         self.phantom.p2g.grad(f)
         self.phantom.svd_grad(f)
-        self.phantom.compute_new_F.grad(f)
+        self.phantom.compute_trial_deformation_gradient.grad(f)
 
     @ti.kernel
     def clear_loss_grad(self):
@@ -329,7 +329,7 @@ class Contact(ContactVisualisation):
                     total_contact_force, _, _ = self.calculate_contact_force(
                         penetration_depth, -1 * surface_normal, -1 * relative_velocity
                     )
-                    self.phantom.update_contact_force(total_contact_force, frame, i, j, k)
+                    self.phantom.update_contact_impulse(total_contact_force, frame, i, j, k)
                     self.vitactip.update_contact_force(closest_sensor_vertex_idx, -1 * total_contact_force, frame)
 
     def memory_to_cache(self, t):
