@@ -63,7 +63,7 @@ class Contact(ContactVisualisation):
     def set_up_snapshot(self):        # Allocate snapshot fields (num_opt_steps, num_markers, 2)
         self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
         self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
-        self.ground_truth_labels = ti.field(dtype=bool, shape=(self.num_opt_steps,), needs_grad=False)
+        self.ground_truth_labels = ti.field(dtype=int, shape=(self.num_opt_steps,), needs_grad=False)
 
     def set_up_pid(self):
         # PID controller parameters
@@ -86,19 +86,19 @@ class Contact(ContactVisualisation):
         self.current_target_idx = ti.field(dtype=int, shape=(), needs_grad=False)
         self.current_target_idx[None] = 0
         self.position_tolerance = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.position_tolerance[None] = 0.1  # 1 mm tolerance
+        self.position_tolerance[None] = 0.1 / 1_000
         self.orientation_tolerance = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.orientation_tolerance[None] = 1  # 1 degree tolerance
+        self.orientation_tolerance[None] = 1 / 1_000
         
         # Add fields for dwell time control
         self.dwell_frames = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dwell_frames[None] = self.contact_params['dwell_frames'] # Number of frames to stay at each target
         self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dwell_counter[None] = 0
-        self.is_dwelling = ti.field(dtype=bool, shape=(), needs_grad=False)
-        self.is_dwelling[None] = False
-        self.last_target_reached = ti.field(dtype=bool, shape=(), needs_grad=False)
-        self.last_target_reached[None] = False
+        self.is_dwelling = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.is_dwelling[None] = 0
+        self.last_target_reached = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.last_target_reached[None] = 0
         self.frames_since_last_target_reached = ti.field(dtype=int, shape=(), needs_grad=False)
         self.frames_since_last_target_reached[None] = 0
 
@@ -114,8 +114,10 @@ class Contact(ContactVisualisation):
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.trajectory = ti.Vector.field(6, dtype=float, shape=1, needs_grad=False)
-        self.tumour_present = ti.field(dtype=bool, shape=(), needs_grad=False)
-        self.tumour_present[None] = False
+        self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.tumour_present[None] = 0
+        self.pid_on = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.pid_on[None] = 0
     
     def set_up_keypoints(self):
         self.keypoint_indices = self.vitactip.get_keypoint_indices(0)
@@ -155,8 +157,8 @@ class Contact(ContactVisualisation):
         self.prev_ori_error.fill(0)
         self.current_target_idx[None] = 0
         self.dwell_counter[None] = 0
-        self.is_dwelling[None] = False
-        self.last_target_reached[None] = False
+        self.is_dwelling[None] = 0
+        self.last_target_reached[None] = 0
         self.frames_since_last_target_reached[None] = 0
 
     def update(self, f):
@@ -359,22 +361,22 @@ class Contact(ContactVisualisation):
         pos_error_magnitude = pos_error.norm()
         ori_error_magnitude = ori_error.norm()
 
-        if self.last_target_reached[None]:
+        if self.last_target_reached[None] == 1:
             self.frames_since_last_target_reached[None] += 1
 
         # If target is reached and not already dwelling, start dwelling (only for non-final targets)
-        if (not self.last_target_reached[None] and not self.is_dwelling[None] and 
+        if (self.last_target_reached[None] == 0 and self.is_dwelling[None] == 0 and 
             pos_error_magnitude < self.position_tolerance[None] and 
             ori_error_magnitude < self.orientation_tolerance[None]):
-            self.is_dwelling[None] = True
+            self.is_dwelling[None] = 1
             self.dwell_counter[None] = 0
             print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
-        
+
         # If dwelling, increment counter and check if dwell time is complete
-        if self.is_dwelling[None]:
+        if self.is_dwelling[None] == 1:
             self.dwell_counter[None] += 1
             if self.dwell_counter[None] >= self.dwell_frames[None]:
-                self.is_dwelling[None] = False
+                self.is_dwelling[None] = 0
                 if self.current_target_idx[None] < self.trajectory.shape[0] - 1:
                     self.current_target_idx[None] += 1
                     # Reset error sums when switching targets
@@ -392,11 +394,11 @@ class Contact(ContactVisualisation):
                     pos_error = target_pos - current_pos
                     ori_error = target_ori - current_ori
                 else:
-                    self.last_target_reached[None] = True
+                    self.last_target_reached[None] = 1
         
         # If dwelling, set control outputs to zero to maintain position
         # But if at final target, never dwell, always actively control
-        if self.is_dwelling[None]:
+        if self.is_dwelling[None] == 1:
             self.vitactip.global_translational_velocity[None] = ti.Vector([0.0, 0.0, 0.0])
             self.vitactip.global_angular_velocity_degrees[None] = ti.Vector([0.0, 0.0, 0.0])
         else:
@@ -430,9 +432,13 @@ class Contact(ContactVisualisation):
             if clamp_speed and ori_control_norm > max_speed_ori:
                 ori_control = ori_control / ori_control_norm * max_speed_ori
 
-            # Set control outputs
-            self.vitactip.global_translational_velocity[None] = pos_control
-            self.vitactip.global_angular_velocity_degrees[None] = ori_control
+            pid_is_on = self.pid_on[None] == 1
+            if pid_is_on:
+                self.vitactip.global_translational_velocity[None] = pos_control
+                self.vitactip.global_angular_velocity_degrees[None] = ori_control
+            else:
+                self.vitactip.global_translational_velocity[None] = ti.Vector([0.0, 0.0, 0.0])
+                self.vitactip.global_angular_velocity_degrees[None] = ti.Vector([0.0, 0.0, 0.0])
         
             if False:
                 # Print all variables used in the function

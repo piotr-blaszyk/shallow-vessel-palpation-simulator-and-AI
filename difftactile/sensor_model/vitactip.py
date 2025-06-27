@@ -221,8 +221,8 @@ class ViTacTip:
         # simulation_cache: cache for gradient computation (dimensionless)
         self.simulation_cache = dict() # for grad backward
         # first_initialization_flag: flag for first initialization (dimensionless)
-        self.first_initialization_flag = ti.field(dtype=bool, shape=(), needs_grad=False)
-        self.first_initialization_flag[None] = True
+        self.first_initialization_flag = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.first_initialization_flag[None] = 1
 
         # rotation_vector_degrees: rotation vector in degrees (dimensionless)
         self.rotation_vector_degrees = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
@@ -276,7 +276,7 @@ class ViTacTip:
             print(self.inverse_transformation_matrix[None].to_numpy())
             print()
         
-        self.first_initialization_flag[None] = False
+        self.first_initialization_flag[None] = 0
         self.set_up_pose_helper()
 
     def validate_markers_via_2d_projection(self):
