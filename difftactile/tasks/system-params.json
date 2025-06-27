@@ -1,0 +1,47 @@
+{
+    "fem_sensor": {
+        "shell": {
+            "density": 1.075,
+            "youngs_modulus": 13.5e6,
+            "poissons_ratio": 0.49
+        },
+        "gel": {
+            "density": 1.085,
+            "youngs_modulus": 12.5e3,
+            "poissons_ratio": 0.49
+        }
+    },
+    "multi_obj": {
+        "object_scale": 1.0,
+        "space_scale": 1.0,
+        "mass_density": 1.0,
+        "particle_density": 2,
+        "gravity": [0.0, 0.0, 0.0],
+        "material_a": {
+            "youngs_modulus": 1e3,
+            "poissons_ratio": 0.48
+        },
+        "material_b": {
+            "youngs_modulus": 1e3,
+            "poissons_ratio": 0.48
+        }
+    },
+    "contact": {
+        "dt": 5e-5,
+        "normal_stiffness": 1e4,
+        "normal_damping": 100,
+        "tangential_stiffness": 1e4,
+        "coulomb_friction_coeff": 0.4,
+        "num_sub_frames": 50,
+        "num_frames": 5000,
+        "num_opt_steps": 10,
+        "phantom_name": "cylinder.stl",
+        "pid_kp": 1000.0,
+        "pid_ki": 0.0,
+        "pid_kd": 0.0,
+        "dwell_frames": 0
+    },
+    "mesh": {
+        "density": 2
+    }
+}

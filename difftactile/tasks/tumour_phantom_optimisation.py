@@ -12,6 +12,7 @@ import pickle
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 import sys
+import json
 
 RUN_ON_LAB_MACHINE = True
 SLOW_DOWN = 0.5
@@ -37,29 +38,29 @@ def print_point_cloud(arr):
 
 @ti.data_oriented
 class Contact(ContactVisualisation):
-    def __init__(
-        self,
-        dt,
-        num_frames,
-        num_sub_frames,
-        obj,
-        num_opt_steps,
-    ):
+    def __init__(self):
         super().__init__()
 
-        self.dt = dt
-        self.num_frames = num_frames
-        self.num_sub_frames = num_sub_frames
-        self.tactile_sensor = FEMDomeSensor(dt, num_sub_frames)
-        self.phantom = MultiObj(
-            dt=dt,
-            sub_steps=num_sub_frames,
-            obj_name=obj,
-            space_scale=16.0,
-            obj_scale=8.0,
-            mesh_density=0.5,
-            mass_density=1.07,
-        )
+        # Load system parameters from JSON
+        with open('../tasks/system-params.json', 'r') as f:
+            params = json.load(f)
+            contact_params = params['contact']
+
+        self.dt = contact_params['dt']
+
+        self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.normal_stiffness[None] = contact_params['normal_stiffness']
+        self.normal_damping[None] = contact_params['normal_damping']
+        self.tangential_stiffness[None] = contact_params['tangential_stiffness']
+        self.coulomb_friction_coeff[None] = contact_params['coulomb_friction_coeff']
+
+        self.num_frames = contact_params['num_frames']
+        self.num_sub_frames = contact_params['num_sub_frames']
+        self.tactile_sensor = FEMDomeSensor()
+        self.phantom = MultiObj()
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
@@ -71,15 +72,6 @@ class Contact(ContactVisualisation):
         # Initialize keypoint indices
         self.keypoint_indices = self.tactile_sensor.get_keypoint_indices(0)
         self.keypoint_indices = np.concatenate((self.keypoint_indices, self.tactile_sensor.marker_node_tags_np), dtype=int)
-
-        self.kn = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.kd = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.kt = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.friction_coeff = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.kn[None] = 34.53
-        self.kd[None] = 269.44
-        self.kt[None] = 108.72
-        self.friction_coeff[None] = 14.16
 
         self.num_sensor = 1
         self.contact_idx = ti.Vector.field(
@@ -137,9 +129,9 @@ class Contact(ContactVisualisation):
         self.pid_controller_kp = ti.field(dtype=float, shape=(), needs_grad=False)  # Proportional gain
         self.pid_controller_ki = ti.field(dtype=float, shape=(), needs_grad=False)  # Integral gain
         self.pid_controller_kd = ti.field(dtype=float, shape=(), needs_grad=False)  # Derivative gain
-        self.pid_controller_kp[None] = 1000.0  # Initial values - these may need tuning
-        self.pid_controller_ki[None] = 0.0
-        self.pid_controller_kd[None] = 0.0
+        self.pid_controller_kp[None] = contact_params['pid_kp']
+        self.pid_controller_ki[None] = contact_params['pid_ki']
+        self.pid_controller_kd[None] = contact_params['pid_kd']
         
         # Error accumulation for integral term
         self.pos_error_sum = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
@@ -159,7 +151,7 @@ class Contact(ContactVisualisation):
         
         # Add fields for dwell time control
         self.dwell_frames = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.dwell_frames[None] = 0 # Number of frames to stay at each target
+        self.dwell_frames[None] = contact_params['dwell_frames'] # Number of frames to stay at each target
         self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dwell_counter[None] = 0
         self.is_dwelling = ti.field(dtype=bool, shape=(), needs_grad=False)
@@ -169,12 +161,12 @@ class Contact(ContactVisualisation):
         self.frames_since_last_target_reached = ti.field(dtype=int, shape=(), needs_grad=False)
         self.frames_since_last_target_reached[None] = 0
 
-        self.num_opt_steps = num_opt_steps
+        self.num_opt_steps = contact_params['num_opt_steps']
         # Allocate snapshot fields (num_opt_steps, num_markers, 2)
         num_markers = self.tactile_sensor.num_markers
-        self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(num_opt_steps, num_markers), needs_grad=False)
-        self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(num_opt_steps, num_markers), needs_grad=False)
-        self.ground_truth_labels = ti.field(dtype=bool, shape=(num_opt_steps,), needs_grad=False)
+        self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, num_markers), needs_grad=False)
+        self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, num_markers), needs_grad=False)
+        self.ground_truth_labels = ti.field(dtype=bool, shape=(self.num_opt_steps,), needs_grad=False)
 
     def set_up_initial_positions_and_trajectory(self):
         ix = self.tactile_sensor.get_keypoint_indices_numpy_point_a()
@@ -188,11 +180,12 @@ class Contact(ContactVisualisation):
         h = np.random.uniform(1, 6)
         r = np.random.uniform(0.1, 0.4)
         cylinder_tuple = (cx, cy, cz, theta, h, r)
-        stiffness_healthy_tissue = np.random.uniform(2.5e3, 7.5e3)
-        stiffness_tumour = np.random.uniform(2.5e4, 7.5e4)
+        # stiffness_healthy_tissue = np.random.uniform(2.5e3, 7.5e3)
+        # stiffness_tumour = np.random.uniform(2.5e4, 7.5e4)
         # stiffness_tuple = (stiffness_healthy_tissue, stiffness_tumour)
         stiffness_tuple = None
-        tumour_present = np.random.rand() < 0.5
+        # tumour_present = np.random.rand() < 0.5
+        tumour_present = False
         self.tumour_present[None] = tumour_present
         self.phantom.init(
             pos=self.phantom_pose[:3],
@@ -291,10 +284,10 @@ class Contact(ContactVisualisation):
 
     @ti.kernel
     def clear_loss_grad(self):
-        self.kn.grad[None] = 0.0
-        self.kd.grad[None] = 0.0
-        self.kt.grad[None] = 0.0
-        self.friction_coeff.grad[None] = 0.0
+        self.normal_stiffness.grad[None] = 0.0
+        self.normal_damping.grad[None] = 0.0
+        self.tangential_stiffness.grad[None] = 0.0
+        self.coulomb_friction_coeff.grad[None] = 0.0
         self.contact_detect_flag.grad[None] = 0.0
         self.loss[None] = 0.0
         self.loss.grad[None] = 0.0
@@ -342,7 +335,7 @@ class Contact(ContactVisualisation):
         contact_relative_velocity = relative_velocity
         normal_velocity_magnitude = ti.max(surface_normal.dot(contact_relative_velocity), 0)
         normal_force = (
-            -(self.kn[None] + self.kd[None] * normal_velocity_magnitude) * signed_distance * surface_normal
+            -(self.normal_stiffness[None] + self.normal_damping[None] * normal_velocity_magnitude) * signed_distance * surface_normal
         )
         tangential_velocity = contact_relative_velocity - surface_normal.dot(contact_relative_velocity) * surface_normal
         tangential_velocity_magnitude = tangential_velocity.norm(self.norm_eps)
@@ -351,8 +344,8 @@ class Contact(ContactVisualisation):
                 1.0
                 * (tangential_velocity / tangential_velocity_magnitude)
                 * ti.min(
-                    self.kt[None] * tangential_velocity_magnitude,
-                    self.friction_coeff[None] * normal_force.norm(self.norm_eps),
+                    self.tangential_stiffness[None] * tangential_velocity_magnitude,
+                    self.coulomb_friction_coeff[None] * normal_force.norm(self.norm_eps),
                 )
             )
         total_contact_force = normal_force + tangential_force
@@ -655,18 +648,14 @@ def main():
 
     gui_tuple = set_up_gui(PHANTOM_INITIAL_POSE.copy(), SENSOR_DOME_TIP_INITIAL_POSE.copy())
 
-    phantom_name = "cylinder.stl"
-    num_sub_frames = 50
-    num_frames = 5_000
-    num_opt_steps = 10
-    dt = 5e-5
-    contact_model = Contact(
-        dt=dt,
-        num_frames=num_frames,
-        num_sub_frames=num_sub_frames,
-        obj=phantom_name,
-        num_opt_steps=num_opt_steps,
-    )
+    with open('../tasks/system-params.json', 'r') as f:
+        params = json.load(f)
+        contact_params = params['contact']
+    num_sub_frames = contact_params['num_sub_frames']
+    num_frames = contact_params['num_frames']
+    num_opt_steps = contact_params['num_opt_steps']
+
+    contact_model = Contact()
     np.savetxt(f'output/trajectory.p_sensor1.csv', contact_model.p_sensor1.to_numpy(), delimiter=",", fmt='%.2f')
     np.savetxt(f'output/trajectory.o_sensor1.csv', contact_model.o_sensor1.to_numpy(), delimiter=",", fmt='%.2f')
     contact_model.save_tactile_sensor_mesh_node_mapping_to_pickle()

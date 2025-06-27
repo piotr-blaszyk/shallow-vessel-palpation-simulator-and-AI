@@ -7,6 +7,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from difftactile.object_model.obj_loader import ObjLoader
 import torch
+import json
 
 TI_TYPE = ti.f32
 TC_TYPE = torch.float32
@@ -14,9 +15,15 @@ NP_TYPE = np.float32
 
 @ti.data_oriented
 class MultiObj:
-    def __init__(self, dt=5e-5, sub_steps=80, obj_name=None, space_scale = 1.0, obj_scale = 1.0, mesh_density = 2, mass_density = 1):
-        self.sub_steps = sub_steps
-        self.dt = dt
+    def __init__(self):
+        # Load system parameters from JSON
+        with open('../tasks/system-params.json', 'r') as f:
+            params = json.load(f)
+            obj_params = params['multi_obj']
+            contact_params = params['contact']
+
+        self.sub_steps = contact_params['num_sub_frames']
+        self.dt = contact_params['dt']
         self.init_pos = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.init_ori = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.init_vel = ti.Vector.field(3, dtype=ti.f32, shape=())
@@ -26,13 +33,13 @@ class MultiObj:
         self.bound = 3
         self.dim = 3
         self.n_grid = 64
-        self.space_scale = space_scale
-        self.obj_scale = obj_scale
-        self.mass_density = mass_density * self.obj_scale
-        self.particle_density = self.n_grid * mesh_density * obj_scale / space_scale
-        self.gravity = ti.Vector([0.0, 0.0, 0.0])
+        self.space_scale = obj_params['space_scale']
+        self.obj_scale = obj_params['object_scale']
+        self.mass_density = obj_params['mass_density'] * self.obj_scale
+        self.particle_density = self.n_grid * obj_params['particle_density'] * self.obj_scale / self.space_scale
+        self.gravity = ti.Vector(obj_params['gravity'])
 
-        self.load_obj(obj_name)
+        self.load_obj(params['contact']['phantom_name'])
 
         self.grid_node_length = float(self.space_scale / self.n_grid)
         self.inverse_grid_node_length =  1 / self.grid_node_length
@@ -45,8 +52,6 @@ class MultiObj:
         self.poissons_ratio_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
         self.lamda_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
         self.mu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-
-        self.set_stiffness((1e3, 1e3))
 
         self.particle_position = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # position
         self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)  # velocity
@@ -98,8 +103,8 @@ class MultiObj:
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
 
     def set_stiffness(self, stiffness_tuple):
-        if stiffness_tuple is None:
-            return
+        return
+
         # Material A (human soft tissue); broad range from 0.1 kPa to 1 MPa
         self.youngs_modulus_0[0], self.poissons_ratio_0[0] = stiffness_tuple[0] * self.space_scale, 0.48  # Young's modulus ~5 kPa, nearly incompressible
         # Material B (tumor); from 1 kPa to 200 kPa

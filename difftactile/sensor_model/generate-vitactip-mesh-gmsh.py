@@ -5,6 +5,7 @@ import sys
 import pickle
 import os
 import itertools
+import json
 
 def dome_radius_of_curvature(radius_of_projection, height):
     r = radius_of_projection
@@ -12,6 +13,13 @@ def dome_radius_of_curvature(radius_of_projection, height):
     return (r ** 2 + h ** 2) / (2 * h)
 
 def generate_vitactip_mesh():
+    # Load system parameters from JSON
+    with open('../tasks/system-params.json', 'r') as f:
+        params = json.load(f)
+        mesh_params = params['mesh']
+
+    mesh_density = mesh_params['density']
+
     with open('biomimetic-tip-points.pkl', 'rb') as f:
         biomimetic_tip_points = pickle.load(f)
     A_points = biomimetic_tip_points['A_points']

@@ -11,6 +11,7 @@ from scipy.spatial import Delaunay
 from scipy.spatial.transform import Rotation as R
 import pickle
 import sys
+import json
 from difftactile.sensor_model.fisheye_model import * 
 
 TI_TYPE = ti.f32
@@ -19,29 +20,39 @@ NP_TYPE = np.float32
 
 @ti.data_oriented
 class FEMDomeSensor:
-    def __init__(self, dt=5e-5, sub_steps = 50, init_img_path=None):
+    def __init__(self):
         np.set_printoptions(precision=3, floatmode='maxprec', suppress=False)
-        self.sub_steps = sub_steps
-        self.dt = dt
+        # Load system parameters from JSON
+        with open('../tasks/system-params.json', 'r') as f:
+            params = json.load(f)
+            fem_params = params['fem_sensor']
+            contact_params = params['contact']
+        
+        self.sub_steps = contact_params['num_sub_frames']
+        self.dt = contact_params['dt']
         self.eps = 1e-11  # Small epsilon value for numerical stability in vector normalization
 
         # Material parameters for shell (Vytaflex 60)
-        self.shell_rho = 1.075  # density [g/cm^3]
+        self.shell_rho = fem_params['shell']['density']  # density [g/cm^3]
         self.shell_youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.shell_poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.shell_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.shell_lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         
         # Material parameters for gel (RTV27905)
-        self.gel_rho = 1.085  # density [g/cm^3]
+        self.gel_rho = fem_params['gel']['density']  # density [g/cm^3]
         self.gel_youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.gel_poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.gel_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.gel_lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
 
         # Initialize default material parameters
-        self.shell_youngs_modulus[None], self.shell_poissons_ratio[None] = 13.5e6, 0.49  # Shell (Vytaflex 60)
-        self.gel_youngs_modulus[None], self.gel_poissons_ratio[None] = 12.5e3, 0.49  # Gel (RTV27905)
+        # Shell (Vytaflex 60)
+        self.shell_youngs_modulus[None] = fem_params['shell']['youngs_modulus']
+        self.shell_poissons_ratio[None] = fem_params['shell']['poissons_ratio']
+        # Gel (RTV27905)
+        self.gel_youngs_modulus[None] = fem_params['gel']['youngs_modulus']
+        self.gel_poissons_ratio[None] = fem_params['gel']['poissons_ratio']
         
         # Compute Lamé parameters for both materials
         self.shell_mu[None] = self.shell_youngs_modulus[None] / 2 / (1 + self.shell_poissons_ratio[None])
@@ -81,22 +92,11 @@ class FEMDomeSensor:
         self.markers_surface_id = ti.field(int, len(self.shell_outer_layer_nodes))
         self.markers_surface_id.from_numpy(self.shell_outer_layer_nodes.astype(np.int32))
         self.num_surface = len(self.shell_outer_layer_nodes)
-
-        # cam model
-        # self.num_k_closest = 5
-        # self.initial_markers, interp_idx, interp_weight = self.init_cam_model(init_img_path)
-        # self.num_markers = len(self.initial_markers)
-        # self.visualise_2d(interp_idx)
         self.num_markers = self.marker_node_tags_np.shape[0]
 
         self.predict_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.virtual_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.initial_virtual_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
-
-        # self.interp_weight = ti.Vector.field(self.num_k_closest, float, self.num_markers, needs_grad=False)
-        # self.interp_weight.from_numpy(interp_weight.astype(np.float32))
-        # self.interp_idx = ti.Vector.field(self.num_k_closest, int, self.num_markers)
-        # self.interp_idx.from_numpy(interp_idx.astype(np.int32))
 
         self.f2v = ti.Vector.field(4, int, self.n_cells)
         self.f2v.from_numpy(self.all_f2v.astype(np.int32))
@@ -329,6 +329,8 @@ class FEMDomeSensor:
 
     @ti.kernel
     def set_material_params(self, shell_E:ti.f32, shell_nu:ti.f32, gel_E:ti.f32, gel_nu:ti.f32):
+        return
+
         # Set shell material parameters (Vytaflex 60)
         self.shell_youngs_modulus[None], self.shell_poissons_ratio[None] = shell_E, shell_nu
         self.shell_mu[None] = self.shell_youngs_modulus[None] / 2 / (1 + self.shell_poissons_ratio[None])
