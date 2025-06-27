@@ -46,6 +46,7 @@ assert obj_scale == phantom_max_dim
 phantom_normalised_spans = phantom_dimensions / phantom_max_dim / 2
 phantom_scaled_spans = phantom_normalised_spans * obj_scale
 
+print(f'phantom_normalised_spans: {phantom_normalised_spans}')
 print(f'phantom_scaled_spans: {phantom_scaled_spans}')
 
 phantom_difftactile_position = phantom_closest_vertex + phantom_scaled_spans

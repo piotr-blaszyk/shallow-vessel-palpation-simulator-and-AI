@@ -42,8 +42,7 @@ class Phantom:
         self.grid_cube_size = float(self.space_scale / self.n_grid)
         self.inverse_grid_cube_size =  1 / self.grid_cube_size
         self.particle_volume = (self.grid_cube_size * self.obj_scale) ** 3
-        self.particle_mass_density = self.mass_density * 1.0
-        self.particle_mass = self.particle_volume * self.particle_mass_density
+        self.particle_mass = self.particle_volume * self.mass_density
         self.eps = 1e-5
         
         self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
@@ -229,6 +228,7 @@ class Phantom:
 
     @ti.func
     def update_contact_force(self, external_force, f, i, j, k):
+        # extrnal_force in N
         self.grid_node_external_force[f, i, j, k] += external_force * self.dt
 
     @ti.kernel
