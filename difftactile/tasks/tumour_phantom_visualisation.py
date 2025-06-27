@@ -5,9 +5,9 @@ import json
 class ContactVisualisation:
     def __init__(self):
         self.off_screen = False
-        self.enable_gui1 = False
-        self.enable_gui2 = True
-        self.enable_gui3 = False
+        self.enable_low_level_camera = False
+        self.enable_tactile_map = False
+        self.enable_strange_gui = False
         self.view_phi = 0
         self.view_theta = 0
         self.table_scale = 2.0
@@ -207,19 +207,19 @@ class ContactVisualisation:
             camera = ti.ui.Camera()
             camera.projection_mode(ti.ui.ProjectionMode.Perspective)
             x, y, z = self.vitactip_tip_pose[:3]
-            camera.position(x-0.5, y, z)
+            camera.position(x-1.0, y, z)
             camera.up(0, 0, 1)
             camera.lookat(x, y, z)
-            camera.fov(5)
-            if self.enable_gui1:
+            camera.fov(10)
+            if self.enable_low_level_camera:
                 gui1 = ti.GUI("low-level camera", res=window_res)
             else:
                 gui1 = None
-            if self.enable_gui2:
+            if self.enable_tactile_map:
                 gui2 = ti.GUI("tactile readout 1", res=window_res)
             else:
                 gui2 = None
-            if self.enable_gui3:
+            if self.enable_strange_gui:
                 gui3 = ti.GUI("tactile readout 2", res=window_res)
             else:
                 gui3 = None
@@ -245,11 +245,11 @@ class ContactVisualisation:
             self.vitactip.extract_markers(0)
             init_2d = self.vitactip.undeformed_markers.to_numpy()
             marker_2d = self.vitactip.deformed_markers.to_numpy()
-            if self.enable_gui2:
+            if self.enable_tactile_map:
                 self.draw_markers(init_2d, marker_2d, gui2)
         if not self.off_screen:
             self.draw_perspective(0)
-            if self.enable_gui1:
+            if self.enable_low_level_camera:
                 gui1.circles(
                     viz_scale * self.draw_pos3.to_numpy() + viz_offset,
                     radius=2,
@@ -260,7 +260,7 @@ class ContactVisualisation:
                     radius=2,
                     color=0xE6C949,
                 )
-            if self.enable_gui3:
+            if self.enable_strange_gui:
                 self.draw_triangles(
                     self.vitactip,
                     gui3,
@@ -270,11 +270,11 @@ class ContactVisualisation:
                     viz_scale_deformation_map,
                     viz_offset_deformation_map,
                 )
-            if self.enable_gui1:
+            if self.enable_low_level_camera:
                 gui1.show()
-            if self.enable_gui2:
+            if self.enable_tactile_map:
                 gui2.show()
-            if self.enable_gui3:
+            if self.enable_strange_gui:
                 gui3.show()
             
             scene.set_camera(camera)
@@ -287,7 +287,7 @@ class ContactVisualisation:
             scene.particles(
                 self.healthy_tissue_points,
                 color=(0.0, 0.0, 1.0),
-                radius=0.01 / sf,
+                radius=0.02 / sf,
             )
             scene.particles(
                 self.tumour_points,
