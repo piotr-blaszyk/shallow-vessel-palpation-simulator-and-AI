@@ -43,7 +43,7 @@ class RigidObj:
         self.obj_name = obj_name
         if self.obj_name is not None:
             data_path = os.path.join("..", "meshes", "objects", self.obj_name)
-            obj_loader = ObjLoader(data_path, particle_density = int(self.particle_density))
+            obj_loader = ObjLoader(data_path, target_total_num_particles = int(self.particle_density))
             obj_loader.generate_particles()
             self.n_particles = len(obj_loader.particles)
             self.particles = ti.Vector.field(3, dtype=float, shape=self.n_particles)

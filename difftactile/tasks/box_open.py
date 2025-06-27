@@ -94,10 +94,10 @@ class Contact:
         self.press_offset1 = ti.field(float, self.fem_sensor1.num_contact_surface_triangles)
 
         self.draw_pos2 = ti.Vector.field(2, float, self.fem_sensor1.num_vertices) # elastomer1's pos
-        self.draw_pos3 = ti.Vector.field(2, float, self.mpm_object.n_particles) # object's particle
+        self.draw_pos3 = ti.Vector.field(2, float, self.mpm_object.actual_total_num_particles) # object's particle
 
         # 3d viz
-        self.draw_pos_3d = ti.Vector.field(3, dtype=float, shape=(self.mpm_object.n_particles))
+        self.draw_pos_3d = ti.Vector.field(3, dtype=float, shape=(self.mpm_object.actual_total_num_particles))
         self.draw_fem1_3d = ti.Vector.field(3, dtype=float, shape=(self.fem_sensor1.num_vertices))
 
         self.contact_grid = ti.field(dtype=int, shape=(self.mpm_object.n_grid, self.mpm_object.n_grid, self.mpm_object.n_grid))
@@ -318,7 +318,7 @@ class Contact:
         for i, j, k in ti.ndrange(self.mpm_object.n_grid, self.mpm_object.n_grid, self.mpm_object.n_grid):
             # if self.mpm_object.grid_m[f, i, j, k] > self.mpm_object.eps:
             if self.mpm_object.grid_occupy[f, i, j, k] == 1:
-                cur_p = ti.Vector([(i+0.5)*self.mpm_object.grid_cube_size, (j+0.5)*self.mpm_object.grid_cube_size, (k+0.5)*self.mpm_object.grid_cube_size])
+                cur_p = ti.Vector([(i+0.5)*self.mpm_object.mpm_grid_cube_size, (j+0.5)*self.mpm_object.mpm_grid_cube_size, (k+0.5)*self.mpm_object.mpm_grid_cube_size])
                 min_idx1 = self.fem_sensor1.find_closest(cur_p, f)
                 self.contact_idx[f, i, j, k] = min_idx1
 
@@ -327,7 +327,7 @@ class Contact:
     def collision(self, f:ti.i32):
         for i, j, k in ti.ndrange(self.mpm_object.n_grid, self.mpm_object.n_grid, self.mpm_object.n_grid):
             if self.mpm_object.grid_occupy[f, i, j, k] == 1:
-                cur_p = ti.Vector([(i+0.5)*self.mpm_object.grid_cube_size, (j+0.5)*self.mpm_object.grid_cube_size, (k+0.5)*self.mpm_object.grid_cube_size])
+                cur_p = ti.Vector([(i+0.5)*self.mpm_object.mpm_grid_cube_size, (j+0.5)*self.mpm_object.mpm_grid_cube_size, (k+0.5)*self.mpm_object.mpm_grid_cube_size])
                 cur_v = self.mpm_object.grid_node_momentum_in[f, i, j, k] / (self.mpm_object.grid_node_mass[f, i, j, k]+self.mpm_object.eps)
                 min_idx1 = self.contact_idx[f, i, j, k]
                 cur_sdf1, cur_norm_v1, cur_relative_v1, contact_flag1 = self.fem_sensor1.find_sdf(cur_p, cur_v, min_idx1, f)
@@ -441,7 +441,7 @@ class Contact:
             self.draw_pos2[i][0] = u + 0.2
             self.draw_pos2[i][1] = v + 0.5
 
-        for i in range(self.mpm_object.n_particles):
+        for i in range(self.mpm_object.actual_total_num_particles):
             x, y, z = self.mpm_object.particle_position[f, i][0] - offset, self.mpm_object.particle_position[f, i][1] - offset, self.mpm_object.particle_position[f, i][2] - offset
             xx, zz = x * c_p + z * s_p, z * c_p - x * s_p
             u, v = xx, y * c_t + zz * s_t

@@ -40,6 +40,7 @@ phantom_h = 0.022
 phantom_r = 0.040
 phantom_d = phantom_r * 2
 phantom_dimensions = np.array([phantom_d, phantom_d, phantom_h], dtype=float)
+phantom_volume = math.pi * phantom_r ** 2 * phantom_h
 
 phantom_max_dim = np.max(phantom_dimensions)
 assert obj_scale == phantom_max_dim
@@ -63,11 +64,12 @@ coordinates = {
     "phantom_centroid_pose": phantom_difftactile_position.tolist() + phantom_orientation,
     "vitactip_tip_position": vitactip_tip_position.tolist(),
     "vitactip_tip_pose": vitactip_tip_position.tolist() + sensor_orientation,
-    "gap": gap
+    "gap": gap,
+    "phantom_volume": phantom_volume,
 }
 
 # Save coordinates to JSON file
-with open('../tasks/initial-coordinates.json', 'w') as f:
+with open('../tasks/initial-coordinates-and-geometry.json', 'w') as f:
     json.dump(coordinates, f, indent=2)
 
 print('difftactile coordinates')

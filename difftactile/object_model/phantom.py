@@ -16,17 +16,47 @@ NP_TYPE = np.float32
 @ti.data_oriented
 class Phantom:
     def __init__(self):
-        self.set_up_system_params()
+        self.set_up_system_params_1()
         self.load_obj()
+        self.set_up_system_params_2()
         self.set_up_physical_state()
         self.set_up_domain_randomisation()
         self.cache = dict() # for grad backward
 
-    def set_up_system_params(self):
+    def set_up_system_params_1(self):
         with open('../tasks/system-params.json', 'r') as f:
             self.params = json.load(f)
             self.phantom_params = self.params['phantom']
             self.contact_params = self.params['contact']
+        
+        with open('../tasks/initial-coordinates-and-geometry.json', 'r') as f:
+            self.coordinates = json.load(f)
+
+    def load_obj(self):
+        self.obj_name = self.params['contact']['phantom_name']
+        if self.obj_name is None:
+            raise Exception("Please specify the name of the phantom object to load")
+        
+        data_path = os.path.join("..", "meshes", "objects", self.obj_name)
+        obj_loader = ObjLoader(data_path, target_total_num_particles = int(self.target_total_num_particles))
+        obj_loader.generate_particles()
+        self.actual_total_num_particles = len(obj_loader.particles)
+        self.particles = ti.Vector.field(3, dtype=float, shape=self.actual_total_num_particles)
+        self.particles.from_numpy((obj_loader.particles * self.obj_scale).astype(np.float32))
+        self.titles = ti.field(dtype=int, shape=self.actual_total_num_particles)
+        
+        self.is_fixed = ti.field(dtype=int, shape=(self.actual_total_num_particles,))
+        particles_np = self.particles.to_numpy()
+        z_coords = particles_np[:, 2]
+        z_min, z_max = np.min(z_coords), np.max(z_coords)
+        z_threshold = z_min + 0.25 * (z_max - z_min)
+        is_fixed_np = (z_coords <= z_threshold)
+        self.is_fixed.from_numpy(is_fixed_np.astype(int))
+
+    def set_up_system_params_2(self):
+        self.total_volume = self.coordinates['phantom_volume']
+        self.particle_volume = self.total_volume / self.actual_total_num_particles
+        self.particle_mass = self.particle_volume * self.mass_density
 
         self.sub_steps = self.contact_params['num_sub_frames']
         self.dt = self.contact_params['dt']
@@ -35,14 +65,12 @@ class Phantom:
         self.n_grid = 64
         self.space_scale = self.phantom_params['space_scale']
         self.obj_scale = self.phantom_params['object_scale']
-        self.mass_density = self.phantom_params['mass_density'] * self.obj_scale
-        self.particle_density = self.n_grid * self.phantom_params['particle_density'] * self.obj_scale / self.space_scale
+        self.mass_density = self.phantom_params['mass_density']
+        self.target_total_num_particles = self.phantom_params['target_total_num_particles']
         self.gravity = ti.Vector(self.phantom_params['gravity'])
 
-        self.grid_cube_size = float(self.space_scale / self.n_grid)
-        self.inverse_grid_cube_size =  1 / self.grid_cube_size
-        self.particle_volume = (self.grid_cube_size * self.obj_scale) ** 3
-        self.particle_mass = self.particle_volume * self.mass_density
+        self.mpm_grid_cube_size = float(self.space_scale / self.n_grid)
+        self.inverse_mpm_grid_cube_size =  1 / self.mpm_grid_cube_size
         self.eps = 1e-5
         
         self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
@@ -64,27 +92,6 @@ class Phantom:
             self.mu_0[item] = self.youngs_modulus_0[item] / 2 / (1 + self.poissons_ratio_0[item])
             self.lamda_0[item] = self.youngs_modulus_0[item] * self.poissons_ratio_0[item] / (1 + self.poissons_ratio_0[item]) / (1 - 2 * self.poissons_ratio_0[item])
 
-    def load_obj(self):
-        self.obj_name = self.params['contact']['phantom_name']
-        if self.obj_name is None:
-            raise Exception("Please specify the name of the phantom object to load")
-        
-        data_path = os.path.join("..", "meshes", "objects", self.obj_name)
-        obj_loader = ObjLoader(data_path, particle_density = int(self.particle_density))
-        obj_loader.generate_particles()
-        self.n_particles = len(obj_loader.particles)
-        self.particles = ti.Vector.field(3, dtype=float, shape=self.n_particles)
-        self.particles.from_numpy((obj_loader.particles * self.obj_scale).astype(np.float32))
-        self.titles = ti.field(dtype=int, shape=self.n_particles)
-        
-        self.is_fixed = ti.field(dtype=int, shape=(self.n_particles,))
-        particles_np = self.particles.to_numpy()
-        z_coords = particles_np[:, 2]
-        z_min, z_max = np.min(z_coords), np.max(z_coords)
-        z_threshold = z_min + 0.25 * (z_max - z_min)
-        is_fixed_np = (z_coords <= z_threshold)
-        self.is_fixed.from_numpy(is_fixed_np.astype(int))
-
     def set_up_physical_state(self):
         # initial_position: position vector in m
         self.initial_position = ti.Vector.field(3, dtype=ti.f32, shape=())
@@ -98,22 +105,22 @@ class Phantom:
         self.transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape=())
 
         # particle_position: position vectors in m
-        self.particle_position = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        self.particle_position = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
         # particle_velocity: velocity vectors in m/s
-        self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
 
         # affine_velocity: affine velocity field matrix (m/s)
-        self.affine_velocity_field = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        self.affine_velocity_field = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
         # trial_deformation_gradient: trial deformation gradient matrix (dimensionless)
-        self.trial_deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        self.trial_deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
         # deformation_gradient: deformation gradient matrix (dimensionless)
-        self.deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        self.deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
         # U_svd: left singular vectors matrix (dimensionless)
-        self.U_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        self.U_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
         # V_svd: right singular vectors matrix (dimensionless)
-        self.V_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        self.V_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
         # S_svd: singular values matrix (dimensionless)
-        self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=False)
+        self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
 
         # grid_node_momentum_in: momentum vectors in kg⋅m/s
         self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
@@ -145,7 +152,7 @@ class Phantom:
             self.set_up_tumour_inclusion(cylinder_tuple)
             self.partition_point_cloud()
         else:
-            self.group_cardinality[0] = self.n_particles
+            self.group_cardinality[0] = self.actual_total_num_particles
             self.group_cardinality[1] = 0
             self.titles.fill(0)
         print(f'tumour_present: {tumour_present}, healthy: {self.group_cardinality[0]}, tumour: {self.group_cardinality[1]}')
@@ -167,7 +174,7 @@ class Phantom:
 
     @ti.kernel
     def partition_point_cloud(self):
-        for item in range(self.n_particles):
+        for item in range(self.actual_total_num_particles):
             pos = self.particles[item]
             # Translate to cylinder center
             px = pos[0] - self.cylinder_cx[None]
@@ -203,7 +210,7 @@ class Phantom:
 
     @ti.kernel
     def initialise_point_cloud(self):
-        for i in range(self.n_particles):
+        for i in range(self.actual_total_num_particles):
             # particle_position_reference: reference particle position in m
             current_particle_position = self.particles[i]
             # particle_position_transformed: transformed particle position in homogeneous coordinates
@@ -233,17 +240,17 @@ class Phantom:
 
     @ti.kernel
     def compute_new_F(self, f: ti.i32):
-        for p in range(self.n_particles):
+        for p in range(self.actual_total_num_particles):
             self.trial_deformation_gradient[f, p] = (ti.Matrix.diag(dim=3, val=1) + self.dt * self.affine_velocity_field[f, p]) @ self.deformation_gradient[f, p]
 
     @ti.kernel
     def svd(self, f: ti.i32):
-        for p in range(self.n_particles):
+        for p in range(self.actual_total_num_particles):
             self.U_svd[f, p], self.S_svd[f, p], self.V_svd[f, p] = ti.svd(self.trial_deformation_gradient[f, p])
 
     @ti.kernel
     def svd_grad(self, f: ti.i32):
-        for p in range(self.n_particles):
+        for p in range(self.actual_total_num_particles):
             self.trial_deformation_gradient.grad[f, p] += self.single_svd_grad(f, p)
 
     @ti.func
@@ -299,14 +306,15 @@ class Phantom:
         Args:
             frame: current simulation frame (dimensionless)
         """
-        for particle_id in range(self.n_particles):
+        for particle_id in range(self.actual_total_num_particles):
             # shear_modulus: shear modulus in Pa
+            shear_modulus = self.mu_0[self.titles[particle_id]]
             # bulk_modulus: bulk modulus in Pa
-            shear_modulus, bulk_modulus = self.mu_0[self.titles[particle_id]], self.lamda_0[self.titles[particle_id]]
+            bulk_modulus = self.lamda_0[self.titles[particle_id]]
             # grid_base_index: grid cell indices (dimensionless)
-            grid_base_index = (self.particle_position[frame, particle_id] * self.inverse_grid_cube_size - 0.5).cast(int)
+            grid_base_index = (self.particle_position[frame, particle_id] * self.inverse_mpm_grid_cube_size - 0.5).cast(int)
             # particle_grid_diff: fractional position within grid cell (dimensionless)
-            particle_grid_diff = self.particle_position[frame, particle_id] * self.inverse_grid_cube_size - grid_base_index.cast(float)
+            particle_grid_diff = self.particle_position[frame, particle_id] * self.inverse_mpm_grid_cube_size - grid_base_index.cast(float)
             # Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=particle_grid_diff, particle_grid_diff-1,particle_grid_diff-2]
             # weight_functions: interpolation weights (dimensionless)
             weight_functions = [0.5 * (1.5 - particle_grid_diff) ** 2, 0.75 - (particle_grid_diff - 1) ** 2, 0.5 * (particle_grid_diff - 0.5) ** 2]
@@ -319,20 +327,24 @@ class Phantom:
             cauchy_stress = 2 * shear_modulus * (self.trial_deformation_gradient[frame, particle_id] - rotation_matrix) @ self.trial_deformation_gradient[frame, particle_id].transpose() + ti.Matrix.identity(float, 3) * bulk_modulus * volume_ratio * (volume_ratio - 1)
 
             # force_term: force contribution in N
-            force_term = (-self.dt * self.particle_volume * 4 * self.inverse_grid_cube_size * self.inverse_grid_cube_size) * cauchy_stress
+            force_term = cauchy_stress * self.particle_volume
+            # impulse_term: kg * m / s
+            impulse_term = force_term * -self.dt
+            # impulse_term_scaled: kg * m / s
+            impulse_term_scaled_quadratic_B_spline = 4 * self.inverse_mpm_grid_cube_size ** 2 * impulse_term
 
             # momentum_contrib: momentum contribution in kg⋅m/s
-            momentum_contrib = force_term + self.particle_mass * self.affine_velocity_field[frame, particle_id]
+            momentum_contribution = impulse_term_scaled_quadratic_B_spline + self.particle_mass * self.affine_velocity_field[frame, particle_id]
 
             # Loop over 3x3 grid node neighborhood
             for i, j, k in ti.static(ti.ndrange(3, 3, 3)):
                 # grid_offset: grid offset vector (dimensionless)
                 grid_offset = ti.Vector([i, j, k])
                 # dist_to_grid: distance to grid node in m
-                dist_to_grid = (grid_offset.cast(float) - particle_grid_diff) * self.grid_cube_size
+                dist_to_grid = (grid_offset.cast(float) - particle_grid_diff) * self.mpm_grid_cube_size
                 # weight: interpolation weight (dimensionless)
                 weight = weight_functions[i][0] * weight_functions[j][1] * weight_functions[k][2]
-                self.grid_node_momentum_in[frame, grid_base_index + grid_offset] += weight * (self.particle_mass * self.particle_velocity[frame, particle_id] + momentum_contrib @ dist_to_grid)
+                self.grid_node_momentum_in[frame, grid_base_index + grid_offset] += weight * (self.particle_mass * self.particle_velocity[frame, particle_id] + momentum_contribution @ dist_to_grid)
                 self.grid_node_mass[frame, grid_base_index + grid_offset] += weight * self.particle_mass
 
             self.deformation_gradient[frame+1, particle_id] = self.trial_deformation_gradient[frame, particle_id]
@@ -393,11 +405,11 @@ class Phantom:
         Args:
             frame: current simulation frame (dimensionless)
         """
-        for particle_id in range(self.n_particles): # grid to particle (G2P)
+        for particle_id in range(self.actual_total_num_particles): # grid to particle (G2P)
             # grid_base_index: grid cell indices (dimensionless)
-            grid_base_index = (self.particle_position[frame, particle_id] * self.inverse_grid_cube_size - 0.5).cast(int)
+            grid_base_index = (self.particle_position[frame, particle_id] * self.inverse_mpm_grid_cube_size - 0.5).cast(int)
             # particle_grid_diff: fractional position within grid cell (dimensionless)
-            particle_grid_diff = self.particle_position[frame, particle_id] * self.inverse_grid_cube_size - grid_base_index.cast(float)
+            particle_grid_diff = self.particle_position[frame, particle_id] * self.inverse_mpm_grid_cube_size - grid_base_index.cast(float)
             # weight_functions: interpolation weights (dimensionless)
             weight_functions = [0.5 * (1.5 - particle_grid_diff) ** 2, 0.75 - (particle_grid_diff - 1.0) ** 2, 0.5 * (particle_grid_diff - 0.5) ** 2]
             # updated_velocity: updated particle velocity in m/s
@@ -413,7 +425,7 @@ class Phantom:
                 # weight: interpolation weight (dimensionless)
                 weight = weight_functions[i][0] * weight_functions[j][1] * weight_functions[k][2]
                 updated_velocity += weight * grid_node_velocity
-                updated_affine += 4 * self.inverse_grid_cube_size * weight * grid_node_velocity.outer_product(grid_relative_offset)
+                updated_affine += 4 * self.inverse_mpm_grid_cube_size * weight * grid_node_velocity.outer_product(grid_relative_offset)
 
             # fixed_particle: flag for fixed particles (dimensionless)
             # fixed_particle = self.is_fixed[particle_id] == 1
@@ -428,7 +440,7 @@ class Phantom:
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):
-        for p in range(self.n_particles):
+        for p in range(self.actual_total_num_particles):
             self.particle_position[target, p] = self.particle_position[source, p]
             self.particle_velocity[target, p] = self.particle_velocity[source, p]
             self.affine_velocity_field[target, p] = self.affine_velocity_field[source, p]
@@ -436,7 +448,7 @@ class Phantom:
 
     @ti.kernel
     def copy_grad(self, source: ti.i32, target: ti.i32):
-        for p in range(self.n_particles):
+        for p in range(self.actual_total_num_particles):
             self.particle_position.grad[target, p] = self.particle_position.grad[source, p]
             self.particle_velocity.grad[target, p] = self.particle_velocity.grad[source, p]
             self.affine_velocity_field.grad[target, p] = self.affine_velocity_field.grad[source, p]
@@ -444,7 +456,7 @@ class Phantom:
 
     @ti.kernel
     def load_step_from_cache(self, f: ti.i32, cache_x_0: ti.types.ndarray(), cache_v_0: ti.types.ndarray(), cache_C_0: ti.types.ndarray(), cache_F_0: ti.types.ndarray()):
-        for p in range(self.n_particles):
+        for p in range(self.actual_total_num_particles):
             for i in ti.static(range(3)):
                 self.particle_position[f, p][i] = cache_x_0[p,i]
                 self.particle_velocity[f, p][i] = cache_v_0[p,i]
@@ -455,7 +467,7 @@ class Phantom:
 
     @ti.kernel
     def add_step_to_cache(self, f: ti.i32, cache_x_0: ti.types.ndarray(), cache_v_0: ti.types.ndarray(), cache_C_0: ti.types.ndarray(), cache_F_0: ti.types.ndarray()):
-        for p in range(self.n_particles):
+        for p in range(self.actual_total_num_particles):
             for i in ti.static(range(3)):
                 cache_x_0[p,i] = self.particle_position[f, p][i]
                 cache_v_0[p,i] = self.particle_velocity[f, p][i]
@@ -469,10 +481,10 @@ class Phantom:
         device = 'cpu'
         self.cache[cur_step_name] = dict()
 
-        self.cache[cur_step_name]['x_0'] = torch.zeros((self.n_particles, 3), dtype=TC_TYPE, device=device)
-        self.cache[cur_step_name]['v_0'] = torch.zeros((self.n_particles, 3), dtype=TC_TYPE, device=device)
-        self.cache[cur_step_name]['C_0'] = torch.zeros((self.n_particles, 3, 3), dtype=TC_TYPE, device=device)
-        self.cache[cur_step_name]['F_0'] = torch.zeros((self.n_particles, 3, 3), dtype=TC_TYPE, device=device)
+        self.cache[cur_step_name]['x_0'] = torch.zeros((self.actual_total_num_particles, 3), dtype=TC_TYPE, device=device)
+        self.cache[cur_step_name]['v_0'] = torch.zeros((self.actual_total_num_particles, 3), dtype=TC_TYPE, device=device)
+        self.cache[cur_step_name]['C_0'] = torch.zeros((self.actual_total_num_particles, 3, 3), dtype=TC_TYPE, device=device)
+        self.cache[cur_step_name]['F_0'] = torch.zeros((self.actual_total_num_particles, 3, 3), dtype=TC_TYPE, device=device)
 
         self.add_step_to_cache(0, self.cache[cur_step_name]['x_0'], self.cache[cur_step_name]['v_0'], self.cache[cur_step_name]['C_0'], self.cache[cur_step_name]['F_0'])
         self.copy_frame(self.sub_steps-1, 0)
@@ -503,7 +515,7 @@ class Phantom:
         self.U_svd.grad.fill(0.0)
         self.V_svd.grad.fill(0.0)
         self.S_svd.grad.fill(0.0)
-        for p in range(self.n_particles):
+        for p in range(self.actual_total_num_particles):
             for t in range(f):
                 self.particle_position.grad[t,p].fill(0.0)
                 self.particle_velocity.grad[t,p].fill(0.0)

@@ -14,7 +14,7 @@
     "phantom": {
         "space_scale": 0.16,
         "object_scale": 0.08,
-        "particle_density": 0.5,
+        "target_total_num_particles": 2000,
         "mass_density": 1000.0,
         "gravity": [0.0, -9.81, 0.0],
         "healthy_tissue": {

@@ -8,13 +8,13 @@ import numpy as np
 from mesh_to_sdf import *
 
 class ObjLoader:
-    def __init__(self, data_path, particle_density = 32):
+    def __init__(self, data_path, target_total_num_particles):
         '''
         Load an obj or stl mesh model and convert it to particles
         '''
         self.data_path = data_path # ending with obj or stl
         self.voxel_resolution = 128
-        self.particle_density = particle_density # # of particles in one dimension of cube
+        self.num_particles_1d = int(target_total_num_particles ** (1/3)) # # of particles in one dimension of cube
 
     def generate_surface_particles(self, num_particles):
         self.raw_mesh = trimesh.load(self.data_path, force='mesh', skip_texture=True)
@@ -60,8 +60,8 @@ class ObjLoader:
         '''
         Sample grid-like particles in a 3D cube space [-0.5, 0.5]
         '''
-        dx = 1 / self.particle_density
-        x = np.linspace(-0.5, 0.5, self.particle_density+1)
+        dx = 1 / self.num_particles_1d
+        x = np.linspace(-0.5, 0.5, self.num_particles_1d+1)
         particles = np.stack(np.meshgrid(x, x, x, indexing='ij'), -1).reshape((-1, 3))
 
         return particles

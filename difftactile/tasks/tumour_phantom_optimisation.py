@@ -103,7 +103,7 @@ class Contact(ContactVisualisation):
         self.frames_since_last_target_reached[None] = 0
 
     def set_up_initial_positions_and_trajectory_first_init_only(self):
-        with open('../tasks/initial-coordinates.json', 'r') as f:
+        with open('../tasks/initial-coordinates-and-geometry.json', 'r') as f:
             self.coordinates = json.load(f)
 
         self.phantom_closest_vertex = self.coordinates['phantom_closest_vertex']
@@ -283,9 +283,9 @@ class Contact(ContactVisualisation):
                 # grid_node_position: position vector in m
                 grid_node_position = ti.Vector(
                     [
-                        (i + 0.5) * self.phantom.grid_cube_size,
-                        (j + 0.5) * self.phantom.grid_cube_size,
-                        (k + 0.5) * self.phantom.grid_cube_size,
+                        (i + 0.5) * self.phantom.mpm_grid_cube_size,
+                        (j + 0.5) * self.phantom.mpm_grid_cube_size,
+                        (k + 0.5) * self.phantom.mpm_grid_cube_size,
                     ]
                 )
                 # closest_sensor_vertex_idx: vertex index (dimensionless)
@@ -308,9 +308,9 @@ class Contact(ContactVisualisation):
                 # grid_node_position: position vector in m
                 grid_node_position = ti.Vector(
                     [
-                        (i + 0.5) * self.phantom.grid_cube_size,
-                        (j + 0.5) * self.phantom.grid_cube_size,
-                        (k + 0.5) * self.phantom.grid_cube_size,
+                        (i + 0.5) * self.phantom.mpm_grid_cube_size,
+                        (j + 0.5) * self.phantom.mpm_grid_cube_size,
+                        (k + 0.5) * self.phantom.mpm_grid_cube_size,
                     ]
                 )
                 # grid_node_velocity: velocity vector in m/s
