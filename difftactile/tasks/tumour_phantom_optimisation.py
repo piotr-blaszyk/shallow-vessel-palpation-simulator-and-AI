@@ -1,7 +1,5 @@
 from difftactile.tasks.tumour_phantom_visualisation import (
-    ContactVisualisation,
-    set_up_gui,
-    update_gui,
+    ContactVisualisation
 )
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
@@ -469,7 +467,7 @@ def main():
     else:
         ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)
 
-    gui_tuple = set_up_gui()
+    contact_model.set_up_gui()
 
     with open('../tasks/system-params.json', 'r') as f:
         params = json.load(f)
