@@ -1,44 +1,44 @@
 {
     "vitactip": {
         "shell": {
-            "density": 1.0,
-            "youngs_modulus": 2.0e3,
+            "density": 1200.0,
+            "youngs_modulus": 2.0e6,
             "poissons_ratio": 0.48
         },
         "gel": {
-            "density": 1.0,
-            "youngs_modulus": 1.0e3,
+            "density": 1000.0,
+            "youngs_modulus": 1.0e4,
             "poissons_ratio": 0.48
         }
     },
     "phantom": {
-        "space_scale": 16.0,
-        "object_scale": 8.0,
+        "space_scale": 0.016,
+        "object_scale": 0.008,
         "particle_density": 0.5,
-        "mass_density": 1.0,
-        "gravity": [0.0, 0.0, 0.0],
+        "mass_density": 1000.0,
+        "gravity": [0.0, -9.81, 0.0],
         "healthy_tissue": {
-            "youngs_modulus": 1.0e3,
+            "youngs_modulus": 1.0e4,
             "poissons_ratio": 0.48
         },
         "tumour": {
-            "youngs_modulus": 1.0e3,
+            "youngs_modulus": 5.0e4,
             "poissons_ratio": 0.48
         }
     },
     "contact": {
-        "dt": 5.0e-5,
-        "normal_stiffness": 34.53,
-        "normal_damping": 269.44,
-        "tangential_stiffness": 108.72,
-        "coulomb_friction_coeff": 14.16,
+        "dt": 1.0e-4,
+        "normal_stiffness": 1.0e4,
+        "normal_damping": 10.0,
+        "tangential_stiffness": 1.0e3,
+        "coulomb_friction_coeff": 0.3,
         "num_sub_frames": 50,
         "num_frames": 5000,
         "num_opt_steps": 10,
         "phantom_name": "cylinder.stl",
         "pid_kp": 1000.0,
         "pid_ki": 0.0,
-        "pid_kd": 0.0,
+        "pid_kd": 10.0,
         "dwell_frames": 0
     },
     "mesh": {

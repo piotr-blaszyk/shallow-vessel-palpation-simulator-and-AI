@@ -22,7 +22,7 @@ print('hello')
 print(node_coordinates.shape)
 print(all_tetrahedra.shape)
 
-i = 0
+i = 15
 with open(f'../tasks/output/tactile_sensor.deformed_node_coordinates.ts={int(100 * i)}.pkl', 'rb') as f:
     deformed_node_coordinates = pickle.load(f)
 print(f'ts={int(100 * i)}; num nan: {np.sum(np.isnan(deformed_node_coordinates))}')
@@ -47,7 +47,7 @@ for tetra in all_tetrahedra_new_idx:
     gel_count = np.sum(tetra_node_labels[:, group_to_idx['gel']])
     shell_count = np.sum(tetra_node_labels[:, group_to_idx['shell']])
     is_gel = gel_count == 4 and shell_count <= 3
-    if True:
+    if not is_gel:
         if np.any(tetra == -1):
             continue
         a, b, c, d = tetra

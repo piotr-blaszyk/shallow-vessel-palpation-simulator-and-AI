@@ -19,11 +19,11 @@ SLOW_DOWN = 0.5
 SPEED_1_MM_S = 4.0828765820486765 / SLOW_DOWN
 SPEED_2_DEG_S = 81.63 / SLOW_DOWN
 TIME_STEPS_PER_S = 10 * SLOW_DOWN
-GLOBAL_Z_OFFSET = 10
-PHANTOM_CLOSEST_VERTEX = [5.750000, 5.750000, 0.750000+GLOBAL_Z_OFFSET]
-PHANTOM_INITIAL_POSE = [9.750000, 9.750000, 1.850000+GLOBAL_Z_OFFSET, 0, 0, 0]
-SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET = 2.0
-SENSOR_DOME_TIP_INITIAL_POSE = [9.750000, 9.750000, 2.950000+GLOBAL_Z_OFFSET+SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET, -90, 0, 0]
+GLOBAL_Z_OFFSET = 0.01  # 10mm = 0.01m
+PHANTOM_CLOSEST_VERTEX = [0.00575, 0.00575, 0.00075 + GLOBAL_Z_OFFSET]  # meters
+PHANTOM_INITIAL_POSE = [0.00975, 0.00975, 0.00185 + GLOBAL_Z_OFFSET, 0, 0, 0]  # meters and degrees
+SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET = 0.002  # 2mm = 0.002m
+SENSOR_DOME_TIP_INITIAL_POSE = [0.00975, 0.00975, 0.00295 + GLOBAL_Z_OFFSET + SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET, -90, 0, 0]
 
 def print_point_cloud(arr):
     # Print the shape for verification
@@ -209,6 +209,8 @@ class Contact(ContactVisualisation):
             [x, y, z, xr, yr, zr],
             [x, y, z, xr, yr, zr],
             [x, y, z, xr, yr, zr],
+            # [x, y, z-press_depth, xr, yr, zr],
+            # [x, y+3, z-press_depth, xr, yr, zr],
         ], dtype=float)
         assert self.trajectory.shape[0] == self.trajectory_npy.shape[0], f"Set self.trajectory length to {self.trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(self.trajectory_npy)
@@ -552,7 +554,7 @@ class Contact(ContactVisualisation):
             
             clamp_speed = True
             # Clamp pos_control to max_speed
-            max_speed_pos = 1.0
+            max_speed_pos = 0.01  # 10 mm/s = 0.01 m/s
             pos_control_norm = pos_control.norm()
             if clamp_speed and pos_control_norm > max_speed_pos:
                 pos_control = pos_control / pos_control_norm * max_speed_pos
@@ -560,7 +562,7 @@ class Contact(ContactVisualisation):
             ori_control = self.pid_controller_kp[None] * ori_error + self.pid_controller_ki[None] * self.ori_error_sum[None] + self.pid_controller_kd[None] * ori_derivative
             
             # Clamp ori_control to max_speed_ori
-            max_speed_ori = max_speed_pos * 2.0
+            max_speed_ori = max_speed_pos * 2.0  # rad/s
             ori_control_norm = ori_control.norm()
             if clamp_speed and ori_control_norm > max_speed_ori:
                 ori_control = ori_control / ori_control_norm * max_speed_ori
