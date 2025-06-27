@@ -348,7 +348,7 @@ def generate_marker_3d_projection():
     with open('init-marker-positions.pkl', 'rb') as f:
         marker_positions_2d = pickle.load(f)
 
-    if True:
+    if False:
         with open('output/gmsh-mesh.pkl', 'rb') as f:
             gmsh_data = pickle.load(f)
         shell_inner_r = gmsh_data['R_inner']

@@ -20,7 +20,7 @@ with open('../tasks/system-params.json', 'r') as f:
     contact_params = params['contact']
 
 # Constants for poses
-gap = 0.01
+gap = 0.5
 phantom_orientation = [0, 0, 0]  # Roll, pitch, yaw in degrees
 sensor_orientation = [-90, 0, 0]  # Roll, pitch, yaw in degrees
 

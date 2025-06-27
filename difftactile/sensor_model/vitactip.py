@@ -68,11 +68,11 @@ class ViTacTip:
         
         # Unpack mesh data
         all_tetrahedra = mesh_data['all_tetrahedra']
-        node_coordinates = mesh_data['node_coordinates']
+        node_coordinates = mesh_data['node_coordinates'] / 1_000
         node_labels = mesh_data['node_labels']
         surface_triangles = mesh_data['surface_triangles']
         group_to_idx = mesh_data['group_to_idx']
-        y_bottom = mesh_data['y_bottom']
+        y_bottom = mesh_data['y_bottom'] / 1_000
         marker_node_tags = mesh_data['marker_node_tags']
         
         # Compute fixed layer nodes (nodes at the bottom)

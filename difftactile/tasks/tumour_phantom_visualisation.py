@@ -207,10 +207,10 @@ class ContactVisualisation:
             camera = ti.ui.Camera()
             camera.projection_mode(ti.ui.ProjectionMode.Perspective)
             x, y, z = self.vitactip_tip_pose[:3]
-            camera.position(x-50, y, z)
+            camera.position(x-0.5, y, z)
             camera.up(0, 0, 1)
             camera.lookat(x, y, z)
-            camera.fov(15)
+            camera.fov(5)
             if self.enable_gui1:
                 gui1 = ti.GUI("low-level camera", res=window_res)
             else:
@@ -281,21 +281,23 @@ class ContactVisualisation:
             scene.ambient_light((0.8, 0.8, 0.8))
             scene.point_light(pos=(0.5, 1.5, 1.5), color=(1, 1, 1))
             self.draw_3d_scene(0)
+
+            sf = 100
             
             scene.particles(
                 self.healthy_tissue_points,
                 color=(0.0, 0.0, 1.0),
-                radius=0.01,
+                radius=0.01 / sf,
             )
             scene.particles(
                 self.tumour_points,
                 color=(1.0, 1.0, 0.0),
-                radius=0.02,
+                radius=0.02 / sf,
             )
             scene.particles(
                 self.sensor_points,
                 color=(0.0, 1.0, 0.0),
-                radius=0.005,
+                radius=0.005 / sf,
             )
             
             assert keypoint_coords.shape[0] == self.key_points.shape[0], f"Set self.key_points to shape ({keypoint_coords.shape[0]},)"
@@ -304,7 +306,7 @@ class ContactVisualisation:
                 scene.particles(
                     self.key_points,
                     color=(1.0, 0.0, 0.0),
-                    radius=0.05,
+                    radius=0.05 / sf,
                 )
             
             canvas.scene(scene)

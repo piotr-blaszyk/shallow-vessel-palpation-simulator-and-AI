@@ -221,18 +221,7 @@ def get_difftactile_variables(geometry_data, A_points):
     with open('output/gmsh-mesh.pkl', 'wb') as f:
         pickle.dump(mesh_data, f)
 
-def point_to_triangle_distance(point, triangle_vertices):
-    # Convert inputs to numpy arrays
-    point = np.array(point)
-    v0, v1, v2 = np.array(triangle_vertices)
-    
-    # Calculate triangle centroid (arithmetic mean of vertices)
-    centroid = (v0 + v1 + v2) / 3.0
-    
-    # Calculate Euclidean distance between point and centroid
-    return np.linalg.norm(point - centroid)
-
-def find_closest_triangle(point):
+def gmsh_reference():
     # element_types is irrelevant
     # triangle_tags[0] is a 1d int numpy array of shape (num_triangles,)
     # triangle_vertex_tags[0] is a 1d int numpy array of shape (num_traingles * 3,)
@@ -241,91 +230,6 @@ def find_closest_triangle(point):
     # node_coordinates is a 1d float numpy array of shape (num_particles*3,)
     # parametric_coord is irrelevant
     node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes()
-
-    node_coordinates = node_coordinates.reshape(-1, 3)
-    node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
-    triangles = []
-    node_tags_array = triangle_vertex_tags[0].reshape(-1, 3)
-    min_distance = float('inf')
-    closest_triangle_idx = None
-    closest_triangle_nodes = None
-    closest_triangle_coords = None
-    for tri_idx, triangle_node_tags in enumerate(node_tags_array):
-        triangle_vertices = [node_coordinates[node_tag_to_idx[tag]] for tag in triangle_node_tags]
-        distance = point_to_triangle_distance(point, triangle_vertices)
-        if distance < min_distance:
-            min_distance = distance
-            closest_triangle_idx = tri_idx
-            closest_triangle_nodes = triangle_node_tags
-            closest_triangle_coords = triangle_vertices
-    
-    if False:
-        print(f"\nClosest triangle:")
-        print(f"Triangle index: {closest_triangle_idx}")
-        print(f"Node indices: {closest_triangle_nodes}")
-        print(f"Node coordinates:")
-        for i, coords in enumerate(closest_triangle_coords):
-            print(f"Node {i}: ({coords[0]:.3f}, {coords[1]:.3f}, {coords[2]:.3f})")
-        print(f"Distance to point: {min_distance:.3f}")
-    
-    return closest_triangle_idx, closest_triangle_nodes, closest_triangle_coords, min_distance
-
-def sandbox():
-    gmsh.initialize()
-    gmsh.option.setNumber("General.Terminal", 1)
-    gmsh.model.add("sandbox")
-    outer_ball = gmsh.model.occ.addSphere(0, 0, 0, 10)
-    inner_ball = gmsh.model.occ.addSphere(0, 0, 0, 5)
-    fragments = gmsh.model.occ.fragment([(3, outer_ball)], [(3, inner_ball)])[0]
-
-    for dim, tag in fragments:
-        xmin, ymin, zmin, xmax, ymax, zmax = gmsh.model.occ.getBoundingBox(dim, tag)
-        foo = 7
-    
-    gmsh.model.occ.synchronize()
-    gmsh.model.mesh.generate(3)
-    gmsh.write('sandbox.msh')
-    gmsh.fltk.run()
-    gmsh.finalize()
-
-def load_mesh():
-    gmsh.initialize()
-    gmsh.open("sandbox.msh")
-    gmsh.fltk.run()
-    gmsh.finalize()
-
-def get_fragment_node_tags(fragment_entities):
-    all_node_tags = []
-    all_node_coords = []
-    for dim, tag in fragment_entities:
-        node_tags, node_coords, _ = gmsh.model.mesh.getNodes(dim, tag)
-        all_node_tags.extend(node_tags)
-        all_node_coords.extend(node_coords)
-    all_node_tags = np.array(all_node_tags)
-    all_node_coords = np.array(all_node_coords).reshape(-1, 3)
-    unique_node_tags, unique_indices = np.unique(all_node_tags, return_index=True)
-    unique_node_coords = all_node_coords[unique_indices]
-    return unique_node_tags, unique_node_coords
-
-def example_fragment_usage():
-    outer_ball = gmsh.model.occ.addSphere(0, 0, 0, 10)
-    inner_ball = gmsh.model.occ.addSphere(0, 0, 0, 5)
-    fragments = gmsh.model.occ.fragment([(3, outer_ball)], [(3, inner_ball)])
-    if fragments[0]:
-        node_tags, node_coords = get_fragment_node_tags(fragments[0])
-        print(f"Fragment has {len(node_tags)} unique vertices")
-        print(f"First few vertices: {node_tags[:5]}")
-        print(f"Vertex coordinates shape: {node_coords.shape}")
-
-def fragments_dfs_get_tetrahedra_tags(x):
-    if isinstance(x, int):
-        return []
-    if not (isinstance(x, tuple) or isinstance(x, list)):
-        raise Exception("unexpected structure of fragments data")
-    if len(x) == 2 and isinstance(x[0], int) and isinstance(x[1], int):
-        return [x[1]]
-    res_nested = [fragments_dfs_get_tetrahedra_tags(y) for y in x]
-    return np.unique(np.array(list(itertools.chain.from_iterable(res_nested)))).tolist()
 
 if __name__ == "__main__":
     np.set_printoptions(formatter={'float_kind': '{:.2f}'.format})
