@@ -16,7 +16,7 @@ off_screen = False
 os.environ['CUDA_VISIBLE_DEVICES'] = str(0)
 import trimesh
 
-from difftactile.sensor_model.fem_sensor import FEMDomeSensor
+from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.rigid_static import RigidObj
 
 
@@ -37,7 +37,7 @@ class Contact:
         self.decontact_flag = False
         self.sub_steps = sub_steps
         self.dim = 3
-        self.fem_sensor1 = FEMDomeSensor(dt, sub_steps)
+        self.fem_sensor1 = ViTacTip(dt, sub_steps)
         self.space_scale = 10.0
         self.obj_scale = 8.0
         self.use_tactile = use_tactile

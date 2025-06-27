@@ -19,13 +19,13 @@ TC_TYPE = torch.float32
 NP_TYPE = np.float32
 
 @ti.data_oriented
-class FEMDomeSensor:
+class ViTacTip:
     def __init__(self):
         np.set_printoptions(precision=3, floatmode='maxprec', suppress=False)
         # Load system parameters from JSON
         with open('../tasks/system-params.json', 'r') as f:
             params = json.load(f)
-            fem_params = params['fem_sensor']
+            fem_params = params['vitactip']
             contact_params = params['contact']
         
         self.sub_steps = contact_params['num_sub_frames']
@@ -208,9 +208,9 @@ class FEMDomeSensor:
         cv2.imwrite("../tasks/output/init_cam_model.png", overlay_img)
         surface_nodes = self.all_nodes[self.shell_outer_layer_nodes]
         cam_3D_nodes = np.array([surface_nodes[:,0], surface_nodes[:,2], surface_nodes[:,1]]).T
-        with open(f"output/fem_sensor.cam_3d_nodes.pkl", 'wb') as f:
+        with open(f"output/vitactip.cam_3d_nodes.pkl", 'wb') as f:
             pickle.dump(cam_3D_nodes, f)
-        np.savetxt(f'output/fem_sensor.cam_3d_nodes.csv', cam_3D_nodes, delimiter=",", fmt='%.2f')
+        np.savetxt(f'output/vitactip.cam_3d_nodes.csv', cam_3D_nodes, delimiter=",", fmt='%.2f')
         cam_points = project_points_to_pix(cam_3D_nodes)
         # Overlay cam_points as green circles and save
         cam_points_img = init_img.copy()
@@ -240,12 +240,12 @@ class FEMDomeSensor:
 
         # Flatten interp_idx before saving
         interp_idx_flat = interp_idx.flatten()
-        with open(f"output/fem_sensor.interp_idx_flat.pkl", 'wb') as f:
+        with open(f"output/vitactip.interp_idx_flat.pkl", 'wb') as f:
             pickle.dump(interp_idx_flat, f)
-        with open(f"output/fem_sensor.shell_outer_layer_nodes.pkl", 'wb') as f:
+        with open(f"output/vitactip.shell_outer_layer_nodes.pkl", 'wb') as f:
             pickle.dump(self.shell_outer_layer_nodes, f)
-        np.savetxt('output/fem_sensor.interp_idx_flat.csv', interp_idx_flat, delimiter=",", fmt='%d')
-        np.savetxt('output/fem_sensor.shell_outer_layer_nodes.csv', self.shell_outer_layer_nodes, delimiter=",", fmt='%d')
+        np.savetxt('output/vitactip.interp_idx_flat.csv', interp_idx_flat, delimiter=",", fmt='%d')
+        np.savetxt('output/vitactip.shell_outer_layer_nodes.csv', self.shell_outer_layer_nodes, delimiter=",", fmt='%d')
 
         return surf_2d, interp_idx, interp_weight
 

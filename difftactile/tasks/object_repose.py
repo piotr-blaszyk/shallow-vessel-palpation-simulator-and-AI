@@ -15,7 +15,7 @@ off_screen = False
 
 import trimesh
 
-from difftactile.sensor_model.fem_sensor import FEMDomeSensor
+from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.rigid_dynamic import RigidObj
 
 import argparse
@@ -33,7 +33,7 @@ class Contact:
         self.prepare_step = 50
         self.sub_steps = sub_steps
         self.dim = 3
-        self.fem_sensor1 = FEMDomeSensor(dt, sub_steps)
+        self.fem_sensor1 = ViTacTip(dt, sub_steps)
         self.space_scale = 10.0
         self.obj_scale = 4.0
         self.use_state = use_state

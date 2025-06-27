@@ -14,12 +14,12 @@ TC_TYPE = torch.float32
 NP_TYPE = np.float32
 
 @ti.data_oriented
-class MultiObj:
+class Phantom:
     def __init__(self):
         # Load system parameters from JSON
         with open('../tasks/system-params.json', 'r') as f:
             params = json.load(f)
-            obj_params = params['multi_obj']
+            obj_params = params['phantom']
             contact_params = params['contact']
 
         self.sub_steps = contact_params['num_sub_frames']
@@ -107,7 +107,7 @@ class MultiObj:
     def set_stiffness(self):
         with open('../tasks/system-params.json', 'r') as f:
             params = json.load(f)
-            obj_params = params['multi_obj']
+            obj_params = params['phantom']
 
         healthy_tissue = obj_params['healthy_tissue']
         tumour = obj_params['tumour']
@@ -345,7 +345,8 @@ class MultiObj:
                 updated_velocity += weight * grid_node_velocity
                 updated_affine += 4 * self.inverse_grid_node_length * weight * grid_node_velocity.outer_product(grid_relative_offset)
 
-            fixed_particle = self.is_fixed[particle_id] == 1
+            # fixed_particle = self.is_fixed[particle_id] == 1
+            fixed_particle = False
             if fixed_particle:
                 self.particle_velocity[frame+1, particle_id] = ti.Vector([0.0, 0.0, 0.0])
                 self.affine_velocity[frame+1, particle_id] = ti.Matrix.zero(float, 3, 3)

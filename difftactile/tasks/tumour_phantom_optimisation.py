@@ -3,8 +3,8 @@ from difftactile.tasks.tumour_phantom_visualisation import (
     set_up_gui,
     update_gui,
 )
-from difftactile.sensor_model.fem_sensor import FEMDomeSensor
-from difftactile.object_model.multi_obj import MultiObj
+from difftactile.sensor_model.vitactip import ViTacTip
+from difftactile.object_model.phantom import Phantom
 
 import taichi as ti
 import numpy as np
@@ -22,7 +22,7 @@ TIME_STEPS_PER_S = 10 * SLOW_DOWN
 GLOBAL_Z_OFFSET = 10
 PHANTOM_CLOSEST_VERTEX = [5.750000, 5.750000, 0.750000+GLOBAL_Z_OFFSET]
 PHANTOM_INITIAL_POSE = [9.750000, 9.750000, 1.850000+GLOBAL_Z_OFFSET, 0, 0, 0]
-SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET = 0.5
+SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET = 2.0
 SENSOR_DOME_TIP_INITIAL_POSE = [9.750000, 9.750000, 2.950000+GLOBAL_Z_OFFSET+SENSOR_DOME_TIP_INITIAL_POSE_Z_OFFSET, -90, 0, 0]
 
 def print_point_cloud(arr):
@@ -59,8 +59,8 @@ class Contact(ContactVisualisation):
 
         self.num_frames = contact_params['num_frames']
         self.num_sub_frames = contact_params['num_sub_frames']
-        self.tactile_sensor = FEMDomeSensor()
-        self.phantom = MultiObj()
+        self.vitactip = ViTacTip()
+        self.phantom = Phantom()
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
@@ -70,8 +70,8 @@ class Contact(ContactVisualisation):
         self.set_up_initial_positions_and_trajectory()
 
         # Initialize keypoint indices
-        self.keypoint_indices = self.tactile_sensor.get_keypoint_indices(0)
-        self.keypoint_indices = np.concatenate((self.keypoint_indices, self.tactile_sensor.marker_node_tags_np), dtype=int)
+        self.keypoint_indices = self.vitactip.get_keypoint_indices(0)
+        self.keypoint_indices = np.concatenate((self.keypoint_indices, self.vitactip.marker_node_tags_np), dtype=int)
 
         self.num_sensor = 1
         self.contact_idx = ti.Vector.field(
@@ -163,14 +163,14 @@ class Contact(ContactVisualisation):
 
         self.num_opt_steps = contact_params['num_opt_steps']
         # Allocate snapshot fields (num_opt_steps, num_markers, 2)
-        num_markers = self.tactile_sensor.num_markers
+        num_markers = self.vitactip.num_markers
         self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, num_markers), needs_grad=False)
         self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, num_markers), needs_grad=False)
         self.ground_truth_labels = ti.field(dtype=bool, shape=(self.num_opt_steps,), needs_grad=False)
 
     def set_up_initial_positions_and_trajectory(self):
-        ix = self.tactile_sensor.get_keypoint_indices_numpy_point_a()
-        camera_lens_to_sensor_tip = self.tactile_sensor.all_nodes[ix, 1]
+        ix = self.vitactip.get_keypoint_indices_numpy_point_a()
+        camera_lens_to_sensor_tip = self.vitactip.all_nodes[ix, 1]
         self.phantom_pose = PHANTOM_INITIAL_POSE.copy()
         
         cx = np.random.uniform(-1.0, 1.0)
@@ -216,7 +216,7 @@ class Contact(ContactVisualisation):
         self.sensor_dome_tip_initial_pose = self.trajectory_npy[0].tolist()
         self.sensor_dome_tip_initial_pose[2] += camera_lens_to_sensor_tip
         t_dx, t_dy, t_dz, rot_x, rot_y, rot_z = self.sensor_dome_tip_initial_pose
-        self.tactile_sensor.init(rot_x, rot_y, rot_z, t_dx, t_dy, t_dz)
+        self.vitactip.init(rot_x, rot_y, rot_z, t_dx, t_dy, t_dz)
         self.tactile_sensor_initial_position[0] = ti.Vector(self.sensor_dome_tip_initial_pose[:3])
         self.phantom_initial_position[0] = ti.Vector(self.phantom_pose[:3])
     
@@ -254,30 +254,30 @@ class Contact(ContactVisualisation):
             print("\nInput orientation vector (o_sensor1):")
             print(self.o_sensor1[f].to_numpy())
             print("\nSet position vector (d_pos):")
-            print(self.tactile_sensor.d_pos_global[None].to_numpy())
+            print(self.vitactip.d_pos_global[None].to_numpy())
             print("\nSet orientation vector (d_ori):")
-            print(self.tactile_sensor.d_ori_global_euler_angles[None].to_numpy())
+            print(self.vitactip.d_ori_global_euler_angles[None].to_numpy())
             print()
 
     def update(self, f):
         self.phantom.compute_new_F(f)
         self.phantom.svd(f)
         self.phantom.p2g(f)
-        self.tactile_sensor.update_internal_forces(f)
+        self.vitactip.update_internal_forces(f)
         self.phantom.check_grid_occupy(f)
         self.check_collision(f)
         self.collision(f)
         self.phantom.grid_op(f)
         self.phantom.g2p(f)
-        self.tactile_sensor.update_external_forces(f)
+        self.vitactip.update_external_forces(f)
 
     def update_grad(self, f):
-        self.tactile_sensor.update_external_forces.grad(f)
+        self.vitactip.update_external_forces.grad(f)
         self.phantom.g2p.grad(f)
         self.phantom.grid_op.grad(f)
         self.clamp_grid(f)
         self.collision.grad(f)
-        self.tactile_sensor.update_internal_forces.grad(f)
+        self.vitactip.update_internal_forces.grad(f)
         self.phantom.p2g.grad(f)
         self.phantom.svd_grad(f)
         self.phantom.compute_new_F.grad(f)
@@ -296,17 +296,17 @@ class Contact(ContactVisualisation):
         self.squared_error_sum.grad[None] = 0.0
 
     def clear_traj_grad(self):
-        self.tactile_sensor.clear_loss_grad()
+        self.vitactip.clear_loss_grad()
         self.phantom.clear_loss_grad()
         self.clear_loss_grad()
 
     def clear_all_grad(self):
         self.clear_traj_grad()
-        self.tactile_sensor.clear_step_grad(self.num_sub_frames)
+        self.vitactip.clear_step_grad(self.num_sub_frames)
         self.phantom.clear_step_grad(self.num_sub_frames)
 
     def reset(self):
-        self.tactile_sensor.reset_contact()
+        self.vitactip.reset_contact()
         self.phantom.reset()
         self.contact_idx.fill(-1)
         self.contact_detect_flag[None] = 0.0
@@ -320,12 +320,12 @@ class Contact(ContactVisualisation):
             self.phantom.grid_node_mass.grad[f, i, j, k] = ti.math.clamp(
                 self.phantom.grid_node_mass.grad[f, i, j, k], -1000.0, 1000.0
             )
-        for i in range(self.tactile_sensor.n_verts):
-            self.tactile_sensor.pos.grad[f, i] = ti.math.clamp(
-                self.tactile_sensor.pos.grad[f, i], -1000.0, 1000.0
+        for i in range(self.vitactip.n_verts):
+            self.vitactip.pos.grad[f, i] = ti.math.clamp(
+                self.vitactip.pos.grad[f, i], -1000.0, 1000.0
             )
-            self.tactile_sensor.vel.grad[f, i] = ti.math.clamp(
-                self.tactile_sensor.vel.grad[f, i], -1000.0, 1000.0
+            self.vitactip.vel.grad[f, i] = ti.math.clamp(
+                self.vitactip.vel.grad[f, i], -1000.0, 1000.0
             )
 
     @ti.func
@@ -364,7 +364,7 @@ class Contact(ContactVisualisation):
                         (k + 0.5) * self.phantom.grid_node_length,
                     ]
                 )
-                closest_sensor_vertex_idx = self.tactile_sensor.find_closest(grid_node_position, frame)
+                closest_sensor_vertex_idx = self.vitactip.find_closest(grid_node_position, frame)
                 self.contact_idx[frame, i, j, k] = closest_sensor_vertex_idx
 
     @ti.kernel
@@ -385,21 +385,21 @@ class Contact(ContactVisualisation):
                 )
                 closest_sensor_vertex_idx = self.contact_idx[frame, i, j, k]
                 penetration_depth, surface_normal, relative_velocity, is_in_contact = (
-                    self.tactile_sensor.find_sdf(grid_node_position, grid_node_velocity, closest_sensor_vertex_idx, frame)
+                    self.vitactip.find_sdf(grid_node_position, grid_node_velocity, closest_sensor_vertex_idx, frame)
                 )
                 if is_in_contact:
                     total_contact_force, _, _ = self.calculate_contact_force(
                         penetration_depth, -1 * surface_normal, -1 * relative_velocity
                     )
                     self.phantom.update_contact_force(total_contact_force, frame, i, j, k)
-                    self.tactile_sensor.update_contact_force(closest_sensor_vertex_idx, -1 * total_contact_force, frame)
+                    self.vitactip.update_contact_force(closest_sensor_vertex_idx, -1 * total_contact_force, frame)
 
     def memory_to_cache(self, t):
-        self.tactile_sensor.memory_to_cache(t)
+        self.vitactip.memory_to_cache(t)
         self.phantom.memory_to_cache(t)
 
     def memory_from_cache(self, t):
-        self.tactile_sensor.memory_from_cache(t)
+        self.vitactip.memory_from_cache(t)
         self.phantom.memory_from_cache(t)
     
     def set_up_target_marker_positions(self):
@@ -412,7 +412,7 @@ class Contact(ContactVisualisation):
             marker_data = pickle.load(f)
         self.experiment_num_frames = marker_data.shape[0]
         self.experiment_num_markers = marker_data.shape[1]
-        cost_matrix = cdist(marker_data[0], self.tactile_sensor.virtual_markers.to_numpy(), metric='sqeuclidean')
+        cost_matrix = cdist(marker_data[0], self.vitactip.virtual_markers.to_numpy(), metric='sqeuclidean')
         exp_indices, sim_indices = linear_sum_assignment(cost_matrix)
         index_mapping = {exp_idx: sim_idx for exp_idx, sim_idx in zip(exp_indices, sim_indices)}
         reordered_markers = np.zeros_like(marker_data)
@@ -452,7 +452,7 @@ class Contact(ContactVisualisation):
             f: Index of the frame to compute loss for
         """
         # Iterate through all markers and accumulate squared errors
-        for i in range(self.tactile_sensor.num_markers):
+        for i in range(self.vitactip.num_markers):
             # Get experimental marker positions at start and end of segment
             exp_marker_start = self.target_marker_positions[self.interpolation_exp_frame_start[None], i]
             exp_marker_end = self.target_marker_positions[self.interpolation_exp_frame_end[None], i]
@@ -461,7 +461,7 @@ class Contact(ContactVisualisation):
             exp_marker = exp_marker_start * (1 - self.interpolation_alpha[None]) + exp_marker_end * self.interpolation_alpha[None]
             
             # Get simulated marker position
-            sim_marker = self.tactile_sensor.predict_markers[i]
+            sim_marker = self.vitactip.predict_markers[i]
             
             # Compute squared error for this marker pair
             dx = exp_marker[0] - sim_marker[0]
@@ -472,14 +472,14 @@ class Contact(ContactVisualisation):
     @ti.kernel
     def compute_marker_loss_2(self):
         # Compute RMSE and add to total loss
-        rmse = ti.sqrt(self.squared_error_sum[None] / self.tactile_sensor.num_markers)
+        rmse = ti.sqrt(self.squared_error_sum[None] / self.vitactip.num_markers)
         self.loss[None] += rmse
 
     @ti.kernel
     def pid_controller(self, ts: ti.i32):
         # Get current position and orientation using reference keypoint
-        current_pos = self.tactile_sensor.virtual_pos[0, self.keypoint_indices[0]]
-        current_ori = self.tactile_sensor.get_euler_angles()
+        current_pos = self.vitactip.virtual_pos[0, self.keypoint_indices[0]]
+        current_ori = self.vitactip.get_euler_angles()
         
         # Get current target position and orientation
         target = self.trajectory[self.current_target_idx[None]]
@@ -532,8 +532,8 @@ class Contact(ContactVisualisation):
         # If dwelling, set control outputs to zero to maintain position
         # But if at final target, never dwell, always actively control
         if self.is_dwelling[None]:
-            self.tactile_sensor.d_pos_global[None] = ti.Vector([0.0, 0.0, 0.0])
-            self.tactile_sensor.d_ori_global_euler_angles[None] = ti.Vector([0.0, 0.0, 0.0])
+            self.vitactip.d_pos_global[None] = ti.Vector([0.0, 0.0, 0.0])
+            self.vitactip.d_ori_global_euler_angles[None] = ti.Vector([0.0, 0.0, 0.0])
         else:
             # Update error sums for integral term
             self.pos_error_sum[None] += pos_error
@@ -566,8 +566,8 @@ class Contact(ContactVisualisation):
                 ori_control = ori_control / ori_control_norm * max_speed_ori
 
             # Set control outputs
-            self.tactile_sensor.d_pos_global[None] = pos_control
-            self.tactile_sensor.d_ori_global_euler_angles[None] = ori_control
+            self.vitactip.d_pos_global[None] = pos_control
+            self.vitactip.d_ori_global_euler_angles[None] = ori_control
         
             if False:
                 # Print all variables used in the function
@@ -595,9 +595,9 @@ class Contact(ContactVisualisation):
 
     @ti.kernel
     def take_snapshot(self, opts: ti.i32):
-        for i in range(self.tactile_sensor.num_markers):
-            self.predict_markers_snapshots[opts, i] = self.tactile_sensor.predict_markers[i]
-            self.virtual_markers_snapshots[opts, i] = self.tactile_sensor.virtual_markers[i]
+        for i in range(self.vitactip.num_markers):
+            self.predict_markers_snapshots[opts, i] = self.vitactip.predict_markers[i]
+            self.virtual_markers_snapshots[opts, i] = self.vitactip.virtual_markers[i]
         self.ground_truth_labels[opts] = self.tumour_present[None]
 
     def save_marker_data_and_ground_truth_labels_to_file(self):
@@ -628,13 +628,13 @@ class Contact(ContactVisualisation):
         np.savetxt('output/ground_truth_labels.csv', labels_np, delimiter=',', fmt='%d')
 
     def save_tactile_sensor_mesh_to_pickle(self, ts):
-        particles = self.tactile_sensor.pos.to_numpy()[0]
+        particles = self.vitactip.pos.to_numpy()[0]
         with open(f'output/tactile_sensor.deformed_node_coordinates.ts={ts}.pkl', 'wb') as f:
             pickle.dump(particles, f)
         print('mesh exported!')
     
     def save_tactile_sensor_mesh_node_mapping_to_pickle(self):
-        f2v = self.tactile_sensor.f2v.to_numpy()
+        f2v = self.vitactip.f2v.to_numpy()
         with open(f'output/tactile_sensor.f2v.pkl', 'wb') as f:
             pickle.dump(f2v, f)
         print('mesh node mapping exported!')
@@ -666,24 +666,24 @@ def main():
         contact_model.reset_pid_controller()
         contact_model.reset_3d_scene()
         if opts == 0:
-            contact_model.tactile_sensor.extract_initial_markers(0)
-            contact_model.tactile_sensor.extract_markers(0)
-            initial_markers = contact_model.tactile_sensor.predict_markers.to_numpy()
+            contact_model.vitactip.extract_initial_markers(0)
+            contact_model.vitactip.extract_markers(0)
+            initial_markers = contact_model.vitactip.predict_markers.to_numpy()
             with open('output/sim-markers-initial-positions.pkl', 'wb') as f:
                 pickle.dump(initial_markers, f)
         print('forward')
         for ts in range(num_frames - 1):
             contact_model.pid_controller(ts)
-            contact_model.tactile_sensor.set_pose_control()
-            contact_model.tactile_sensor.set_pose_control_maybe_print()
-            contact_model.tactile_sensor.set_control_vel(0)
-            contact_model.tactile_sensor.set_vel(0)
+            contact_model.vitactip.set_pose_control()
+            contact_model.vitactip.set_pose_control_maybe_print()
+            contact_model.vitactip.set_control_vel(0)
+            contact_model.vitactip.set_vel(0)
             contact_model.reset()
             for ss in range(num_sub_frames - 1):
                 contact_model.update(ss)
             contact_model.memory_to_cache(0)
 
-            keypoint_coords = contact_model.tactile_sensor.get_keypoint_coordinates(0, contact_model.keypoint_indices[-1].reshape((1,)))
+            keypoint_coords = contact_model.vitactip.get_keypoint_coordinates(0, contact_model.keypoint_indices[-1].reshape((1,)))
             # keypoint_coords = contact_model.trajectory_npy
             update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords)
 

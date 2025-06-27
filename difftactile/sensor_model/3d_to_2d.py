@@ -5,7 +5,7 @@ import os
 from fisheye_model import project_points_to_pix, project_points_to_pix_cv2
 
 # Load 3D nodes
-with open(os.path.join(os.path.dirname(__file__), '../tasks/output/fem_sensor.cam_3d_nodes.pkl'), 'rb') as f:
+with open(os.path.join(os.path.dirname(__file__), '../tasks/output/vitactip.cam_3d_nodes.pkl'), 'rb') as f:
     cam_3D_nodes = pickle.load(f)
 
 # Load image

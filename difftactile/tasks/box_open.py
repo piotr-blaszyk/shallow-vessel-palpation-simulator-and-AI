@@ -15,8 +15,8 @@ off_screen = False
 #     os.environ["PYOPENGL_PLATFORM"] = "egl"
 
 import trimesh
-from difftactile.sensor_model.fem_sensor import FEMDomeSensor
-from difftactile.object_model.multi_obj import MultiObj
+from difftactile.sensor_model.vitactip import ViTacTip
+from difftactile.object_model.phantom import Phantom
 import argparse
 
 TI_TYPE = ti.f32
@@ -32,12 +32,12 @@ class Contact:
         self.total_steps = total_steps
         self.sub_steps = sub_steps
         self.dim = 3
-        self.fem_sensor1 = FEMDomeSensor(dt, sub_steps)
+        self.fem_sensor1 = ViTacTip(dt, sub_steps)
         self.space_scale = 10.0
         self.obj_scale = 6.0
         self.use_tactile = use_tactile
         self.use_state = use_state
-        self.mpm_object = MultiObj(dt=dt,
+        self.mpm_object = Phantom(dt=dt,
                       sub_steps=sub_steps,
                       obj_name=obj,
                       space_scale = self.space_scale,

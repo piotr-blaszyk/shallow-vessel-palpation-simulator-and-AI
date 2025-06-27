@@ -1,6 +1,3 @@
-from difftactile.sensor_model.fem_sensor import FEMDomeSensor
-from difftactile.object_model.mpm_elastic import MPMObj
-
 import taichi as ti
 import numpy as np
 
@@ -19,11 +16,11 @@ class ContactVisualisation:
         self.table_height = 0.0
 
     def init_visualisation(self):
-        self.draw_pos2 = ti.Vector.field(2, float, self.tactile_sensor.n_verts)
+        self.draw_pos2 = ti.Vector.field(2, float, self.vitactip.n_verts)
         self.draw_pos3 = ti.Vector.field(2, float, self.phantom.n_particles)
         self.draw_tableline = ti.Vector.field(3, dtype=float, shape=(2 * 4))
         self.sensor_points = ti.Vector.field(
-            3, dtype=float, shape=(self.tactile_sensor.n_verts)
+            3, dtype=float, shape=(self.vitactip.n_verts)
         )
         
         self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(1,), needs_grad=False)
@@ -48,8 +45,8 @@ class ContactVisualisation:
             elif self.phantom.titles[p] == 1:
                 self.tumour_points[p] = self.phantom.particle_position[f, p]
 
-        for p in range(self.tactile_sensor.n_verts):
-            self.sensor_points[p] = self.tactile_sensor.pos[f, p]
+        for p in range(self.vitactip.n_verts):
+            self.sensor_points[p] = self.vitactip.pos[f, p]
 
     def draw_markers(self, init_markers, cur_markers, gui):
         img_height = 480
@@ -97,11 +94,11 @@ class ContactVisualisation:
         c_p, s_p = ti.math.cos(phi), ti.math.sin(phi)
         c_t, s_t = ti.math.cos(theta), ti.math.sin(theta)
         offset = 0.2
-        for i in range(self.tactile_sensor.n_verts):
+        for i in range(self.vitactip.n_verts):
             x, y, z = (
-                self.tactile_sensor.pos[f, i][0] - offset,
-                self.tactile_sensor.pos[f, i][1] - offset,
-                self.tactile_sensor.pos[f, i][2] - offset,
+                self.vitactip.pos[f, i][0] - offset,
+                self.vitactip.pos[f, i][1] - offset,
+                self.vitactip.pos[f, i][2] - offset,
             )
             xx, zz = x * c_p + z * s_p, z * c_p - x * s_p
             u, v = xx, y * c_t + zz * s_t
@@ -194,7 +191,7 @@ class ContactVisualisation:
         self.draw_tableline[6] = c4
         self.draw_tableline[7] = c1
 
-def set_up_gui(phantom_initial_pose, tactile_sensor_initial_pose):
+def set_up_gui(phantom_initial_pose, vitactip_initial_pose):
     if off_screen:
         return None
     else:
@@ -211,7 +208,7 @@ def set_up_gui(phantom_initial_pose, tactile_sensor_initial_pose):
         scene = ti.ui.Scene()
         camera = ti.ui.Camera()
         camera.projection_mode(ti.ui.ProjectionMode.Perspective)
-        x, y, z = tactile_sensor_initial_pose[:3]
+        x, y, z = vitactip_initial_pose[:3]
         camera.position(x-50, y, z)
         camera.up(0, 0, 1)
         camera.lookat(x, y, z)
@@ -256,9 +253,9 @@ def update_gui(contact_model, gui_tuple, num_frames, ts, key_points_coords=None)
     r1_deformation = -90
     r2_deformation = 90
     if not off_screen:
-        contact_model.tactile_sensor.extract_markers(0)
-        init_2d = contact_model.tactile_sensor.virtual_markers.to_numpy()
-        marker_2d = contact_model.tactile_sensor.predict_markers.to_numpy()
+        contact_model.vitactip.extract_markers(0)
+        init_2d = contact_model.vitactip.virtual_markers.to_numpy()
+        marker_2d = contact_model.vitactip.predict_markers.to_numpy()
         if enable_gui2:
             contact_model.draw_markers(init_2d, marker_2d, gui2)
     if not off_screen:
@@ -276,7 +273,7 @@ def update_gui(contact_model, gui_tuple, num_frames, ts, key_points_coords=None)
             )
         if enable_gui3:
             contact_model.draw_triangles(
-                contact_model.tactile_sensor,
+                contact_model.vitactip,
                 gui3,
                 f_deformation,
                 r1_deformation,

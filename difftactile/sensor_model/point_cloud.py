@@ -22,7 +22,7 @@ print('hello')
 print(node_coordinates.shape)
 print(all_tetrahedra.shape)
 
-i = 7
+i = 0
 with open(f'../tasks/output/tactile_sensor.deformed_node_coordinates.ts={int(100 * i)}.pkl', 'rb') as f:
     deformed_node_coordinates = pickle.load(f)
 print(f'ts={int(100 * i)}; num nan: {np.sum(np.isnan(deformed_node_coordinates))}')
@@ -30,20 +30,26 @@ foo = 7
 
 nan_nodes = np.where(np.any(np.isnan(deformed_node_coordinates), axis=1))[0]
 
+# Filter out NaN nodes and create mapping
+valid_nodes = np.setdiff1d(np.arange(len(deformed_node_coordinates)), nan_nodes)
+old_to_new_idx = np.full(len(deformed_node_coordinates), -1)  # Initialize with -1
+old_to_new_idx[valid_nodes] = np.arange(len(valid_nodes))  # Map old indices to new indices
+
+# Filter deformed_node_coordinates
+deformed_node_coordinates = deformed_node_coordinates[valid_nodes]
+
+# Convert all tetrahedra to new indices
+all_tetrahedra_new_idx = np.array([[old_to_new_idx[i] for i in tetra] for tetra in all_tetrahedra])
+
 good_tetrahedra = []
-for tetra in all_tetrahedra:
-    is_nan = False
-    for x in tetra:
-        if x in nan_nodes:
-            is_nan = True
-            break
-    if is_nan:
-        continue
+for tetra in all_tetrahedra_new_idx:
     tetra_node_labels = node_labels[tetra]
     gel_count = np.sum(tetra_node_labels[:, group_to_idx['gel']])
     shell_count = np.sum(tetra_node_labels[:, group_to_idx['shell']])
     is_gel = gel_count == 4 and shell_count <= 3
-    if not is_gel:
+    if True:
+        if np.any(tetra == -1):
+            continue
         a, b, c, d = tetra
         good_tetrahedra.append([a, b, c])
         good_tetrahedra.append([a, b, d])
@@ -55,10 +61,10 @@ print(len(good_tetrahedra) // 4)
 # deformed_node_coordinates = deformed_node_coordinates[1:]
 # good_tetrahedra -= 1
 
-# with open(f'../tasks/output/fem_sensor.interp_idx_flat.pkl', 'rb') as f:
+# with open(f'../tasks/output/vitactip.interp_idx_flat.pkl', 'rb') as f:
 #     interp_idx_flat = pickle.load(f)
 
-# with open(f'../tasks/output/fem_sensor.cam_3d_nodes.pkl', 'rb') as f:
+# with open(f'../tasks/output/vitactip.cam_3d_nodes.pkl', 'rb') as f:
 #     cam_3d_nodes = pickle.load(f)
 
 # with open(f'../tasks/output/tactile_sensor.f2v.pkl', 'rb') as f:
@@ -75,7 +81,7 @@ if False:
 
     print(f'num of 3d marker points (after de-duplication): {interp_idx_flat.shape[0]}')
 
-    with open(f'output/fem_sensor.surface_id_np.pkl', 'rb') as f:
+    with open(f'output/vitactip.surface_id_np.pkl', 'rb') as f:
         surface_id_np = pickle.load(f)
 
     surface_nodes = points[surface_id_np]
