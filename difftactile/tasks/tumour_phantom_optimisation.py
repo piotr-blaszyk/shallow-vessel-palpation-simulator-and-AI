@@ -506,9 +506,7 @@ def main():
                 contact_model.update(ss)
             contact_model.memory_to_cache(0)
 
-            keypoint_coords = contact_model.vitactip.get_keypoint_coordinates(0, contact_model.keypoint_indices[-1].reshape((1,)))
-            # keypoint_coords = contact_model.trajectory_npy
-            update_gui(contact_model, gui_tuple, num_frames, ts, keypoint_coords)
+            contact_model.update_gui()
 
             if ts % 100 == 0:
                 contact_model.take_snapshot(opts)

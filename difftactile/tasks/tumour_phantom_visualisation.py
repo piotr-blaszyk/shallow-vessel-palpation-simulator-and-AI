@@ -2,17 +2,12 @@ import taichi as ti
 import numpy as np
 import json
 
-off_screen = False
-enable_gui1 = False
-enable_gui2 = True
-enable_gui3 = False
-
-# Load coordinates from JSON file
-with open('../tasks/initial-coordinates.json', 'r') as f:
-    coordinates = json.load(f)
-
 class ContactVisualisation:
     def __init__(self):
+        self.off_screen = False
+        self.enable_gui1 = False
+        self.enable_gui2 = True
+        self.enable_gui3 = False
         self.view_phi = 0
         self.view_theta = 0
         self.table_scale = 2.0
@@ -62,7 +57,7 @@ class ContactVisualisation:
         offset[:, 0] = offset[:, 0] / img_width
         offset[:, 1] = offset[:, 1] / img_height
         offset = offset - draw_points
-        if not off_screen:
+        if not self.off_screen:
             # Draw circle outline using line segments
             circle_centre = np.array([359, 266])
             circle_radius = 180
@@ -195,7 +190,7 @@ class ContactVisualisation:
         self.draw_tableline[7] = c1
 
     def set_up_gui(self):
-        if off_screen:
+        if self.off_screen:
             return None
         else:
             screen_width = 1920
@@ -216,25 +211,28 @@ class ContactVisualisation:
             camera.up(0, 0, 1)
             camera.lookat(x, y, z)
             camera.fov(15)
-            if enable_gui1:
+            if self.enable_gui1:
                 gui1 = ti.GUI("low-level camera", res=window_res)
             else:
                 gui1 = None
-            if enable_gui2:
+            if self.enable_gui2:
                 gui2 = ti.GUI("tactile readout 1", res=window_res)
             else:
                 gui2 = None
-            if enable_gui3:
+            if self.enable_gui3:
                 gui3 = ti.GUI("tactile readout 2", res=window_res)
             else:
                 gui3 = None
             
             self.gui_tuple = (gui1, gui2, gui3, camera, scene, window, canvas)
 
-    def update_gui(self, key_points_coords=None):
-        if off_screen:
+    def update_gui(self):
+        if self.off_screen:
             return
         gui1, gui2, gui3, camera, scene, window, canvas = self.gui_tuple
+
+        keypoint_coords = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[-1].reshape((1,)))
+        # keypoint_coords = self.trajectory_npy
 
         viz_scale = 0.1
         viz_offset = [0.25, 0.25]
@@ -243,28 +241,28 @@ class ContactVisualisation:
         f_deformation = 0
         r1_deformation = -90
         r2_deformation = 90
-        if not off_screen:
-            contact_model.vitactip.extract_markers(0)
-            init_2d = contact_model.vitactip.virtual_markers.to_numpy()
-            marker_2d = contact_model.vitactip.predict_markers.to_numpy()
-            if enable_gui2:
-                contact_model.draw_markers(init_2d, marker_2d, gui2)
-        if not off_screen:
-            contact_model.draw_perspective(0)
-            if enable_gui1:
+        if not self.off_screen:
+            self.vitactip.extract_markers(0)
+            init_2d = self.vitactip.virtual_markers.to_numpy()
+            marker_2d = self.vitactip.predict_markers.to_numpy()
+            if self.enable_gui2:
+                self.draw_markers(init_2d, marker_2d, gui2)
+        if not self.off_screen:
+            self.draw_perspective(0)
+            if self.enable_gui1:
                 gui1.circles(
-                    viz_scale * contact_model.draw_pos3.to_numpy() + viz_offset,
+                    viz_scale * self.draw_pos3.to_numpy() + viz_offset,
                     radius=2,
                     color=0x039DFC,
                 )
                 gui1.circles(
-                    viz_scale * contact_model.draw_pos2.to_numpy() + viz_offset,
+                    viz_scale * self.draw_pos2.to_numpy() + viz_offset,
                     radius=2,
                     color=0xE6C949,
                 )
-            if enable_gui3:
-                contact_model.draw_triangles(
-                    contact_model.vitactip,
+            if self.enable_gui3:
+                self.draw_triangles(
+                    self.vitactip,
                     gui3,
                     f_deformation,
                     r1_deformation,
@@ -272,39 +270,39 @@ class ContactVisualisation:
                     viz_scale_deformation_map,
                     viz_offset_deformation_map,
                 )
-            if enable_gui1:
+            if self.enable_gui1:
                 gui1.show()
-            if enable_gui2:
+            if self.enable_gui2:
                 gui2.show()
-            if enable_gui3:
+            if self.enable_gui3:
                 gui3.show()
             
             scene.set_camera(camera)
             scene.ambient_light((0.8, 0.8, 0.8))
             scene.point_light(pos=(0.5, 1.5, 1.5), color=(1, 1, 1))
-            contact_model.draw_3d_scene(0)
+            self.draw_3d_scene(0)
             
             scene.particles(
-                contact_model.healthy_tissue_points,
+                self.healthy_tissue_points,
                 color=(0.0, 0.0, 1.0),
                 radius=0.01,
             )
             scene.particles(
-                contact_model.tumour_points,
+                self.tumour_points,
                 color=(1.0, 1.0, 0.0),
                 radius=0.02,
             )
             scene.particles(
-                contact_model.sensor_points,
+                self.sensor_points,
                 color=(0.0, 1.0, 0.0),
                 radius=0.005,
             )
             
-            assert key_points_coords.shape[0] == contact_model.key_points.shape[0], f"Set contact_model.key_points to shape ({key_points_coords.shape[0]},)"
-            if key_points_coords is not None:
-                contact_model.key_points.from_numpy(key_points_coords)
+            assert keypoint_coords.shape[0] == self.key_points.shape[0], f"Set self.key_points to shape ({keypoint_coords.shape[0]},)"
+            if keypoint_coords is not None:
+                self.key_points.from_numpy(keypoint_coords)
                 scene.particles(
-                    contact_model.key_points,
+                    self.key_points,
                     color=(1.0, 0.0, 0.0),
                     radius=0.05,
                 )
