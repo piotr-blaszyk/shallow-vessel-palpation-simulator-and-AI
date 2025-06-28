@@ -65,7 +65,7 @@ class Phantom:
         obj_loader = ObjLoader(data_path, target_total_num_cube_particles = int(self.target_total_num_particles))
         obj_loader.generate_particles()
         self.actual_total_num_particles = len(obj_loader.particles)
-        self.particles = ti.Vector.field(3, dtype=float, shape=self.actual_total_num_particles)
+        self.particles = ti.Vector.field(3, dtype=float, shape=(self.actual_total_num_particles,))
         self.particles.from_numpy((obj_loader.particles * self.obj_scale).astype(np.float32))
         self.titles = ti.field(dtype=int, shape=self.actual_total_num_particles)
         

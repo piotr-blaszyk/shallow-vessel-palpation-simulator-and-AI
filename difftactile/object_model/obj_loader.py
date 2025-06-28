@@ -14,7 +14,8 @@ class ObjLoader:
         '''
         self.data_path = data_path # ending with obj or stl
         self.voxel_resolution = 128
-        self.num_particles_1d = max(1, int(target_total_num_cube_particles ** (1/3))) # # of particles in one dimension of cube
+        self.num_particles_1d = int(target_total_num_cube_particles ** (1/3)) # # of particles in one dimension of cube
+        self.num_particles_1d = 40
 
     def generate_surface_particles(self, num_particles):
         self.raw_mesh = trimesh.load(self.data_path, force='mesh', skip_texture=True)
