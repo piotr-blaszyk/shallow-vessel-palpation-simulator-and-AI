@@ -520,7 +520,7 @@ def main():
             if ts % 1_000 == 0:
                 print(f'ts: {ts}')
 
-            if False and ts % 100 == 0:
+            if ts % 100 == 0:
                 contact_model.take_snapshot(opts)
                 contact_model.save_tactile_sensor_mesh_to_pickle(ts)
                 # break

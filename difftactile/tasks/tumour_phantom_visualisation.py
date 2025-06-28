@@ -240,10 +240,6 @@ class ContactVisualisation:
         gui1, gui2, gui3, camera, scene, window, canvas = self.gui_tuple
 
         keypoint_coords = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[-2].reshape((1,)))
-        if ts % 100 == 0:
-            print(f'phantom lowest z particle: {keypoint_coords[0][2]:0.3e}; min_coord = {self.min_coord:0.3e}; diff = {abs(keypoint_coords[0][2]-self.min_coord):0.3e}')
-        if keypoint_coords[0][2] <= self.min_coord:
-            print(f'phantom hit the ground at ts: {ts}')
         z = self.min_coord
         _, y0, _ = self.coordinates['phantom_centroid_pose'][:3]
         x1, y1, _ = self.coordinates['phantom_closest_vertex']
@@ -254,8 +250,15 @@ class ContactVisualisation:
         ])
         keypoint_coords = np.vstack((keypoint_coords, floor))
 
-        # von_mises_max = np.max((self.healthy_tissue_points_von_mises_stress.to_numpy(), self.tumour_points_von_mises_stress.to_numpy()))
-        # print(f'max von mises stress: {von_mises_max}')
+        vitactip_coords = self.vitactip.vertex_positions_deformed.to_numpy()[0]
+        if np.isnan(vitactip_coords).any():
+            nan_count = np.any(np.isnan(vitactip_coords), axis=1).sum()
+            print(f'ViTacTip contains {nan_count} / {vitactip_coords.shape[0]} nan vertices at ts: {ts}')
+        
+        phantom_coords = self.phantom.particle_position.to_numpy()[0]
+        if np.isnan(phantom_coords).any():
+            nan_count = np.any(np.isnan(phantom_coords), axis=1).sum()
+            print(f'phantom contains {nan_count} / {phantom_coords.shape[0]} nan vertices at ts: {ts}')
 
         viz_scale = 0.1
         viz_offset = [0.25, 0.25]
@@ -315,12 +318,12 @@ class ContactVisualisation:
             scene.particles(
                 self.tumour_points,
                 color=(1.0, 1.0, 0.0),
-                radius=0.02 / sf,
+                radius=0.06 / sf,
             )
             scene.particles(
                 self.sensor_points,
                 color=(0.0, 1.0, 0.0),
-                radius=0.005 / sf,
+                radius=0.06 / sf,
             )
             
             assert keypoint_coords.shape[0] == self.key_points.shape[0], f"Set self.key_points to shape ({keypoint_coords.shape[0]},)"
