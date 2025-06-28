@@ -29,9 +29,9 @@
     },
     "contact": {
         "dt": 1.0e-5,
-        "normal_stiffness": 1.0e6,
-        "normal_damping": 5.0e2,
-        "tangential_stiffness": 7.0e5,
+        "normal_stiffness": 1.0e5,
+        "normal_damping": 5.7e1,
+        "tangential_stiffness": 7.0e4,
         "coulomb_friction_coeff": 0.85,
         "num_sub_frames": 50,
         "num_frames": 10000,
