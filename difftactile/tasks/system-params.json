@@ -28,7 +28,7 @@
         }
     },
     "contact": {
-        "dt": 5.0e-5,
+        "dt": 1.0e-5,
         "normal_stiffness": 1.0e6,
         "normal_damping": 5.0e2,
         "tangential_stiffness": 7.0e5,
@@ -37,12 +37,22 @@
         "num_frames": 10000,
         "num_opt_steps": 10,
         "phantom_name": "cylinder.stl",
-        "pid_kp": 1000.0,
+        "pid_max_speed_translation": 0.100,
+        "pid_max_speed_rotation": 30.0,
+        "pid_kp": 100.0,
         "pid_ki": 0.0,
         "pid_kd": 0.0,
         "dwell_frames": 0
     },
     "gmsh": {
         "characteristic_length_factor": 0.5
+    },
+    "geometry": {
+        "gap": 0.020,
+        "phantom_orientation": [0, 0, 0],
+        "sensor_orientation": [-90, 0, 0],
+        "n_grid": 64,
+        "phantom_h": 0.022,
+        "phantom_r": 0.040
     }
 }

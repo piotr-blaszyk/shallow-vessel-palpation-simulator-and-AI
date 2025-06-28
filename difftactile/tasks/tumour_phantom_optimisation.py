@@ -74,6 +74,11 @@ class Contact(ContactVisualisation):
         self.pid_controller_kp[None] = self.contact_params['pid_kp']
         self.pid_controller_ki[None] = self.contact_params['pid_ki']
         self.pid_controller_kd[None] = self.contact_params['pid_kd']
+
+        self.pid_controller_max_speed_translation = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.pid_controller_max_speed_rotation = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.pid_controller_max_speed_translation[None] = self.contact_params['pid_max_speed_translation']
+        self.pid_controller_max_speed_rotation[None] = self.contact_params['pid_max_speed_rotation']
         
         # Error accumulation for integral term
         self.pos_error_sum = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
@@ -121,7 +126,7 @@ class Contact(ContactVisualisation):
         self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
         self.tumour_present[None] = 0
         self.pid_on = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.pid_on[None] = 0
+        self.pid_on[None] = 1
     
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate((
@@ -144,7 +149,7 @@ class Contact(ContactVisualisation):
             tumour_present=tumour_present,
         )
         x, y, z, xr, yr, zr = self.vitactip_tip_pose
-        press_depth = self.gap + 0.006
+        press_depth = self.gap + 0.002
         self.trajectory_npy = np.array([
             [x, y, z, xr, yr, zr],
             [x, y, z-press_depth, xr, yr, zr],
@@ -384,7 +389,7 @@ class Contact(ContactVisualisation):
             
             clamp_speed = True
             # Clamp pos_control to max_speed
-            max_speed_pos = 0.01  # 1 cm/s = 0.01 m/s
+            max_speed_pos = self.pid_controller_max_speed_translation[None]
             pos_control_norm = pos_control.norm()
             if clamp_speed and pos_control_norm > max_speed_pos:
                 pos_control = pos_control / pos_control_norm * max_speed_pos
@@ -392,7 +397,7 @@ class Contact(ContactVisualisation):
             ori_control = self.pid_controller_kp[None] * ori_error + self.pid_controller_ki[None] * self.ori_error_sum[None] + self.pid_controller_kd[None] * ori_derivative
             
             # Clamp ori_control to max_speed_ori
-            max_speed_ori = max_speed_pos * 2.0 # degrees / s
+            max_speed_ori = self.pid_controller_max_speed_rotation[None]
             ori_control_norm = ori_control.norm()
             if clamp_speed and ori_control_norm > max_speed_ori:
                 ori_control = ori_control / ori_control_norm * max_speed_ori

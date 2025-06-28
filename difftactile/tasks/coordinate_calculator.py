@@ -18,15 +18,16 @@ with open('../tasks/system-params.json', 'r') as f:
     params = json.load(f)
     phantom_params = params['phantom']
     contact_params = params['contact']
+    geometry_params = params['geometry']
 
-# Constants for poses
-gap = 0.010
-phantom_orientation = [0, 0, 0]  # Roll, pitch, yaw in degrees
-sensor_orientation = [-90, 0, 0]  # Roll, pitch, yaw in degrees
+# Load geometry parameters from JSON
+gap = geometry_params['gap']
+phantom_orientation = geometry_params['phantom_orientation']  # Roll, pitch, yaw in degrees
+sensor_orientation = geometry_params['sensor_orientation']  # Roll, pitch, yaw in degrees
+n_grid = geometry_params['n_grid']
 
 space_scale = phantom_params['space_scale']
 obj_scale = phantom_params['object_scale']
-n_grid = 64
 mpm_grid_node_size = space_scale / n_grid
 min_coord = mpm_grid_node_size * 3
 max_coord = (n_grid - 3) * mpm_grid_node_size
@@ -34,12 +35,12 @@ print(f'mpm_grid_node_size: {mpm_grid_node_size}')
 print(f'min_coord: {min_coord}')
 print(f'max_coord: {max_coord}')
 
-phantom_closest_vertex = np.array([mpm_grid_node_size*6, mpm_grid_node_size*6, mpm_grid_node_size*3], dtype=float)
+phantom_closest_vertex = np.array([mpm_grid_node_size*16, mpm_grid_node_size*16, mpm_grid_node_size*3], dtype=float)
 
 dist_from_floor = phantom_closest_vertex[2] - min_coord
 
-phantom_h = 0.022
-phantom_r = 0.040
+phantom_h = geometry_params['phantom_h']
+phantom_r = geometry_params['phantom_r']
 phantom_d = phantom_r * 2
 phantom_dimensions = np.array([phantom_d, phantom_d, phantom_h], dtype=float)
 phantom_volume = math.pi * phantom_r ** 2 * phantom_h
@@ -51,8 +52,8 @@ print(f'phantom_furthest_vertex: {phantom_furthest_vertex}')
 print(f'phantom_volume: {phantom_volume}')
 print(f'dist_from_floor: {dist_from_floor:0.3e}')
 
-assert np.min(phantom_closest_vertex) > min_coord, "the phantom is outside of the manipulation cube"
-assert np.max(phantom_furthest_vertex) < max_coord, "the phantom is outside of the manipulation cube"
+assert np.min(phantom_closest_vertex) >= min_coord, "the phantom is outside of the manipulation cube"
+assert np.max(phantom_furthest_vertex) <= max_coord, "the phantom is outside of the manipulation cube"
 
 phantom_max_dim = np.max(phantom_dimensions)
 assert obj_scale == phantom_max_dim

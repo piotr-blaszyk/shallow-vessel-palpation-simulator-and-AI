@@ -21,7 +21,7 @@ class ContactVisualisation:
             3, dtype=float, shape=(self.vitactip.num_vertices)
         )
         
-        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(4,), needs_grad=False)
+        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(5,), needs_grad=False)
         
         self.healthy_tissue_points = ti.Vector.field(
             3, dtype=float, shape=(self.phantom.actual_total_num_particles,)
@@ -218,7 +218,7 @@ class ContactVisualisation:
             camera.position(x-1.0, y, z)
             camera.up(0, 0, 1)
             camera.lookat(x, y, z)
-            camera.fov(15)
+            camera.fov(10)
             if self.enable_low_level_camera:
                 gui1 = ti.GUI("low-level camera", res=window_res)
             else:
@@ -239,7 +239,7 @@ class ContactVisualisation:
             return
         gui1, gui2, gui3, camera, scene, window, canvas = self.gui_tuple
 
-        keypoint_coords = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[-2].reshape((1,)))
+        vitactip_marker = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[-2].reshape((1,)))
         z = self.min_coord
         _, y0, _ = self.coordinates['phantom_centroid_pose'][:3]
         x1, y1, _ = self.coordinates['phantom_closest_vertex']
@@ -248,7 +248,12 @@ class ContactVisualisation:
             [x1, y0, z],
             [x1, y0 + abs(y0 - y1), z],
         ])
-        keypoint_coords = np.vstack((keypoint_coords, floor))
+        vitactip_bottom = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[0].reshape((1,)))
+        keypoint_coords = np.vstack((vitactip_marker, vitactip_bottom, floor))
+
+        phantom_top_z = self.vitactip_tip_pose[2] - self.gap
+        if ts % 100 == 0:
+            print(f'ViTacTip bottom node z coordinate: {vitactip_bottom[0][2]:0.3e}; phantom top surface z coordinate: {phantom_top_z:0.3e}; diff: {abs(vitactip_bottom[0][2] - phantom_top_z):0.3e}')
 
         vitactip_coords = self.vitactip.vertex_positions_deformed.to_numpy()[0]
         if np.isnan(vitactip_coords).any():
