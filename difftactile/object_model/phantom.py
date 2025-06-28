@@ -134,6 +134,8 @@ class Phantom:
         self.grid_occupy = ti.field(dtype=int, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid))
         # total_surface_external_force: total surface force vector in N
         self.total_surface_external_force = ti.Vector.field(3, float, shape=(self.sub_steps), needs_grad=False)
+        # von_mises: von Mises stress in Pa
+        self.particle_von_mises_stress = ti.field(dtype=float, shape=(self.sub_steps, self.actual_total_num_particles))
 
         self.keypoint_idx = ti.field(dtype=int, shape=())
         self.keypoint_idx[None] = -1
@@ -230,6 +232,7 @@ class Phantom:
         self.grid_node_external_impulse.fill(0.0)
         self.grid_occupy.fill(0.0)
         self.total_surface_external_force.fill(0.0)
+        self.particle_von_mises_stress.fill(0.0)
 
     @ti.kernel
     def get_external_force(self, f:ti.i32):
@@ -280,6 +283,21 @@ class Phantom:
             rotation_matrix = self.U_svd[frame, particle_id] @ self.V_svd[frame, particle_id].transpose()
             # cauchy_stress: stress tensor in Pa
             cauchy_stress = 2 * shear_modulus * (self.trial_deformation_gradient[frame, particle_id] - rotation_matrix) @ self.trial_deformation_gradient[frame, particle_id].transpose() + ti.Matrix.identity(float, 3) * bulk_modulus * volume_ratio * (volume_ratio - 1)
+
+            # pressure: hydrostatic pressure in Pa
+            pressure = (cauchy_stress[0, 0] + cauchy_stress[1, 1] + cauchy_stress[2, 2]) / 3.0
+            # deviatoric_stress: deviatoric stress tensor in Pa
+            deviatoric_stress = cauchy_stress - pressure * ti.Matrix.identity(float, 3)
+            # von_mises: von Mises stress in Pa
+            von_mises = ti.sqrt(1.5 * (
+                deviatoric_stress[0, 0] * deviatoric_stress[0, 0] +
+                deviatoric_stress[1, 1] * deviatoric_stress[1, 1] +
+                deviatoric_stress[2, 2] * deviatoric_stress[2, 2] +
+                2 * (deviatoric_stress[0, 1] * deviatoric_stress[0, 1] +
+                     deviatoric_stress[1, 2] * deviatoric_stress[1, 2] +
+                     deviatoric_stress[0, 2] * deviatoric_stress[0, 2])
+            ))
+            self.particle_von_mises_stress[frame, particle_id] = von_mises
 
             # force_term: force contribution in N
             force_term = cauchy_stress * self.initial_particle_volume

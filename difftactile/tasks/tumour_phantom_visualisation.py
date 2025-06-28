@@ -24,10 +24,16 @@ class ContactVisualisation:
         self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(4,), needs_grad=False)
         
         self.healthy_tissue_points = ti.Vector.field(
-            3, dtype=float, shape=(self.phantom.actual_total_num_particles)
+            3, dtype=float, shape=(self.phantom.actual_total_num_particles,)
         )
         self.tumour_points = ti.Vector.field(
-            3, dtype=float, shape=(self.phantom.actual_total_num_particles)
+            3, dtype=float, shape=(self.phantom.actual_total_num_particles,)
+        )
+        self.healthy_tissue_points_von_mises_stress = ti.field(
+            dtype=float, shape=(self.phantom.actual_total_num_particles,)
+        )
+        self.tumour_points_von_mises_stress = ti.field(
+            dtype=float, shape=(self.phantom.actual_total_num_particles,)
         )
 
     @ti.kernel
@@ -40,8 +46,10 @@ class ContactVisualisation:
         for p in range(self.phantom.actual_total_num_particles):
             if self.phantom.titles[p] == 0:
                 self.healthy_tissue_points[p] = self.phantom.particle_position[f, p]
+                self.healthy_tissue_points_von_mises_stress[p] = self.phantom.particle_von_mises_stress[0, p]
             elif self.phantom.titles[p] == 1:
                 self.tumour_points[p] = self.phantom.particle_position[f, p]
+                self.tumour_points_von_mises_stress[p] = self.phantom.particle_von_mises_stress[0, p]
 
         for p in range(self.vitactip.num_vertices):
             self.sensor_points[p] = self.vitactip.vertex_positions_deformed[f, p]
@@ -243,6 +251,9 @@ class ContactVisualisation:
             [x1, y0 + abs(y0 - y1), z],
         ])
         keypoint_coords = np.vstack((keypoint_coords, floor))
+
+        von_mises_max = np.max((self.healthy_tissue_points_von_mises_stress.to_numpy(), self.tumour_points_von_mises_stress.to_numpy()))
+        print(f'max von mises stress: {von_mises_max}')
 
         viz_scale = 0.1
         viz_offset = [0.25, 0.25]
