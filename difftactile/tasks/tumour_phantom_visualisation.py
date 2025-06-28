@@ -297,7 +297,7 @@ class ContactVisualisation:
             scene.particles(
                 self.healthy_tissue_points,
                 color=(0.0, 0.0, 1.0),
-                radius=0.03 / sf,
+                radius=0.06 / sf,
             )
             scene.particles(
                 self.tumour_points,
