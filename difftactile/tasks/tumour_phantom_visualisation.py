@@ -208,7 +208,7 @@ class ContactVisualisation:
             window_width = screen_width // grid_cols
             window_height = screen_height // grid_rows
             window_res = (int(window_width * 0.75), int(window_height * 0.75))
-            window = ti.ui.Window("high-level camera", (int(screen_width * 0.8), screen_height // 2))
+            window = ti.ui.Window("high-level camera", (int(screen_width * 0.9), int(screen_height * 0.9)))
             canvas = window.get_canvas()
             canvas.set_background_color((0, 0, 0))
             scene = ti.ui.Scene()
@@ -218,7 +218,7 @@ class ContactVisualisation:
             camera.position(x-1.0, y, z)
             camera.up(0, 0, 1)
             camera.lookat(x, y, z)
-            camera.fov(10)
+            camera.fov(8)
             if self.enable_low_level_camera:
                 gui1 = ti.GUI("low-level camera", res=window_res)
             else:
