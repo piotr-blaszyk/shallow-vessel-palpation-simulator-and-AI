@@ -15,8 +15,8 @@ surface_triangles = mesh_data['surface_triangles']
 node_tags = mesh_data['node_tags']
 group_to_idx = mesh_data['group_to_idx']
 y_bottom = mesh_data['y_bottom']
-R_inner = mesh_data['R_inner']
-R_outer = mesh_data['R_outer']
+radius_of_curvature_inner = mesh_data['radius_of_curvature_inner']
+radius_of_curvature_outer = mesh_data['radius_of_curvature_outer']
 
 print('hello')
 print(node_coordinates.shape)

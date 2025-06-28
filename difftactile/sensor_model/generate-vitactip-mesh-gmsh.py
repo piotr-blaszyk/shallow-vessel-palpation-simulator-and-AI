@@ -8,10 +8,48 @@ import os
 import itertools
 import json
 
+def spherical_cap_volume_1(radius_of_curvature, cap_height):
+    return 1/3 * math.pi * cap_height ** 2 * (3 * radius_of_curvature - cap_height)
+
+def spherical_cap_volume_2(radius_of_base, cap_height):
+    return 1/6 * math.pi * cap_height * (3 * radius_of_base ** 2 + cap_height ** 2)
+
+def cylinder_volume(radius_of_base, height):
+    return math.pi * radius_of_base ** 2 * height
+
 def dome_radius_of_curvature(radius_of_projection, height):
     r = radius_of_projection
     h = height
     return (r ** 2 + h ** 2) / (2 * h)
+
+def calculate_volumes_SI(geometry_data):
+    stem_wall_radius_outer = geometry_data['stem_wall_radius_outer']
+    stem_wall_radius_inner = geometry_data['stem_wall_radius_inner']
+    radius_of_curvature_outer = geometry_data['radius_of_curvature_outer']
+    radius_of_curvature_inner = geometry_data['radius_of_curvature_inner']
+    stem_height = geometry_data['stem_height']
+    cap_height = geometry_data['cap_height']
+
+    outer_cylinder = cylinder_volume(stem_wall_radius_outer, stem_height)
+    outer_cap = spherical_cap_volume_2(stem_wall_radius_outer, cap_height)
+    outer_solid_volume = outer_cylinder + outer_cap
+
+    inner_cylinder = cylinder_volume(stem_wall_radius_inner, stem_height)
+    inner_cap = spherical_cap_volume_2(stem_wall_radius_inner, cap_height)
+    inner_solid_volume = inner_cylinder + inner_cap
+
+    shell_volume = outer_solid_volume - inner_solid_volume
+    gel_volume = inner_solid_volume
+
+    shell_volume /= 1e3 ** 3
+    gel_volume /= 1e3 ** 3
+
+    volumes = {
+        'shell': shell_volume,
+        'gel': gel_volume,
+    }
+
+    return volumes
 
 def generate_vitactip_mesh():
     # Load system parameters from JSON
@@ -47,23 +85,23 @@ def generate_vitactip_mesh():
     stem_wall_radius_inner = 19
     cap_height = 6.0
     stem_height = 11.0
-    R_outer = dome_radius_of_curvature(stem_wall_radius_outer, cap_height)
-    R_inner = R_outer - 1
-    y_cap_base = R_outer - cap_height
+    radius_of_curvature_outer = dome_radius_of_curvature(stem_wall_radius_outer, cap_height)
+    radius_of_curvature_inner = radius_of_curvature_outer - 1
+    y_cap_base = radius_of_curvature_outer - cap_height
     y_bottom = y_cap_base - stem_height
     geometry_data = {
         'stem_wall_radius_outer': stem_wall_radius_outer,
         'stem_wall_radius_inner': stem_wall_radius_inner,
         'cap_height': cap_height,
         'stem_height': stem_height,
-        'R_outer': R_outer,
-        'R_inner': R_inner,
+        'radius_of_curvature_outer': radius_of_curvature_outer,
+        'radius_of_curvature_inner': radius_of_curvature_inner,
         'y_cap_base': y_cap_base,
         'y_bottom': y_bottom
     }
 
-    outer_ball = gmsh.model.occ.addSphere(0, 0, 0, R_outer)
-    inner_ball = gmsh.model.occ.addSphere(0, 0, 0, R_inner)
+    outer_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_outer)
+    inner_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_inner)
     cap = gmsh.model.occ.cut([(3, outer_ball)], [(3, inner_ball)])[0]
     cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
     cap = gmsh.model.occ.intersect(cap, [(3, cyl_helper)])[0]
@@ -93,7 +131,7 @@ def generate_vitactip_mesh():
         point_with_largest_magnitude = node_coordinates[max_magnitude_index]
         largest_magnitude = magnitudes[max_magnitude_index]
         magnitudes.sort()
-        if largest_magnitude>R_outer+1:
+        if largest_magnitude>radius_of_curvature_outer+1:
             gmsh.model.occ.remove(dimTags=[(dim, tag)], recursive=True)
             continue
         new_fragments.append((dim, tag))
@@ -103,7 +141,7 @@ def generate_vitactip_mesh():
     stem_wall = gmsh.model.occ.cut([(3, stem_wall_outer)], [(3, stem_wall_inner)])[0]
     shell = gmsh.model.occ.fuse(new_fragments, stem_wall)[0]
 
-    outer_ball = gmsh.model.occ.addSphere(0, 0, 0, R_outer)
+    outer_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_outer)
     cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
     all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
     gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
@@ -113,9 +151,17 @@ def generate_vitactip_mesh():
     gmsh.write('vitactip.msh')
     gmsh.model.addPhysicalGroup(3, [x[1] for x in shell], name="shell")
     gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
+    
+    volumes = calculate_volumes_SI(geometry_data)
+    print(f"\nComponent Volumes:")
+    print(f"Gel Volume: {volumes['gel']:0.3e} m³")
+    print(f"Shell Volume: {volumes['shell']:0.3e} m³")
+    
     get_difftactile_variables(geometry_data, A_points)
     gmsh.fltk.run()
     gmsh.finalize()
+    
+    return volumes
 
 def get_difftactile_variables(geometry_data, A_points):
     # Unpack all geometry variables
@@ -123,8 +169,8 @@ def get_difftactile_variables(geometry_data, A_points):
     stem_wall_radius_inner = geometry_data['stem_wall_radius_inner']
     cap_height = geometry_data['cap_height']
     stem_height = geometry_data['stem_height']
-    R_outer = geometry_data['R_outer']
-    R_inner = geometry_data['R_inner']
+    radius_of_curvature_outer = geometry_data['radius_of_curvature_outer']
+    radius_of_curvature_inner = geometry_data['radius_of_curvature_inner']
     y_cap_base = geometry_data['y_cap_base']
     y_bottom = geometry_data['y_bottom']
 
@@ -154,7 +200,7 @@ def get_difftactile_variables(geometry_data, A_points):
         node = node_coordinates[i]
         x,y,z = node
         if y > y_cap_base:
-            if np.linalg.norm(node) > R_outer - 0.1:
+            if np.linalg.norm(node) > radius_of_curvature_outer - 0.1:
                 surface_node_tags.append(tag)
                 surface_coords.append(node)
         else:
@@ -221,8 +267,8 @@ def get_difftactile_variables(geometry_data, A_points):
         'marker_node_tags': marker_node_tags,
 
         'y_bottom': y_bottom,
-        'R_inner': R_inner,
-        'R_outer': R_outer,
+        'radius_of_curvature_inner': radius_of_curvature_inner,
+        'radius_of_curvature_outer': radius_of_curvature_outer,
     }
     print(f'number of vertices generated: {node_coordinates.shape[0]}')
     os.makedirs('output', exist_ok=True)

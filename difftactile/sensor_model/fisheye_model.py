@@ -351,8 +351,8 @@ def generate_marker_3d_projection():
     if False:
         with open('output/gmsh-mesh.pkl', 'rb') as f:
             gmsh_data = pickle.load(f)
-        shell_inner_r = gmsh_data['R_inner']
-        shell_outer_r = gmsh_data['R_outer']
+        shell_inner_r = gmsh_data['radius_of_curvature_inner']
+        shell_outer_r = gmsh_data['radius_of_curvature_outer']
     else:
         shell_inner_r = 35 + 1/3
         shell_outer_r = 36 + 1/3
