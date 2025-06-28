@@ -8,13 +8,13 @@ import numpy as np
 from mesh_to_sdf import *
 
 class ObjLoader:
-    def __init__(self, data_path, target_total_num_particles):
+    def __init__(self, data_path, target_total_num_cube_particles):
         '''
         Load an obj or stl mesh model and convert it to particles
         '''
         self.data_path = data_path # ending with obj or stl
         self.voxel_resolution = 128
-        self.num_particles_1d = int(target_total_num_particles ** (1/3)) # # of particles in one dimension of cube
+        self.num_particles_1d = int(target_total_num_cube_particles ** (1/3)) # # of particles in one dimension of cube
 
     def generate_surface_particles(self, num_particles):
         self.raw_mesh = trimesh.load(self.data_path, force='mesh', skip_texture=True)

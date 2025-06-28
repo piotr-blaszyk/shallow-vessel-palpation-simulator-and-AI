@@ -14,7 +14,7 @@
     "phantom": {
         "space_scale": "m",
         "object_scale": "m",
-        "target_total_num_particles": "dimensionless",
+        "target_total_num_particles_raw": "dimensionless",
         "gravity": "m/s^2",
         "silicone": {
             "density": "kg/m^3",

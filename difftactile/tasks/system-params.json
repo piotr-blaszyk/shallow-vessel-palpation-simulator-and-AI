@@ -14,7 +14,7 @@
     "phantom": {
         "space_scale": 0.16,
         "object_scale": 0.08,
-        "target_total_num_particles": 2000,
+        "target_total_num_particles_raw": 2000,
         "gravity": [0.0, 0.0, -9.81],
         "silicone": {
             "density": 1.07e3,

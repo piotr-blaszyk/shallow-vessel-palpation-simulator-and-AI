@@ -31,7 +31,7 @@ class Phantom:
         with open('../tasks/initial-coordinates-and-geometry.json', 'r') as f:
             self.coordinates = json.load(f)
         
-        self.target_total_num_particles = self.phantom_params['target_total_num_particles']
+        self.target_total_num_particles = self.coordinates['target_total_num_particles']
 
         self.total_volume = self.coordinates['phantom_volume']
 
@@ -61,7 +61,7 @@ class Phantom:
             raise Exception("Please specify the name of the phantom object to load")
         
         data_path = os.path.join("..", "meshes", "objects", self.obj_name)
-        obj_loader = ObjLoader(data_path, target_total_num_particles = int(self.target_total_num_particles))
+        obj_loader = ObjLoader(data_path, target_total_num_cube_particles = int(self.target_total_num_particles))
         obj_loader.generate_particles()
         self.actual_total_num_particles = len(obj_loader.particles)
         self.particles = ti.Vector.field(3, dtype=float, shape=self.actual_total_num_particles)

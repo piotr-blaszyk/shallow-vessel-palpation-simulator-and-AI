@@ -26,5 +26,6 @@
     0
   ],
   "gap": 0.5,
-  "phantom_volume": 0.0001105840614063607
+  "phantom_volume": 0.0001105840614063607,
+  "target_total_num_particles": 9259.923961710276
 }

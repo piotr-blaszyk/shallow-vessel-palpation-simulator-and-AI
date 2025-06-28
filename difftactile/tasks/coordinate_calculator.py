@@ -47,6 +47,9 @@ assert obj_scale == phantom_max_dim
 phantom_normalised_spans = phantom_dimensions / phantom_max_dim / 2
 phantom_scaled_spans = phantom_normalised_spans * obj_scale
 
+phantom_to_cube_volume_ratio = phantom_volume / (np.max(phantom_scaled_spans) * 2) ** 3
+target_total_num_particles = phantom_params['target_total_num_particles_raw'] * (1 / phantom_to_cube_volume_ratio)
+
 print(f'phantom_normalised_spans: {phantom_normalised_spans}')
 print(f'phantom_scaled_spans: {phantom_scaled_spans}')
 
@@ -66,6 +69,7 @@ coordinates = {
     "vitactip_tip_pose": vitactip_tip_position.tolist() + sensor_orientation,
     "gap": gap,
     "phantom_volume": phantom_volume,
+    "target_total_num_particles": target_total_num_particles,
 }
 
 # Save coordinates to JSON file
