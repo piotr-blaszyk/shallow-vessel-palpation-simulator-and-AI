@@ -204,9 +204,6 @@ class Contact:
         self.mpm_object.compute_R(f)
         self.fem_sensor1.update_external_forces(f)
 
-
-
-
     def update_grad(self, f):
         self.fem_sensor1.update_external_forces.grad(f)
         self.mpm_object.compute_R.grad(f)

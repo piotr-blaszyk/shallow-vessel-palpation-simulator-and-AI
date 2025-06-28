@@ -722,13 +722,6 @@ class ViTacTip:
             self.vertex_positions_undeformed[target, p] = self.vertex_positions_undeformed[source, p]
 
     @ti.kernel
-    def copy_grad(self, source: ti.i32, target: ti.i32):
-        for p in range(self.num_vertices):
-            self.vertex_positions_deformed.grad[target, p] = self.vertex_positions_deformed.grad[source, p]
-            self.vertex_velocities.grad[target, p] = self.vertex_velocities.grad[source, p]
-            self.vertex_positions_undeformed.grad[target, p] = self.vertex_positions_undeformed.grad[source, p]
-
-    @ti.kernel
     def load_step_from_cache(self, f: ti.i32, cache_pos: ti.types.ndarray(), cache_vel: ti.types.ndarray(), cache_trans: ti.types.ndarray(), cache_virtual_pos: ti.types.ndarray(), cache_rot: ti.types.ndarray(), cache_predict_markers: ti.types.ndarray()):
         for j in range(4):
             for k in range(4):
@@ -780,34 +773,8 @@ class ViTacTip:
         cur_step_name = f'{t:06d}'
         device = 'cpu'
         self.copy_frame(0, self.sub_steps-1)
-        self.copy_grad(0, self.sub_steps-1)
-        self.clear_step_grad(self.sub_steps-1)
 
         self.load_step_from_cache(0, self.simulation_cache[cur_step_name]['pos'], self.simulation_cache[cur_step_name]['vel'], self.simulation_cache[cur_step_name]['trans_h'], self.simulation_cache[cur_step_name]['virtual_pos'], self.simulation_cache[cur_step_name]['rot_h'], self.simulation_cache[cur_step_name]['predict_markers'])
-
-    @ti.kernel
-    def clear_loss_grad(self):
-        self.deformed_markers.grad.fill(0.0)
-        self.local_translational_velocity.grad[None].fill(0.0)
-        self.local_angular_velocity.grad[None].fill(0.0)
-        self.homogeneous_rotation_matrix.grad[None].fill(0.0)
-        self.local_rotation_matrix.grad[None].fill(0.0)
-        self.inverse_rotation_matrix.grad[None].fill(0.0)
-        self.homogeneous_transformation_matrix.grad[None].fill(0.0)
-        self.local_transformation_matrix.grad[None].fill(0.0)
-        self.inverse_transformation_matrix.grad[None].fill(0.0)
-        self.delta_transformation_matrix.grad[None].fill(0.0)
-        self.vertex_control_velocities.grad.fill(0.0)
-
-    @ti.kernel
-    def clear_step_grad(self, f:ti.i32):
-        self.total_surface_force.grad.fill(0.0)
-        self.contact_forces_on_vertices.grad.fill(0.0)
-        for p in range(self.num_vertices):
-            for t in range(f):
-                self.vertex_positions_deformed.grad[t, p].fill(0.0)
-                self.vertex_velocities.grad[t, p].fill(0.0)
-                self.vertex_positions_undeformed.grad[t, p].fill(0.0)
 
     def get_min_z_from_cache(self, t):
         """Returns the minimum z-coordinate from the cached positions at timestep t.

@@ -180,56 +180,11 @@ class Contact(ContactVisualisation):
         self.phantom.g2p(f)
         self.vitactip.update_external_forces(f)
 
-    def update_grad(self, f):
-        self.vitactip.update_external_forces.grad(f)
-        self.phantom.g2p.grad(f)
-        self.phantom.grid_op.grad(f)
-        self.clamp_grid(f)
-        self.collision.grad(f)
-        self.vitactip.update_internal_forces.grad(f)
-        self.phantom.p2g.grad(f)
-        self.phantom.svd_grad(f)
-        self.phantom.compute_trial_deformation_gradient.grad(f)
-
-    @ti.kernel
-    def clear_loss_grad(self):
-        self.normal_stiffness.grad[None] = 0.0
-        self.normal_damping.grad[None] = 0.0
-        self.tangential_stiffness.grad[None] = 0.0
-        self.coulomb_friction_coeff.grad[None] = 0.0
-        self.contact_detect_flag.grad[None] = 0.0
-
-    def clear_traj_grad(self):
-        self.vitactip.clear_loss_grad()
-        self.phantom.clear_loss_grad()
-        self.clear_loss_grad()
-
-    def clear_all_grad(self):
-        self.clear_traj_grad()
-        self.vitactip.clear_step_grad(self.num_sub_frames)
-        self.phantom.clear_step_grad(self.num_sub_frames)
-
     def reset(self):
         self.vitactip.reset_contact()
         self.phantom.reset()
         self.contact_idx.fill(-1)
         self.contact_detect_flag[None] = 0.0
-
-    @ti.kernel
-    def clamp_grid(self, f: ti.i32):
-        for i, j, k in ti.ndrange(
-            self.phantom.n_grid, self.phantom.n_grid, self.phantom.n_grid
-        ):
-            self.phantom.grid_node_mass.grad[f, i, j, k] = ti.math.clamp(
-                self.phantom.grid_node_mass.grad[f, i, j, k], -1000.0, 1000.0
-            )
-        for i in range(self.vitactip.num_vertices):
-            self.vitactip.vertex_positions_deformed.grad[f, i] = ti.math.clamp(
-                self.vitactip.vertex_positions_deformed.grad[f, i], -1000.0, 1000.0
-            )
-            self.vitactip.vertex_velocities.grad[f, i] = ti.math.clamp(
-                self.vitactip.vertex_velocities.grad[f, i], -1000.0, 1000.0
-            )
 
     @ti.func
     def calculate_contact_force(self, signed_distance, surface_normal, relative_velocity):
