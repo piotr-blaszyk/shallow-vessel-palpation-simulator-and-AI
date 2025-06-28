@@ -41,7 +41,7 @@ class Phantom:
         self.n_grid = 64
         self.space_scale = self.phantom_params['space_scale']
         self.obj_scale = self.phantom_params['object_scale']
-        self.mass_density = self.phantom_params['mass_density']
+        self.healthy_tissue_mass_density = self.phantom_params['silicone']['density']
         self.gravity = ti.Vector(self.phantom_params['gravity'])
 
         self.mpm_grid_cube_size = float(self.space_scale / self.n_grid)
@@ -77,11 +77,11 @@ class Phantom:
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
 
         self.initial_particle_volume = self.total_volume / self.actual_total_num_particles
-        self.particle_mass = self.initial_particle_volume * self.mass_density
+        self.healthy_tissue_particle_mass = self.initial_particle_volume * self.healthy_tissue_mass_density
 
     def set_stiffness(self):
-        healthy_tissue = self.phantom_params['healthy_tissue']
-        tumour = self.phantom_params['tumour']
+        healthy_tissue = self.phantom_params['silicone']
+        tumour = self.phantom_params['hard_plastic']
         self.youngs_modulus_0[0] = healthy_tissue['youngs_modulus'] * self.space_scale
         self.poissons_ratio_0[0] = healthy_tissue['poissons_ratio']
         self.youngs_modulus_0[1] = tumour['youngs_modulus'] * self.space_scale
@@ -334,7 +334,7 @@ class Phantom:
             impulse_term_scaled_quadratic_B_spline = 4 * self.inverse_mpm_grid_cube_size ** 2 * impulse_term
 
             # momentum_contrib: momentum contribution in kg⋅m/s
-            momentum_contribution = impulse_term_scaled_quadratic_B_spline + self.particle_mass * self.affine_velocity_field[frame, particle_id]
+            momentum_contribution = impulse_term_scaled_quadratic_B_spline + self.healthy_tissue_particle_mass * self.affine_velocity_field[frame, particle_id]
 
             # Loop over 3x3 grid node neighborhood
             for i, j, k in ti.static(ti.ndrange(3, 3, 3)):
@@ -344,8 +344,8 @@ class Phantom:
                 dist_to_grid = (grid_offset.cast(float) - particle_grid_diff) * self.mpm_grid_cube_size
                 # weight: interpolation weight (dimensionless)
                 weight = weight_functions[i][0] * weight_functions[j][1] * weight_functions[k][2]
-                self.grid_node_momentum_in[frame, grid_base_index + grid_offset] += weight * (self.particle_mass * self.particle_velocity[frame, particle_id] + momentum_contribution @ dist_to_grid)
-                self.grid_node_mass[frame, grid_base_index + grid_offset] += weight * self.particle_mass
+                self.grid_node_momentum_in[frame, grid_base_index + grid_offset] += weight * (self.healthy_tissue_particle_mass * self.particle_velocity[frame, particle_id] + momentum_contribution @ dist_to_grid)
+                self.grid_node_mass[frame, grid_base_index + grid_offset] += weight * self.healthy_tissue_particle_mass
 
             self.deformation_gradient[frame+1, particle_id] = self.trial_deformation_gradient[frame, particle_id]
 

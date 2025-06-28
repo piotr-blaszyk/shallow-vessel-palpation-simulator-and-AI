@@ -1,0 +1,48 @@
+{
+    "vitactip": {
+        "shell": {
+            "density": "mean value: 1.1e3; plausible range: 1.05e3-1.2e3",
+            "youngs_modulus": "mean value: 7.5e6; plausible range: 6.0e6-9.0e6",
+            "poissons_ratio": "mean value: 0.495; plausible range: 0.49-0.50"
+        },
+        "gel": {
+            "density": "mean value: 1.1e3; plausible range: 1.0e3-1.2e3",
+            "youngs_modulus": "mean value: 5.0e3; plausible range: 1.0e3-2.0e4",
+            "poissons_ratio": "mean value: 0.499; plausible range: 0.495-0.499"
+        }
+    },
+    "phantom": {
+        "space_scale": "m",
+        "object_scale": "m",
+        "target_total_num_particles": "dimensionless",
+        "gravity": "m/s^2",
+        "silicone": {
+            "density": "mean value: 1.07e3; plausible range: 1.03e3-1.15e3",
+            "youngs_modulus": "mean value: 2.5e4; plausible range: 5.0e3-1.0e5",
+            "poissons_ratio": "mean value: 0.499; plausible range: 0.495-0.500"
+        },
+        "hard_plastic": {
+            "density": "mean value: 1.18e3; plausible range: 1.1e3-1.4e3",
+            "youngs_modulus": "mean value: 2.5e9; plausible range: 1.0e9-4.0e9",
+            "poissons_ratio": "mean value: 0.38; plausible range: 0.35-0.40"
+        }
+    },
+    "contact": {
+        "dt": "s",
+        "normal_stiffness": "mean value: 1.0e6; plausible range: 5.0e5-5.0e6",
+        "normal_damping": "mean value: 5.0e2; plausible range: 1.0e2-2.0e3",
+        "tangential_stiffness": "mean value: 7.0e5; plausible range: 3.5e5-3.5e6",
+        "coulomb_friction_coeff": "mean value: 0.85; plausible range: 0.60-1.10",
+        "num_sub_frames": "dimensionless",
+        "num_frames": "dimensionless",
+        "num_opt_steps": "dimensionless",
+        "phantom_name": "n/a",
+        "pid_kp": "dimensionless",
+        "pid_ki": "dimensionless",
+        "pid_kd": "dimensionless",
+        "dwell_frames": "dimensionless"
+    },
+    "mesh": {
+        "density": "dimensionless"
+    }
+}

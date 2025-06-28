@@ -14,14 +14,15 @@
     "phantom": {
         "space_scale": "m",
         "object_scale": "m",
-        "particle_density": "kg/m^3",
-        "mass_density": "kg/m^3",
+        "target_total_num_particles": "dimensionless",
         "gravity": "m/s^2",
-        "healthy_tissue": {
+        "silicone": {
+            "density": "kg/m^3",
             "youngs_modulus": "Pa",
             "poissons_ratio": "dimensionless"
         },
-        "tumour": {
+        "hard_plastic": {
+            "density": "kg/m^3",
             "youngs_modulus": "Pa",
             "poissons_ratio": "dimensionless"
         }
