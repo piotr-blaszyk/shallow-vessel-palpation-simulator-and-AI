@@ -21,7 +21,7 @@ class ContactVisualisation:
             3, dtype=float, shape=(self.vitactip.num_vertices)
         )
         
-        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(1,), needs_grad=False)
+        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(4,), needs_grad=False)
         
         self.healthy_tissue_points = ti.Vector.field(
             3, dtype=float, shape=(self.phantom.actual_total_num_particles)
@@ -207,10 +207,10 @@ class ContactVisualisation:
             camera = ti.ui.Camera()
             camera.projection_mode(ti.ui.ProjectionMode.Perspective)
             x, y, z = self.phantom_centroid_pose[:3]
-            camera.position(x-1.0, y, z * 1/3)
+            camera.position(x-1.0, y, self.mpm_grid_node_size * 10)
             camera.up(0, 0, 1)
-            camera.lookat(x, y, z * 1/3)
-            camera.fov(3)
+            camera.lookat(x, y, self.mpm_grid_node_size * 10)
+            camera.fov(15)
             if self.enable_low_level_camera:
                 gui1 = ti.GUI("low-level camera", res=window_res)
             else:
@@ -226,13 +226,23 @@ class ContactVisualisation:
             
             self.gui_tuple = (gui1, gui2, gui3, camera, scene, window, canvas)
 
-    def update_gui(self):
+    def update_gui(self, ts):
         if self.off_screen:
             return
         gui1, gui2, gui3, camera, scene, window, canvas = self.gui_tuple
 
-        keypoint_coords = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[-1].reshape((1,)))
-        # keypoint_coords = self.trajectory_npy
+        keypoint_coords = self.phantom.get_keypoint_coordinates(0, self.keypoint_indices[-1].reshape((1,)))
+        if ts % 100 == 0:
+            print(f'phantom lowest z particle: {keypoint_coords}; min_coord = {self.min_coord:0.3e}; max_coord = {self.max_coord:0.3e}')
+        z = self.min_coord
+        _, y0, _ = self.coordinates['phantom_centroid_pose'][:3]
+        x1, y1, _ = self.coordinates['phantom_closest_vertex']
+        floor = np.array([
+            [x1, y1, z],
+            [x1, y0, z],
+            [x1, y0 + abs(y0 - y1), z],
+        ])
+        keypoint_coords = np.vstack((keypoint_coords, floor))
 
         viz_scale = 0.1
         viz_offset = [0.25, 0.25]
@@ -287,7 +297,7 @@ class ContactVisualisation:
             scene.particles(
                 self.healthy_tissue_points,
                 color=(0.0, 0.0, 1.0),
-                radius=0.02 / sf,
+                radius=0.03 / sf,
             )
             scene.particles(
                 self.tumour_points,
@@ -306,7 +316,7 @@ class ContactVisualisation:
                 scene.particles(
                     self.key_points,
                     color=(1.0, 0.0, 0.0),
-                    radius=0.05 / sf,
+                    radius=0.06 / sf,
                 )
             
             canvas.scene(scene)

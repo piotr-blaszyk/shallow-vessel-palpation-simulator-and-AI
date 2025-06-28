@@ -1,13 +1,14 @@
+import taichi as ti
+import numpy as np
+np.set_printoptions(precision=6, suppress=False, formatter={'float': '{:0.6e}'.format})
+import pickle
+import json
+
 from difftactile.tasks.tumour_phantom_visualisation import (
     ContactVisualisation
 )
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
-
-import taichi as ti
-import numpy as np
-import pickle
-import json
 
 RUN_ON_LAB_MACHINE = True
 @ti.data_oriented
@@ -110,6 +111,9 @@ class Contact(ContactVisualisation):
         self.phantom_centroid_pose = self.coordinates['phantom_centroid_pose']
         self.vitactip_tip_pose = self.coordinates['vitactip_tip_pose']
         self.gap = self.coordinates['gap']
+        self.min_coord = self.coordinates['min_coord']
+        self.max_coord = self.coordinates['max_coord']
+        self.mpm_grid_node_size = self.coordinates['mpm_grid_node_size']
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
@@ -120,8 +124,11 @@ class Contact(ContactVisualisation):
         self.pid_on[None] = 0
     
     def set_up_keypoints(self):
-        self.keypoint_indices = self.vitactip.get_keypoint_indices(0)
-        self.keypoint_indices = np.concatenate((self.keypoint_indices, self.vitactip.marker_node_tags_np), dtype=int)
+        self.keypoint_indices = np.concatenate((
+            self.vitactip.get_keypoint_indices(0), 
+            self.vitactip.marker_node_tags_np, 
+            self.phantom.get_keypoint_index(),
+        ), dtype=int)
 
     def set_up_initial_positions_and_trajectory(self):
         ix = self.vitactip.get_keypoint_indices_numpy_point_a()
@@ -502,16 +509,15 @@ class Contact(ContactVisualisation):
         particles = self.vitactip.vertex_positions_deformed.to_numpy()[0]
         with open(f'output/tactile_sensor.deformed_node_coordinates.ts={ts}.pkl', 'wb') as f:
             pickle.dump(particles, f)
-        print('mesh exported!')
+        # print('mesh exported!')
     
     def save_tactile_sensor_mesh_node_mapping_to_pickle(self):
         f2v = self.vitactip.tetrahedra.to_numpy()
         with open(f'output/tactile_sensor.f2v.pkl', 'wb') as f:
             pickle.dump(f2v, f)
-        print('mesh node mapping exported!')
+        # print('mesh node mapping exported!')
 
 def main():
-    np.set_printoptions(precision=3, floatmode='maxprec', suppress=False)
     if RUN_ON_LAB_MACHINE:
         ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cuda, device_memory_GB=9)
     else:
@@ -551,9 +557,12 @@ def main():
                 contact_model.update(ss)
             contact_model.memory_to_cache(0)
 
-            contact_model.update_gui()
+            contact_model.update_gui(ts)
 
-            if ts % 100 == 0:
+            if ts % 1_000 == 0:
+                print(f'ts: {ts}')
+
+            if False and ts % 100 == 0:
                 contact_model.take_snapshot(opts)
                 contact_model.save_tactile_sensor_mesh_to_pickle(ts)
                 # break

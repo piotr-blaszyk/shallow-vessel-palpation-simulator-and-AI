@@ -9,6 +9,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import pickle
 import json
+
 from difftactile.sensor_model.fisheye_model import * 
 
 TI_TYPE = ti.f32
@@ -18,7 +19,6 @@ NP_TYPE = np.float32
 @ti.data_oriented
 class ViTacTip:
     def __init__(self):
-        np.set_printoptions(precision=3, floatmode='maxprec', suppress=False)
         self.set_up_system_params()
         self.init_mesh()
         self.set_up_physical_state()
@@ -523,7 +523,7 @@ class ViTacTip:
             cur_min_idx: index of closest triangle segment (dimensionless)
         """
         # cur_min_offset: distance in m
-        cur_min_offset = 100.0 # arbitrary large value
+        cur_min_offset = 0.1 # arbitrary large value
         # cur_min_idx: triangle index (dimensionless)
         cur_min_idx = -1
         for k in range(self.num_contact_surface_triangles):

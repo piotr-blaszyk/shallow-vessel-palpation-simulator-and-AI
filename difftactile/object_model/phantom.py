@@ -5,9 +5,10 @@ import os
 import taichi as ti
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-from difftactile.object_model.obj_loader import ObjLoader
 import torch
 import json
+
+from difftactile.object_model.obj_loader import ObjLoader
 
 TI_TYPE = ti.f32
 TC_TYPE = torch.float32
@@ -133,6 +134,9 @@ class Phantom:
         self.grid_occupy = ti.field(dtype=int, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid))
         # total_surface_external_force: total surface force vector in N
         self.total_surface_external_force = ti.Vector.field(3, float, shape=(self.sub_steps), needs_grad=False)
+
+        self.keypoint_idx = ti.field(dtype=int, shape=())
+        self.keypoint_idx[None] = -1
     
     def set_up_domain_randomisation(self):
         self.group_cardinality = ti.field(dtype=int, shape=(2,), needs_grad=False)
@@ -522,3 +526,54 @@ class Phantom:
                 self.particle_velocity.grad[t,p].fill(0.0)
                 self.affine_velocity_field.grad[t,p].fill(0.0)
                 self.deformation_gradient.grad[t,p].fill(0.0)
+
+    def get_keypoint_index(self) -> int:
+        """
+        Get the index of the point closest to phantom_centroid_pose in x,y plane
+        and with minimum z coordinate.
+        
+        Returns:
+            int: Index of the keypoint
+        """
+        # Get particle positions as numpy array for frame 0
+        positions = self.particle_position.to_numpy()[0]
+        
+        # Get phantom centroid x,y coordinates from coordinates
+        centroid_x = self.coordinates['phantom_centroid_pose'][0]
+        centroid_y = self.coordinates['phantom_centroid_pose'][1]
+        
+        # Create mask for points within 0.01 of centroid x,y
+        x_mask = np.abs(positions[:, 0] - centroid_x) < 0.01
+        y_mask = np.abs(positions[:, 1] - centroid_y) < 0.01
+        xy_mask = x_mask & y_mask
+        
+        # Among points that satisfy xy criteria, find one with minimum z
+        valid_points = positions[xy_mask]
+        if len(valid_points) == 0:
+            raise ValueError("No points found within 0.001 of centroid x,y coordinates")
+            
+        min_z_idx = np.argmin(valid_points[:, 2])
+        # Get the original index
+        keypoint_idx = np.where(xy_mask)[0][min_z_idx]
+        self.keypoint_idx[None] = int(keypoint_idx)
+        
+        return np.array([keypoint_idx])
+
+    def get_keypoint_coordinates(self, f: int, keypoint_indices: np.ndarray) -> np.ndarray:
+        """
+        Get coordinates for specified keypoint indices at a given frame.
+        
+        Args:
+            f: Frame index
+            keypoint_indices: Array of keypoint indices to get coordinates for
+            
+        Returns:
+            numpy array of shape (num_points, 3) containing the coordinates
+        """
+        # Convert positions to numpy array for the given frame
+        positions = self.particle_position.to_numpy()[f]
+        
+        # Extract coordinates for the specified indices
+        coordinates = positions[keypoint_indices]
+        
+        return coordinates

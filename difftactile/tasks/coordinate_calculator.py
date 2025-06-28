@@ -27,20 +27,28 @@ sensor_orientation = [-90, 0, 0]  # Roll, pitch, yaw in degrees
 space_scale = phantom_params['space_scale']
 obj_scale = phantom_params['object_scale']
 n_grid = 64
-dx_0 = space_scale / n_grid
-min_z = dx_0 * 3
-max_z = (n_grid - 3) * dx_0
-print(f'dx_0: {dx_0}')
-print(f'min_z: {min_z}')
-print(f'max_z: {max_z}')
+mpm_grid_node_size = space_scale / n_grid
+min_coord = mpm_grid_node_size * 3
+max_coord = (n_grid - 3) * mpm_grid_node_size
+print(f'mpm_grid_node_size: {mpm_grid_node_size}')
+print(f'min_coord: {min_coord}')
+print(f'max_coord: {max_coord}')
 
-phantom_closest_vertex = np.array([min_z+dx_0, min_z+dx_0, min_z+dx_0], dtype=float)
+phantom_closest_vertex = np.array([mpm_grid_node_size*6, mpm_grid_node_size*6, mpm_grid_node_size*21], dtype=float)
 
 phantom_h = 0.022
 phantom_r = 0.040
 phantom_d = phantom_r * 2
 phantom_dimensions = np.array([phantom_d, phantom_d, phantom_h], dtype=float)
 phantom_volume = math.pi * phantom_r ** 2 * phantom_h
+
+phantom_furthest_vertex = phantom_closest_vertex + phantom_dimensions
+
+print(f'phantom_closest_vertex: {phantom_closest_vertex}')
+print(f'phantom_furthest_vertex: {phantom_furthest_vertex}')
+
+assert np.min(phantom_closest_vertex) > min_coord, "the phantom is outside of the manipulation cube"
+assert np.max(phantom_furthest_vertex) < max_coord, "the phantom is outside of the manipulation cube"
 
 phantom_max_dim = np.max(phantom_dimensions)
 assert obj_scale == phantom_max_dim
@@ -70,6 +78,9 @@ coordinates = {
     "gap": gap,
     "phantom_volume": phantom_volume,
     "target_total_num_particles": target_total_num_particles,
+    "min_coord": min_coord,
+    "max_coord": max_coord,
+    "mpm_grid_node_size": mpm_grid_node_size,
 }
 
 # Save coordinates to JSON file

@@ -1,5 +1,6 @@
 import gmsh
 import numpy as np
+np.set_printoptions(formatter={'float_kind': '{:.2f}'.format})
 import math
 import sys
 import pickle
@@ -232,5 +233,4 @@ def gmsh_reference():
     node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes()
 
 if __name__ == "__main__":
-    np.set_printoptions(formatter={'float_kind': '{:.2f}'.format})
     generate_vitactip_mesh()
