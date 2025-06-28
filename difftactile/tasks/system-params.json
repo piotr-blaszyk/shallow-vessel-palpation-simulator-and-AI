@@ -37,11 +37,11 @@
         "keypoint_search_xy_threshold": 0.010
     },
     "contact": {
-        "dt": 1.0e-5,
-        "normal_stiffness": 2.5e4,
-        "normal_damping": 2.5e2,
-        "tangential_stiffness": 2.0e3,
-        "coulomb_friction_coeff": 0.2,
+        "dt": 5.0e-6,
+        "normal_stiffness": 5.0e5,
+        "normal_damping": 2.0e3,
+        "tangential_stiffness": 3.5e5,
+        "coulomb_friction_coeff": 0.60,
         "num_sub_frames": 100,
         "num_frames": 10000,
         "num_opt_steps": 10,
@@ -55,11 +55,15 @@
         "norm_eps": 1e-11,
         "tangential_velocity_detection_threshold": 1e-6
     },
-    "gmsh": {
-        "characteristic_length_factor": 0.5
+    "gmsh_mm": {
+        "characteristic_length_factor": 0.5,
+        "stem_wall_radius_outer": 20,
+        "stem_wall_radius_inner": 19,
+        "cap_height": 6.0,
+        "stem_height": 11.0
     },
     "geometry": {
-        "gap": 0.010,
+        "gap": 0.005,
         "phantom_orientation": [0, 0, 0],
         "sensor_orientation": [-90, 0, 0],
         "phantom_h": 0.022,

@@ -55,9 +55,13 @@ def generate_vitactip_mesh():
     # Load system parameters from JSON
     with open('../tasks/system-params.json', 'r') as f:
         params = json.load(f)
-        mesh_params = params['gmsh']
+    mesh_params = params['gmsh_mm']
 
     characteristic_length_factor = mesh_params['characteristic_length_factor']
+    stem_wall_radius_outer = mesh_params['characteristic_stem_wall_radius_outerlength_factor']
+    stem_wall_radius_inner = mesh_params['stem_wall_radius_inner']
+    cap_height = mesh_params['cap_height']
+    stem_height = mesh_params['stem_height']
 
     with open('biomimetic-tip-points.pkl', 'rb') as f:
         biomimetic_tip_points = pickle.load(f)
@@ -81,10 +85,6 @@ def generate_vitactip_mesh():
     gmsh.option.setNumber("Mesh.CharacteristicLengthFactor", characteristic_length_factor)
     gmsh.model.add("ViTacTip")
 
-    stem_wall_radius_outer = 20
-    stem_wall_radius_inner = 19
-    cap_height = 6.0
-    stem_height = 11.0
     radius_of_curvature_outer = dome_radius_of_curvature(stem_wall_radius_outer, cap_height)
     radius_of_curvature_inner = radius_of_curvature_outer - 1
     y_cap_base = radius_of_curvature_outer - cap_height
@@ -160,8 +160,6 @@ def generate_vitactip_mesh():
     get_difftactile_variables(geometry_data, A_points)
     gmsh.fltk.run()
     gmsh.finalize()
-    
-    return volumes
 
 def get_difftactile_variables(geometry_data, A_points):
     # Unpack all geometry variables
