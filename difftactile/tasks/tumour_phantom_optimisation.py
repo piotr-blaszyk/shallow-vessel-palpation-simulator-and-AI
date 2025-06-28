@@ -296,7 +296,7 @@ class Contact(ContactVisualisation):
                 )
                 # closest_sensor_vertex_idx: vertex index (dimensionless)
                 closest_sensor_vertex_idx = self.contact_idx[frame, i, j, k]
-                if closest_sensor_vertex_idx != -1:
+                if closest_sensor_vertex_idx[0] != -1:
                     # penetration_depth: depth in m, surface_normal: unit vector (dimensionless), 
                     # relative_velocity: velocity vector in m/s, is_in_contact: boolean (dimensionless)
                     penetration_depth, surface_normal, relative_velocity, is_in_contact = (
