@@ -33,9 +33,9 @@ class Contact(ContactVisualisation):
             dtype=int,
             shape=(
                 self.num_sub_frames,
-                self.phantom.n_grid,
-                self.phantom.n_grid,
-                self.phantom.n_grid,
+                self.phantom.n_grid_x,
+                self.phantom.n_grid_y,
+                self.phantom.n_grid_z,
             ),
         )
         self.contact_detect_flag = ti.field(float, (), needs_grad=False)
@@ -249,7 +249,7 @@ class Contact(ContactVisualisation):
             frame: current simulation frame (dimensionless)
         """
         for i, j, k in ti.ndrange(
-            self.phantom.n_grid, self.phantom.n_grid, self.phantom.n_grid
+            self.phantom.n_grid_x, self.phantom.n_grid_y, self.phantom.n_grid_z
         ):
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 # grid_node_position: position vector in m
@@ -274,7 +274,7 @@ class Contact(ContactVisualisation):
             frame: current simulation frame (dimensionless)
         """
         for i, j, k in ti.ndrange(
-            self.phantom.n_grid, self.phantom.n_grid, self.phantom.n_grid
+            self.phantom.n_grid_x, self.phantom.n_grid_y, self.phantom.n_grid_z
         ):
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 # grid_node_position: position vector in m

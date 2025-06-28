@@ -26,9 +26,8 @@ class Phantom:
     def set_up_system_params(self):
         with open('../tasks/system-params.json', 'r') as f:
             self.params = json.load(f)
-            self.phantom_params = self.params['phantom']
-            self.contact_params = self.params['contact']
-        
+        self.phantom_params = self.params['phantom']
+        self.contact_params = self.params['contact']
         with open('../tasks/initial-coordinates-and-geometry.json', 'r') as f:
             self.coordinates = json.load(f)
         
@@ -38,16 +37,16 @@ class Phantom:
 
         self.sub_steps = self.contact_params['num_sub_frames']
         self.dt = self.contact_params['dt']
-        self.bound = 3
-        self.n_grid = 64
-        self.space_scale = self.phantom_params['space_scale']
-        self.obj_scale = self.phantom_params['object_scale']
+        self.bound = self.phantom_params['bound']
+        self.n_grid_x = self.phantom_params['n_grid_x']
+        self.n_grid_y = self.phantom_params['n_grid_y']
+        self.n_grid_z = self.phantom_params['n_grid_z']
         self.healthy_tissue_mass_density = self.phantom_params['silicone']['density']
         self.gravity = ti.Vector(self.phantom_params['gravity'])
 
-        self.mpm_grid_cube_size = float(self.space_scale / self.n_grid)
+        self.mpm_grid_cube_size = self.phantom_params['mpm_grid_cube_size']
         self.inverse_mpm_grid_cube_size =  1 / self.mpm_grid_cube_size
-        self.eps = 1e-8
+        self.eps = self.phantom_params['eps']
         
         self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
         self.poissons_ratio_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
@@ -66,7 +65,7 @@ class Phantom:
         obj_loader.generate_particles()
         self.actual_total_num_particles = len(obj_loader.particles)
         self.particles = ti.Vector.field(3, dtype=float, shape=(self.actual_total_num_particles,))
-        self.particles.from_numpy((obj_loader.particles * self.obj_scale).astype(np.float32))
+        self.particles.from_numpy((obj_loader.particles).astype(np.float32))
         self.titles = ti.field(dtype=int, shape=self.actual_total_num_particles)
         
         self.is_fixed = ti.field(dtype=int, shape=(self.actual_total_num_particles,))
@@ -84,9 +83,9 @@ class Phantom:
     def set_stiffness(self):
         healthy_tissue = self.phantom_params['silicone']
         tumour = self.phantom_params['hard_plastic']
-        self.youngs_modulus_0[0] = healthy_tissue['youngs_modulus'] * self.space_scale
+        self.youngs_modulus_0[0] = healthy_tissue['youngs_modulus']
         self.poissons_ratio_0[0] = healthy_tissue['poissons_ratio']
-        self.youngs_modulus_0[1] = tumour['youngs_modulus'] * self.space_scale
+        self.youngs_modulus_0[1] = tumour['youngs_modulus']
         self.poissons_ratio_0[1] = tumour['poissons_ratio']
 
         for item in range(2):
@@ -124,15 +123,15 @@ class Phantom:
         self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
 
         # grid_node_momentum_in: momentum vectors in kg⋅m/s
-        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
+        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid_x, self.n_grid_y, self.n_grid_z), needs_grad=False)
         # grid_node_velocity_out: velocity vectors in m/s
-        self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
+        self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid_x, self.n_grid_y, self.n_grid_z), needs_grad=False)
         # grid_node_mass: mass values in kg
-        self.grid_node_mass = ti.field(dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
+        self.grid_node_mass = ti.field(dtype=float, shape=(self.sub_steps, self.n_grid_x, self.n_grid_y, self.n_grid_z), needs_grad=False)
         # grid_node_external_force: force vectors in N
-        self.grid_node_external_impulse = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid), needs_grad=False)
+        self.grid_node_external_impulse = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid_x, self.n_grid_y, self.n_grid_z), needs_grad=False)
         # grid_occupy: occupancy flags (dimensionless)
-        self.grid_occupy = ti.field(dtype=int, shape=(self.sub_steps, self.n_grid, self.n_grid, self.n_grid))
+        self.grid_occupy = ti.field(dtype=int, shape=(self.sub_steps, self.n_grid_x, self.n_grid_y, self.n_grid_z))
         # total_surface_external_force: total surface force vector in N
         self.total_surface_external_force = ti.Vector.field(3, float, shape=(self.sub_steps), needs_grad=False)
         # von_mises: von Mises stress in Pa
@@ -237,7 +236,7 @@ class Phantom:
 
     @ti.kernel
     def get_external_force(self, f:ti.i32):
-        for i, j, k in ti.ndrange(self.n_grid, self.n_grid, self.n_grid):
+        for i, j, k in ti.ndrange(self.n_grid_x, self.n_grid_y, self.n_grid_z):
             # external force in N
             self.total_surface_external_force[f] += self.grid_node_external_impulse[f, i, j, k] / self.dt
 
@@ -331,7 +330,7 @@ class Phantom:
         Args:
             f: current simulation frame (dimensionless)
         """
-        for i, j, k in ti.ndrange(self.n_grid, self.n_grid, self.n_grid):
+        for i, j, k in ti.ndrange(self.n_grid_x, self.n_grid_y, self.n_grid_z):
             if self.grid_node_mass[f, i, j, k] > self.eps:
                 self.grid_occupy[f, i, j, k] = 1
 
@@ -343,7 +342,7 @@ class Phantom:
         Args:
             frame: current simulation frame (dimensionless)
         """
-        for grid_x, grid_y, grid_z in ti.ndrange(self.n_grid, self.n_grid, self.n_grid):
+        for grid_x, grid_y, grid_z in ti.ndrange(self.n_grid_x, self.n_grid_y, self.n_grid_z):
             if self.grid_occupy[frame, grid_x, grid_y, grid_z] == 1:
                 # inverse_mass: inverse mass in kg^-1
                 inverse_mass = 1 / (self.grid_node_mass[frame, grid_x, grid_y, grid_z] + self.eps)
@@ -357,15 +356,15 @@ class Phantom:
                 # Apply boundary conditions at domain edges
                 if grid_x < self.bound and grid_velocity[0] < 0:
                     grid_velocity[0] = 0  # Left boundary
-                if grid_x > self.n_grid - self.bound and grid_velocity[0] > 0:
+                if grid_x > self.n_grid_x - self.bound and grid_velocity[0] > 0:
                     grid_velocity[0] = 0  # Right boundary
                 if grid_y < self.bound and grid_velocity[1] < 0:
                     grid_velocity[1] = 0  # Bottom boundary
-                if grid_y > self.n_grid - self.bound and grid_velocity[1] > 0:
+                if grid_y > self.n_grid_y - self.bound and grid_velocity[1] > 0:
                     grid_velocity[1] = 0  # Top boundary
                 if grid_z < self.bound and grid_velocity[2] < 0:
                     grid_velocity[2] = 0  # Front boundary
-                if grid_z > self.n_grid - self.bound and grid_velocity[2] > 0:
+                if grid_z > self.n_grid_y - self.bound and grid_velocity[2] > 0:
                     grid_velocity[2] = 0  # Back boundary
 
                 self.grid_node_velocity_out[frame, grid_x, grid_y, grid_z] = grid_velocity

@@ -5,6 +5,8 @@ the space is 100 mm x 100 mm x 100 mm
 """
 import trimesh
 import numpy as np
+import json
+
 from mesh_to_sdf import *
 
 class ObjLoader:
@@ -15,6 +17,11 @@ class ObjLoader:
         self.data_path = data_path # ending with obj or stl
         self.voxel_resolution = 128
         self.num_particles_1d = num_particles_cube_1d
+
+        with open('../tasks/system-params.json', 'r') as f:
+            self.params = json.load(f)
+        self.phantom_params = self.params['phantom']
+        self.object_scale = self.phantom_params['object_scale']
 
     def generate_surface_particles(self, num_particles):
         self.raw_mesh = trimesh.load(self.data_path, force='mesh', skip_texture=True)
@@ -30,6 +37,7 @@ class ObjLoader:
         self.voxelized_mesh = self.normalized_mesh.voxelized(pitch=1.0/self.voxel_resolution).fill()
         cube_particles = self.sample_cube()
         self.particles = cube_particles[self.voxelized_mesh.is_filled(cube_particles)]
+        self.particles *= self.object_scale
         # the center of the obj is [0.0, 0.0, 0.0]
 
     def normalize_mesh(self, mesh):

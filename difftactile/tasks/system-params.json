@@ -12,8 +12,12 @@
         }
     },
     "phantom": {
-        "space_scale": 0.16,
-        "object_scale": 0.08,
+        "eps": 1e-8,
+        "mpm_grid_cube_size": 0.002,
+        "bound": 3,
+        "n_grid_x": 64,
+        "n_grid_y": 64,
+        "n_grid_z": 32,
         "num_particles_cube_1d": 40,
         "gravity": [0.0, 0.0, -9.81],
         "silicone": {
@@ -51,7 +55,6 @@
         "gap": 0.020,
         "phantom_orientation": [0, 0, 0],
         "sensor_orientation": [-90, 0, 0],
-        "n_grid": 64,
         "phantom_h": 0.022,
         "phantom_r": 0.040
     }
