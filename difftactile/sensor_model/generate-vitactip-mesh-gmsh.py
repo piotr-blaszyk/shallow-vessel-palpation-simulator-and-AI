@@ -17,9 +17,9 @@ def generate_vitactip_mesh():
     # Load system parameters from JSON
     with open('../tasks/system-params.json', 'r') as f:
         params = json.load(f)
-        mesh_params = params['mesh']
+        mesh_params = params['gmsh']
 
-    mesh_density = mesh_params['density']
+    characteristic_length_factor = mesh_params['characteristic_length_factor']
 
     with open('biomimetic-tip-points.pkl', 'rb') as f:
         biomimetic_tip_points = pickle.load(f)
@@ -40,7 +40,7 @@ def generate_vitactip_mesh():
     gmsh.option.setNumber("Mesh.Optimize", 1)
     gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
     gmsh.option.setNumber("Mesh.Algorithm", 6)
-    # gmsh.option.setNumber("Mesh.CharacteristicLengthFactor", 1.0)
+    gmsh.option.setNumber("Mesh.CharacteristicLengthFactor", characteristic_length_factor)
     gmsh.model.add("ViTacTip")
 
     stem_wall_radius_outer = 20
@@ -128,12 +128,18 @@ def get_difftactile_variables(geometry_data, A_points):
     y_cap_base = geometry_data['y_cap_base']
     y_bottom = geometry_data['y_bottom']
 
+    # element_types is irrelevant
+    # triangle_tags[0] is a 1d int numpy array of shape (num_triangles,)
+    # triangle_vertex_tags[0] is a 1d int numpy array of shape (num_traingles * 3,)
     element_types, tetrahedra_tags, tetrahedra_vertex_tags = gmsh.model.mesh.getElements(dim=3)
     all_tetrahedra = tetrahedra_vertex_tags[0].reshape(-1, 4).astype(int)
     tetrahedra_tags = tetrahedra_tags[0]
     element_types_2d, triangle_tags, triangle_nodes = gmsh.model.mesh.getElements(dim=2)
     all_surface_triangles = triangle_nodes[0].reshape(-1, 3).astype(int)
-    node_tags, node_coordinates, _ = gmsh.model.mesh.getNodes()
+    # node_tags is a 1d int python array of length num_particles
+    # node_coordinates is a 1d float numpy array of shape (num_particles*3,)
+    # parametric_coord is irrelevant
+    node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes()
     node_coordinates = node_coordinates.reshape(-1, 3).astype(float)
     node_tags = np.array(node_tags)
     node_tag_to_idx = {tag: idx for idx, tag in enumerate(node_tags)}
@@ -218,19 +224,10 @@ def get_difftactile_variables(geometry_data, A_points):
         'R_inner': R_inner,
         'R_outer': R_outer,
     }
+    print(f'number of vertices generated: {node_coordinates.shape[0]}')
     os.makedirs('output', exist_ok=True)
     with open('output/gmsh-mesh.pkl', 'wb') as f:
         pickle.dump(mesh_data, f)
-
-def gmsh_reference():
-    # element_types is irrelevant
-    # triangle_tags[0] is a 1d int numpy array of shape (num_triangles,)
-    # triangle_vertex_tags[0] is a 1d int numpy array of shape (num_traingles * 3,)
-    element_types, triangle_tags, triangle_vertex_tags = gmsh.model.mesh.getElements(dim=2)
-    # node_tags is a 1d int python array of length num_particles
-    # node_coordinates is a 1d float numpy array of shape (num_particles*3,)
-    # parametric_coord is irrelevant
-    node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes()
 
 if __name__ == "__main__":
     generate_vitactip_mesh()

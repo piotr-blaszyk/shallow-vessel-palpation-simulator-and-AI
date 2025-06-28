@@ -214,10 +214,10 @@ class ContactVisualisation:
             scene = ti.ui.Scene()
             camera = ti.ui.Camera()
             camera.projection_mode(ti.ui.ProjectionMode.Perspective)
-            x, y, z = self.phantom_centroid_pose[:3]
-            camera.position(x-1.0, y, self.mpm_grid_node_size * 10)
+            x, y, z = self.vitactip_tip_pose[:3]
+            camera.position(x-1.0, y, z)
             camera.up(0, 0, 1)
-            camera.lookat(x, y, self.mpm_grid_node_size * 10)
+            camera.lookat(x, y, z)
             camera.fov(15)
             if self.enable_low_level_camera:
                 gui1 = ti.GUI("low-level camera", res=window_res)
@@ -239,9 +239,11 @@ class ContactVisualisation:
             return
         gui1, gui2, gui3, camera, scene, window, canvas = self.gui_tuple
 
-        keypoint_coords = self.phantom.get_keypoint_coordinates(0, self.keypoint_indices[-1].reshape((1,)))
+        keypoint_coords = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[-2].reshape((1,)))
         if ts % 100 == 0:
-            print(f'phantom lowest z particle: {keypoint_coords}; min_coord = {self.min_coord:0.3e}; max_coord = {self.max_coord:0.3e}')
+            print(f'phantom lowest z particle: {keypoint_coords[0][2]:0.3e}; min_coord = {self.min_coord:0.3e}; diff = {abs(keypoint_coords[0][2]-self.min_coord):0.3e}')
+        if keypoint_coords[0][2] <= self.min_coord:
+            print(f'phantom hit the ground at ts: {ts}')
         z = self.min_coord
         _, y0, _ = self.coordinates['phantom_centroid_pose'][:3]
         x1, y1, _ = self.coordinates['phantom_closest_vertex']
@@ -252,8 +254,8 @@ class ContactVisualisation:
         ])
         keypoint_coords = np.vstack((keypoint_coords, floor))
 
-        von_mises_max = np.max((self.healthy_tissue_points_von_mises_stress.to_numpy(), self.tumour_points_von_mises_stress.to_numpy()))
-        print(f'max von mises stress: {von_mises_max}')
+        # von_mises_max = np.max((self.healthy_tissue_points_von_mises_stress.to_numpy(), self.tumour_points_von_mises_stress.to_numpy()))
+        # print(f'max von mises stress: {von_mises_max}')
 
         viz_scale = 0.1
         viz_offset = [0.25, 0.25]

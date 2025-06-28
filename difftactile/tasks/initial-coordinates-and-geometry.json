@@ -27,7 +27,6 @@
   ],
   "gap": 0.5,
   "phantom_volume": 0.0001105840614063607,
-  "target_total_num_particles": 0.0,
   "min_coord": 0.0075,
   "max_coord": 0.1525,
   "mpm_grid_node_size": 0.0025

@@ -32,7 +32,7 @@ class Phantom:
         with open('../tasks/initial-coordinates-and-geometry.json', 'r') as f:
             self.coordinates = json.load(f)
         
-        self.target_total_num_particles = self.coordinates['target_total_num_particles']
+        self.num_particles_cube_1d = self.phantom_params['num_particles_cube_1d']
 
         self.total_volume = self.coordinates['phantom_volume']
 
@@ -62,7 +62,7 @@ class Phantom:
             raise Exception("Please specify the name of the phantom object to load")
         
         data_path = os.path.join("..", "meshes", "objects", self.obj_name)
-        obj_loader = ObjLoader(data_path, target_total_num_cube_particles = int(self.target_total_num_particles))
+        obj_loader = ObjLoader(data_path, num_particles_cube_1d=self.num_particles_cube_1d)
         obj_loader.generate_particles()
         self.actual_total_num_particles = len(obj_loader.particles)
         self.particles = ti.Vector.field(3, dtype=float, shape=(self.actual_total_num_particles,))
@@ -79,6 +79,7 @@ class Phantom:
 
         self.initial_particle_volume = self.total_volume / self.actual_total_num_particles
         self.healthy_tissue_particle_mass = self.initial_particle_volume * self.healthy_tissue_mass_density
+        self.total_healthy_tissue_mass = self.total_volume * self.healthy_tissue_mass_density
 
     def set_stiffness(self):
         healthy_tissue = self.phantom_params['silicone']

@@ -20,7 +20,7 @@ with open('../tasks/system-params.json', 'r') as f:
     contact_params = params['contact']
 
 # Constants for poses
-gap = 0.5
+gap = 0.010
 phantom_orientation = [0, 0, 0]  # Roll, pitch, yaw in degrees
 sensor_orientation = [-90, 0, 0]  # Roll, pitch, yaw in degrees
 
@@ -34,7 +34,9 @@ print(f'mpm_grid_node_size: {mpm_grid_node_size}')
 print(f'min_coord: {min_coord}')
 print(f'max_coord: {max_coord}')
 
-phantom_closest_vertex = np.array([mpm_grid_node_size*6, mpm_grid_node_size*6, mpm_grid_node_size*21], dtype=float)
+phantom_closest_vertex = np.array([mpm_grid_node_size*6, mpm_grid_node_size*6, mpm_grid_node_size*3], dtype=float)
+
+dist_from_floor = phantom_closest_vertex[2] - min_coord
 
 phantom_h = 0.022
 phantom_r = 0.040
@@ -46,6 +48,8 @@ phantom_furthest_vertex = phantom_closest_vertex + phantom_dimensions
 
 print(f'phantom_closest_vertex: {phantom_closest_vertex}')
 print(f'phantom_furthest_vertex: {phantom_furthest_vertex}')
+print(f'phantom_volume: {phantom_volume}')
+print(f'dist_from_floor: {dist_from_floor:0.3e}')
 
 assert np.min(phantom_closest_vertex) > min_coord, "the phantom is outside of the manipulation cube"
 assert np.max(phantom_furthest_vertex) < max_coord, "the phantom is outside of the manipulation cube"
@@ -56,7 +60,6 @@ phantom_normalised_spans = phantom_dimensions / phantom_max_dim / 2
 phantom_scaled_spans = phantom_normalised_spans * obj_scale
 
 phantom_to_cube_volume_ratio = phantom_volume / (np.max(phantom_scaled_spans) * 2) ** 3
-target_total_num_particles = phantom_params['target_total_num_particles_raw'] * (1 / phantom_to_cube_volume_ratio)
 
 print(f'phantom_normalised_spans: {phantom_normalised_spans}')
 print(f'phantom_scaled_spans: {phantom_scaled_spans}')
@@ -77,7 +80,6 @@ coordinates = {
     "vitactip_tip_pose": vitactip_tip_position.tolist() + sensor_orientation,
     "gap": gap,
     "phantom_volume": phantom_volume,
-    "target_total_num_particles": target_total_num_particles,
     "min_coord": min_coord,
     "max_coord": max_coord,
     "mpm_grid_node_size": mpm_grid_node_size,
