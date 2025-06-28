@@ -252,14 +252,6 @@ class Phantom:
         for p in range(self.actual_total_num_particles):
             self.U_svd[f, p], self.S_svd[f, p], self.V_svd[f, p] = ti.svd(self.trial_deformation_gradient[f, p])
 
-    @ti.func
-    def clamp(self, a: ti.f32):
-        if a>=0:
-            a = ti.max(a, 1e-11)
-        else:
-            a = ti.min(a, -1e-11)
-        return a
-
     @ti.kernel
     def p2g(self, frame:ti.i32):
         """
