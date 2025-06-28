@@ -26,22 +26,27 @@ class ViTacTip:
     def set_up_system_params(self):
         with open('../tasks/system-params.json', 'r') as f:
             self.params = json.load(f)
-            self.fem_params = self.params['vitactip']
-            self.contact_params = self.params['contact']
+        self.vitactip_params = self.params['vitactip']
+        self.contact_params = self.params['contact']
+        self.geometry_params = self.params['geometry']
+
+        self.keypoint_search_z_threshold = self.vitactip_params['keypoint_search_z_threshold']
+        self.collision_search_distance = self.vitactip_params['collision_search_distance']
+        self.distance_from_camera_lens_to_outer_shell_surface = self.geometry_params['distance_from_camera_lens_to_outer_shell_surface']
         
         self.sub_steps = self.contact_params['num_sub_frames']
         self.dt = self.contact_params['dt']
-        self.eps = 1e-11  # Small epsilon value for numerical stability in vector normalization
+        self.norm_eps = self.contact_params['norm_eps']
 
         # Material parameters for shell (Vytaflex 60)
-        self.shell_mass_density = self.fem_params['shell']['density']  # density [g/cm^3]
+        self.shell_mass_density = self.vitactip_params['shell']['density']  # density [g/cm^3]
         self.shell_youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.shell_poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.shell_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.shell_lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         
         # Material parameters for gel (RTV27905)
-        self.gel_mass_density = self.fem_params['gel']['density']  # density [g/cm^3]
+        self.gel_mass_density = self.vitactip_params['gel']['density']  # density [g/cm^3]
         self.gel_youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.gel_poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.gel_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
@@ -49,11 +54,11 @@ class ViTacTip:
 
         # Initialize default material parameters
         # Shell (Vytaflex 60)
-        self.shell_youngs_modulus[None] = self.fem_params['shell']['youngs_modulus']
-        self.shell_poissons_ratio[None] = self.fem_params['shell']['poissons_ratio']
+        self.shell_youngs_modulus[None] = self.vitactip_params['shell']['youngs_modulus']
+        self.shell_poissons_ratio[None] = self.vitactip_params['shell']['poissons_ratio']
         # Gel (RTV27905)
-        self.gel_youngs_modulus[None] = self.fem_params['gel']['youngs_modulus']
-        self.gel_poissons_ratio[None] = self.fem_params['gel']['poissons_ratio']
+        self.gel_youngs_modulus[None] = self.vitactip_params['gel']['youngs_modulus']
+        self.gel_poissons_ratio[None] = self.vitactip_params['gel']['poissons_ratio']
         
         # Compute Lamé parameters for both materials
         self.shell_mu[None] = self.shell_youngs_modulus[None] / 2 / (1 + self.shell_poissons_ratio[None])
@@ -119,7 +124,7 @@ class ViTacTip:
                 vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
         
         max_y = np.max(node_coordinates[:, 1])
-        y_translation = 2.0 - max_y
+        y_translation = self.distance_from_camera_lens_to_outer_shell_surface - max_y
         translation_vector = np.array([0, y_translation, 0])
         node_coordinates = node_coordinates + translation_vector
 
@@ -523,7 +528,7 @@ class ViTacTip:
             cur_min_idx: index of closest triangle segment (dimensionless)
         """
         # cur_min_offset: distance in m
-        cur_min_offset = 0.1 # arbitrary large value
+        cur_min_offset = self.collision_search_distance # arbitrary large value
         # cur_min_idx: triangle index (dimensionless)
         cur_min_idx = -1
         for k in range(self.num_contact_surface_triangles):
@@ -535,7 +540,7 @@ class ViTacTip:
             # p_c: triangle centroid position in m
             p_c = 1/3 * (p_1 + p_2 + p_3) # center of the segment
             # offset_p: distance in m
-            offset_p = (p_c - grid_p).norm(self.eps) # distance to the center point of the segment
+            offset_p = (p_c - grid_p).norm(self.norm_eps) # distance to the center point of the segment
 
             if (offset_p < cur_min_offset):
                 cur_min_offset = offset_p
@@ -569,7 +574,7 @@ class ViTacTip:
 
         # triangle_normal: unit normal vector (dimensionless)
         triangle_normal = ti.math.cross(vertex2_pos-vertex1_pos, vertex3_pos-vertex1_pos) # plane's norm
-        triangle_normal = triangle_normal.normalized(self.eps)
+        triangle_normal = triangle_normal.normalized(self.norm_eps)
         # normal_direction: sign value (dimensionless)
         normal_direction = ti.math.sign(triangle_normal.dot(self.sensor_outward_normal[None]))
         triangle_normal = normal_direction * triangle_normal # facing up
@@ -771,112 +776,9 @@ class ViTacTip:
 
     def memory_from_cache(self, t):
         cur_step_name = f'{t:06d}'
-        device = 'cpu'
         self.copy_frame(0, self.sub_steps-1)
 
         self.load_step_from_cache(0, self.simulation_cache[cur_step_name]['pos'], self.simulation_cache[cur_step_name]['vel'], self.simulation_cache[cur_step_name]['trans_h'], self.simulation_cache[cur_step_name]['virtual_pos'], self.simulation_cache[cur_step_name]['rot_h'], self.simulation_cache[cur_step_name]['predict_markers'])
-
-    def get_min_z_from_cache(self, t):
-        """Returns the minimum z-coordinate from the cached positions at timestep t.
-        
-        Args:
-            t (int): The timestep to get the minimum z-coordinate from
-            
-        Returns:
-            float: The minimum z-coordinate across all vertices
-        """
-        cur_step_name = f'{t:06d}'
-        if cur_step_name not in self.simulation_cache:
-            raise KeyError(f"No cached data found for timestep {t}")
-            
-        # Get the z-coordinates (third column) and find minimum
-        z_coords = self.simulation_cache[cur_step_name]['pos'][:, 2]
-        return float(z_coords.min().item())
-
-    def get_min_z_ix(self, t):
-        """Returns the minimum z-coordinate from the cached positions at timestep t.
-        
-        Args:
-            t (int): The timestep to get the minimum z-coordinate from
-            
-        Returns:
-            float: The minimum z-coordinate across all vertices
-        """
-        cur_step_name = f'{t:06d}'
-        if cur_step_name not in self.simulation_cache:
-            raise KeyError(f"No cached data found for timestep {t}")
-            
-        # Get the z-coordinates (third column) and find minimum
-        z_coords = self.simulation_cache[cur_step_name]['pos'][:, 2]
-        return z_coords.argmin().item()
-
-    def get_high_z_max_y_ix(self, t):
-        """Returns the index of the point that has maximum y-coordinate among points
-        whose z-coordinate is within 0.2 of the maximum z value.
-        
-        Args:
-            t (int): The timestep to get the point index from
-            
-        Returns:
-            int: The index of the vertex that meets the criteria
-        """
-        cur_step_name = f'{t:06d}'
-        if cur_step_name not in self.simulation_cache:
-            raise KeyError(f"No cached data found for timestep {t}")
-            
-        # Get all positions
-        positions = self.simulation_cache[cur_step_name]['pos']
-        
-        # Get z-coordinates and find maximum
-        z_coords = positions[:, 2]
-        max_z = float(z_coords.max().item())
-        
-        # Create mask for points within 0.2 of max z
-        z_mask = (z_coords >= (max_z - 0.2))
-        
-        # Get y-coordinates of points that meet z criteria
-        y_coords = positions[:, 1]
-        y_coords_filtered = y_coords.clone()
-        y_coords_filtered[~z_mask] = float('-inf')  # Set non-matching points to negative infinity
-        
-        # Find index of maximum y among filtered points
-        return int(y_coords_filtered.argmax().item())
-
-    def get_xyz_angle_from_cache(self, t, idx):
-        """Returns the x and y coordinates of a point from the cached positions at timestep t,
-        and computes the angle this point forms with a reference point, assuming the point lies
-        on a circle centered at the reference point.
-        
-        Args:
-            t (int): The timestep to get the coordinates from
-            idx (int): The index of the point to get coordinates for
-            ref_x (float): x-coordinate of the reference point (center of circle)
-            ref_y (float): y-coordinate of the reference point (center of circle)
-            
-        Returns:
-            tuple: (x, y, angle) where:
-                - x, y are the coordinates as floats
-                - angle is in degrees, measured counterclockwise from positive x-axis
-        """
-        cur_step_name = f'{t:06d}'
-        if cur_step_name not in self.simulation_cache:
-            raise KeyError(f"No cached data found for timestep {t}")
-            
-        if idx < 0 or idx >= self.num_vertices:
-            raise ValueError(f"Index {idx} out of bounds. Must be between 0 and {self.num_vertices-1}")
-            
-        # Get the x and y coordinates (first and second columns)
-        point = self.simulation_cache[cur_step_name]['pos'][idx]
-        x = float(point[0].item())
-        y = float(point[1].item())
-        z = float(point[2].item())
-        
-        # Compute angle using atan2 and convert to degrees
-        dx = x - 12.50
-        dy = y - 11.50
-        angle_rad = np.arctan2(dy, dx)
-        
-        return (x, y, z), angle_rad
 
     def get_keypoint_indices(self, f: ti.i32):
         # Convert positions to numpy array
@@ -888,7 +790,7 @@ class ViTacTip:
         
         # Points B and C: high z coordinate points
         max_z = float(np.max(z_coords))
-        z_mask = (z_coords >= (max_z - 0.2))
+        z_mask = (z_coords >= (max_z - self.keypoint_search_z_threshold))
         
         # Point B: max x coordinate among high z points
         x_coords = positions[:, 0]
@@ -932,22 +834,3 @@ class ViTacTip:
         coordinates = positions[keypoint_indices]
         
         return coordinates
-
-    def compute_mean_deformation_top_10_percent(self):
-        """
-        Compute the mean Euclidean distance between the initial virtual positions and the current positions at frame 0,
-        but only for the 10% of points that deformed the most.
-        Returns:
-            float: The mean Euclidean distance of the top 10% most deformed points between self.virtual_pos[0] and self.pos[0]
-        """
-        # Convert Taichi fields to numpy arrays for frame 0
-        virtual_pos_np = self.vertex_positions_undeformed.to_numpy()[0]  # shape: (n_verts, 3)
-        pos_np = self.vertex_positions_deformed.to_numpy()[0]                  # shape: (n_verts, 3)
-
-        # Compute Euclidean distances for each point
-        distances = np.linalg.norm(virtual_pos_np - pos_np, axis=1)
-        n_top = max(1, int(0.1 * len(distances)))
-        # Get the mean of the largest 10% of distances
-        top_distances = np.partition(distances, -n_top)[-n_top:]
-        mean_top_distance = np.mean(top_distances)
-        return mean_top_distance

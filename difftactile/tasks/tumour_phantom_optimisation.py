@@ -63,7 +63,8 @@ class Contact(ContactVisualisation):
         self.tangential_stiffness[None] = self.contact_params['tangential_stiffness']
         self.coulomb_friction_coeff[None] = self.contact_params['coulomb_friction_coeff']
 
-        self.norm_eps = 1e-11
+        self.norm_eps = self.contact_params['norm_eps']
+        self.tangential_velocity_detection_threshold = self.contact_params['tangential_velocity_detection_threshold']
 
     def set_up_snapshot(self):        # Allocate snapshot fields (num_opt_steps, num_markers, 2)
         self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
@@ -229,7 +230,7 @@ class Contact(ContactVisualisation):
         tangential_velocity = contact_relative_velocity - surface_normal.dot(contact_relative_velocity) * surface_normal
         # tangential_velocity_magnitude: velocity magnitude in m/s
         tangential_velocity_magnitude = tangential_velocity.norm(self.norm_eps)
-        if tangential_velocity_magnitude > 1e-4:
+        if tangential_velocity_magnitude > self.tangential_velocity_detection_threshold:
             # tangential_force: force vector in N
             tangential_force = (
                 1.0
@@ -295,18 +296,19 @@ class Contact(ContactVisualisation):
                 )
                 # closest_sensor_vertex_idx: vertex index (dimensionless)
                 closest_sensor_vertex_idx = self.contact_idx[frame, i, j, k]
-                # penetration_depth: depth in m, surface_normal: unit vector (dimensionless), 
-                # relative_velocity: velocity vector in m/s, is_in_contact: boolean (dimensionless)
-                penetration_depth, surface_normal, relative_velocity, is_in_contact = (
-                    self.vitactip.find_sdf(grid_node_position, grid_node_velocity, closest_sensor_vertex_idx, frame)
-                )
-                if is_in_contact:
-                    # total_contact_force: force vector in N
-                    total_contact_force, _, _ = self.calculate_contact_force(
-                        penetration_depth, -1 * surface_normal, -1 * relative_velocity
+                if closest_sensor_vertex_idx != -1:
+                    # penetration_depth: depth in m, surface_normal: unit vector (dimensionless), 
+                    # relative_velocity: velocity vector in m/s, is_in_contact: boolean (dimensionless)
+                    penetration_depth, surface_normal, relative_velocity, is_in_contact = (
+                        self.vitactip.find_sdf(grid_node_position, grid_node_velocity, closest_sensor_vertex_idx, frame)
                     )
-                    self.phantom.update_contact_impulse(total_contact_force, frame, i, j, k)
-                    self.vitactip.update_contact_force(closest_sensor_vertex_idx, -1 * total_contact_force, frame)
+                    if is_in_contact:
+                        # total_contact_force: force vector in N
+                        total_contact_force, _, _ = self.calculate_contact_force(
+                            penetration_depth, -1 * surface_normal, -1 * relative_velocity
+                        )
+                        self.phantom.update_contact_impulse(total_contact_force, frame, i, j, k)
+                        self.vitactip.update_contact_force(closest_sensor_vertex_idx, -1 * total_contact_force, frame)
 
     def memory_to_cache(self, t):
         self.vitactip.memory_to_cache(t)
@@ -476,7 +478,7 @@ class Contact(ContactVisualisation):
         particles = self.vitactip.vertex_positions_deformed.to_numpy()[0]
         with open(f'output/tactile_sensor.deformed_node_coordinates.ts={ts}.pkl', 'wb') as f:
             pickle.dump(particles, f)
-        # print('mesh exported!')
+        print(f'mesh exported at ts: {ts}!')
     
     def save_tactile_sensor_mesh_node_mapping_to_pickle(self):
         f2v = self.vitactip.tetrahedra.to_numpy()

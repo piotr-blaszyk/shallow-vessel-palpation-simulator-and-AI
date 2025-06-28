@@ -9,7 +9,9 @@
             "density": 1.1e3,
             "youngs_modulus": 5.0e3,
             "poissons_ratio": 0.499
-        }
+        },
+        "collision_search_distance": 0.010,
+        "keypoint_search_z_threshold": 0.001
     },
     "phantom": {
         "eps": 1e-8,
@@ -29,7 +31,10 @@
             "density": 1.18e3,
             "youngs_modulus": 2.5e9,
             "poissons_ratio": 0.38
-        }
+        },
+        "fixed_points_z_ratio": 0.25,
+        "fix_bottom_points": 0,
+        "keypoint_search_xy_threshold": 0.010
     },
     "contact": {
         "dt": 1.0e-5,
@@ -46,7 +51,9 @@
         "pid_kp": 100.0,
         "pid_ki": 0.0,
         "pid_kd": 0.0,
-        "dwell_frames": 0
+        "dwell_frames": 0,
+        "norm_eps": 1e-11,
+        "tangential_velocity_detection_threshold": 1e-6
     },
     "gmsh": {
         "characteristic_length_factor": 0.5
@@ -56,6 +63,7 @@
         "phantom_orientation": [0, 0, 0],
         "sensor_orientation": [-90, 0, 0],
         "phantom_h": 0.022,
-        "phantom_r": 0.040
+        "phantom_r": 0.040,
+        "distance_from_camera_lens_to_outer_shell_surface": 0.020
     }
 }

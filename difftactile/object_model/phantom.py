@@ -31,8 +31,10 @@ class Phantom:
         with open('../tasks/initial-coordinates-and-geometry.json', 'r') as f:
             self.coordinates = json.load(f)
         
+        self.keypoint_search_xy_threshold = self.phantom_params['keypoint_search_xy_threshold']
+        self.fix_bottom_points = self.phantom_params['fix_bottom_points'] == 1
+        self.fixed_points_z_ratio = self.phantom_params['fixed_points_z_ratio']
         self.num_particles_cube_1d = self.phantom_params['num_particles_cube_1d']
-
         self.total_volume = self.coordinates['phantom_volume']
 
         self.sub_steps = self.contact_params['num_sub_frames']
@@ -72,7 +74,7 @@ class Phantom:
         particles_np = self.particles.to_numpy()
         z_coords = particles_np[:, 2]
         z_min, z_max = np.min(z_coords), np.max(z_coords)
-        z_threshold = z_min + 0.25 * (z_max - z_min)
+        z_threshold = z_min + self.fixed_points_z_ratio * (z_max - z_min)
         is_fixed_np = (z_coords <= z_threshold)
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
 
@@ -402,7 +404,7 @@ class Phantom:
 
             # fixed_particle: flag for fixed particles (dimensionless)
             # fixed_particle = self.is_fixed[particle_id] == 1
-            fixed_particle = False
+            fixed_particle = self.fix_bottom_points
             if fixed_particle:
                 self.particle_velocity[frame+1, particle_id] = ti.Vector([0.0, 0.0, 0.0])
                 self.affine_velocity_field[frame+1, particle_id] = ti.Matrix.zero(float, 3, 3)
@@ -457,7 +459,6 @@ class Phantom:
 
     def memory_from_cache(self, t):
         cur_step_name = f'{t:06d}'
-        device = 'cpu'
         self.copy_frame(0, self.sub_steps-1)
 
         self.load_step_from_cache(0, self.cache[cur_step_name]['x_0'], self.cache[cur_step_name]['v_0'], self.cache[cur_step_name]['C_0'], self.cache[cur_step_name]['F_0'])
@@ -478,8 +479,8 @@ class Phantom:
         centroid_y = self.coordinates['phantom_centroid_pose'][1]
         
         # Create mask for points within 0.01 of centroid x,y
-        x_mask = np.abs(positions[:, 0] - centroid_x) < 0.01
-        y_mask = np.abs(positions[:, 1] - centroid_y) < 0.01
+        x_mask = np.abs(positions[:, 0] - centroid_x) < self.keypoint_search_xy_threshold
+        y_mask = np.abs(positions[:, 1] - centroid_y) < self.keypoint_search_xy_threshold
         xy_mask = x_mask & y_mask
         
         # Among points that satisfy xy criteria, find one with minimum z
