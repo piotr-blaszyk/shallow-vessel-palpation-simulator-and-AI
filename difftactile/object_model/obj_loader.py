@@ -18,10 +18,9 @@ class ObjLoader:
         self.voxel_resolution = 128
         self.num_particles_1d = num_particles_cube_1d
 
-        with open('../tasks/system-params.json', 'r') as f:
-            self.params = json.load(f)
-        self.phantom_params = self.params['phantom']
-        self.object_scale = self.phantom_params['object_scale']
+        with open('../tasks/initial-coordinates-and-geometry.json', 'r') as f:
+            self.geometry = json.load(f)
+        self.object_scale = self.geometry['object_scale']
 
     def generate_surface_particles(self, num_particles):
         self.raw_mesh = trimesh.load(self.data_path, force='mesh', skip_texture=True)

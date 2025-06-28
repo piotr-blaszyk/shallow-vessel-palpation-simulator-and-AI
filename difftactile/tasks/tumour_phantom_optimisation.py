@@ -43,12 +43,16 @@ class Contact(ContactVisualisation):
     def set_up_system_params(self):
         with open('../tasks/system-params.json', 'r') as f:
             self.params = json.load(f)
-            self.contact_params = self.params['contact']
+        self.contact_params = self.params['contact']
+        self.geometry_params = self.params['geometry']
+        self.phantom_params = self.params['phantom']
 
         self.num_opt_steps = self.contact_params['num_opt_steps']
         self.num_frames = self.contact_params['num_frames']
         self.num_sub_frames = self.contact_params['num_sub_frames']
         self.dt = self.contact_params['dt']
+        self.gap = self.geometry_params['gap']
+        self.mpm_grid_cube_size = self.phantom_params['mpm_grid_cube_size']
 
         self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
         self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=False)
@@ -115,10 +119,10 @@ class Contact(ContactVisualisation):
         self.phantom_closest_vertex = self.coordinates['phantom_closest_vertex']
         self.phantom_centroid_pose = self.coordinates['phantom_centroid_pose']
         self.vitactip_tip_pose = self.coordinates['vitactip_tip_pose']
-        self.gap = self.coordinates['gap']
         self.min_coord = self.coordinates['min_coord']
-        self.max_coord = self.coordinates['max_coord']
-        self.mpm_grid_node_size = self.coordinates['mpm_grid_node_size']
+        self.max_coord_x = self.coordinates['max_coord_x']
+        self.max_coord_y = self.coordinates['max_coord_y']
+        self.max_coord_z = self.coordinates['max_coord_z']
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
