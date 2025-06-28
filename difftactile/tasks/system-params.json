@@ -2,12 +2,12 @@
     "vitactip": {
         "shell": {
             "density": 1.1e3,
-            "youngs_modulus": 7.5e6,
+            "youngs_modulus": 6.0e6,
             "poissons_ratio": 0.495
         },
         "gel": {
             "density": 1.1e3,
-            "youngs_modulus": 5.0e3,
+            "youngs_modulus": 1.0e3,
             "poissons_ratio": 0.499
         },
         "collision_search_distance": 0.010,
@@ -24,7 +24,7 @@
         "gravity": [0.0, 0.0, -9.81],
         "silicone": {
             "density": 1.07e3,
-            "youngs_modulus": 2.5e4,
+            "youngs_modulus": 5.0e3,
             "poissons_ratio": 0.499
         },
         "hard_plastic": {

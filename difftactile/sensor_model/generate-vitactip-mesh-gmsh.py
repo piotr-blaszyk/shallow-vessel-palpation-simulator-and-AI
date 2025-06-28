@@ -147,9 +147,29 @@ def generate_vitactip_mesh():
     gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
     gmsh.model.occ.synchronize()
 
+    y_max = radius_of_curvature_outer
+    y_mid = y_cap_base
+    y_min = y_bottom
+
+    def dist(a, b):
+        return "sqrt(("+str(a)+"-"+str(b)+")^2)"
+
+    dist_y_y_max = dist('y', y_max)
+    dist_y_mid_y_max = dist(y_mid, y_max)
+    dist_to_y_max_ratio = f"{dist_y_y_max}/{dist_y_mid_y_max}"
+    f1 = f"0.5+5.5*{dist_to_y_max_ratio}"
+    print(f1)
+
     gmsh.model.mesh.field.add("MathEval", 1)
-    gmsh.model.mesh.field.setString(1, "F", f"5.0-4.5*(y-{y_bottom})/({radius_of_curvature_outer}-{y_bottom})")
-    gmsh.model.mesh.field.setAsBackgroundMesh(1)
+    gmsh.model.mesh.field.setString(1, "F", f1)
+
+    gmsh.model.mesh.field.add("MathEval", 2)
+    gmsh.model.mesh.field.setString(2, "F", f"6.0")
+
+    gmsh.model.mesh.field.add("Min", 3)
+    gmsh.model.mesh.field.setNumbers(3, "FieldsList", [1, 2])
+
+    gmsh.model.mesh.field.setAsBackgroundMesh(3)
 
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
