@@ -56,7 +56,7 @@
         "tangential_velocity_detection_threshold": 1e-6
     },
     "gmsh_mm": {
-        "characteristic_length_factor": 0.5,
+        "characteristic_length_factor": 1.0,
         "stem_wall_radius_outer": 20,
         "stem_wall_radius_inner": 19,
         "cap_height": 6.0,

@@ -58,7 +58,7 @@ def generate_vitactip_mesh():
     mesh_params = params['gmsh_mm']
 
     characteristic_length_factor = mesh_params['characteristic_length_factor']
-    stem_wall_radius_outer = mesh_params['characteristic_stem_wall_radius_outerlength_factor']
+    stem_wall_radius_outer = mesh_params['stem_wall_radius_outer']
     stem_wall_radius_inner = mesh_params['stem_wall_radius_inner']
     cap_height = mesh_params['cap_height']
     stem_height = mesh_params['stem_height']
@@ -145,6 +145,11 @@ def generate_vitactip_mesh():
     cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
     all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
     gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
+    gmsh.model.occ.synchronize()
+
+    gmsh.model.mesh.field.add("MathEval", 1)
+    gmsh.model.mesh.field.setString(1, "F", f"5.0-4.5*(y-{y_bottom})/({radius_of_curvature_outer}-{y_bottom})")
+    gmsh.model.mesh.field.setAsBackgroundMesh(1)
 
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.generate(3)
