@@ -11,7 +11,8 @@
             "poissons_ratio": 0.499
         },
         "collision_search_distance": 0.010,
-        "keypoint_search_z_threshold": 0.001
+        "keypoint_search_z_threshold": 0.001,
+        "number_of_biomimetic_tips": 0
     },
     "phantom": {
         "eps": 1e-8,
