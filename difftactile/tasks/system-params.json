@@ -27,7 +27,7 @@
         "n_grid_x": 64,
         "n_grid_y": 64,
         "n_grid_z": 32,
-        "num_particles_cube_1d": 40,
+        "num_particles_cube_1d": 15,
         "gravity": [0.0, 0.0, -9.81],
         "silicone": {
             "density": 1.07e3,
@@ -63,7 +63,7 @@
         "tangential_velocity_detection_threshold": 1e-6
     },
     "gmsh_mm": {
-        "characteristic_length_factor": 1.0,
+        "characteristic_length_factor": 1.5,
         "stem_wall_radius_outer": 20,
         "stem_wall_radius_inner": 19,
         "cap_height": 6.0,

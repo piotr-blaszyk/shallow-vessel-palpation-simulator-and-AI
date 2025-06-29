@@ -191,7 +191,7 @@ class MeshGenerator:
         if self.refine_mesh:
             r_max = radius_of_curvature_outer
             r_min = radius_of_curvature_outer - 4
-            f1 = f"3.0+max(0.0,min(4.0,{r_max}-sqrt(x^2+y^2+z^2)))"
+            f1 = f"6.0+max(0.0,min(4.0,{r_max}-sqrt(x^2+y^2+z^2)))"
             print(f1)
 
             gmsh.model.mesh.field.add("MathEval", 1)
@@ -220,9 +220,6 @@ class MeshGenerator:
         self.get_difftactile_variables()
         gmsh.fltk.run()
         gmsh.finalize()
-    
-    def dist(self, a, b):
-        return "sqrt(("+str(a)+"-"+str(b)+")^2)"
 
     def get_difftactile_variables(self):
         # Unpack all geometry variables
