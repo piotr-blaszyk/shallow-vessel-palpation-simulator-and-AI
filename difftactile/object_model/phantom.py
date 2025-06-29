@@ -28,7 +28,7 @@ class Phantom:
             self.params = json.load(f)
         self.phantom_params = self.params['phantom']
         self.contact_params = self.params['contact']
-        with open('../tasks/initial-coordinates-and-geometry.json', 'r') as f:
+        with open('../tasks/system-params-computed.json', 'r') as f:
             self.coordinates = json.load(f)
         
         self.keypoint_search_xy_threshold = self.phantom_params['keypoint_search_xy_threshold']

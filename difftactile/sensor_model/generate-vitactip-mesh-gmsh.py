@@ -245,7 +245,7 @@ class MeshGenerator:
         self.node_coordinates = self.node_coordinates.reshape(-1, 3).astype(float)
         self.node_tags = np.array(self.node_tags)
         node_tag_to_idx = {tag: idx for idx, tag in enumerate(self.node_tags)}
-        node_labels = np.zeros((len(self.node_tags), 3), dtype=bool)
+        self.node_labels = np.zeros((len(self.node_tags), 2), dtype=bool)
         physical_groups = gmsh.model.getPhysicalGroups()
         group_to_idx = {"shell": 0, "gel": 1}
 
@@ -281,7 +281,7 @@ class MeshGenerator:
                 node_tag_to_idx = {tag: idx for idx, tag in enumerate(self.node_tags)}
                 for node_tag in group_node_tags:
                     if node_tag in node_tag_to_idx:
-                        node_labels[node_tag_to_idx[node_tag], group_to_idx[name]] = True
+                        self.node_labels[node_tag_to_idx[node_tag], group_to_idx[name]] = True
 
         if self.number_of_biomimetic_tips not in [0, 1]:
             raise Exception("self.number_of_biomimetic_tips must be 0 or 1")
@@ -298,7 +298,7 @@ class MeshGenerator:
         marker_node_tags = np.array([min_node_tag])-1
 
         self.node_coordinates = self.node_coordinates[1:]
-        node_labels = node_labels[1:]
+        self.node_labels = self.node_labels[1:]
         self.all_tetrahedra -= 1
         self.surface_triangles -= 1
         marker_node_tags -= 1
@@ -313,24 +313,82 @@ class MeshGenerator:
                 surface_triangles_temp.append(tetra)
         self.surface_triangles = np.array(surface_triangles_temp)
 
+        self.all_tetrahedra -= 1
+        surface_node_tags -= 1
+        self.surface_triangles -= 1
+        self.node_tags -= 1
+
+        minimum_particle_spacing = self.compute_minimum_particle_spacing()
+        print(f'minimum_particle_spacing (mm): {minimum_particle_spacing}')
+
         mesh_data = {
-            'all_tetrahedra': self.all_tetrahedra-1,
+            'all_tetrahedra': self.all_tetrahedra,
             'node_coordinates': self.node_coordinates,
-            'node_labels': node_labels,
-            'surface_node_tags': surface_node_tags-1,
-            'surface_triangles': self.surface_triangles-1,
-            'node_tags': self.node_tags-1,
+            'node_labels': self.node_labels,
+            'surface_node_tags': surface_node_tags,
+            'surface_triangles': self.surface_triangles,
+            'node_tags': self.node_tags,
             'group_to_idx': group_to_idx,
             'marker_node_tags': marker_node_tags,
 
             'y_bottom': y_bottom,
             'radius_of_curvature_inner': radius_of_curvature_inner,
             'radius_of_curvature_outer': radius_of_curvature_outer,
+            'minimum_particle_spacing': minimum_particle_spacing
         }
         print(f'number of vertices generated: {self.node_coordinates.shape[0]}')
         os.makedirs('output', exist_ok=True)
         with open('output/gmsh-mesh.pkl', 'wb') as f:
             pickle.dump(mesh_data, f)
+    
+    def compute_minimum_particle_spacing(self):
+        """
+        Compute the minimum distance between any two vertices within the same tetrahedron,
+        separately for shell nodes, gel nodes, and all nodes.
+        
+        Returns:
+            dict: Minimum edge lengths for 'all', 'shell', and 'gel' groups
+        """
+        # Get coordinates of all vertices for each tetrahedron
+        tet_vertices = self.node_coordinates[self.all_tetrahedra]  # Shape: (num_tets, 4, 3)
+        tet_labels = self.node_labels[self.all_tetrahedra]  # Shape: (num_tets, 4, 2)
+        
+        # Edge pairs to check in each tetrahedron
+        edge_pairs = [(0,1), (0,2), (0,3), (1,2), (1,3), (2,3)]
+        
+        # Initialize minimum spacings
+        min_spacing_all = float('inf')
+        min_spacing_shell = float('inf')
+        min_spacing_gel = float('inf')
+        
+        for i, j in edge_pairs:
+            # Calculate distances between vertex pairs for all tetrahedra at once
+            edges = tet_vertices[:, i] - tet_vertices[:, j]  # Shape: (num_tets, 3)
+            lengths = np.sqrt(np.sum(edges**2, axis=1))  # Shape: (num_tets,)
+            
+            # Get labels for both vertices of each edge
+            labels_i = tet_labels[:, i]  # Shape: (num_tets, 2)
+            labels_j = tet_labels[:, j]  # Shape: (num_tets, 2)
+            
+            # Update minimum spacing for all edges
+            if lengths.size > 0:
+                min_spacing_all = min(min_spacing_all, np.min(lengths))
+            
+            # Update minimum spacing for shell edges (both vertices must be shell)
+            shell_edges = lengths[labels_i[:, 0] & labels_j[:, 0]]
+            if shell_edges.size > 0:
+                min_spacing_shell = min(min_spacing_shell, np.min(shell_edges))
+            
+            # Update minimum spacing for gel edges (both vertices must be gel)
+            gel_edges = lengths[labels_i[:, 1] & labels_j[:, 1]]
+            if gel_edges.size > 0:
+                min_spacing_gel = min(min_spacing_gel, np.min(gel_edges))
+        
+        return {
+            'all': min_spacing_all,
+            'shell': min_spacing_shell,
+            'gel': min_spacing_gel
+        }
 
 if __name__ == "__main__":
     mesh_generator = MeshGenerator()

@@ -4,7 +4,7 @@ np.set_printoptions(precision=6, suppress=False, formatter={'float': '{:0.6e}'.f
 import pickle
 import json
 
-from difftactile.tasks.tumour_phantom_visualisation import (
+from difftactile.tasks.visualisation import (
     ContactVisualisation
 )
 from difftactile.sensor_model.vitactip import ViTacTip
@@ -114,7 +114,7 @@ class Contact(ContactVisualisation):
         self.frames_since_last_target_reached[None] = 0
 
     def set_up_initial_positions_and_trajectory_first_init_only(self):
-        with open('../tasks/initial-coordinates-and-geometry.json', 'r') as f:
+        with open('../tasks/system-params-computed.json', 'r') as f:
             self.coordinates = json.load(f)
 
         self.phantom_closest_vertex = self.coordinates['phantom_closest_vertex']

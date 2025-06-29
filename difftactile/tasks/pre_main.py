@@ -1,6 +1,7 @@
 import numpy as np
 import math
 import json
+import pickle
 
 def arr_str(xs):
     if len(xs.shape) == 1:
@@ -16,10 +17,15 @@ def arr_str(xs):
 
 with open('../tasks/system-params.json', 'r') as f:
     params = json.load(f)
+with open('../sensor_model/output/gmsh-mesh.pkl', 'rb') as f:
+    mesh_data = pickle.load(f)
 phantom_params = params['phantom']
 contact_params = params['contact']
 geometry_params = params['geometry']
 
+vitactip_minimum_particle_spacing = mesh_data['minimum_particle_spacing']
+vitactip_minimum_particle_spacing = {key: value/1000 for key, value in vitactip_minimum_particle_spacing.items()}
+phantom_num_particles_cube_1d = phantom_params['num_particles_cube_1d']
 gap = geometry_params['gap']
 phantom_orientation = geometry_params['phantom_orientation']
 sensor_orientation = geometry_params['sensor_orientation']
@@ -67,10 +73,13 @@ object_scale = phantom_max_dim
 phantom_normalised_spans = phantom_dimensions / phantom_max_dim / 2
 phantom_scaled_spans = phantom_normalised_spans * object_scale
 
+phantom_particle_spacing = phantom_max_dim / (phantom_num_particles_cube_1d-1)
 phantom_to_cube_volume_ratio = phantom_volume / (np.max(phantom_scaled_spans) * 2) ** 3
 
 print(f'phantom_normalised_spans: {phantom_normalised_spans}')
 print(f'phantom_scaled_spans: {phantom_scaled_spans}')
+print(f'phantom_particle_spacing: {phantom_particle_spacing}')
+print(f'vitactip_minimum_particle_spacing: {vitactip_minimum_particle_spacing}')
 
 phantom_difftactile_position = phantom_closest_vertex + phantom_scaled_spans
 
@@ -92,10 +101,12 @@ coordinates = {
     "max_coord_y": max_coord_y,
     "max_coord_z": max_coord_z,
     "object_scale": object_scale,
+    "phantom_particle_spacing": phantom_particle_spacing,
+    "vitactip_minimum_particle_spacing": vitactip_minimum_particle_spacing,
 }
 
 # Save coordinates to JSON file
-with open('../tasks/initial-coordinates-and-geometry.json', 'w') as f:
+with open('../tasks/system-params-computed.json', 'w') as f:
     json.dump(coordinates, f, indent=2)
 
 print('difftactile coordinates')

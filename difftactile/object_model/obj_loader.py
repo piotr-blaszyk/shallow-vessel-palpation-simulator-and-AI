@@ -18,7 +18,7 @@ class ObjLoader:
         self.voxel_resolution = 128
         self.num_particles_1d = num_particles_cube_1d
 
-        with open('../tasks/initial-coordinates-and-geometry.json', 'r') as f:
+        with open('../tasks/system-params-computed.json', 'r') as f:
             self.geometry = json.load(f)
         self.object_scale = self.geometry['object_scale']
 
