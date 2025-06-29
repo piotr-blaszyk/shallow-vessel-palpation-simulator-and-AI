@@ -44,7 +44,7 @@
         "keypoint_search_xy_threshold": 0.010
     },
     "contact": {
-        "dt": 4.007e-05,
+        "dt": 1.004e-05,
         "normal_stiffness": 1.68e+02,
         "tangential_stiffness": 1.17e+02,
         "normal_damping": 2.08e+00,
@@ -83,6 +83,6 @@
         "distance_from_camera_lens_to_outer_shell_surface": 0.020
     },
     "meta": {
-        "target_courant_number": 1.0
+        "target_courant_number": 0.5
     }
 }

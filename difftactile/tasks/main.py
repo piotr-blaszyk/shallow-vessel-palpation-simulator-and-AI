@@ -4,17 +4,13 @@ np.set_printoptions(precision=6, suppress=False, formatter={'float': '{:0.6e}'.f
 import pickle
 import json
 
-from difftactile.tasks.visualisation import (
-    ContactVisualisation
-)
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
 
 RUN_ON_LAB_MACHINE = True
 @ti.data_oriented
-class Contact(ContactVisualisation):
+class Contact:
     def __init__(self):
-        self.visualisation_initialise()
         self.set_up_system_params()
         self.vitactip = ViTacTip()
         self.phantom = Phantom()
@@ -22,9 +18,9 @@ class Contact(ContactVisualisation):
         self.set_up_initial_positions_and_trajectory()
         self.set_up_keypoints()
         self.set_up_collision_detection()
-        self.init_visualisation()
         self.set_up_pid()
         self.set_up_snapshot()
+        self.visualisation_initialise()
 
     def set_up_collision_detection(self):
         self.num_sensor = 1
@@ -584,7 +580,7 @@ class Contact(ContactVisualisation):
             self.tactile_readout_gui = None
         
     def visualisation_update_gui(self, ts):
-        vitactip_marker = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[-2].reshape((1,)))
+        move_to_the_front_offset = np.array([-0.100, 0, 0], dtype=float)
         z = self.min_coord
         _, y0, _ = self.coordinates['phantom_centroid_pose'][:3]
         x1, y1, _ = self.coordinates['phantom_closest_vertex']
@@ -594,9 +590,8 @@ class Contact(ContactVisualisation):
             [x1, y0 + abs(y0 - y1), z],
         ])
         floor -= move_to_the_front_offset
-        move_to_the_front_offset = np.array([-0.100, 0, 0], dtype=float)
         vitactip_bottom = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[0].reshape((1,)))
-        trajectory_keypoints = self.trajectory_npy
+        trajectory_keypoints = self.trajectory_npy[:, :3].copy()
         vitactip_bottom -= move_to_the_front_offset
         trajectory_keypoints -= move_to_the_front_offset
         keypoint_coords = np.vstack((vitactip_bottom, trajectory_keypoints, floor))
