@@ -478,7 +478,7 @@ class Contact(ContactVisualisation):
         particles = self.vitactip.vertex_positions_deformed.to_numpy()[0]
         with open(f'output/tactile_sensor.deformed_node_coordinates.ts={ts}.pkl', 'wb') as f:
             pickle.dump(particles, f)
-        print(f'mesh exported at ts: {ts}!')
+        # print(f'mesh exported at ts: {ts}!')
     
     def save_tactile_sensor_mesh_node_mapping_to_pickle(self):
         f2v = self.vitactip.tetrahedra.to_numpy()

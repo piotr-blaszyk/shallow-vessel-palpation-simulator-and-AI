@@ -252,7 +252,7 @@ class ContactVisualisation:
         keypoint_coords = np.vstack((vitactip_marker, vitactip_bottom, floor))
 
         phantom_top_z = self.vitactip_tip_pose[2] - self.gap
-        if ts % 100 == 0:
+        if False and ts % 100 == 0:
             print(f'ViTacTip bottom node z coordinate: {vitactip_bottom[0][2]:0.3e}; phantom top surface z coordinate: {phantom_top_z:0.3e}; diff: {abs(vitactip_bottom[0][2] - phantom_top_z):0.3e}')
 
         vitactip_coords = self.vitactip.vertex_positions_deformed.to_numpy()[0]
