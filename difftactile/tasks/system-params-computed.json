@@ -36,5 +36,6 @@
     "all": 0.001969274455679437,
     "shell": Infinity,
     "gel": Infinity
-  }
+  },
+  "contact_surface_area": 0.005026548245743669
 }

@@ -57,12 +57,15 @@ phantom_d = phantom_r * 2
 phantom_dimensions = np.array([phantom_d, phantom_d, phantom_h], dtype=float)
 phantom_volume = math.pi * phantom_r ** 2 * phantom_h
 
+contact_surface_area = math.pi * phantom_r ** 2
+
 phantom_furthest_vertex = phantom_closest_vertex + phantom_dimensions
 
 print(f'phantom_dimensions: {phantom_dimensions}')
 print(f'phantom_closest_vertex: {phantom_closest_vertex}')
 print(f'phantom_furthest_vertex: {phantom_furthest_vertex}')
 print(f'phantom_volume: {phantom_volume}')
+print(f'contact_surface_area: {contact_surface_area}')
 print(f'dist_from_floor: {dist_from_floor:0.3e}')
 
 assert np.min(phantom_closest_vertex) >= min_coord, "the phantom is outside of the manipulation cube"
@@ -122,6 +125,7 @@ coordinates = {
     "object_scale": object_scale,
     "phantom_min_max_particle_spacing": phantom_min_max_particle_spacing,
     "vitactip_min_particle_spacing": vitactip_min_particle_spacing,
+    "contact_surface_area": contact_surface_area,
 }
 
 # Save coordinates to JSON file
