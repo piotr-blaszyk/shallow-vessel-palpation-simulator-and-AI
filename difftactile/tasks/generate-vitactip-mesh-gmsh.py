@@ -191,7 +191,9 @@ class MeshGenerator:
         if self.refine_mesh:
             r_max = radius_of_curvature_outer
             r_min = radius_of_curvature_outer - 4
-            f1 = f"2.75+max(0.0,min(4.0,{r_max}-sqrt(x^2+y^2+z^2)))"
+            a = self.mesh_params['refine_min_mesh_size']
+            b = self.mesh_params['refine_mesh_size_distance_offset']
+            f1 = f"{a}+max(0.0,min({b},{r_max}-sqrt(x^2+y^2+z^2)))"
             print(f1)
 
             gmsh.model.mesh.field.add("MathEval", 1)

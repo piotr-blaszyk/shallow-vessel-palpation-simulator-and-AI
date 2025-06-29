@@ -14,7 +14,7 @@ RUN_ON_LAB_MACHINE = True
 @ti.data_oriented
 class Contact(ContactVisualisation):
     def __init__(self):
-        super().__init__()
+        self.visualisation_initialise()
         self.set_up_system_params()
         self.vitactip = ViTacTip()
         self.phantom = Phantom()
@@ -97,9 +97,9 @@ class Contact(ContactVisualisation):
         self.current_target_idx = ti.field(dtype=int, shape=(), needs_grad=False)
         self.current_target_idx[None] = 0
         self.position_tolerance = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.position_tolerance[None] = 0.1 / 1_000
+        self.position_tolerance[None] = self.contact_params['pid_position_tolerance']
         self.orientation_tolerance = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.orientation_tolerance[None] = 1 / 1_000
+        self.orientation_tolerance[None] = self.contact_params['pid_orientation_tolerance']
         
         # Add fields for dwell time control
         self.dwell_frames = ti.field(dtype=int, shape=(), needs_grad=False)
@@ -484,6 +484,174 @@ class Contact(ContactVisualisation):
         with open(f'output/tactile_sensor.f2v.pkl', 'wb') as f:
             pickle.dump(f2v, f)
         # print('mesh node mapping exported!')
+    
+    def visualisation_initialise(self):
+        self.enable_tactile_map = False
+        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(6,), needs_grad=False)
+        self.sensor_points = ti.Vector.field(
+            3, dtype=float, shape=(self.vitactip.num_vertices)
+        )
+        self.healthy_tissue_points = ti.Vector.field(
+            3, dtype=float, shape=(self.phantom.actual_total_num_particles,)
+        )
+        self.tumour_points = ti.Vector.field(
+            3, dtype=float, shape=(self.phantom.actual_total_num_particles,)
+        )
+        self.healthy_tissue_points_von_mises_stress = ti.field(
+            dtype=float, shape=(self.phantom.actual_total_num_particles,)
+        )
+        self.tumour_points_von_mises_stress = ti.field(
+            dtype=float, shape=(self.phantom.actual_total_num_particles,)
+        )
+
+    @ti.kernel
+    def visualisation_reset_3d_scene(self):
+        self.healthy_tissue_points.fill(0)
+        self.tumour_points.fill(0)
+
+    @ti.kernel
+    def visualisation_draw_3d_scene(self, f: ti.i32):
+        for p in range(self.phantom.actual_total_num_particles):
+            if self.phantom.titles[p] == 0:
+                self.healthy_tissue_points[p] = self.phantom.particle_position[f, p]
+                self.healthy_tissue_points_von_mises_stress[p] = self.phantom.particle_von_mises_stress[0, p]
+            elif self.phantom.titles[p] == 1:
+                self.tumour_points[p] = self.phantom.particle_position[f, p]
+                self.tumour_points_von_mises_stress[p] = self.phantom.particle_von_mises_stress[0, p]
+
+        for p in range(self.vitactip.num_vertices):
+            self.sensor_points[p] = self.vitactip.vertex_positions_deformed[f, p]
+
+    def visualisation_draw_tactile_readout(self):
+        self.vitactip.extract_markers(0)
+
+        img_height = 480
+        img_width = 640
+        # Scale x by img_width and y by img_height
+        draw_points = self.vitactip.undeformed_markers.to_numpy().copy()
+        draw_points[:, 0] = draw_points[:, 0] / img_width
+        draw_points[:, 1] = draw_points[:, 1] / img_height
+        offset = self.vitactip.deformed_markers.to_numpy().copy()
+        offset[:, 0] = offset[:, 0] / img_width
+        offset[:, 1] = offset[:, 1] / img_height
+        offset = offset - draw_points
+        # Draw circle outline using line segments
+        circle_centre = np.array([359, 266])
+        circle_radius = 180
+        
+        # Generate 100 points around the circle
+        theta = np.linspace(0, 2*np.pi, 100)
+        points_x = circle_centre[0] + circle_radius * np.cos(theta)
+        points_y = circle_centre[1] + circle_radius * np.sin(theta)
+        points = np.stack([points_x, points_y], axis=1)
+        points[:, 0] /= img_width
+        points[:, 1] /= img_height
+        
+        # Create begin and end points for lines (connecting consecutive points)
+        begin_points = points[:-1]  # All points except the last
+        end_points = points[1:]     # All points except the first
+        # Add final line connecting last point to first point
+        begin_points = np.vstack([begin_points, points[-1]])
+        end_points = np.vstack([end_points, points[0]])
+        
+        # Draw the lines
+        self.tactile_readout_gui.lines(begin=begin_points, end=end_points, radius=1, color=0xFFFFFF)
+        self.tactile_readout_gui.circles(draw_points, radius=2, color=0xF542A1)
+        self.tactile_readout_gui.arrows(draw_points, offset, radius=2, color=0xE6C949)
+
+    def visualisation_set_up_gui(self):
+        screen_width = 1920
+        screen_height = 1080
+        grid_rows = 2
+        grid_cols = 2
+        window_width = screen_width // grid_cols
+        window_height = screen_height // grid_rows
+        window_res = (int(window_width * 0.75), int(window_height * 0.75))
+        self.window = ti.ui.Window("high-level camera", (int(screen_width * 0.9), int(screen_height * 0.9)))
+        self.canvas = self.window.get_canvas()
+        self.canvas.set_background_color((0, 0, 0))
+        self.scene = ti.ui.Scene()
+        self.camera = ti.ui.Camera()
+        self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
+        x, y, z = self.vitactip_tip_pose[:3]
+        self.camera.position(x-1.0, y, z)
+        self.camera.up(0, 0, 1)
+        self.camera.lookat(x, y, z)
+        self.camera.fov(8)
+        if self.enable_tactile_map:
+            self.tactile_readout_gui = ti.GUI("tactile readout 1", res=window_res)
+        else:
+            self.tactile_readout_gui = None
+        
+    def visualisation_update_gui(self, ts):
+        vitactip_marker = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[-2].reshape((1,)))
+        z = self.min_coord
+        _, y0, _ = self.coordinates['phantom_centroid_pose'][:3]
+        x1, y1, _ = self.coordinates['phantom_closest_vertex']
+        floor = np.array([
+            [x1, y1, z],
+            [x1, y0, z],
+            [x1, y0 + abs(y0 - y1), z],
+        ])
+        floor -= move_to_the_front_offset
+        move_to_the_front_offset = np.array([-0.100, 0, 0], dtype=float)
+        vitactip_bottom = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[0].reshape((1,)))
+        trajectory_keypoints = self.trajectory_npy
+        vitactip_bottom -= move_to_the_front_offset
+        trajectory_keypoints -= move_to_the_front_offset
+        keypoint_coords = np.vstack((vitactip_bottom, trajectory_keypoints, floor))
+
+        phantom_top_z = self.vitactip_tip_pose[2] - self.gap
+        if False and ts % 100 == 0:
+            print(f'ViTacTip bottom node z coordinate: {vitactip_bottom[0][2]:0.3e}; phantom top surface z coordinate: {phantom_top_z:0.3e}; diff: {abs(vitactip_bottom[0][2] - phantom_top_z):0.3e}')
+
+        vitactip_coords = self.vitactip.vertex_positions_deformed.to_numpy()[0]
+        if np.isnan(vitactip_coords).any():
+            nan_count = np.any(np.isnan(vitactip_coords), axis=1).sum()
+            print(f'ViTacTip contains {nan_count} / {vitactip_coords.shape[0]} nan vertices at ts: {ts}')
+        
+        phantom_coords = self.phantom.particle_position.to_numpy()[0]
+        if np.isnan(phantom_coords).any():
+            nan_count = np.any(np.isnan(phantom_coords), axis=1).sum()
+            print(f'phantom contains {nan_count} / {phantom_coords.shape[0]} nan vertices at ts: {ts}')
+
+        if self.enable_tactile_map:
+            self.visualisation_draw_tactile_readout()
+        
+        self.scene.set_camera(self.camera)
+        self.scene.ambient_light((0.8, 0.8, 0.8))
+        self.scene.point_light(pos=(0.5, 1.5, 1.5), color=(1, 1, 1))
+        self.visualisation_draw_3d_scene(0)
+
+        sf = 100
+        
+        self.scene.particles(
+            self.healthy_tissue_points,
+            color=(0.0, 0.0, 1.0),
+            radius=0.06 / sf,
+        )
+        self.scene.particles(
+            self.tumour_points,
+            color=(1.0, 1.0, 0.0),
+            radius=0.06 / sf,
+        )
+        self.scene.particles(
+            self.sensor_points,
+            color=(0.0, 1.0, 0.0),
+            radius=0.06 / sf,
+        )
+        
+        assert keypoint_coords.shape[0] == self.key_points.shape[0], f"Set self.key_points to shape ({keypoint_coords.shape[0]},)"
+        if keypoint_coords is not None:
+            self.key_points.from_numpy(keypoint_coords)
+            self.scene.particles(
+                self.key_points,
+                color=(1.0, 0.0, 0.0),
+                radius=0.06 / sf,
+            )
+        
+        self.canvas.scene(self.scene)
+        self.window.show()
 
 def main():
     if RUN_ON_LAB_MACHINE:
@@ -499,14 +667,14 @@ def main():
     num_opt_steps = contact_params['num_opt_steps']
 
     contact_model = Contact()
-    contact_model.set_up_gui()
+    contact_model.visualisation_set_up_gui()
     contact_model.save_tactile_sensor_mesh_node_mapping_to_pickle()
     
     for opts in range(num_opt_steps):
         print(f"optimisation step: {opts} / {num_opt_steps}")
         contact_model.set_up_initial_positions_and_trajectory()
         contact_model.reset_pid_controller()
-        contact_model.reset_3d_scene()
+        contact_model.visualisation_reset_3d_scene()
         if opts == 0:
             contact_model.vitactip.extract_initial_markers(0)
             contact_model.vitactip.extract_markers(0)
@@ -525,7 +693,7 @@ def main():
                 contact_model.update(ss)
             contact_model.memory_to_cache(0)
 
-            contact_model.update_gui(ts)
+            contact_model.visualisation_update_gui(ts)
 
             if ts % 1_000 == 0:
                 print(f'ts: {ts}')

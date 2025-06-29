@@ -12,7 +12,7 @@
         },
         "single_material": {
             "density": 1.1e3,
-            "youngs_modulus": 3.755e05,
+            "youngs_modulus": 5.0e4,
             "poissons_ratio": 0.499
         },
         "collision_search_distance": 0.010,
@@ -27,7 +27,7 @@
         "n_grid_x": 64,
         "n_grid_y": 64,
         "n_grid_z": 32,
-        "num_particles_cube_1d": 30,
+        "num_particles_cube_1d": 22,
         "gravity": [0.0, 0.0, -9.81],
         "silicone": {
             "density": 1.07e3,
@@ -44,10 +44,10 @@
         "keypoint_search_xy_threshold": 0.010
     },
     "contact": {
-        "dt": 7.137e-06,
-        "normal_stiffness": 2.50e02,
-        "tangential_stiffness": 1.75e02,
-        "normal_damping": 3.13e00,
+        "dt": 4.007e-05,
+        "normal_stiffness": 1.68e+02,
+        "tangential_stiffness": 1.17e+02,
+        "normal_damping": 2.08e+00,
         "coulomb_friction_coeff": 0.85,
         "num_sub_frames": 200,
         "num_frames": 10000,
@@ -55,9 +55,11 @@
         "phantom_name": "cylinder.stl",
         "pid_max_speed_translation": 0.100,
         "pid_max_speed_rotation": 90.0,
-        "pid_kp": 10.0,
+        "pid_kp": 100.0,
         "pid_ki": 0.0,
         "pid_kd": 0.0,
+        "pid_position_tolerance": 0.001,
+        "pid_orientation_tolerance": 1.0,
         "dwell_frames": 0,
         "norm_eps": 1e-11,
         "tangential_velocity_detection_threshold": 1e-6
@@ -68,7 +70,9 @@
         "stem_wall_radius_inner": 19,
         "cap_height": 6.0,
         "stem_height": 11.0,
-        "refine_mesh": 1
+        "refine_mesh": 1,
+        "refine_min_mesh_size": 3.25,
+        "refine_mesh_size_distance_offset": 4.0
     },
     "geometry": {
         "gap": 0.020,
