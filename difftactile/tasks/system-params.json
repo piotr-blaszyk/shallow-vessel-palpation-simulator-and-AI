@@ -2,17 +2,17 @@
     "vitactip": {
         "shell": {
             "density": 1.1e3,
-            "youngs_modulus": 7.5e6,
+            "youngs_modulus": 7.5e5,
             "poissons_ratio": 0.495
         },
         "gel": {
             "density": 1.1e3,
-            "youngs_modulus": 5.0e3,
+            "youngs_modulus": 5.0e2,
             "poissons_ratio": 0.499
         },
         "single_material": {
             "density": 1.1e3,
-            "youngs_modulus": 3.755e06,
+            "youngs_modulus": 3.755e05,
             "poissons_ratio": 0.499
         },
         "collision_search_distance": 0.010,
@@ -27,16 +27,16 @@
         "n_grid_x": 64,
         "n_grid_y": 64,
         "n_grid_z": 32,
-        "num_particles_cube_1d": 10,
+        "num_particles_cube_1d": 40,
         "gravity": [0.0, 0.0, -9.81],
         "silicone": {
             "density": 1.07e3,
-            "youngs_modulus": 2.5e4,
+            "youngs_modulus": 2.5e3,
             "poissons_ratio": 0.499
         },
         "hard_plastic": {
             "density": 1.18e3,
-            "youngs_modulus": 2.5e9,
+            "youngs_modulus": 2.5e8,
             "poissons_ratio": 0.38
         },
         "fixed_points_z_ratio": 0.25,
@@ -63,7 +63,7 @@
         "tangential_velocity_detection_threshold": 1e-6
     },
     "gmsh_mm": {
-        "characteristic_length_factor": 8.0,
+        "characteristic_length_factor": 1.0,
         "stem_wall_radius_outer": 20,
         "stem_wall_radius_inner": 19,
         "cap_height": 6.0,

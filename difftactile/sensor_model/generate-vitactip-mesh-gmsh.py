@@ -189,25 +189,21 @@ class MeshGenerator:
             raise Exception("number of materials must be 1 or 2")
 
         if self.refine_mesh:
-            y_max = radius_of_curvature_outer
-            y_mid = y_cap_base
-            y_min = y_bottom
-            dist_y_y_max = self.dist('y', y_max)
-            dist_y_mid_y_max = self.dist(y_mid, y_max)
-            dist_to_y_max_ratio = f"{dist_y_y_max}/{dist_y_mid_y_max}"
-            f1 = f"0.5+5.5*{dist_to_y_max_ratio}"
+            r_max = radius_of_curvature_outer
+            r_min = radius_of_curvature_outer - 4
+            f1 = f"3.0+max(0.0,min(4.0,{r_max}-sqrt(x^2+y^2+z^2)))"
             print(f1)
 
             gmsh.model.mesh.field.add("MathEval", 1)
             gmsh.model.mesh.field.setString(1, "F", f1)
 
-            gmsh.model.mesh.field.add("MathEval", 2)
-            gmsh.model.mesh.field.setString(2, "F", f"6.0")
+            # gmsh.model.mesh.field.add("MathEval", 2)
+            # gmsh.model.mesh.field.setString(2, "F", f"6.0")
 
-            gmsh.model.mesh.field.add("Min", 3)
-            gmsh.model.mesh.field.setNumbers(3, "FieldsList", [1, 2])
+            # gmsh.model.mesh.field.add("Min", 3)
+            # gmsh.model.mesh.field.setNumbers(3, "FieldsList", [1, 2])
 
-            gmsh.model.mesh.field.setAsBackgroundMesh(3)
+            gmsh.model.mesh.field.setAsBackgroundMesh(1)
 
         gmsh.model.occ.synchronize()
         gmsh.model.mesh.generate(3)
@@ -327,8 +323,10 @@ class MeshGenerator:
         self.surface_triangles -= 1
         self.node_tags -= 1
 
-        minimum_particle_spacing = self.compute_minimum_particle_spacing()
-        print(f'minimum_particle_spacing (mm): {minimum_particle_spacing}')
+        min_particle_spacing = self.compute_particle_spacing(mode='min')
+        max_particle_spacing = self.compute_particle_spacing(mode='max')
+        print(f'min_particle_spacing (mm): {min_particle_spacing}')
+        print(f'max_particle_spacing (mm): {max_particle_spacing}')
 
         mesh_data = {
             'all_tetrahedra': self.all_tetrahedra,
@@ -343,21 +341,28 @@ class MeshGenerator:
             'y_bottom': y_bottom,
             'radius_of_curvature_inner': radius_of_curvature_inner,
             'radius_of_curvature_outer': radius_of_curvature_outer,
-            'minimum_particle_spacing': minimum_particle_spacing
+            'min_particle_spacing': min_particle_spacing,
+            'max_particle_spacing': max_particle_spacing,
         }
         print(f'number of vertices generated: {self.node_coordinates.shape[0]}')
         os.makedirs('output', exist_ok=True)
         with open('output/gmsh-mesh.pkl', 'wb') as f:
             pickle.dump(mesh_data, f)
     
-    def compute_minimum_particle_spacing(self):
+    def compute_particle_spacing(self, mode='min'):
         """
-        Compute the minimum distance between any two vertices within the same tetrahedron,
+        Compute either minimum or maximum distance between vertices within tetrahedra,
         separately for shell nodes, gel nodes, and all nodes.
         
+        Args:
+            mode: String, either 'min' or 'max' to compute minimum or maximum spacing
+        
         Returns:
-            dict: Minimum edge lengths for 'all', 'shell', and 'gel' groups
+            dict: Edge lengths for 'all', 'shell', and 'gel' groups
         """
+        if mode not in ['min', 'max']:
+            raise ValueError("mode must be either 'min' or 'max'")
+            
         # Get coordinates of all vertices for each tetrahedron
         tet_vertices = self.node_coordinates[self.all_tetrahedra]  # Shape: (num_tets, 4, 3)
         tet_labels = self.node_labels[self.all_tetrahedra]  # Shape: (num_tets, 4, 2)
@@ -365,10 +370,11 @@ class MeshGenerator:
         # Edge pairs to check in each tetrahedron
         edge_pairs = [(0,1), (0,2), (0,3), (1,2), (1,3), (2,3)]
         
-        # Initialize minimum spacings
-        min_spacing_all = float('inf')
-        min_spacing_shell = float('inf')
-        min_spacing_gel = float('inf')
+        # Initialize spacings with appropriate extreme values
+        initial_value = -float('inf') if mode == 'max' else float('inf')
+        spacing_all = initial_value
+        spacing_shell = initial_value
+        spacing_gel = initial_value
         
         for i, j in edge_pairs:
             # Calculate distances between vertex pairs for all tetrahedra at once
@@ -379,24 +385,24 @@ class MeshGenerator:
             labels_i = tet_labels[:, i]  # Shape: (num_tets, 2)
             labels_j = tet_labels[:, j]  # Shape: (num_tets, 2)
             
-            # Update minimum spacing for all edges
+            # Update spacing for all edges
             if lengths.size > 0:
-                min_spacing_all = min(min_spacing_all, np.min(lengths))
+                spacing_all = max(spacing_all, np.max(lengths)) if mode == 'max' else min(spacing_all, np.min(lengths))
             
-            # Update minimum spacing for shell edges (both vertices must be shell)
+            # Update spacing for shell edges (both vertices must be shell)
             shell_edges = lengths[labels_i[:, 0] & labels_j[:, 0]]
             if shell_edges.size > 0:
-                min_spacing_shell = min(min_spacing_shell, np.min(shell_edges))
+                spacing_shell = max(spacing_shell, np.max(shell_edges)) if mode == 'max' else min(spacing_shell, np.min(shell_edges))
             
-            # Update minimum spacing for gel edges (both vertices must be gel)
+            # Update spacing for gel edges (both vertices must be gel)
             gel_edges = lengths[labels_i[:, 1] & labels_j[:, 1]]
             if gel_edges.size > 0:
-                min_spacing_gel = min(min_spacing_gel, np.min(gel_edges))
+                spacing_gel = max(spacing_gel, np.max(gel_edges)) if mode == 'max' else min(spacing_gel, np.min(gel_edges))
         
         return {
-            'all': min_spacing_all,
-            'shell': min_spacing_shell,
-            'gel': min_spacing_gel
+            'all': spacing_all,
+            'shell': spacing_shell,
+            'gel': spacing_gel
         }
 
 if __name__ == "__main__":

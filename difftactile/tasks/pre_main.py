@@ -23,8 +23,10 @@ phantom_params = params['phantom']
 contact_params = params['contact']
 geometry_params = params['geometry']
 
-vitactip_minimum_particle_spacing = mesh_data['minimum_particle_spacing']
-vitactip_minimum_particle_spacing = {key: value/1000 for key, value in vitactip_minimum_particle_spacing.items()}
+vitactip_min_particle_spacing = mesh_data['min_particle_spacing']
+vitactip_max_particle_spacing = mesh_data['max_particle_spacing']
+vitactip_min_particle_spacing = {key: value/1000 for key, value in vitactip_min_particle_spacing.items()}
+vitactip_max_particle_spacing = {key: value/1000 for key, value in vitactip_max_particle_spacing.items()}
 phantom_num_particles_cube_1d = phantom_params['num_particles_cube_1d']
 gap = geometry_params['gap']
 phantom_orientation = geometry_params['phantom_orientation']
@@ -73,13 +75,13 @@ object_scale = phantom_max_dim
 phantom_normalised_spans = phantom_dimensions / phantom_max_dim / 2
 phantom_scaled_spans = phantom_normalised_spans * object_scale
 
-phantom_particle_spacing = phantom_max_dim / (phantom_num_particles_cube_1d-1)
+phantom_min_max_particle_spacing = phantom_max_dim / (phantom_num_particles_cube_1d-1)
 phantom_to_cube_volume_ratio = phantom_volume / (np.max(phantom_scaled_spans) * 2) ** 3
 
 print(f'phantom_normalised_spans: {phantom_normalised_spans}')
 print(f'phantom_scaled_spans: {phantom_scaled_spans}')
-print(f'phantom_particle_spacing: {phantom_particle_spacing}')
-print(f'vitactip_minimum_particle_spacing: {vitactip_minimum_particle_spacing}')
+print(f'phantom_min_max_particle_spacing: {phantom_min_max_particle_spacing}')
+print(f'vitactip_min_particle_spacing: {vitactip_min_particle_spacing}')
 
 phantom_difftactile_position = phantom_closest_vertex + phantom_scaled_spans
 
@@ -88,6 +90,23 @@ vitactip_tip_position = np.array([
     phantom_difftactile_position[1],
     phantom_difftactile_position[2] + phantom_dimensions[2] / 2 + gap,
 ])
+
+for key in vitactip_min_particle_spacing.keys():
+    vitactip_min_particle_spacing_for_material = vitactip_min_particle_spacing[key]
+    vitactip_max_particle_spacing_for_material = vitactip_max_particle_spacing[key]
+    particle_min_min_spacing_ratio = max(
+        phantom_min_max_particle_spacing / vitactip_min_particle_spacing_for_material,
+        vitactip_min_particle_spacing_for_material / phantom_min_max_particle_spacing,
+    )
+    if key == 'all':
+        assert particle_min_min_spacing_ratio < 1.1, f"ratio of minimum particle spacing in phantom and ViTacTip is too high: {particle_min_min_spacing_ratio:0.2f}; phantom: {phantom_min_max_particle_spacing:0.2e}; ViTacTip: {vitactip_min_particle_spacing_for_material:0.2e}"
+        particle_min_max_spacing_ratio = max(
+            phantom_min_max_particle_spacing / vitactip_min_particle_spacing_for_material,
+            phantom_min_max_particle_spacing / vitactip_max_particle_spacing_for_material,
+            vitactip_max_particle_spacing_for_material / vitactip_min_particle_spacing_for_material,
+        )
+        particle_min_max_spacing_ratio = max(particle_min_max_spacing_ratio, 1 / particle_min_max_spacing_ratio)
+        assert particle_min_min_spacing_ratio < 10.0, f"ratio of minimum and maximum global particle spacing is too high: {particle_min_max_spacing_ratio:0.2f}"
 
 # Create coordinates dictionary
 coordinates = {
@@ -101,8 +120,8 @@ coordinates = {
     "max_coord_y": max_coord_y,
     "max_coord_z": max_coord_z,
     "object_scale": object_scale,
-    "phantom_particle_spacing": phantom_particle_spacing,
-    "vitactip_minimum_particle_spacing": vitactip_minimum_particle_spacing,
+    "phantom_min_max_particle_spacing": phantom_min_max_particle_spacing,
+    "vitactip_min_particle_spacing": vitactip_min_particle_spacing,
 }
 
 # Save coordinates to JSON file
