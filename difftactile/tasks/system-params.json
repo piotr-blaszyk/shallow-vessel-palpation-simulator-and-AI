@@ -54,7 +54,7 @@
         "num_opt_steps": 10,
         "phantom_name": "cylinder.stl",
         "pid_max_speed_translation": 0.100,
-        "pid_max_speed_rotation": 30.0,
+        "pid_max_speed_rotation": 90.0,
         "pid_kp": 10.0,
         "pid_ki": 0.0,
         "pid_kd": 0.0,
