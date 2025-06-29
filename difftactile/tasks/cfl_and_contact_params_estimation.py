@@ -65,7 +65,7 @@ def calculate_cfl_timestep():
 
     # Calculate dt for each material
     # C can be between 0.0 (safest simulation) and 1.0 (fastest simulation)
-    cfl_number = 0.3
+    cfl_number = system_params['meta']['target_courant_number']
     dt_values = {}
     
     for material in materials:
