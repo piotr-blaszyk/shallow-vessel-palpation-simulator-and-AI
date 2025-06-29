@@ -2,12 +2,12 @@
     "vitactip": {
         "shell": {
             "density": 1.1e3,
-            "youngs_modulus": 6.0e6,
+            "youngs_modulus": 7.5e6,
             "poissons_ratio": 0.495
         },
         "gel": {
             "density": 1.1e3,
-            "youngs_modulus": 1.0e3,
+            "youngs_modulus": 5.0e3,
             "poissons_ratio": 0.499
         },
         "collision_search_distance": 0.010,
@@ -24,7 +24,7 @@
         "gravity": [0.0, 0.0, -9.81],
         "silicone": {
             "density": 1.07e3,
-            "youngs_modulus": 5.0e3,
+            "youngs_modulus": 2.5e4,
             "poissons_ratio": 0.499
         },
         "hard_plastic": {
@@ -38,17 +38,17 @@
     },
     "contact": {
         "dt": 1.0e-5,
-        "normal_stiffness": 5.0e5,
-        "normal_damping": 2.0e3,
-        "tangential_stiffness": 3.5e5,
-        "coulomb_friction_coeff": 0.60,
+        "normal_stiffness": 1.0e6,
+        "normal_damping": 5.0e2,
+        "tangential_stiffness": 7.0e5,
+        "coulomb_friction_coeff": 0.85,
         "num_sub_frames": 50,
         "num_frames": 10000,
         "num_opt_steps": 10,
         "phantom_name": "cylinder.stl",
         "pid_max_speed_translation": 0.100,
         "pid_max_speed_rotation": 30.0,
-        "pid_kp": 100.0,
+        "pid_kp": 10.0,
         "pid_ki": 0.0,
         "pid_kd": 0.0,
         "dwell_frames": 0,
