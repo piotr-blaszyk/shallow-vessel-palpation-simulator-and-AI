@@ -17,7 +17,7 @@ def arr_str(xs):
 
 with open('../tasks/system-params.json', 'r') as f:
     params = json.load(f)
-with open('../sensor_model/output/gmsh-mesh.pkl', 'rb') as f:
+with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
     mesh_data = pickle.load(f)
 phantom_params = params['phantom']
 contact_params = params['contact']

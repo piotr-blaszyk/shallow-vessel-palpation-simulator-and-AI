@@ -349,7 +349,7 @@ def generate_marker_3d_projection():
         marker_positions_2d = pickle.load(f)
 
     if False:
-        with open('output/gmsh-mesh.pkl', 'rb') as f:
+        with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
             gmsh_data = pickle.load(f)
         shell_inner_r = gmsh_data['radius_of_curvature_inner']
         shell_outer_r = gmsh_data['radius_of_curvature_outer']

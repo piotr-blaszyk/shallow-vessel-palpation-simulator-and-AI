@@ -68,7 +68,7 @@ class ViTacTip:
 
     def init_mesh(self):
         # Load mesh data from gmsh
-        with open('../sensor_model/output/gmsh-mesh.pkl', 'rb') as f:
+        with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
             mesh_data = pickle.load(f)
         
         # Unpack mesh data

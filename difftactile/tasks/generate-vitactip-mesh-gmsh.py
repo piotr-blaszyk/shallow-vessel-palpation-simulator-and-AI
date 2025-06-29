@@ -76,7 +76,7 @@ class MeshGenerator:
         self.number_of_materials = self.vitactip_params['number_of_materials']
         self.refine_mesh = self.mesh_params['refine_mesh'] == 1
 
-        with open('biomimetic-tip-points.pkl', 'rb') as f:
+        with open('../sensor_model/biomimetic-tip-points.pkl', 'rb') as f:
             self.biomimetic_tip_points = pickle.load(f)
         self.A_points = self.biomimetic_tip_points['A_points']
         self.B_points = self.biomimetic_tip_points['B_points']
@@ -191,7 +191,7 @@ class MeshGenerator:
         if self.refine_mesh:
             r_max = radius_of_curvature_outer
             r_min = radius_of_curvature_outer - 4
-            f1 = f"6.0+max(0.0,min(4.0,{r_max}-sqrt(x^2+y^2+z^2)))"
+            f1 = f"2.75+max(0.0,min(4.0,{r_max}-sqrt(x^2+y^2+z^2)))"
             print(f1)
 
             gmsh.model.mesh.field.add("MathEval", 1)
@@ -343,7 +343,7 @@ class MeshGenerator:
         }
         print(f'number of vertices generated: {self.node_coordinates.shape[0]}')
         os.makedirs('output', exist_ok=True)
-        with open('output/gmsh-mesh.pkl', 'wb') as f:
+        with open('../tasks/output/gmsh-mesh.pkl', 'wb') as f:
             pickle.dump(mesh_data, f)
     
     def compute_particle_spacing(self, mode='min'):
