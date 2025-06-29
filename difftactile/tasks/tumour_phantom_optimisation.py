@@ -127,7 +127,7 @@ class Contact(ContactVisualisation):
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
-        self.trajectory = ti.Vector.field(6, dtype=float, shape=3, needs_grad=False)
+        self.trajectory = ti.Vector.field(6, dtype=float, shape=2, needs_grad=False)
         self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
         self.tumour_present[None] = 0
         self.pid_on = ti.field(dtype=int, shape=(), needs_grad=False)
@@ -154,11 +154,10 @@ class Contact(ContactVisualisation):
             tumour_present=tumour_present,
         )
         x, y, z, xr, yr, zr = self.vitactip_tip_pose
-        press_depth = self.gap + 0.002
+        press_depth = self.gap + 0.012
         self.trajectory_npy = np.array([
             [x, y, z, xr, yr, zr],
             [x, y, z-press_depth, xr, yr, zr],
-            [x, y+0.020, z-press_depth, xr, yr, zr],
         ], dtype=float)
         assert self.trajectory.shape[0] == self.trajectory_npy.shape[0], f"Set self.trajectory length to {self.trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(self.trajectory_npy)
