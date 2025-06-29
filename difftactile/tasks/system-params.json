@@ -2,17 +2,17 @@
     "vitactip": {
         "shell": {
             "density": 1.1e3,
-            "youngs_modulus": 7.5e5,
+            "youngs_modulus": 7.5e6,
             "poissons_ratio": 0.495
         },
         "gel": {
             "density": 1.1e3,
-            "youngs_modulus": 5.0e2,
+            "youngs_modulus": 5.0e3,
             "poissons_ratio": 0.499
         },
         "single_material": {
             "density": 1.1e3,
-            "youngs_modulus": 3.755e05,
+            "youngs_modulus": 3.755e06,
             "poissons_ratio": 0.499
         },
         "collision_search_distance": 0.010,
@@ -31,12 +31,12 @@
         "gravity": [0.0, 0.0, -9.81],
         "silicone": {
             "density": 1.07e3,
-            "youngs_modulus": 2.5e3,
+            "youngs_modulus": 2.5e4,
             "poissons_ratio": 0.499
         },
         "hard_plastic": {
             "density": 1.18e3,
-            "youngs_modulus": 2.5e8,
+            "youngs_modulus": 2.5e9,
             "poissons_ratio": 0.38
         },
         "fixed_points_z_ratio": 0.25,
