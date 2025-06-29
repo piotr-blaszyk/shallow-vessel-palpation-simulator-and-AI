@@ -33,8 +33,8 @@
   "object_scale": 0.08,
   "phantom_particle_spacing": 0.008888888888888889,
   "vitactip_minimum_particle_spacing": {
-    "all": 0.0009999999999999985,
-    "shell": 0.0009999999999999985,
-    "gel": 0.009811230373719629
+    "all": 0.009590274706083356,
+    "shell": Infinity,
+    "gel": Infinity
   }
 }

@@ -18,31 +18,50 @@ def calculate_cfl_timestep():
         system_params = json.load(f)
     with open('../tasks/system-params-computed.json', 'r') as f:
         system_params_computed = json.load(f)
-
-    # Define all materials and their properties
-    materials = [
-        {
-            'name': 'phantom',
-            'density': system_params['phantom']['silicone']['density'],
-            'youngs_modulus': system_params['phantom']['silicone']['youngs_modulus'],
-            'poissons_ratio': system_params['phantom']['silicone']['poissons_ratio'],
-            'particle_spacing': system_params_computed['phantom_particle_spacing']
-        },
-        {
-            'name': 'vitactip_shell',
-            'density': system_params['vitactip']['shell']['density'],
-            'youngs_modulus': system_params['vitactip']['shell']['youngs_modulus'],
-            'poissons_ratio': system_params['vitactip']['shell']['poissons_ratio'],
-            'particle_spacing': system_params_computed['vitactip_minimum_particle_spacing']['shell']
-        },
-        {
-            'name': 'vitactip_gel',
-            'density': system_params['vitactip']['gel']['density'],
-            'youngs_modulus': system_params['vitactip']['gel']['youngs_modulus'],
-            'poissons_ratio': system_params['vitactip']['gel']['poissons_ratio'],
-            'particle_spacing': system_params_computed['vitactip_minimum_particle_spacing']['gel']
-        }
-    ]
+    
+    vitactip_params = system_params['vitactip']
+    if vitactip_params['number_of_materials'] == 1:
+        materials = [
+            {
+                'name': 'phantom',
+                'density': system_params['phantom']['silicone']['density'],
+                'youngs_modulus': system_params['phantom']['silicone']['youngs_modulus'],
+                'poissons_ratio': system_params['phantom']['silicone']['poissons_ratio'],
+                'particle_spacing': system_params_computed['phantom_particle_spacing']
+            },
+            {
+                'name': 'vitactip',
+                'density': system_params['vitactip']['single_material']['density'],
+                'youngs_modulus': system_params['vitactip']['single_material']['youngs_modulus'],
+                'poissons_ratio': system_params['vitactip']['single_material']['poissons_ratio'],
+                'particle_spacing': system_params_computed['vitactip_minimum_particle_spacing']['all']
+            }
+        ]
+    else:
+        # Define all materials and their properties
+        materials = [
+            {
+                'name': 'phantom',
+                'density': system_params['phantom']['silicone']['density'],
+                'youngs_modulus': system_params['phantom']['silicone']['youngs_modulus'],
+                'poissons_ratio': system_params['phantom']['silicone']['poissons_ratio'],
+                'particle_spacing': system_params_computed['phantom_particle_spacing']
+            },
+            {
+                'name': 'vitactip_shell',
+                'density': system_params['vitactip']['shell']['density'],
+                'youngs_modulus': system_params['vitactip']['shell']['youngs_modulus'],
+                'poissons_ratio': system_params['vitactip']['shell']['poissons_ratio'],
+                'particle_spacing': system_params_computed['vitactip_minimum_particle_spacing']['shell']
+            },
+            {
+                'name': 'vitactip_gel',
+                'density': system_params['vitactip']['gel']['density'],
+                'youngs_modulus': system_params['vitactip']['gel']['youngs_modulus'],
+                'poissons_ratio': system_params['vitactip']['gel']['poissons_ratio'],
+                'particle_spacing': system_params_computed['vitactip_minimum_particle_spacing']['gel']
+            }
+        ]
 
     # Calculate dt for each material
     cfl_number = 0.3

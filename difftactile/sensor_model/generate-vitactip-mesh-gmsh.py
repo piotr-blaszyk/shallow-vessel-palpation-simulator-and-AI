@@ -43,7 +43,7 @@ class MeshGenerator:
         radius_of_curvature_inner = self.geometry_data['radius_of_curvature_inner']
         stem_height = self.geometry_data['stem_height']
         cap_height = self.geometry_data['cap_height']
-
+        
         outer_cylinder = self.cylinder_volume(stem_wall_radius_outer, stem_height)
         outer_cap = self.spherical_cap_volume_2(stem_wall_radius_outer, cap_height)
         outer_solid_volume = outer_cylinder + outer_cap
@@ -61,6 +61,7 @@ class MeshGenerator:
         volumes = {
             'shell': shell_volume,
             'gel': gel_volume,
+            'all': outer_solid_volume,
         }
 
         return volumes
@@ -72,6 +73,7 @@ class MeshGenerator:
         self.mesh_params = self.params['gmsh_mm']
         self.vitactip_params = self.params['vitactip']
 
+        self.number_of_materials = self.vitactip_params['number_of_materials']
         self.refine_mesh = self.mesh_params['refine_mesh'] == 1
 
         with open('biomimetic-tip-points.pkl', 'rb') as f:
@@ -132,58 +134,64 @@ class MeshGenerator:
         stem_wall_radius_outer = self.geometry_data['stem_wall_radius_outer']
         stem_height = self.geometry_data['stem_height']
 
-        outer_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_outer)
-        inner_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_inner)
-        cap = gmsh.model.occ.cut([(3, outer_ball)], [(3, inner_ball)])[0]
-        cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
-        cap = gmsh.model.occ.intersect(cap, [(3, cyl_helper)])[0]
+        if self.number_of_materials == 1:
+            outer_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_outer)
+            cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
+            all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
+        elif self.number_of_materials == 2:
+            outer_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_outer)
+            inner_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_inner)
+            cap = gmsh.model.occ.cut([(3, outer_ball)], [(3, inner_ball)])[0]
+            cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
+            cap = gmsh.model.occ.intersect(cap, [(3, cyl_helper)])[0]
 
-        if self.number_of_biomimetic_tips == 0:
-            fragments = cap
-        elif self.number_of_biomimetic_tips == 1:
-            A = self.A_points[0]
-            B = self.B_points[0]
-            AB = B-A
-            tip_cylinder = gmsh.model.occ.addCylinder(0, A[1], 0, AB[0], AB[1], AB[2], 0.25)
+            if self.number_of_biomimetic_tips == 0:
+                pass
+            elif self.number_of_biomimetic_tips == 1:
+                A = self.A_points[0]
+                B = self.B_points[0]
+                AB = B-A
+                tip_cylinder = gmsh.model.occ.addCylinder(0, A[1], 0, AB[0], AB[1], AB[2], 0.25)
+                gmsh.model.occ.synchronize()
+                cap = gmsh.model.occ.fragment(cap, [(3, tip_cylinder)])[0]
+            else:
+                raise Exception("Having more than 1 biomimetic tip is not supported yet")
+
             gmsh.model.occ.synchronize()
-            fragments = gmsh.model.occ.fragment(cap, [(3, tip_cylinder)])[0]
+            gmsh.model.mesh.generate(3)
+            
+            new_fragments = []
+            for dim, tag in cap:
+                node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes(dim=dim, tag=tag, includeBoundary=True)
+                node_coordinates = node_coordinates.reshape(-1, 3)
+                assert node_coordinates.shape[0] > 0
+                magnitudes = np.linalg.norm(node_coordinates, axis=1)
+                max_magnitude_index = np.argmax(magnitudes)
+                point_with_largest_magnitude = node_coordinates[max_magnitude_index]
+                largest_magnitude = magnitudes[max_magnitude_index]
+                magnitudes.sort()
+                if largest_magnitude>radius_of_curvature_outer+1:
+                    gmsh.model.occ.remove(dimTags=[(dim, tag)], recursive=True)
+                    continue
+                new_fragments.append((dim, tag))
+            
+            stem_wall_outer = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, stem_wall_radius_outer)
+            stem_wall_inner = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, self.geometry_data['stem_wall_radius_inner'])
+            stem_wall = gmsh.model.occ.cut([(3, stem_wall_outer)], [(3, stem_wall_inner)])[0]
+            shell = gmsh.model.occ.fuse(new_fragments, stem_wall)[0]
+
+            outer_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_outer)
+            cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
+            all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
+            gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
+            gmsh.model.occ.synchronize()
         else:
-            raise Exception("Having more than 1 biomimetic tip is not supported yet")
-
-        gmsh.model.occ.synchronize()
-        gmsh.model.mesh.generate(3)
-        
-        new_fragments = []
-        for dim, tag in fragments:
-            node_tags, node_coordinates, parametric_coord = gmsh.model.mesh.getNodes(dim=dim, tag=tag, includeBoundary=True)
-            node_coordinates = node_coordinates.reshape(-1, 3)
-            assert node_coordinates.shape[0] > 0
-            magnitudes = np.linalg.norm(node_coordinates, axis=1)
-            max_magnitude_index = np.argmax(magnitudes)
-            point_with_largest_magnitude = node_coordinates[max_magnitude_index]
-            largest_magnitude = magnitudes[max_magnitude_index]
-            magnitudes.sort()
-            if largest_magnitude>radius_of_curvature_outer+1:
-                gmsh.model.occ.remove(dimTags=[(dim, tag)], recursive=True)
-                continue
-            new_fragments.append((dim, tag))
-        
-        stem_wall_outer = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, stem_wall_radius_outer)
-        stem_wall_inner = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, self.geometry_data['stem_wall_radius_inner'])
-        stem_wall = gmsh.model.occ.cut([(3, stem_wall_outer)], [(3, stem_wall_inner)])[0]
-        shell = gmsh.model.occ.fuse(new_fragments, stem_wall)[0]
-
-        outer_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_outer)
-        cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
-        all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
-        gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
-        gmsh.model.occ.synchronize()
-
-        y_max = radius_of_curvature_outer
-        y_mid = y_cap_base
-        y_min = y_bottom
+            raise Exception("number of materials must be 1 or 2")
 
         if self.refine_mesh:
+            y_max = radius_of_curvature_outer
+            y_mid = y_cap_base
+            y_min = y_bottom
             dist_y_y_max = self.dist('y', y_max)
             dist_y_mid_y_max = self.dist(y_mid, y_max)
             dist_to_y_max_ratio = f"{dist_y_y_max}/{dist_y_mid_y_max}"
@@ -203,15 +211,16 @@ class MeshGenerator:
 
         gmsh.model.occ.synchronize()
         gmsh.model.mesh.generate(3)
-        gmsh.write('vitactip.msh')
-        gmsh.model.addPhysicalGroup(3, [x[1] for x in shell], name="shell")
-        gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
+        if self.number_of_materials == 2:
+            gmsh.model.addPhysicalGroup(3, [x[1] for x in shell], name="shell")
+            gmsh.model.addPhysicalGroup(3, [x[1] for x in gel], name="gel")
         
         volumes = self.calculate_volumes_SI()
-        print(f"\nComponent Volumes:")
-        print(f"Gel Volume: {volumes['gel']:0.3e} m³")
-        print(f"Shell Volume: {volumes['shell']:0.3e} m³")
-        
+        if self.number_of_materials == 1:
+            print(f"Volume: {volumes['all']:0.3e} m³")
+        else:
+            print(f"Gel Volume: {volumes['gel']:0.3e} m³")
+            print(f"Shell Volume: {volumes['shell']:0.3e} m³")
         self.get_difftactile_variables()
         gmsh.fltk.run()
         gmsh.finalize()
