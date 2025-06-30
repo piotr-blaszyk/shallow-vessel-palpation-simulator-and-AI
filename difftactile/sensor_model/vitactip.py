@@ -779,7 +779,7 @@ class ViTacTip:
             
             # Calculate hourglass control forces if enabled
             force_matrix = elastic_force_matrix + damping_force_matrix
-            if self.hourglass_enabled[None]:
+            if self.hourglass_enabled[None] == 1:
                 hourglass_force_matrix = self.compute_hourglass_forces(
                     vertex1_pos, vertex2_pos, vertex3_pos, vertex4_pos,
                     vertex1_vel, vertex2_vel, vertex3_vel, vertex4_vel,

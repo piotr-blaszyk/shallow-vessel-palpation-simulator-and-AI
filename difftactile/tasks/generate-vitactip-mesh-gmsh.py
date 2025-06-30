@@ -189,12 +189,15 @@ class MeshGenerator:
             raise Exception("number of materials must be 1 or 2")
 
         if self.refine_mesh:
-            r_max = radius_of_curvature_outer
-            r_min = radius_of_curvature_outer - 4
-            a = self.mesh_params['refine_min_mesh_size']
-            b = self.mesh_params['refine_mesh_size_distance_offset']
-            f1 = f"{a}+max(0.0,min({b},{r_max}-sqrt(x^2+y^2+z^2)))"
-            print(f1)
+            # r_max = radius_of_curvature_outer
+            # r_min = radius_of_curvature_outer - 4
+            # a = self.mesh_params['refine_min_mesh_size']
+            # b = self.mesh_params['refine_mesh_size_distance_offset']
+            # f1 = f"{a}+max(0.0,min({b},{r_max}-sqrt(x^2+y^2+z^2)))"
+            # print(f1)
+            y_poi = y_bottom + 18
+
+            f1 = f"max(1.0, min(4.0, 2.5 - (y-{y_poi}) * 3.0 / (2.0 * 2.0)))"
 
             gmsh.model.mesh.field.add("MathEval", 1)
             gmsh.model.mesh.field.setString(1, "F", f1)

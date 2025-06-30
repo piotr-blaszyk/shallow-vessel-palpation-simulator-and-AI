@@ -2,10 +2,16 @@ import numpy as np
 import open3d as o3d
 import pickle
 from collections import Counter
+import json
 
 with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
     mesh_data = pickle.load(f)
         
+with open('../tasks/system-params.json', 'r') as f:
+    params = json.load(f)
+visualise_mesh_params = params['visualise_mesh']
+frame_number = visualise_mesh_params['frame_number']
+
 # Unpack mesh data
 all_tetrahedra = mesh_data['all_tetrahedra']
 node_coordinates = mesh_data['node_coordinates']
@@ -22,11 +28,9 @@ print('hello')
 print(node_coordinates.shape)
 print(all_tetrahedra.shape)
 
-i = 10
-with open(f'../tasks/output/tactile_sensor.deformed_node_coordinates.ts={int(100 * i)}.pkl', 'rb') as f:
+with open(f'../tasks/output/tactile_sensor.deformed_node_coordinates.ts={frame_number}.pkl', 'rb') as f:
     deformed_node_coordinates = pickle.load(f)
-print(f'ts={int(100 * i)}; num nan: {np.sum(np.isnan(deformed_node_coordinates))}')
-foo = 7
+print(f'ts={frame_number}; num nan: {np.sum(np.isnan(deformed_node_coordinates))}')
 
 nan_nodes = np.where(np.any(np.isnan(deformed_node_coordinates), axis=1))[0]
 
