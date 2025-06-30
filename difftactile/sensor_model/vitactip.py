@@ -30,6 +30,10 @@ class ViTacTip:
         self.contact_params = self.params['contact']
         self.geometry_params = self.params['geometry']
 
+        self.max_num_materials = self.vitactip_params['maximum_number_of_materials']
+        self.number_of_materials = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.number_of_materials[None] = self.vitactip_params['number_of_materials']
+        self.fixed_layer_distance_from_bottom = self.vitactip_params['fixed_layer_distance_from_bottom']
         self.keypoint_search_z_threshold = self.vitactip_params['keypoint_search_z_threshold']
         self.collision_search_distance = self.vitactip_params['collision_search_distance']
         self.distance_from_camera_lens_to_outer_shell_surface = self.geometry_params['distance_from_camera_lens_to_outer_shell_surface']
@@ -38,33 +42,38 @@ class ViTacTip:
         self.dt = self.contact_params['dt']
         self.norm_eps = self.contact_params['norm_eps']
 
-        # Material parameters for shell (Vytaflex 60)
-        self.shell_mass_density = self.vitactip_params['shell']['density']  # density [g/cm^3]
-        self.shell_youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.shell_poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.shell_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.shell_lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        
-        # Material parameters for gel (RTV27905)
-        self.gel_mass_density = self.vitactip_params['gel']['density']  # density [g/cm^3]
-        self.gel_youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.gel_poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.gel_mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.gel_lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        # Material parameters for all materials
+        self.mass_density = ti.field(dtype=ti.f32, shape=(self.number_of_materials[None],), needs_grad=False)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(self.number_of_materials[None],), needs_grad=False)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(self.number_of_materials[None],), needs_grad=False)
+        self.mu = ti.field(dtype=ti.f32, shape=(self.number_of_materials[None],), needs_grad=False)
+        self.lam = ti.field(dtype=ti.f32, shape=(self.number_of_materials[None],), needs_grad=False)
 
-        # Initialize default material parameters
-        # Shell (Vytaflex 60)
-        self.shell_youngs_modulus[None] = self.vitactip_params['shell']['youngs_modulus']
-        self.shell_poissons_ratio[None] = self.vitactip_params['shell']['poissons_ratio']
-        # Gel (RTV27905)
-        self.gel_youngs_modulus[None] = self.vitactip_params['gel']['youngs_modulus']
-        self.gel_poissons_ratio[None] = self.vitactip_params['gel']['poissons_ratio']
+        if self.number_of_materials[None] == 1:
+            self.mass_density[0] = self.vitactip_params['single_material']['density']
+            self.youngs_modulus[0] = self.vitactip_params['single_material']['youngs_modulus']
+            self.poissons_ratio[0] = self.vitactip_params['single_material']['poissons_ratio']
+
+            self.mass_density[1] = self.vitactip_params['single_material']['density']
+            self.youngs_modulus[1] = self.vitactip_params['single_material']['youngs_modulus']
+            self.poissons_ratio[1] = self.vitactip_params['single_material']['poissons_ratio']
+        else:
+            # Initialize material parameters
+            # Shell (Vytaflex 60) - material index 0
+            self.mass_density[0] = self.vitactip_params['shell']['density']
+            self.youngs_modulus[0] = self.vitactip_params['shell']['youngs_modulus']
+            self.poissons_ratio[0] = self.vitactip_params['shell']['poissons_ratio']
+            
+            # Gel (RTV27905) - material index 1
+            self.mass_density[1] = self.vitactip_params['gel']['density']
+            self.youngs_modulus[1] = self.vitactip_params['gel']['youngs_modulus']
+            self.poissons_ratio[1] = self.vitactip_params['gel']['poissons_ratio']
         
-        # Compute Lamé parameters for both materials
-        self.shell_mu[None] = self.shell_youngs_modulus[None] / 2 / (1 + self.shell_poissons_ratio[None])
-        self.shell_lam[None] = self.shell_youngs_modulus[None] * self.shell_poissons_ratio[None] / (1 + self.shell_poissons_ratio[None]) / (1 - 2 * self.shell_poissons_ratio[None])
-        self.gel_mu[None] = self.gel_youngs_modulus[None] / 2 / (1 + self.gel_poissons_ratio[None])
-        self.gel_lam[None] = self.gel_youngs_modulus[None] * self.gel_poissons_ratio[None] / (1 + self.gel_poissons_ratio[None]) / (1 - 2 * self.gel_poissons_ratio[None])
+        # Compute Lamé parameters for all materials
+        for i in range(self.max_num_materials):
+            self.mu[i] = self.youngs_modulus[i] / 2 / (1 + self.poissons_ratio[i])
+            self.lam[i] = (self.youngs_modulus[i] * self.poissons_ratio[i] / 
+                          ((1 + self.poissons_ratio[i]) * (1 - 2 * self.poissons_ratio[i])))
 
     def init_mesh(self):
         # Load mesh data from gmsh
@@ -81,7 +90,7 @@ class ViTacTip:
         marker_node_tags = mesh_data['marker_node_tags']
         
         # Compute fixed layer nodes (nodes at the bottom)
-        is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < 1  # Check if y-coordinate is at bottom
+        is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < self.fixed_layer_distance_from_bottom  # Check if y-coordinate is at bottom
         
         # Append is_fixed_layer to node_labels
         node_labels = np.column_stack([node_labels, is_fixed_layer])
@@ -111,12 +120,12 @@ class ViTacTip:
             
             # Assign material based on node composition
             if gel_count == 4 and shell_count <= 3:
-                element_materials[i] = 2  # gel material
+                element_materials[i] = group_to_idx['gel']  # gel material
             else:
-                element_materials[i] = 1  # shell material
+                element_materials[i] = group_to_idx['shell']  # shell material
             
             # Determine density based on material
-            material_density = self.shell_mass_density if element_materials[i] == 1 else self.gel_mass_density
+            material_density = self.mass_density[element_materials[i]]
             element_mass = volume * material_density
             
             # Distribute element mass to vertices
@@ -658,13 +667,8 @@ class ViTacTip:
             # deformation_gradient: deformation gradient tensor (dimensionless)
             deformation_gradient = deformation_matrix @ self.deformation_gradient_inverse[tetra_idx]
 
-            ## Get material parameters based on element type
-            # is_shell: boolean flag (dimensionless)
-            is_shell = self.element_materials[tetra_idx] == 1
-            # mu: shear modulus in Pa
-            mu = self.shell_mu[None] if is_shell else self.gel_mu[None]
-            # lam: Lame's first parameter in Pa
-            lam = self.shell_lam[None] if is_shell else self.gel_lam[None]
+            mu = self.mu[self.element_materials[tetra_idx]]
+            lam = self.lam[self.element_materials[tetra_idx]]
 
             ## stable neo-hooken
             # jacobian: volume ratio (dimensionless)
