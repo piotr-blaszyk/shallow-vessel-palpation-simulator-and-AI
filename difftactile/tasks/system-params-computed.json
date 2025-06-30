@@ -31,9 +31,9 @@
   "max_coord_y": 0.122,
   "max_coord_z": 0.058,
   "object_scale": 0.08,
-  "phantom_min_max_particle_spacing": 0.0020512820512820513,
+  "phantom_min_max_particle_spacing": 0.0033333333333333335,
   "vitactip_min_particle_spacing": {
-    "all": 0.001969274455679437,
+    "all": 0.0033904173168173464,
     "shell": Infinity,
     "gel": Infinity
   },
