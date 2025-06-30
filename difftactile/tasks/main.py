@@ -127,7 +127,7 @@ class Contact:
         self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
         self.tumour_present[None] = 0
         self.pid_on = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.pid_on[None] = 1
+        self.pid_on[None] = 0
     
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate((

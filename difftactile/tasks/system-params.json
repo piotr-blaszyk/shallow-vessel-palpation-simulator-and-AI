@@ -20,7 +20,9 @@
         "number_of_biomimetic_tips": 0,
         "number_of_materials": 1,
         "maximum_number_of_materials": 2,
-        "fixed_layer_distance_from_bottom": 0.005
+        "fixed_layer_distance_from_bottom": 0.005,
+        "rayleigh_damping_alpha": 0.1,
+        "rayleigh_damping_beta": 0.01
     },
     "phantom": {
         "eps": 1e-8,

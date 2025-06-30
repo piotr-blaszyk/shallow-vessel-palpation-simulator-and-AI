@@ -74,6 +74,14 @@ class ViTacTip:
             self.mu[i] = self.youngs_modulus[i] / 2 / (1 + self.poissons_ratio[i])
             self.lam[i] = (self.youngs_modulus[i] * self.poissons_ratio[i] / 
                           ((1 + self.poissons_ratio[i]) * (1 - 2 * self.poissons_ratio[i])))
+            
+        # Add Rayleigh damping coefficients
+        self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)  # mass damping coefficient
+        self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)   # stiffness damping coefficient
+        
+        # Set default values (these should be tuned based on your specific needs)
+        self.rayleigh_damping_alpha[None] = self.vitactip_params['rayleigh_damping_alpha']  # typical values range from 0 to 0.1
+        self.rayleigh_damping_beta[None] = self.vitactip_params['rayleigh_damping_beta']  # typical values range from 0.001 to 0.01
 
     def init_mesh(self):
         # Load mesh data from gmsh
@@ -652,46 +660,60 @@ class ViTacTip:
         """
         Update internal forces for all tetrahedral elements using finite element method.
         Computes deformation gradient, stress tensor, and applies forces to vertices.
+        Includes Rayleigh damping forces.
         
         Args:
             frame: current simulation frame (dimensionless)
         """
         for tetra_idx in range(self.num_tetrahedra):
             vertex1_idx, vertex2_idx, vertex3_idx, vertex4_idx = self.tetrahedra[tetra_idx]
-            # vertex1_pos, vertex2_pos, vertex3_pos, vertex4_pos: vertex positions in m
-            vertex1_pos, vertex2_pos, vertex3_pos, vertex4_pos = self.vertex_positions_deformed[frame, vertex1_idx], self.vertex_positions_deformed[frame, vertex2_idx], self.vertex_positions_deformed[frame, vertex3_idx], self.vertex_positions_deformed[frame, vertex4_idx]
-            # deformation_matrix: deformation matrix (dimensionless)
+            # Get vertex positions and velocities
+            vertex1_pos = self.vertex_positions_deformed[frame, vertex1_idx]
+            vertex2_pos = self.vertex_positions_deformed[frame, vertex2_idx]
+            vertex3_pos = self.vertex_positions_deformed[frame, vertex3_idx]
+            vertex4_pos = self.vertex_positions_deformed[frame, vertex4_idx]
+            
+            vertex1_vel = self.vertex_velocities[frame, vertex1_idx]
+            vertex2_vel = self.vertex_velocities[frame, vertex2_idx]
+            vertex3_vel = self.vertex_velocities[frame, vertex3_idx]
+            vertex4_vel = self.vertex_velocities[frame, vertex4_idx]
+
+            # Calculate elastic forces
             deformation_matrix = ti.Matrix.cols([vertex1_pos - vertex4_pos, vertex2_pos - vertex4_pos, vertex3_pos - vertex4_pos])
-            # tetra_volume: volume in m^3
             tetra_volume = ti.abs(deformation_matrix.determinant()) / 6
-            # deformation_gradient: deformation gradient tensor (dimensionless)
             deformation_gradient = deformation_matrix @ self.deformation_gradient_inverse[tetra_idx]
 
             mu = self.mu[self.element_materials[tetra_idx]]
             lam = self.lam[self.element_materials[tetra_idx]]
 
-            ## stable neo-hooken
-            # jacobian: volume ratio (dimensionless)
+            # Neo-hookean calculations
             jacobian = deformation_gradient.determinant()
-            # first_invariant: first invariant of Cauchy-Green tensor (dimensionless)
             first_invariant = (deformation_gradient.transpose() @ deformation_gradient).trace()
-            # dJ_dF0, dJ_dF1, dJ_dF2: jacobian derivatives (dimensionless)
             dJ_dF0 = deformation_gradient[:,1].cross(deformation_gradient[:,2])
             dJ_dF1 = deformation_gradient[:,2].cross(deformation_gradient[:,0])
             dJ_dF2 = deformation_gradient[:,0].cross(deformation_gradient[:,1])
-            # jacobian_derivative: jacobian derivative matrix (dimensionless)
             jacobian_derivative = ti.Matrix.cols([dJ_dF0, dJ_dF1, dJ_dF2])
-            # alpha: material parameter (dimensionless)
             alpha = 1 + 0.75 * mu/lam
-            # stress_tensor: stress tensor in Pa
             stress_tensor = mu * (1 - 1/(first_invariant+1)) * deformation_gradient + lam * (jacobian - alpha) * jacobian_derivative
 
-            # force_matrix: force matrix in N
-            force_matrix = -tetra_volume * stress_tensor @ self.deformation_gradient_inverse[tetra_idx].transpose()
-            # vertex_indices: vertex indices array (dimensionless)
+            # Calculate elastic force matrix
+            elastic_force_matrix = -tetra_volume * stress_tensor @ self.deformation_gradient_inverse[tetra_idx].transpose()
+            
+            # Calculate velocity-based damping forces (Rayleigh damping)
+            relative_vel1 = vertex1_vel - vertex4_vel
+            relative_vel2 = vertex2_vel - vertex4_vel
+            relative_vel3 = vertex3_vel - vertex4_vel
+            
+            # Combine mass and stiffness damping
+            damping_force_matrix = -self.rayleigh_damping_alpha[None] * ti.Matrix.cols([relative_vel1, relative_vel2, relative_vel3])
+            damping_force_matrix -= self.rayleigh_damping_beta[None] * elastic_force_matrix
+            
+            # Combine elastic and damping forces
+            force_matrix = elastic_force_matrix + damping_force_matrix
+            
+            # Apply forces to vertices
             vertex_indices = ti.Vector([vertex1_idx, vertex2_idx, vertex3_idx, vertex4_idx])
             for k in ti.static(range(3)):
-                # vertex_force: force vector in N
                 vertex_force = ti.Vector([force_matrix[j,k] for j in range(3)])
                 self.vertex_velocities[frame,vertex_indices[k]] += self.dt * vertex_force / self.vertex_mass[vertex_indices[k]]
                 self.vertex_velocities[frame,vertex_indices[3]] += -1*self.dt * vertex_force / self.vertex_mass[vertex_indices[3]]
