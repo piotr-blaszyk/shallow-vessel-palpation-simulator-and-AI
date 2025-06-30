@@ -580,7 +580,7 @@ class Contact:
             self.tactile_readout_gui = None
         
     def visualisation_update_gui(self, ts):
-        move_to_the_front_offset = np.array([-0.100, 0, 0], dtype=float)
+        move_to_the_front_offset = np.array([-0.070, 0, 0], dtype=float)
         z = self.min_coord
         _, y0, _ = self.coordinates['phantom_centroid_pose'][:3]
         x1, y1, _ = self.coordinates['phantom_closest_vertex']
