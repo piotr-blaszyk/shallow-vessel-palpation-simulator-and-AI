@@ -192,6 +192,13 @@ class ViTacTip:
         self.contact_surface = ti.Vector.field(3, int, self.num_contact_surface_triangles) # surface triangle mesh
         self.contact_surface.from_numpy(self.outer_surface_triangles.astype(np.int32))
 
+        self.markers_surface_id_np = np.where(self.layer_idxs==self.N_t*3-1)[0]
+        self.markers_surface_id = ti.field(int, len(self.markers_surface_id_np))
+        self.markers_surface_id.from_numpy(self.markers_surface_id_np.astype(np.int32))
+        self.num_surface = len(self.markers_surface_id_np)
+        self.surface_cam_loc = ti.Vector.field(2, float, self.num_surface, needs_grad=False)
+        self.surface_cam_virtual_loc = ti.Vector.field(2, float, self.num_surface, needs_grad=False)
+
         self.validate_markers_via_2d_projection()
 
     def set_up_physical_state(self):
@@ -265,18 +272,16 @@ class ViTacTip:
         # rotation_matrix: 3x3 rotation matrix (dimensionless)
         self.rotation_matrix = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
 
-    def init_cam_model(self, init_img_path=None):
-        if init_img_path is None:
-            init_img = cv2.imread("./init.png")
-        else:
-            init_img = cv2.imread(init_img_path)
+    def init_cam_model(self):
+        init_img = cv2.imread("./init.png")
         initial_markers, _, _ = get_marker_image(init_img)
-        # Overlay initial_markers on the image and save
+
         overlay_img = init_img.copy()
         for pos in initial_markers:
             center = (int(round(pos[0])), int(round(pos[1])))
-            cv2.circle(overlay_img, center, radius=5, color=(0, 0, 255), thickness=2)  # Red circle
+            cv2.circle(overlay_img, center, radius=5, color=(0, 0, 255), thickness=2)
         cv2.imwrite("../tasks/output/init_cam_model.png", overlay_img)
+
         surface_nodes = self.all_nodes[self.markers_surface_id_np]
         cam_3D_nodes = np.array([surface_nodes[:,0], surface_nodes[:,2], surface_nodes[:,1]]).T
         with open(f"output/fem_sensor.cam_3d_nodes.pkl", 'wb') as f:
