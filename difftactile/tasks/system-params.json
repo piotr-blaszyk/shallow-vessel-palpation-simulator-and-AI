@@ -12,7 +12,7 @@
         },
         "single_material": {
             "density": 1.1e3,
-            "youngs_modulus": 3.752e+06,
+            "youngs_modulus": 2.5e+05,
             "poissons_ratio": 0.499
         },
         "collision_search_distance": 1.0,
@@ -55,10 +55,10 @@
         "rayleigh_damping_beta": 0.01
     },
     "contact": {
-        "dt": 2.245e-06,
-        "normal_stiffness": 2.50e+02,
-        "tangential_stiffness": 1.75e+02,
-        "normal_damping": 1.89e+00,
+        "dt": 8.631e-06,
+        "normal_stiffness": 2.28e+02,
+        "tangential_stiffness": 1.60e+02,
+        "normal_damping": 2.34e+00,
         "coulomb_friction_coeff": 0.85,
         "num_sub_frames": 500,
         "num_frames": 10000,
@@ -95,6 +95,6 @@
         "target_courant_number": 0.5
     },
     "visualise_mesh": {
-        "frame_number": 600
+        "frame_number": 200
     }
 }
