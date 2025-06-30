@@ -265,6 +265,72 @@ class ViTacTip:
         # rotation_matrix: 3x3 rotation matrix (dimensionless)
         self.rotation_matrix = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
 
+    def init_cam_model(self, init_img_path=None):
+        if init_img_path is None:
+            init_img = cv2.imread("./init.png")
+        else:
+            init_img = cv2.imread(init_img_path)
+        initial_markers, _, _ = get_marker_image(init_img)
+        # Overlay initial_markers on the image and save
+        overlay_img = init_img.copy()
+        for pos in initial_markers:
+            center = (int(round(pos[0])), int(round(pos[1])))
+            cv2.circle(overlay_img, center, radius=5, color=(0, 0, 255), thickness=2)  # Red circle
+        cv2.imwrite("../tasks/output/init_cam_model.png", overlay_img)
+        surface_nodes = self.all_nodes[self.markers_surface_id_np]
+        cam_3D_nodes = np.array([surface_nodes[:,0], surface_nodes[:,2], surface_nodes[:,1]]).T
+        with open(f"output/fem_sensor.cam_3d_nodes.pkl", 'wb') as f:
+            pickle.dump(cam_3D_nodes, f)
+        np.savetxt(f'output/fem_sensor.cam_3d_nodes.csv', cam_3D_nodes, delimiter=",", fmt='%.2f')
+        cam_points = project_points_to_pix(cam_3D_nodes)
+        # Overlay cam_points as green circles and save
+        cam_points_img = init_img.copy()
+        for pt in cam_points:
+            center = (int(round(pt[0])), int(round(pt[1])))
+            cv2.circle(cam_points_img, center, radius=3, color=(0, 255, 0), thickness=2)  # Green circle
+        cv2.imwrite("../tasks/output/cam_points.png", cam_points_img)
+        # interpolated markers in 2d & 3d
+        interp_idx = []
+        interp_weight = []
+        surf_2d = []
+        for i in range(initial_markers.shape[0]):
+            offset = np.linalg.norm(initial_markers[i,0:2] - cam_points,axis=1)
+            idx = np.argpartition(offset, self.num_k_closest)
+            smallest_idx = idx[:self.num_k_closest]
+            inv_offset = 1/offset[smallest_idx]
+            total_offset = np.sum(inv_offset)
+            weights = inv_offset / total_offset
+            loc_2d = np.matmul(cam_points[smallest_idx].T, weights).T
+            surf_2d.append(loc_2d)
+            interp_idx.append(smallest_idx)
+            interp_weight.append(weights)
+
+        surf_2d = np.array(surf_2d)
+        interp_idx = np.array(interp_idx)
+        interp_weight = np.array(interp_weight)
+
+        # Flatten interp_idx before saving
+        interp_idx_flat = interp_idx.flatten()
+        with open(f"output/fem_sensor.interp_idx_flat.pkl", 'wb') as f:
+            pickle.dump(interp_idx_flat, f)
+        with open(f"output/fem_sensor.markers_surface_id_np.pkl", 'wb') as f:
+            pickle.dump(self.markers_surface_id_np, f)
+        np.savetxt('output/fem_sensor.interp_idx_flat.csv', interp_idx_flat, delimiter=",", fmt='%d')
+        np.savetxt('output/fem_sensor.markers_surface_id_np.csv', self.markers_surface_id_np, delimiter=",", fmt='%d')
+    
+        self.num_k_closest = 5
+        self.initial_markers = surf_2d
+        self.num_markers = len(self.initial_markers)
+        self.visualise_2d(interp_idx)
+
+        self.predict_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
+        self.virtual_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
+
+        self.interp_weight = ti.Vector.field(self.num_k_closest, float, self.num_markers, needs_grad=False)
+        self.interp_weight.from_numpy(interp_weight.astype(np.float32))
+        self.interp_idx = ti.Vector.field(self.num_k_closest, int, self.num_markers)
+        self.interp_idx.from_numpy(interp_idx.astype(np.int32))
+
     def set_up_pose(self, rot_x, rot_y, rot_z, t_dx, t_dy, t_dz):
         # rotation_quaternion: rotation quaternion from Euler angles (dimensionless)
         rotation_object = R.from_rotvec(np.deg2rad([rot_x, rot_y, rot_z]))
@@ -326,7 +392,7 @@ class ViTacTip:
         cv2.imwrite('output/init-3d-markers.png', img)
 
     @ti.kernel
-    def extract_initial_markers(self, f:ti.i32):
+    def extract_initial_markers_biomimetic_tips(self, f:ti.i32):
         for i in range(self.num_markers):
             node_ix = self.marker_node_tags[i]
             init_pos = self.vertex_positions_undeformed[f, node_ix]
@@ -346,7 +412,7 @@ class ViTacTip:
                 print(0)
 
     @ti.kernel
-    def extract_markers(self, f:ti.i32):
+    def extract_markers_biomimetic_tips(self, f:ti.i32):
         for i in range(self.num_markers):
             node_ix = self.marker_node_tags[i]
             pos = self.vertex_positions_deformed[f, node_ix]
@@ -379,6 +445,34 @@ class ViTacTip:
                 print(f'cam_loc - drift: {cam_loc - drift}')
                 print(f'cam_init_loc - drift: {cam_init_loc - drift}')
                 print()
+    
+    @ti.kernel
+    def extract_markers(self, f:ti.i32):
+        for i in range(self.num_surface):
+            pos = self.pos[f, self.markers_surface_id[i]]
+            init_pos = self.virtual_pos[f, self.markers_surface_id[i]]
+            hom_pos = ti.Vector([pos[0], pos[1], pos[2], 1.0])
+            hom_init_pos = ti.Vector([init_pos[0], init_pos[1], init_pos[2], 1.0])
+            inv_pos = self.inv_trans_h[None] @ hom_pos
+            inv_init_pos = self.inv_trans_h[None] @ hom_init_pos
+            cam_pos = ti.Vector([inv_pos[0], inv_pos[2], inv_pos[1]])
+
+            cam_init_pos = ti.Vector([inv_init_pos[0], inv_init_pos[2], inv_init_pos[1]])
+            cam_loc = project_3d_2d(cam_pos)
+            cam_init_loc = project_3d_2d(cam_init_pos)
+            self.surface_cam_loc[i] = cam_loc
+            self.surface_cam_virtual_loc[i] = cam_init_loc
+
+        for i in range(self.num_markers):
+            smallest_idx = self.interp_idx[i]
+            weights = self.interp_weight[i]
+            loc_2d = ti.Vector([0.0, 0.0])
+            init_loc_2d = ti.Vector([0.0, 0.0])
+            for j in range(self.num_k_closest):
+                loc_2d += weights[j] * self.surface_cam_loc[smallest_idx[j]]
+                init_loc_2d += weights[j] * self.surface_cam_virtual_loc[smallest_idx[j]]
+            self.predict_markers[i] = loc_2d
+            self.virtual_markers[i] = init_loc_2d
 
     @ti.kernel
     def set_material_params(self, shell_E:ti.f32, shell_nu:ti.f32, gel_E:ti.f32, gel_nu:ti.f32):
