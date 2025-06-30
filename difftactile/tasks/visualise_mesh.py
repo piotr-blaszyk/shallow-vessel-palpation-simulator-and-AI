@@ -22,7 +22,7 @@ print('hello')
 print(node_coordinates.shape)
 print(all_tetrahedra.shape)
 
-i = 2
+i = 10
 with open(f'../tasks/output/tactile_sensor.deformed_node_coordinates.ts={int(100 * i)}.pkl', 'rb') as f:
     deformed_node_coordinates = pickle.load(f)
 print(f'ts={int(100 * i)}; num nan: {np.sum(np.isnan(deformed_node_coordinates))}')

@@ -83,6 +83,16 @@ class ViTacTip:
         self.rayleigh_damping_alpha[None] = self.vitactip_params['rayleigh_damping_alpha']  # typical values range from 0 to 0.1
         self.rayleigh_damping_beta[None] = self.vitactip_params['rayleigh_damping_beta']  # typical values range from 0.001 to 0.01
 
+        # Add hourglass control parameters
+        self.hourglass_enabled = ti.field(dtype=ti.i32, shape=(), needs_grad=False)
+        self.hourglass_coefficient = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.hourglass_modulus_scale = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        
+        # Set hourglass control parameters from config
+        self.hourglass_enabled[None] = self.vitactip_params['hourglass_control']['enabled']
+        self.hourglass_coefficient[None] = self.vitactip_params['hourglass_control']['coefficient']
+        self.hourglass_modulus_scale[None] = self.vitactip_params['hourglass_control']['modulus_scale']
+
     def init_mesh(self):
         # Load mesh data from gmsh
         with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
@@ -655,12 +665,71 @@ class ViTacTip:
         self.contact_forces_on_vertices[frame, vertex2_idx] += 1/3 * contact_force
         self.contact_forces_on_vertices[frame, vertex3_idx] += 1/3 * contact_force
 
+    @ti.func
+    def compute_hourglass_forces(self, vertex1_pos, vertex2_pos, vertex3_pos, vertex4_pos,
+                               vertex1_vel, vertex2_vel, vertex3_vel, vertex4_vel,
+                               tetra_volume, mu, lam):
+        """
+        Compute hourglass control forces for a tetrahedral element.
+        
+        Args:
+            vertex1_pos, vertex2_pos, vertex3_pos, vertex4_pos: vertex positions in m
+            vertex1_vel, vertex2_vel, vertex3_vel, vertex4_vel: vertex velocities in m/s
+            tetra_volume: tetrahedral volume in m^3
+            mu: shear modulus in Pa
+            lam: Lamé's first parameter in Pa
+            
+        Returns:
+            hourglass_force_matrix: hourglass force matrix in N
+        """
+        # Compute element center and average velocity
+        center_pos = (vertex1_pos + vertex2_pos + vertex3_pos + vertex4_pos) / 4.0
+        center_vel = (vertex1_vel + vertex2_vel + vertex3_vel + vertex4_vel) / 4.0
+        
+        # Compute relative positions and velocities
+        rel_pos1 = vertex1_pos - center_pos
+        rel_pos2 = vertex2_pos - center_pos
+        rel_pos3 = vertex3_pos - center_pos
+        rel_pos4 = vertex4_pos - center_pos
+        
+        rel_vel1 = vertex1_vel - center_vel
+        rel_vel2 = vertex2_vel - center_vel
+        rel_vel3 = vertex3_vel - center_vel
+        rel_vel4 = vertex4_vel - center_vel
+        
+        # Compute hourglass modes (non-physical deformation patterns)
+        # Using strain-rate based approach
+        strain_rate1 = rel_vel1.outer_product(rel_pos1)
+        strain_rate2 = rel_vel2.outer_product(rel_pos2)
+        strain_rate3 = rel_vel3.outer_product(rel_pos3)
+        strain_rate4 = rel_vel4.outer_product(rel_pos4)
+        
+        # Average strain rate
+        avg_strain_rate = (strain_rate1 + strain_rate2 + strain_rate3 + strain_rate4) / 4.0
+        
+        # Compute hourglass mode contributions
+        hg1 = strain_rate1 - avg_strain_rate
+        hg2 = strain_rate2 - avg_strain_rate
+        hg3 = strain_rate3 - avg_strain_rate
+        
+        # Compute hourglass stiffness (based on material properties)
+        hg_stiffness = self.hourglass_coefficient[None] * self.hourglass_modulus_scale[None] * (mu + lam)
+        
+        # Compute hourglass forces
+        hg_force_matrix = -hg_stiffness * tetra_volume * ti.Matrix.cols([
+            hg1.transpose() @ rel_pos1,
+            hg2.transpose() @ rel_pos2,
+            hg3.transpose() @ rel_pos3
+        ])
+        
+        return hg_force_matrix
+
     @ti.kernel
     def update_internal_forces(self, frame:ti.i32):
         """
         Update internal forces for all tetrahedral elements using finite element method.
         Computes deformation gradient, stress tensor, and applies forces to vertices.
-        Includes Rayleigh damping forces.
+        Includes Rayleigh damping and hourglass control forces.
         
         Args:
             frame: current simulation frame (dimensionless)
@@ -708,8 +777,15 @@ class ViTacTip:
             damping_force_matrix = -self.rayleigh_damping_alpha[None] * ti.Matrix.cols([relative_vel1, relative_vel2, relative_vel3])
             damping_force_matrix -= self.rayleigh_damping_beta[None] * elastic_force_matrix
             
-            # Combine elastic and damping forces
+            # Calculate hourglass control forces if enabled
             force_matrix = elastic_force_matrix + damping_force_matrix
+            if self.hourglass_enabled[None]:
+                hourglass_force_matrix = self.compute_hourglass_forces(
+                    vertex1_pos, vertex2_pos, vertex3_pos, vertex4_pos,
+                    vertex1_vel, vertex2_vel, vertex3_vel, vertex4_vel,
+                    tetra_volume, mu, lam
+                )
+                force_matrix += hourglass_force_matrix
             
             # Apply forces to vertices
             vertex_indices = ti.Vector([vertex1_idx, vertex2_idx, vertex3_idx, vertex4_idx])

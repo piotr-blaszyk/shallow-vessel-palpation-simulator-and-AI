@@ -127,7 +127,7 @@ class Contact:
         self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
         self.tumour_present[None] = 0
         self.pid_on = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.pid_on[None] = 0
+        self.pid_on[None] = 1
     
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate((
@@ -570,8 +570,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y, z+1.0)
-        self.camera.up(1, 0, 0)
+        self.camera.position(x-1.0, y, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(8)
         if self.enable_tactile_map:
