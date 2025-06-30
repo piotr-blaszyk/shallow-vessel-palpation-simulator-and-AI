@@ -95,6 +95,6 @@
         "target_courant_number": 0.5
     },
     "visualise_mesh": {
-        "frame_number": 300
+        "frame_number": 600
     }
 }
