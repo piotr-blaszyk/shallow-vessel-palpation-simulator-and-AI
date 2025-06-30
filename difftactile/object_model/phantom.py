@@ -31,6 +31,13 @@ class Phantom:
         with open('../tasks/system-params-computed.json', 'r') as f:
             self.coordinates = json.load(f)
         
+        # Add Rayleigh damping coefficients
+        self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)  # mass damping coefficient
+        self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)   # stiffness damping coefficient
+        # Set default values from system parameters
+        self.rayleigh_damping_alpha[None] = self.phantom_params['rayleigh_damping_alpha']  # typical values range from 0 to 0.1
+        self.rayleigh_damping_beta[None] = self.phantom_params['rayleigh_damping_beta']  # typical values range from 0.001 to 0.01
+
         self.keypoint_search_xy_threshold = self.phantom_params['keypoint_search_xy_threshold']
         self.fix_bottom_points = self.phantom_params['fix_bottom_points'] == 1
         self.fixed_points_z_ratio = self.phantom_params['fixed_points_z_ratio']
@@ -340,6 +347,7 @@ class Phantom:
     def grid_op(self, frame:ti.i32):
         """
         Grid operations: update grid velocities and apply boundary conditions.
+        Includes Rayleigh damping forces for both mass and stiffness damping.
         
         Args:
             frame: current simulation frame (dimensionless)
@@ -348,12 +356,28 @@ class Phantom:
             if self.grid_occupy[frame, grid_x, grid_y, grid_z] == 1:
                 # inverse_mass: inverse mass in kg^-1
                 inverse_mass = 1 / (self.grid_node_mass[frame, grid_x, grid_y, grid_z] + self.eps)
+                # grid_mass: mass at grid node in kg
+                grid_mass = self.grid_node_mass[frame, grid_x, grid_y, grid_z]
 
+                # Calculate initial grid velocity without damping
                 # grid_velocity: grid node velocity in m/s
                 grid_velocity = ti.Vector([0.0, 0.0, 0.0])
                 grid_velocity += inverse_mass * self.grid_node_momentum_in[frame, grid_x, grid_y, grid_z] # Momentum to velocity
                 grid_velocity += inverse_mass * self.grid_node_external_impulse[frame, grid_x, grid_y, grid_z]
                 grid_velocity += self.dt * self.gravity  # gravity
+
+                # Calculate elastic forces (from momentum)
+                # elastic_force: elastic force in N
+                elastic_force = self.grid_node_momentum_in[frame, grid_x, grid_y, grid_z] / self.dt
+
+                # Apply Rayleigh damping
+                # mass_damping: mass-proportional damping force in N
+                mass_damping = -self.rayleigh_damping_alpha[None] * grid_mass * grid_velocity
+                # stiffness_damping: stiffness-proportional damping force in N
+                stiffness_damping = -self.rayleigh_damping_beta[None] * elastic_force
+
+                # Apply damping forces to velocity
+                grid_velocity += inverse_mass * (mass_damping + stiffness_damping) * self.dt
 
                 # Apply boundary conditions at domain edges
                 if grid_x < self.bound and grid_velocity[0] < 0:
