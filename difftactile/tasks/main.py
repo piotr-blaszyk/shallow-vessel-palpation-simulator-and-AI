@@ -570,8 +570,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x-1.0, y, z)
-        self.camera.up(0, 0, 1)
+        self.camera.position(x, y, z+1.0)
+        self.camera.up(1, 0, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(8)
         if self.enable_tactile_map:
@@ -580,20 +580,20 @@ class Contact:
             self.tactile_readout_gui = None
         
     def visualisation_update_gui(self, ts):
-        move_to_the_front_offset = np.array([-0.070, 0, 0], dtype=float)
+        move_to_the_front_offset = np.array([-0.050, 0, 0], dtype=float)
         z = self.min_coord
-        _, y0, _ = self.coordinates['phantom_centroid_pose'][:3]
+        x0, y0, _ = self.coordinates['phantom_centroid_pose'][:3]
         x1, y1, _ = self.coordinates['phantom_closest_vertex']
         floor = np.array([
-            [x1, y1, z],
-            [x1, y0, z],
-            [x1, y0 + abs(y0 - y1), z],
+            [x0, y1, z],
+            [x0, y0, z],
+            [x0, y0 + abs(y0 - y1), z],
         ])
-        floor -= move_to_the_front_offset
+        floor += move_to_the_front_offset
         vitactip_bottom = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[0].reshape((1,)))
         trajectory_keypoints = self.trajectory_npy[:, :3].copy()
-        vitactip_bottom -= move_to_the_front_offset
-        trajectory_keypoints -= move_to_the_front_offset
+        vitactip_bottom += move_to_the_front_offset
+        trajectory_keypoints += move_to_the_front_offset
         keypoint_coords = np.vstack((vitactip_bottom, trajectory_keypoints, floor))
 
         phantom_top_z = self.vitactip_tip_pose[2] - self.gap
