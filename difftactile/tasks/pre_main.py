@@ -3,7 +3,7 @@ import math
 import json
 import pickle
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import SYSTEM_PARAMS
 
 def arr_str(xs):
     if len(xs.shape) == 1:
@@ -17,7 +17,7 @@ def arr_str(xs):
         res.append(']')
         return ''.join(res)
 
-with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
+with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
     mesh_data = pickle.load(f)
 
 mesh_data.min_particle_spacing = {key: value/1000 for key, value in mesh_data.min_particle_spacing.items()}

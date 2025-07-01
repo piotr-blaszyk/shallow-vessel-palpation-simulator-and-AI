@@ -7,15 +7,15 @@ from sklearn.metrics import confusion_matrix
 from torch_geometric.data import Data, DataLoader
 import pytorch_lightning as pl
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import SYSTEM_PARAMS
 
 def load_and_preprocess_data():
     # Load experimental data
-    with open('../sensor_model/vascular-tumour-press-experimental-results.pkl', 'rb') as f:
+    with open(SYSTEM_PARAMS.files.vascular_tumour_press_results, 'rb') as f:
         data = pickle.load(f)
     
     # Load initial marker positions
-    with open('../sensor_model/init-marker-positions.pkl', 'rb') as f:
+    with open(SYSTEM_PARAMS.files.init_marker_positions, 'rb') as f:
         init_marker_positions = pickle.load(f)
     
     marker_positions = data['marker_positions']  # Shape: (num_points, num_markers, 2)
@@ -45,7 +45,7 @@ def load_and_preprocess_data():
     new_labels[np.isin(class_labels, [3, 5])] = 1
     
     # Load GNN preprocessing parameters
-    with open('saved_models/gnn_preprocessing_params.pkl', 'rb') as f:
+    with open(SYSTEM_PARAMS.files.gnn_preprocessing_params, 'rb') as f:
         params = pickle.load(f)
     
     # Create graph dataset
@@ -84,7 +84,7 @@ def load_and_preprocess_data():
 
 def main():
     # Load preprocessing parameters
-    with open('saved_models/gnn_preprocessing_params.pkl', 'rb') as f:
+    with open(SYSTEM_PARAMS.files.gnn_preprocessing_params, 'rb') as f:
         params = pickle.load(f)
     
     # Initialize and load model

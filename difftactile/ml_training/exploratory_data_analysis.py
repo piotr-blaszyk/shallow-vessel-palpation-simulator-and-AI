@@ -5,7 +5,7 @@ import cv2
 from ..tasks.constants import *
 
 def load_sim_data():
-    with open("../tasks/output/marker_snapshots_and_labels.pkl", "rb") as f:
+    with open(SYSTEM_PARAMS.files.marker_snapshots_and_labels, "rb") as f:
         data = pickle.load(f)
     predict_markers_snapshots = data["predict_markers_snapshots"]
     virtual_markers_snapshots = data["virtual_markers_snapshots"]

@@ -13,7 +13,7 @@ import pickle
 import matplotlib.pyplot as plt
 import json
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import SYSTEM_PARAMS
 
 class FisheyeModel:
     def __init__(self):
@@ -308,7 +308,7 @@ class FisheyeModel:
         }
         
         # Save to pickle file
-        output_file = "vascular-tumour-press-experimental-results.pkl"
+        output_file = SYSTEM_PARAMS.files.vascular_tumour_press_results
         with open(output_file, 'wb') as f:
             pickle.dump(results, f)
         
@@ -318,15 +318,15 @@ class FisheyeModel:
 
     def save_init_marker_positions(self):
         # Read the image
-        img = cv2.imread('../tasks/vitactip_photo_default_state.png', cv2.IMREAD_GRAYSCALE)
+        img = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default, cv2.IMREAD_GRAYSCALE)
         if img is None:
-            raise FileNotFoundError("Could not find or open vitactip_photo_default_state.png")
+            raise FileNotFoundError("Could not find or open " + SYSTEM_PARAMS.files.vitactip_photo_default)
         
         # Get marker positions
         marker_positions, circle_center, circle_radius = self.get_marker_image(img)
         
         # Save marker positions to pickle file
-        with open('init-marker-positions.pkl', 'wb') as f:
+        with open(SYSTEM_PARAMS.files.init_marker_positions, 'wb') as f:
             pickle.dump(marker_positions, f)
         
         print(f"Found {len(marker_positions)} markers")
@@ -335,7 +335,7 @@ class FisheyeModel:
         return marker_positions
 
     def generate_marker_3d_projection(self):
-        with open('init-marker-positions.pkl', 'rb') as f:
+        with open(SYSTEM_PARAMS.files.init_marker_positions, 'rb') as f:
             marker_positions_2d = pickle.load(f)
         A_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=SYSTEM_PARAMS.fisheye_model.shell_outer_r)
         B_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=SYSTEM_PARAMS.fisheye_model.shell_outer_r+2)
@@ -343,7 +343,7 @@ class FisheyeModel:
             'A_points': A_points,
             'B_points': B_points,
         }
-        with open('biomimetic-tip-points.pkl', 'wb') as f:
+        with open(SYSTEM_PARAMS.files.biomimetic_tip_points, 'wb') as f:
             pickle.dump(obj, f)
 
 if __name__ == '__main__':

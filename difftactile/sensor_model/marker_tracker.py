@@ -10,7 +10,7 @@ from scipy.spatial.distance import cdist
 import json
 import pickle
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import SYSTEM_PARAMS
 
 class MarkerTracker:
     def __init__(self, video_path, output_path=None):
@@ -205,7 +205,7 @@ class MarkerTracker:
                     out.write(frame)
         else:
             # Load the paired markers data
-            with open("./markers-paired.pkl", 'rb') as f:
+            with open(SYSTEM_PARAMS.files.markers_paired, 'rb') as f:
                 markers_array = pickle.load(f)
             
             for frame_idx in range(len(self.frames)):
@@ -275,7 +275,7 @@ class MarkerTracker:
             markers_array[frame_idx] = reordered_markers
         
         # Save to pickle file
-        with open("./markers-paired.pkl", 'wb') as f:
+        with open(SYSTEM_PARAMS.files.markers_paired, 'wb') as f:
             pickle.dump(markers_array, f)
 
     def process_video(self):
@@ -426,8 +426,7 @@ def process_and_view_video(input_path, output_path=None):
 
 
 if __name__ == '__main__':
-    path = 'difftactile/sensor_model'
-    process_and_view_video(f'{path}/system-id-screws-3-reps.mkv', f'{path}/marker-tracker.mkv')
+    process_and_view_video(SYSTEM_PARAMS.files.system_id_video, f'difftactile/sensor_model/marker-tracker.mkv')
 
-    # player = VideoPlayer(f'{path}/marker-tracker.mkv')
-    # player.run()
+    player = VideoPlayer(f'difftactile/sensor_model/marker-tracker.mkv')
+    player.run()

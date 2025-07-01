@@ -236,7 +236,7 @@ def main():
     torch.save(model.state_dict(), 'saved_models/cnn_classifier_weights.pt')
     
     # Save preprocessing parameters
-    with open('saved_models/cnn_preprocessing_params.pkl', 'wb') as f:
+    with open(SYSTEM_PARAMS.cnn_preprocessing_params, 'wb') as f:
         pickle.dump({
             'grid_size': 32,
             'input_channels': 2,  # Number of input channels (x and y displacements)
@@ -244,7 +244,7 @@ def main():
         }, f)
     
     print("Model weights saved to saved_models/cnn_classifier_weights.pt")
-    print("Preprocessing parameters saved to saved_models/cnn_preprocessing_params.pkl")
+    print("Preprocessing parameters saved")
     
     # Test the model and display confusion matrix
     print(f"\nTest dataset size: {len(test_dataset)}")

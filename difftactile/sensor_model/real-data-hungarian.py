@@ -10,15 +10,15 @@ from sklearn.metrics import confusion_matrix, f1_score, accuracy_score, recall_s
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import SYSTEM_PARAMS
 
 def load_data():
     # Load experimental data
-    with open('vascular-tumour-press-experimental-results.pkl', 'rb') as f:
+    with open(SYSTEM_PARAMS.files.vascular_tumour_press_results, 'rb') as f:
         data = pickle.load(f)
     
     # Load initial marker positions
-    with open('init-marker-positions.pkl', 'rb') as f:
+    with open(SYSTEM_PARAMS.files.init_marker_positions, 'rb') as f:
         init_marker_positions = pickle.load(f)
     
     marker_positions = data['marker_positions']  # Shape: (num_points, num_markers, 2)

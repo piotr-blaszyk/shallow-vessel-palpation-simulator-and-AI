@@ -196,13 +196,13 @@ def main():
     # Save model state dict
     torch.save(model.state_dict(), 'saved_models/tumor_classifier_weights.pt')
     # Save scaler and input dimension separately
-    with open('saved_models/preprocessing_params.pkl', 'wb') as f:
+    with open(SYSTEM_PARAMS.files.preprocessing_params, 'wb') as f:
         pickle.dump({
             'scaler': scaler,
             'input_dim': X.shape[1]
         }, f)
     print("Model weights saved to saved_models/tumor_classifier_weights.pt")
-    print("Preprocessing parameters saved to saved_models/preprocessing_params.pkl")
+    print("Preprocessing parameters saved")
     
     # Test the model and display confusion matrix
     print(f"\nTest dataset size: {len(test_dataset)}")

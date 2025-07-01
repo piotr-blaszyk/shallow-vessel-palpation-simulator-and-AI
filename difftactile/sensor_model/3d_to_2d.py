@@ -9,14 +9,11 @@ from ..tasks.constants import *
 fisheye_model = FisheyeModel()
 
 # Load 3D nodes
-with open(os.path.join(os.path.dirname(__file__), '../tasks/output/vitactip.cam_3d_nodes.pkl'), 'rb') as f:
+with open(os.path.join(os.path.dirname(__file__), SYSTEM_PARAMS.files.vitactip_cam_3d_nodes), 'rb') as f:
     cam_3D_nodes = pickle.load(f)
 
 # Load image
-img_path = os.path.join(os.path.dirname(__file__), 'vitactip_photo_default_state.png')
-if not os.path.exists(img_path):
-    # Try tasks/vitactip_photo_default_state.png if not found
-    img_path = os.path.join(os.path.dirname(__file__), '../tasks/vitactip_photo_default_state.png')
+img_path = os.path.join(os.path.dirname(__file__), SYSTEM_PARAMS.files.vitactip_photo_default_state)
 img = cv2.imread(img_path)
 
 # Project using project_points_to_pix
@@ -34,9 +31,8 @@ def overlay_points(image, points, color=(0,255,0), radius=3):
     return img_copy
 
 # Overlay and save
-out_dir = os.path.join(os.path.dirname(__file__), '../tasks/output')
 img_pix = overlay_points(img, points2d_pix, color=(0,255,0))
-cv2.imwrite(os.path.join(out_dir, 'fisheye_model.project_points_to_pix.png'), img_pix)
+cv2.imwrite(SYSTEM_PARAMS.files.fisheye_model_project_points_to_pix, img_pix)
 
 img_cv2 = overlay_points(img, points2d_cv2, color=(255,0,0))
-cv2.imwrite(os.path.join(out_dir, 'fisheye_model.project_points_to_pix_cv2.png'), img_cv2)
+cv2.imwrite(SYSTEM_PARAMS.files.fisheye_model_project_points_to_pix_cv2, img_cv2)

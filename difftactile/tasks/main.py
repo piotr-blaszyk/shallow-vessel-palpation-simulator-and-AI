@@ -6,7 +6,7 @@ import json
 
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
-from ..tasks.constants import *
+from difftactile.tasks.constants import SYSTEM_PARAMS
 
 RUN_ON_LAB_MACHINE = True
 @ti.data_oriented
@@ -450,7 +450,7 @@ class Contact:
             'ground_truth_labels': labels_np,
         }
 
-        with open('output/marker_snapshots_and_labels.pkl', 'wb') as f:
+        with open(SYSTEM_PARAMS.files.marker_snapshots_and_labels, 'wb') as f:
             pickle.dump(out, f)
         # Save each array to a separate CSV file in the requested format
         def save_markers_with_empty_rows(arr, filename):
@@ -461,19 +461,19 @@ class Contact:
                 rows.append(np.full((1, dim), np.nan))  # empty row
             out_arr = np.vstack(rows)
             np.savetxt(filename, out_arr, delimiter=',')
-        save_markers_with_empty_rows(predict_np, 'output/predict_markers_snapshots.csv')
-        save_markers_with_empty_rows(virtual_np, 'output/virtual_markers_snapshots.csv')
-        np.savetxt('output/ground_truth_labels.csv', labels_np, delimiter=',', fmt='%d')
+        save_markers_with_empty_rows(predict_np, SYSTEM_PARAMS.files.predict_markers_snapshots)
+        save_markers_with_empty_rows(virtual_np, SYSTEM_PARAMS.files.virtual_markers_snapshots)
+        np.savetxt(SYSTEM_PARAMS.files.ground_truth_labels, labels_np, delimiter=',', fmt='%d')
 
     def save_tactile_sensor_mesh_to_pickle(self, ts):
         particles = self.vitactip.vertex_positions_deformed.to_numpy()[0]
-        with open(f'output/tactile_sensor.deformed_node_coordinates.ts={ts}.pkl', 'wb') as f:
+        with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(ts), 'wb') as f:
             pickle.dump(particles, f)
         # print(f'mesh exported at ts: {ts}!')
     
     def save_tactile_sensor_mesh_node_mapping_to_pickle(self):
         f2v = self.vitactip.tetrahedra.to_numpy()
-        with open(f'output/tactile_sensor.f2v.pkl', 'wb') as f:
+        with open(SYSTEM_PARAMS.files.tactile_sensor_f2v, 'wb') as f:
             pickle.dump(f2v, f)
         # print('mesh node mapping exported!')
     
@@ -664,7 +664,7 @@ def main():
             contact_model.vitactip.save_predicted_markers_to_image()
             contact_model.vitactip.extract_markers(0)
             initial_markers = contact_model.vitactip.deformed_markers.to_numpy()
-            with open('output/sim-markers-initial-positions.pkl', 'wb') as f:
+            with open(SYSTEM_PARAMS.files.sim_markers_initial_positions, 'wb') as f:
                 pickle.dump(initial_markers, f)
         print('forward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames - 1):

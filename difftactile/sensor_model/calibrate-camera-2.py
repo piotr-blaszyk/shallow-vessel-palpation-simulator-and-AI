@@ -1,10 +1,10 @@
 import numpy as np
 import cv2
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import SYSTEM_PARAMS
 
 # Load the saved parameters
-params = np.load("fisheye_params.npz")
+params = np.load(SYSTEM_PARAMS.files.fisheye_params)
 
 K = params["K"]
 D = params["D"]
@@ -35,16 +35,16 @@ def scale_resolution(fx, fy, cx, cy, orig_width, orig_height, new_width, new_hei
     print(f"Scaled Principal Point (cx, cy): {cx_scaled:.2f}, {cy_scaled:.2f}")
 
     # Open the image
-    img = cv2.imread('../tasks/vitactip_photo_default_state.png')
+    img = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default)
     if img is not None:
         # Draw a small red dot at the scaled principal point
         center = (int(round(cx_scaled)), int(round(cy_scaled)))
         cv2.circle(img, center, radius=5, color=(0, 0, 255), thickness=-1)
         # Save the image
-        cv2.imwrite('../tasks/output/init-principal-point.png', img)
-        print("Saved image with principal point to './init-principal-point.png'")
+        cv2.imwrite(SYSTEM_PARAMS.files.init_principal_point, img)
+        print("Saved image with principal point to " + SYSTEM_PARAMS.files.init_principal_point)
     else:
-        print("Could not open './vitactip_photo_default_state.png' to plot principal point.")
+        print("Could not open " + SYSTEM_PARAMS.files.vitactip_photo_default + " to plot principal point.")
 
 # Example usage: scale to 1280x720
 scale_resolution(fx, fy, cx, cy, 1920, 1080, 640, 480)

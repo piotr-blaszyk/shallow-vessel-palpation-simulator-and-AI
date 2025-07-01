@@ -97,7 +97,7 @@ print(f"Principal Point (cx, cy): {K[0,2]:.2f}, {K[1,2]:.2f}")
 print(f"Distortion Coefficients (k1, k2, k3, k4): {D.flatten()}")
 
 # Save parameters
-np.savez("fisheye_params.npz", K=K, D=D)
+np.savez(SYSTEM_PARAMS.files.fisheye_params, K=K, D=D)
 
 # Visualize undistortion for each calibration image
 for idx, fname in enumerate(images):
@@ -107,6 +107,6 @@ for idx, fname in enumerate(images):
         K, D, np.eye(3), K, (w, h), cv2.CV_16SC2
     )
     undistorted_img = cv2.remap(img, map1, map2, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
-    out_path = f"outputs/undistorted_{idx+1:02d}.png"
+    out_path = f"{SYSTEM_PARAMS.files.output_dir}undistorted_{idx+1:02d}.png"
     cv2.imwrite(out_path, undistorted_img)
     print(f"Saved undistorted image: {out_path}")

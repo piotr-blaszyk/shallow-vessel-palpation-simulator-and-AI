@@ -3,16 +3,16 @@ import open3d as o3d
 import pickle
 from collections import Counter
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import SYSTEM_PARAMS
 
-with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
+with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
     mesh_data = pickle.load(f)
 
 print('hello')
 print(mesh_data.node_coordinates.shape)
 print(mesh_data.all_tetrahedra.shape)
 
-with open(f'../tasks/output/tactile_sensor.deformed_node_coordinates.ts={SYSTEM_PARAMS.visualise_mesh.frame_number}.pkl', 'rb') as f:
+with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(SYSTEM_PARAMS.visualise_mesh.frame_number), 'rb') as f:
     deformed_node_coordinates = pickle.load(f)
 print(f'ts={SYSTEM_PARAMS.visualise_mesh.frame_number}; num nan: {np.sum(np.isnan(deformed_node_coordinates))}')
 
@@ -69,7 +69,7 @@ if False:
 
     print(f'num of 3d marker points (after de-duplication): {interp_idx_flat.shape[0]}')
 
-    with open(f'output/vitactip.surface_id_np.pkl', 'rb') as f:
+    with open(SYSTEM_PARAMS.files.vitactip_surface_id, 'rb') as f:
         surface_id_np = pickle.load(f)
 
     surface_nodes = points[surface_id_np]

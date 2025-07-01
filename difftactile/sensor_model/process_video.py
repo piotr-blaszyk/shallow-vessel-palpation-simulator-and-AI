@@ -1,11 +1,11 @@
 import cv2
 import numpy as np
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import SYSTEM_PARAMS
 
 # Input and output video paths
-input_video_path = "difftactile/sensor_model/system-id-screws-3-reps.mkv"
-output_video_path = "difftactile/sensor_model/processed_video.mkv"
+input_video_path = SYSTEM_PARAMS.files.system_id_video
+output_video_path = SYSTEM_PARAMS.files.processed_video
 
 # Open the input video
 cap = cv2.VideoCapture(input_video_path)

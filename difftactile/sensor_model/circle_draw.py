@@ -4,7 +4,7 @@ import numpy as np
 from ..tasks.constants import *
 
 # Load the image
-image_path = "../tasks/vitactip_photo_default_state.png"
+image_path = SYSTEM_PARAMS.files.vitactip_photo_default_state
 img = cv2.imread(image_path)
 
 if img is None:
@@ -30,4 +30,4 @@ cv2.waitKey(0)
 cv2.destroyAllWindows()
 
 # Optionally save the result
-cv2.imwrite('init_with_circle.png', img) 
+cv2.imwrite(SYSTEM_PARAMS.files.init_with_circle, img) 

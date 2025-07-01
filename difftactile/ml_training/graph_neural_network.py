@@ -13,7 +13,7 @@ import os
 import pickle
 
 from exploratory_data_analysis import *
-from ..tasks.constants import *
+from difftactile.tasks.constants import SYSTEM_PARAMS
 
 class GNNClassifier(pl.LightningModule):
     def __init__(self, node_dim=4):
@@ -213,7 +213,7 @@ def main():
     torch.save(model.state_dict(), 'saved_models/gnn_classifier_weights.pt')
     
     # Save preprocessing parameters
-    with open('saved_models/gnn_preprocessing_params.pkl', 'wb') as f:
+    with open(SYSTEM_PARAMS.files.gnn_preprocessing_params, 'wb') as f:
         pickle.dump({
             'node_dim': 4,
             'k_neighbors': 8,
@@ -221,7 +221,7 @@ def main():
         }, f)
     
     print("Model weights saved to saved_models/gnn_classifier_weights.pt")
-    print("Preprocessing parameters saved to saved_models/gnn_preprocessing_params.pkl")
+    print(f"Preprocessing parameters saved to {SYSTEM_PARAMS.files.gnn_preprocessing_params}")
     
     # Test the model
     print(f"\nTest dataset size: {len(test_graphs)}")
