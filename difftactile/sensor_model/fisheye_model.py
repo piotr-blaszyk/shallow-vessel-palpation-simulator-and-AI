@@ -23,7 +23,7 @@ class FisheyeModel:
     def project_3d_2d(self, a):
         #ref. Universal Semantic Segmentation for Fisheye Urban Driving Images Ye et al.
         #a is 3d vec
-        # a[2] += 2.0*0.01 # distance to the image plane
+        a[2] += 2.0*0.0001 # distance to the image plane
         a_norm = a.norm(1e-12)
         cos = a[2] / a_norm
 
@@ -43,7 +43,7 @@ class FisheyeModel:
     def project_points_to_pix(self, a):
         #ref. Universal Semantic Segmentation for Fisheye Urban Driving Images Ye et al.
         #a is a point cloud if (n, 3)
-        # a[:,2] += 2.0*0.01 #(14-0.7-9)* 0.01 # distance to the image plane
+        a[:,2] += 2.0*0.0001 #(14-0.7-9)* 0.01 # distance to the image plane
         b = np.array([[0., 0., 1.]]).repeat(len(a), axis=0)
         inner_product = (a * b).sum(axis=1)
         a_norm = np.linalg.norm(a,axis=1)

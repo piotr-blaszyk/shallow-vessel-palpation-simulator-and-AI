@@ -298,7 +298,7 @@ class Contact:
     @ti.kernel
     def pid_controller(self, ts: ti.i32):
         # Get current position and orientation using reference keypoint
-        current_pos = self.vitactip.vertex_positions_undeformed[0, self.keypoint_indices[0]]
+        current_pos = self.vitactip.vertex_positions_undeformed_global_coordinates[0, self.keypoint_indices[0]]
         current_ori = self.vitactip.get_euler_angles()
         
         # Get current target position and orientation
@@ -452,7 +452,7 @@ class Contact:
         np.savetxt(SYSTEM_PARAMS.files.ground_truth_labels, labels_np, delimiter=',', fmt='%d')
 
     def save_tactile_sensor_mesh_to_pickle(self, ts):
-        particles = self.vitactip.vertex_positions_deformed.to_numpy()[0]
+        particles = self.vitactip.vertex_positions_deformed_global_coordinates.to_numpy()[0]
         with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(ts), 'wb') as f:
             pickle.dump(particles, f)
         # print(f'mesh exported at ts: {ts}!')
@@ -498,7 +498,7 @@ class Contact:
                 self.tumour_points_von_mises_stress[p] = self.phantom.particle_von_mises_stress[0, p]
 
         for p in range(self.vitactip.num_vertices):
-            self.sensor_points[p] = self.vitactip.vertex_positions_deformed[f, p]
+            self.sensor_points[p] = self.vitactip.vertex_positions_deformed_global_coordinates[f, p]
 
     def visualisation_draw_tactile_readout(self):
         self.vitactip.extract_markers(0)
@@ -582,7 +582,7 @@ class Contact:
         if False and ts % 100 == 0:
             print(f'ViTacTip bottom node z coordinate: {vitactip_bottom[0][2]:0.3e}; phantom top surface z coordinate: {phantom_top_z:0.3e}; diff: {abs(vitactip_bottom[0][2] - phantom_top_z):0.3e}')
 
-        vitactip_coords = self.vitactip.vertex_positions_deformed.to_numpy()[0]
+        vitactip_coords = self.vitactip.vertex_positions_deformed_global_coordinates.to_numpy()[0]
         if np.isnan(vitactip_coords).any():
             nan_count = np.any(np.isnan(vitactip_coords), axis=1).sum()
             print(f'ViTacTip contains {nan_count} / {vitactip_coords.shape[0]} nan vertices at ts: {ts}')
@@ -646,9 +646,10 @@ def main():
         contact_model.reset_pid_controller()
         contact_model.visualisation_reset_3d_scene()
         if opts == 0:
-            contact_model.vitactip.extract_initial_markers()
-            contact_model.vitactip.save_predicted_markers_to_image()
+            contact_model.vitactip.test_mapping_from_global_space_to_camera_space()
             contact_model.vitactip.extract_markers(0)
+            contact_model.vitactip.copy_markers_to_initial_markers()
+            contact_model.vitactip.save_predicted_markers_to_image()
             initial_markers = contact_model.vitactip.deformed_markers.to_numpy()
             with open(SYSTEM_PARAMS.files.sim_markers_initial_positions, 'wb') as f:
                 pickle.dump(initial_markers, f)
