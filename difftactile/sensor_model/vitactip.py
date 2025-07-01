@@ -107,8 +107,6 @@ class ViTacTip:
         
         # Compute element volumes and assign materials
         for i, tetra in enumerate(all_tetrahedra):
-            if 0 in tetra:
-                foo = 7
             v1, v2, v3, v4 = tetra
             pos1, pos2, pos3, pos4 = node_coordinates[v1], node_coordinates[v2], node_coordinates[v3], node_coordinates[v4]
             
@@ -214,12 +212,12 @@ class ViTacTip:
         marker_interpolation_indices = np.array(marker_interpolation_indices)
         marker_interpolation_weights = np.array(marker_interpolation_weights)
 
-        self.markers_2d_initial_undeformed = interpolated_marker_positions_2d
-        self.num_markers = len(self.markers_2d_initial_undeformed)
+        self.num_markers = len(interpolated_marker_positions_2d)
 
         self.deformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.undeformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.initial_undeformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
+        self.initial_undeformed_vertices_after_applying_transformation_matrix = ti.Vector.field(3, float, self.num_markers, needs_grad=False)
 
         self.marker_interpolation_weights = ti.Vector.field(self.marker_interpolation_knn_k, float, self.num_markers, needs_grad=False)
         self.marker_interpolation_weights.from_numpy(marker_interpolation_weights.astype(np.float32))
@@ -346,6 +344,8 @@ class ViTacTip:
     def save_predicted_markers_to_image(self):
         initial_camera_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
         surface_node_visualization = initial_camera_image.copy()
+        with open(SYSTEM_PARAMS.files.initial_vertex_positions_undeformed, 'wb') as f:
+            pickle.dump(self.initial_vertex_positions_undeformed.to_numpy(), f)
         for projected_point in self.initial_undeformed_markers.to_numpy():
             point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
             cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
@@ -354,6 +354,7 @@ class ViTacTip:
 
     @ti.kernel
     def extract_initial_markers(self):
+        ti.loop_config(serialize=True)
         for marker_idx in range(self.num_markers):
             surface_node_idx = self.dome_surface_node_tags[marker_idx]
             initial_vertex_pos = self.initial_vertex_positions_undeformed[surface_node_idx]
@@ -362,15 +363,16 @@ class ViTacTip:
             camera_space_initial_pos = ti.Vector([transformed_initial_pos[0], transformed_initial_pos[2], transformed_initial_pos[1]])
             camera_space_initial_2d = self.fisheye_model.project_3d_2d(camera_space_initial_pos)
             self.initial_undeformed_markers[marker_idx] = camera_space_initial_2d
-            if False:
+            if True:
                 print('extract_initial_markers')
+                print(f'marker_idx: {marker_idx}')
                 print(f'surface_node_idx: {surface_node_idx}')
                 print(f'initial_vertex_pos: {initial_vertex_pos}')
                 print(f'homogeneous_initial_pos: {homogeneous_initial_pos}')
                 print(f'transformed_initial_pos: {transformed_initial_pos}')
                 print(f'camera_space_initial_pos: {camera_space_initial_pos}')
                 print(f'camera_space_initial_2d: {camera_space_initial_2d}')
-                print(0)
+                print()
 
     @ti.kernel
     def extract_markers(self, frame_idx: ti.i32):

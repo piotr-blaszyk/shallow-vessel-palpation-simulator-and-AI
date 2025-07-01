@@ -305,6 +305,7 @@ class MeshGenerator:
 
         self.all_tetrahedra -= 1
         surface_node_tags -= 1
+        dome_surface_node_tags -= 1
         self.surface_triangles -= 1
         self.node_tags -= 1
 

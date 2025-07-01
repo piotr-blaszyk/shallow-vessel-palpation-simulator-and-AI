@@ -6,14 +6,14 @@ from difftactile.main.constants import *
 
 class VisualiseMesh:
     def __init__(self):
-        self.load_data()
+        self.load_undeformed_mesh_in_gmsh_coordinate_system()
 
-    def load_data(self):
+    def load_undeformed_mesh_in_gmsh_coordinate_system(self):
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
             self.mesh_data = pickle.load(f)
-        with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(SYSTEM_PARAMS.visualise_mesh.frame_number), 'rb') as f:
+        with open(SYSTEM_PARAMS.files.initial_vertex_positions_undeformed, 'rb') as f:
             self.point_coordinates = pickle.load(f)
-        print(f'ts={SYSTEM_PARAMS.visualise_mesh.frame_number}; num nan: {np.sum(np.isnan(self.point_coordinates))}')
+        print(f'number of nan vertices: {np.sum(np.isnan(self.point_coordinates))}')
     
     def use_dome_surface_points(self):
         self.point_coordinates = self.point_coordinates[self.mesh_data['dome_surface_node_tags']]
