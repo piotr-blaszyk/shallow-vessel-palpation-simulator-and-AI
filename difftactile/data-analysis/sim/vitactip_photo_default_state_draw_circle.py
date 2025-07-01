@@ -4,7 +4,7 @@ import numpy as np
 from difftactile.main.constants import *
 
 # Load the image
-image_path = SYSTEM_PARAMS.files.vitactip_photo_default
+image_path = SYSTEM_PARAMS.files.vitactip_photo_default_state
 img = cv2.imread(image_path)
 
 if img is None:

@@ -13,7 +13,7 @@ with open(os.path.join(os.path.dirname(__file__), SYSTEM_PARAMS.files.vitactip_c
     cam_3D_nodes = pickle.load(f)
 
 # Load image
-img_path = os.path.join(os.path.dirname(__file__), SYSTEM_PARAMS.files.vitactip_photo_default)
+img_path = os.path.join(os.path.dirname(__file__), SYSTEM_PARAMS.files.vitactip_photo_default_state)
 img = cv2.imread(img_path)
 
 # Project using project_points_to_pix

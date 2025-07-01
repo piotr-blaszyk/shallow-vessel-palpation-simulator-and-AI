@@ -318,9 +318,9 @@ class FisheyeModel:
 
     def save_init_marker_positions(self):
         # Read the image
-        img = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default, cv2.IMREAD_GRAYSCALE)
+        img = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state, cv2.IMREAD_GRAYSCALE)
         if img is None:
-            raise FileNotFoundError("Could not find or open " + SYSTEM_PARAMS.files.vitactip_photo_default)
+            raise FileNotFoundError("Could not find or open " + SYSTEM_PARAMS.files.vitactip_photo_default_state)
         
         # Get marker positions
         marker_positions, circle_center, circle_radius = self.get_marker_image(img)
@@ -345,10 +345,3 @@ class FisheyeModel:
         }
         with open(SYSTEM_PARAMS.files.biomimetic_tip_points, 'wb') as f:
             pickle.dump(obj, f)
-
-if __name__ == '__main__':
-    fisheye_model = FisheyeModel()
-    # fisheye_model.interactive_exploration()
-    # fisheye_model.save_init_marker_positions()
-    # fisheye_model.extract_experimental_markers_and_save_to_file()
-    fisheye_model.generate_marker_3d_projection()

@@ -111,7 +111,7 @@
     },
     "files": {
         "fisheye_model_image_dir": "difftactile/manual_or_experimental_data/downward-press-vascular-phantom",
-        "vitactip_photo_default": "difftactile/manual_or_experimental_data/vitactip_photo_default.png",
+        "vitactip_photo_default_state": "difftactile/manual_or_experimental_data/vitactip_photo_default_state.png",
         "vitactip_photo_default_state_detected_markers": "difftactile/output/vitactip_photo_default_state_detected_markers.png",
         "vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d": "difftactile/output/vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d.png",
         "vitactip_photo_default_state_predicted_markers": "difftactile/output/vitactip_photo_default_state_predicted_markers.png",

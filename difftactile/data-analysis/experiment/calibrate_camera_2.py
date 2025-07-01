@@ -35,7 +35,7 @@ def scale_resolution(fx, fy, cx, cy, orig_width, orig_height, new_width, new_hei
     print(f"Scaled Principal Point (cx, cy): {cx_scaled:.2f}, {cy_scaled:.2f}")
 
     # Open the image
-    img = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default)
+    img = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
     if img is not None:
         # Draw a small red dot at the scaled principal point
         center = (int(round(cx_scaled)), int(round(cy_scaled)))
@@ -44,7 +44,7 @@ def scale_resolution(fx, fy, cx, cy, orig_width, orig_height, new_width, new_hei
         cv2.imwrite(SYSTEM_PARAMS.files.init_principal_point, img)
         print("Saved image with principal point to " + SYSTEM_PARAMS.files.init_principal_point)
     else:
-        print("Could not open " + SYSTEM_PARAMS.files.vitactip_photo_default + " to plot principal point.")
+        print("Could not open " + SYSTEM_PARAMS.files.vitactip_photo_default_state + " to plot principal point.")
 
 # Example usage: scale to 1280x720
 scale_resolution(fx, fy, cx, cy, 1920, 1080, 640, 480)

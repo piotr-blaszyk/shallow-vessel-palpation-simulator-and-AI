@@ -29,7 +29,7 @@ class Contact:
             self.num_sensor,
             dtype=int,
             shape=(
-                self.SYSTEM_PARAMS.contact.num_sub_frames,
+                SYSTEM_PARAMS.contact.num_sub_frames,
                 self.phantom.n_grid_x,
                 self.phantom.n_grid_y,
                 self.phantom.n_grid_z,
@@ -38,47 +38,33 @@ class Contact:
         self.contact_detect_flag = ti.field(float, (), needs_grad=False)
 
     def set_up_system_params(self):
-        self.SYSTEM_PARAMS.contact = SYSTEM_PARAMS.contact
-        self.geometry_params = SYSTEM_PARAMS.geometry
-        self.phantom_params = SYSTEM_PARAMS.phantom
-
-        self.SYSTEM_PARAMS.contact.num_opt_steps = self.SYSTEM_PARAMS.contact.SYSTEM_PARAMS.contact.num_opt_steps
-        self.SYSTEM_PARAMS.contact.num_frames = self.SYSTEM_PARAMS.contact.SYSTEM_PARAMS.contact.num_frames
-        self.SYSTEM_PARAMS.contact.num_sub_frames = self.SYSTEM_PARAMS.contact.SYSTEM_PARAMS.contact.num_sub_frames
-        self.dt = self.SYSTEM_PARAMS.contact.dt
-        self.gap = self.geometry_params.gap
-        self.mpm_grid_cube_size = self.phantom_params.mpm_grid_cube_size
-
         self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
         self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=False)
         self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
         self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.normal_stiffness[None] = self.SYSTEM_PARAMS.contact.normal_stiffness
-        self.normal_damping[None] = self.SYSTEM_PARAMS.contact.normal_damping
-        self.tangential_stiffness[None] = self.SYSTEM_PARAMS.contact.tangential_stiffness
-        self.coulomb_friction_coeff[None] = self.SYSTEM_PARAMS.contact.coulomb_friction_coeff
-
-        self.norm_eps = self.SYSTEM_PARAMS.contact.norm_eps
-        self.tangential_velocity_detection_threshold = self.SYSTEM_PARAMS.contact.tangential_velocity_detection_threshold
+        self.normal_stiffness[None] = SYSTEM_PARAMS.contact.normal_stiffness
+        self.normal_damping[None] = SYSTEM_PARAMS.contact.normal_damping
+        self.tangential_stiffness[None] = SYSTEM_PARAMS.contact.tangential_stiffness
+        self.coulomb_friction_coeff[None] = SYSTEM_PARAMS.contact.coulomb_friction_coeff
 
     def set_up_snapshot(self):        # Allocate snapshot fields (SYSTEM_PARAMS.contact.num_opt_steps, num_markers, 2)
-        self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
-        self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
-        self.ground_truth_labels = ti.field(dtype=int, shape=(self.SYSTEM_PARAMS.contact.num_opt_steps,), needs_grad=False)
+        self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
+        self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
+        self.ground_truth_labels = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_opt_steps,), needs_grad=False)
 
     def set_up_pid(self):
         # PID controller parameters
         self.pid_controller_kp = ti.field(dtype=float, shape=(), needs_grad=False)  # Proportional gain
         self.pid_controller_ki = ti.field(dtype=float, shape=(), needs_grad=False)  # Integral gain
         self.pid_controller_kd = ti.field(dtype=float, shape=(), needs_grad=False)  # Derivative gain
-        self.pid_controller_kp[None] = self.SYSTEM_PARAMS.contact.pid_kp
-        self.pid_controller_ki[None] = self.SYSTEM_PARAMS.contact.pid_ki
-        self.pid_controller_kd[None] = self.SYSTEM_PARAMS.contact.pid_kd
+        self.pid_controller_kp[None] = SYSTEM_PARAMS.contact.pid_kp
+        self.pid_controller_ki[None] = SYSTEM_PARAMS.contact.pid_ki
+        self.pid_controller_kd[None] = SYSTEM_PARAMS.contact.pid_kd
 
         self.pid_controller_max_speed_translation = ti.field(dtype=float, shape=(), needs_grad=False)
         self.pid_controller_max_speed_rotation = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.pid_controller_max_speed_translation[None] = self.SYSTEM_PARAMS.contact.pid_max_speed_translation
-        self.pid_controller_max_speed_rotation[None] = self.SYSTEM_PARAMS.contact.pid_max_speed_rotation
+        self.pid_controller_max_speed_translation[None] = SYSTEM_PARAMS.contact.pid_max_speed_translation
+        self.pid_controller_max_speed_rotation[None] = SYSTEM_PARAMS.contact.pid_max_speed_rotation
         
         # Error accumulation for integral term
         self.pos_error_sum = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
@@ -92,13 +78,13 @@ class Contact:
         self.current_target_idx = ti.field(dtype=int, shape=(), needs_grad=False)
         self.current_target_idx[None] = 0
         self.position_tolerance = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.position_tolerance[None] = self.SYSTEM_PARAMS.contact.pid_position_tolerance
+        self.position_tolerance[None] = SYSTEM_PARAMS.contact.pid_position_tolerance
         self.orientation_tolerance = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.orientation_tolerance[None] = self.SYSTEM_PARAMS.contact.pid_orientation_tolerance
+        self.orientation_tolerance[None] = SYSTEM_PARAMS.contact.pid_orientation_tolerance
         
         # Add fields for dwell time control
         self.dwell_frames = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.dwell_frames[None] = self.SYSTEM_PARAMS.contact.dwell_frames # Number of frames to stay at each target
+        self.dwell_frames[None] = SYSTEM_PARAMS.contact.dwell_frames # Number of frames to stay at each target
         self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dwell_counter[None] = 0
         self.is_dwelling = ti.field(dtype=int, shape=(), needs_grad=False)
@@ -145,7 +131,7 @@ class Contact:
             tumour_present=tumour_present,
         )
         x, y, z, xr, yr, zr = self.vitactip_tip_pose
-        press_depth = self.gap + 0.006
+        press_depth = SYSTEM_PARAMS.geometry.gap + 0.006
         self.trajectory_npy = np.array([
             [x, y, z, xr, yr, zr],
             [x, y, z-press_depth, xr, yr, zr],
@@ -220,15 +206,15 @@ class Contact:
         # tangential_velocity: velocity vector in m/s
         tangential_velocity = contact_relative_velocity - surface_normal.dot(contact_relative_velocity) * surface_normal
         # tangential_velocity_magnitude: velocity magnitude in m/s
-        tangential_velocity_magnitude = tangential_velocity.norm(self.norm_eps)
-        if tangential_velocity_magnitude > self.tangential_velocity_detection_threshold:
+        tangential_velocity_magnitude = tangential_velocity.norm(SYSTEM_PARAMS.contact.norm_eps)
+        if tangential_velocity_magnitude > SYSTEM_PARAMS.contact.tangential_velocity_detection_threshold:
             # tangential_force: force vector in N
             tangential_force = (
                 1.0
                 * (tangential_velocity / tangential_velocity_magnitude)
                 * ti.min(
                     self.tangential_stiffness[None] * tangential_velocity_magnitude,
-                    self.coulomb_friction_coeff[None] * normal_force.norm(self.norm_eps),
+                    self.coulomb_friction_coeff[None] * normal_force.norm(SYSTEM_PARAMS.contact.norm_eps),
                 )
             )
         # total_contact_force: force vector in N
@@ -592,7 +578,7 @@ class Contact:
         trajectory_keypoints += move_to_the_front_offset
         keypoint_coords = np.vstack((vitactip_bottom, trajectory_keypoints, floor))
 
-        phantom_top_z = self.vitactip_tip_pose[2] - self.gap
+        phantom_top_z = self.vitactip_tip_pose[2] - SYSTEM_PARAMS.geometry.gap
         if False and ts % 100 == 0:
             print(f'ViTacTip bottom node z coordinate: {vitactip_bottom[0][2]:0.3e}; phantom top surface z coordinate: {phantom_top_z:0.3e}; diff: {abs(vitactip_bottom[0][2] - phantom_top_z):0.3e}')
 
