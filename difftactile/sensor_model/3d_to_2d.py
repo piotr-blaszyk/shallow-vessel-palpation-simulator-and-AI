@@ -2,7 +2,9 @@ import numpy as np
 import cv2
 import pickle
 import os
-from fisheye_model import project_points_to_pix, project_points_to_pix_cv2
+from fisheye_model import *
+
+fisheye_model = FisheyeModel()
 
 # Load 3D nodes
 with open(os.path.join(os.path.dirname(__file__), '../tasks/output/vitactip.cam_3d_nodes.pkl'), 'rb') as f:
@@ -16,10 +18,10 @@ if not os.path.exists(img_path):
 img = cv2.imread(img_path)
 
 # Project using project_points_to_pix
-points2d_pix = project_points_to_pix(cam_3D_nodes.copy())
+points2d_pix = fisheye_model.project_points_to_pix(cam_3D_nodes.copy())
 
 # Project using project_points_to_pix_cv2
-points2d_cv2 = project_points_to_pix_cv2(cam_3D_nodes.copy())
+points2d_cv2 = fisheye_model.project_points_to_pix_cv2(cam_3D_nodes.copy())
 
 # Overlay function
 def overlay_points(image, points, color=(0,255,0), radius=3):

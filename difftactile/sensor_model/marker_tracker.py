@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
-from fisheye_model import get_marker_image
+from fisheye_model import *
 import tkinter as tk
 from PIL import Image, ImageTk
 from scipy.optimize import linear_sum_assignment
@@ -19,6 +19,7 @@ class MarkerTracker:
             video_path (str): Path to the input video file
             output_path (str, optional): Path for output video file
         """
+        self.fisheye_model = FisheyeModel()
         self.video_path = Path(video_path)
         self.output_path = Path(output_path) if output_path else self.video_path.parent / f"{self.video_path.stem}_tracked.mkv"
         self.frame_markers = []  # List to store markers for each frame
@@ -64,7 +65,7 @@ class MarkerTracker:
             if frame_count % frame_interval == 0:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 self.frames.append(frame)
-                markers, _, _ = get_marker_image(gray)
+                markers, _, _ = self.fisheye_model.get_marker_image(gray)
                 
                 if len(markers) > 0:  # Only append if markers were detected
                     self.frame_markers.append(markers)

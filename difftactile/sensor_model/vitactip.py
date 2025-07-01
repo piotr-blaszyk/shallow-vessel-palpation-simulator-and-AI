@@ -20,6 +20,7 @@ NP_TYPE = np.float32
 @ti.data_oriented
 class ViTacTip:
     def __init__(self):
+        self.fisheye_model = FisheyeModel()
         self.set_up_system_params()
         self.load_mesh()
         self.initialise_camera_model()
@@ -194,7 +195,7 @@ class ViTacTip:
         self.marker_interpolation_knn_k = 5
 
         initial_camera_image = cv2.imread("../tasks/vitactip_photo_default_state.png")
-        initial_marker_positions, _, _ = get_marker_image(initial_camera_image)
+        initial_marker_positions, _, _ = self.fisheye_model.get_marker_image(initial_camera_image)
         marker_visualization_image = initial_camera_image.copy()
         for marker_position in initial_marker_positions:
             marker_center = (int(round(marker_position[0])), int(round(marker_position[1])))
@@ -376,7 +377,7 @@ class ViTacTip:
             homogeneous_initial_pos = ti.Vector([initial_vertex_pos[0], initial_vertex_pos[1], initial_vertex_pos[2], 1.0])
             transformed_initial_pos = self.inverse_transformation_matrix[None] @ homogeneous_initial_pos
             camera_space_initial_pos = ti.Vector([transformed_initial_pos[0], transformed_initial_pos[2], transformed_initial_pos[1]])
-            camera_space_initial_2d = project_3d_2d(camera_space_initial_pos)
+            camera_space_initial_2d = self.fisheye_model.project_3d_2d(camera_space_initial_pos)
             self.initial_undeformed_markers[marker_idx] = camera_space_initial_2d
             if False:
                 print('extract_initial_markers')
@@ -400,8 +401,8 @@ class ViTacTip:
             transformed_undeformed_pos = self.inverse_transformation_matrix[None] @ homogeneous_undeformed_pos
             camera_space_deformed_pos = ti.Vector([transformed_deformed_pos[0], transformed_deformed_pos[2], transformed_deformed_pos[1]])
             camera_space_undeformed_pos = ti.Vector([transformed_undeformed_pos[0], transformed_undeformed_pos[2], transformed_undeformed_pos[1]])
-            camera_space_deformed_2d = project_3d_2d(camera_space_deformed_pos)
-            camera_space_undeformed_2d = project_3d_2d(camera_space_undeformed_pos)
+            camera_space_deformed_2d = self.fisheye_model.project_3d_2d(camera_space_deformed_pos)
+            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(camera_space_undeformed_pos)
             marker_drift = camera_space_undeformed_2d - self.initial_undeformed_markers[surface_idx]
             self.projection_2d_surface_nodes_deformed[surface_idx] = camera_space_deformed_2d - marker_drift
             self.projection_2d_surface_nodes_undeformed[surface_idx] = camera_space_undeformed_2d - marker_drift
