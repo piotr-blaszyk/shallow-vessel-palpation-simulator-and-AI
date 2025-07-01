@@ -6,23 +6,12 @@ import sys
 import pickle
 import os
 import itertools
-import json
 
 from difftactile.tasks.constants import *
 
 class MeshGenerator:
     def __init__(self):
-        SYSTEM_PARAMS = None
-        SYSTEM_PARAMS.gmsh_mm = None
-        SYSTEM_PARAMS.vitactip = None
-        self.geometry_data = None
-        self.biomimetic_tip_points = None
-        self.A_points = None
-        self.B_points = None
-        self.node_tags = None
-        self.node_coordinates = None
-        self.all_tetrahedra = None
-        self.surface_triangles = None
+        pass
         
     def spherical_cap_volume_1(self, radius_of_curvature, cap_height):
         return 1/3 * math.pi * cap_height ** 2 * (3 * radius_of_curvature - cap_height)
@@ -39,12 +28,10 @@ class MeshGenerator:
         return (r ** 2 + h ** 2) / (2 * h)
 
     def calculate_volumes_SI(self):
-        stem_wall_radius_outer = self.geometry_data.stem_wall_radius_outer
-        stem_wall_radius_inner = self.geometry_data.stem_wall_radius_inner
-        radius_of_curvature_outer = self.geometry_data.radius_of_curvature_outer
-        radius_of_curvature_inner = self.geometry_data.radius_of_curvature_inner
-        stem_height = self.geometry_data.stem_height
-        cap_height = self.geometry_data.cap_height
+        stem_wall_radius_outer = self.geometry_data['stem_wall_radius_outer']
+        stem_wall_radius_inner = self.geometry_data['stem_wall_radius_inner']
+        stem_height = self.geometry_data['stem_height']
+        cap_height = self.geometry_data['cap_height']
         
         outer_cylinder = self.cylinder_volume(stem_wall_radius_outer, stem_height)
         outer_cap = self.spherical_cap_volume_2(stem_wall_radius_outer, cap_height)
@@ -69,10 +56,10 @@ class MeshGenerator:
         return volumes
 
     def load_parameters(self):
-        with open('../sensor_model/biomimetic-tip-points.pkl', 'rb') as f:
+        with open(SYSTEM_PARAMS.files.biomimetic_tip_points, 'rb') as f:
             self.biomimetic_tip_points = pickle.load(f)
-        self.A_points = self.biomimetic_tip_points.A_points
-        self.B_points = self.biomimetic_tip_points.B_points
+        self.A_points = self.biomimetic_tip_points['A_points']
+        self.B_points = self.biomimetic_tip_points['B_points']
         self.A_points = self.A_points[:, [0, 2, 1]]
         self.B_points = self.B_points[:, [0, 2, 1]]
         
@@ -120,12 +107,12 @@ class MeshGenerator:
         self.setup_geometry()
 
         self.number_of_biomimetic_tips = SYSTEM_PARAMS.vitactip.number_of_biomimetic_tips
-        radius_of_curvature_outer = self.geometry_data.radius_of_curvature_outer
-        radius_of_curvature_inner = self.geometry_data.radius_of_curvature_inner
-        y_cap_base = self.geometry_data.y_cap_base
-        y_bottom = self.geometry_data.y_bottom
-        stem_wall_radius_outer = self.geometry_data.stem_wall_radius_outer
-        stem_height = self.geometry_data.stem_height
+        radius_of_curvature_outer = self.geometry_data['radius_of_curvature_outer']
+        radius_of_curvature_inner = self.geometry_data['radius_of_curvature_inner']
+        y_cap_base = self.geometry_data['y_cap_base']
+        y_bottom = self.geometry_data['y_bottom']
+        stem_wall_radius_outer = self.geometry_data['stem_wall_radius_outer']
+        stem_height = self.geometry_data['stem_height']
 
         if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
             outer_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_outer)
@@ -169,7 +156,7 @@ class MeshGenerator:
                 new_fragments.append((dim, tag))
             
             stem_wall_outer = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, stem_wall_radius_outer)
-            stem_wall_inner = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, self.geometry_data.stem_wall_radius_inner)
+            stem_wall_inner = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, self.geometry_data['stem_wall_radius_inner'])
             stem_wall = gmsh.model.occ.cut([(3, stem_wall_outer)], [(3, stem_wall_inner)])[0]
             shell = gmsh.model.occ.fuse(new_fragments, stem_wall)[0]
 
@@ -211,24 +198,24 @@ class MeshGenerator:
         
         volumes = self.calculate_volumes_SI()
         if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
-            print(f"Volume: {volumes.all:0.3e} m³")
+            print(f"Volume: {volumes['all']:0.3e} m³")
         else:
-            print(f"Gel Volume: {volumes.gel:0.3e} m³")
-            print(f"Shell Volume: {volumes.shell:0.3e} m³")
+            print(f"Gel Volume: {volumes['gel']:0.3e} m³")
+            print(f"Shell Volume: {volumes['shell']:0.3e} m³")
         self.get_difftactile_variables()
         gmsh.fltk.run()
         gmsh.finalize()
 
     def get_difftactile_variables(self):
         # Unpack all geometry variables
-        stem_wall_radius_outer = self.geometry_data.stem_wall_radius_outer
-        stem_wall_radius_inner = self.geometry_data.stem_wall_radius_inner
-        cap_height = self.geometry_data.cap_height
-        stem_height = self.geometry_data.stem_height
-        radius_of_curvature_outer = self.geometry_data.radius_of_curvature_outer
-        radius_of_curvature_inner = self.geometry_data.radius_of_curvature_inner
-        y_cap_base = self.geometry_data.y_cap_base
-        y_bottom = self.geometry_data.y_bottom
+        stem_wall_radius_outer = self.geometry_data['stem_wall_radius_outer']
+        stem_wall_radius_inner = self.geometry_data['stem_wall_radius_inner']
+        cap_height = self.geometry_data['cap_height']
+        stem_height = self.geometry_data['stem_height']
+        radius_of_curvature_outer = self.geometry_data['radius_of_curvature_outer']
+        radius_of_curvature_inner = self.geometry_data['radius_of_curvature_inner']
+        y_cap_base = self.geometry_data['y_cap_base']
+        y_bottom = self.geometry_data['y_bottom']
 
         # element_types is irrelevant
         # triangle_tags[0] is a 1d int numpy array of shape (num_triangles,)
@@ -341,7 +328,7 @@ class MeshGenerator:
         }
         print(f'number of vertices generated: {self.node_coordinates.shape[0]}')
         os.makedirs('output', exist_ok=True)
-        with open('../tasks/output/gmsh-mesh.pkl', 'wb') as f:
+        with open(SYSTEM_PARAMS.files.gmsh_mesh, 'wb') as f:
             pickle.dump(mesh_data, f)
     
     def compute_particle_spacing(self, mode='min'):
@@ -355,7 +342,7 @@ class MeshGenerator:
         Returns:
             dict: Edge lengths for 'all', 'shell', and 'gel' groups
         """
-        if mode not in .min', 'max:
+        if mode not in ['min', 'max']:
             raise ValueError("mode must be either 'min' or 'max'")
             
         # Get coordinates of all vertices for each tetrahedron

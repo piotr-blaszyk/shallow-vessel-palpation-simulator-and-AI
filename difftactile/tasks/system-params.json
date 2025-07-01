@@ -98,7 +98,7 @@
         "frame_number": 200
     },
     "fisheye_model": {
-        "image_dir": "../experiment-capture-completed",
+        "image_dir": "difftactile/experiment-capture-completed",
         "focal_length_x": 230.0,
         "focal_length_y": 230.0,
         "principal_point_x": 359.0,
@@ -112,10 +112,11 @@
         "shell_outer_r": 36.33333333333333
     },
     "files": {
-        "vitactip_photo_default_state": "../tasks/vitactip_photo_default_state.png",
-        "vitactip_photo_default_state_detected_markers": "../tasks/output/vitactip_photo_default_state_detected_markers.png",
-        "vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d": "../tasks/output/vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d.png",
-        "vitactip_photo_default_state_predicted_markers": "../tasks/output/vitactip_photo_default_state_predicted_markers.png",
-        "gmsh_mesh": "../tasks/output/gmsh-mesh.pkl"
+        "vitactip_photo_default_state": "difftactile/tasks/vitactip_photo_default_state.png",
+        "vitactip_photo_default_state_detected_markers": "difftactile/tasks/output/vitactip_photo_default_state_detected_markers.png",
+        "vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d": "difftactile/tasks/output/vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d.png",
+        "vitactip_photo_default_state_predicted_markers": "difftactile/tasks/output/vitactip_photo_default_state_predicted_markers.png",
+        "gmsh_mesh": "difftactile/tasks/output/gmsh-mesh.pkl",
+        "biomimetic_tip_points": "difftactile/sensor_model/biomimetic-tip-points.pkl"
     }
 }
