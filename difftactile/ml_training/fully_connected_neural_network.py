@@ -14,7 +14,7 @@ import os
 import pickle
 
 from exploratory_data_analysis import *
-from difftactile.tasks.constants import *
+from difftactile.main.constants import *
 
 class TumorClassifier(pl.LightningModule):
     def __init__(self, input_dim=254):

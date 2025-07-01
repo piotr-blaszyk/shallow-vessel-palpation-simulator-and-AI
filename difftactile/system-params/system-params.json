@@ -1,0 +1,156 @@
+{
+    "vitactip": {
+        "shell": {
+            "density": 1.1e3,
+            "youngs_modulus": 7.5e6,
+            "poissons_ratio": 0.495
+        },
+        "gel": {
+            "density": 1.1e3,
+            "youngs_modulus": 5.0e3,
+            "poissons_ratio": 0.499
+        },
+        "single_material": {
+            "density": 1.1e3,
+            "youngs_modulus": 2.5e+05,
+            "poissons_ratio": 0.499
+        },
+        "collision_search_distance": 1.0,
+        "keypoint_search_z_threshold": 0.001,
+        "number_of_biomimetic_tips": 0,
+        "number_of_materials": 1,
+        "maximum_number_of_materials": 2,
+        "fixed_layer_distance_from_bottom": 0.020,
+        "rayleigh_damping_alpha": 0.1,
+        "rayleigh_damping_beta": 0.01,
+        "hourglass_control": {
+            "enabled": 1,
+            "coefficient": 0.1,
+            "modulus_scale": 0.05
+        }
+    },
+    "phantom": {
+        "eps": 1e-8,
+        "mpm_grid_cube_size": 0.002,
+        "bound": 3,
+        "n_grid_x": 64,
+        "n_grid_y": 64,
+        "n_grid_z": 32,
+        "num_particles_cube_1d": 25,
+        "gravity": [0.0, 0.0, -9.81],
+        "silicone": {
+            "density": 1.07e3,
+            "youngs_modulus": 2.5e4,
+            "poissons_ratio": 0.499
+        },
+        "hard_plastic": {
+            "density": 1.18e3,
+            "youngs_modulus": 2.5e9,
+            "poissons_ratio": 0.38
+        },
+        "fixed_points_z_ratio": 0.25,
+        "fix_bottom_points": 0,
+        "keypoint_search_xy_threshold": 0.010,
+        "rayleigh_damping_alpha": 0.1,
+        "rayleigh_damping_beta": 0.01
+    },
+    "contact": {
+        "dt": 8.631e-06,
+        "normal_stiffness": 2.28e+02,
+        "tangential_stiffness": 1.60e+02,
+        "normal_damping": 2.34e+00,
+        "coulomb_friction_coeff": 0.85,
+        "num_sub_frames": 500,
+        "num_frames": 10000,
+        "num_opt_steps": 10,
+        "pid_max_speed_translation": 0.050,
+        "pid_max_speed_rotation": 45.0,
+        "pid_kp": 100.0,
+        "pid_ki": 0.0,
+        "pid_kd": 0.0,
+        "pid_position_tolerance": 0.001,
+        "pid_orientation_tolerance": 1.0,
+        "dwell_frames": 0,
+        "norm_eps": 1e-11,
+        "tangential_velocity_detection_threshold": 1e-6
+    },
+    "gmsh_mm": {
+        "characteristic_length_factor": 5.0,
+        "stem_wall_radius_outer": 20,
+        "stem_wall_radius_inner": 19,
+        "cap_height": 6.0,
+        "stem_height": 30.0,
+        "refine_mesh": 1
+    },
+    "geometry": {
+        "gap": 0.005,
+        "phantom_orientation": [0, 0, 0],
+        "sensor_orientation": [-90, 0, 0],
+        "phantom_h": 0.022,
+        "phantom_r": 0.040,
+        "distance_from_camera_lens_to_outer_shell_surface": 0.020
+    },
+    "meta": {
+        "target_courant_number": 0.5
+    },
+    "visualise_mesh": {
+        "frame_number": 200
+    },
+    "fisheye_model": {
+        "image_dir": "difftactile/experiment-capture-completed",
+        "focal_length_x": 230.0,
+        "focal_length_y": 230.0,
+        "principal_point_x": 359.0,
+        "principal_point_y": 266.0,
+        "target_image_width": 640.0,
+        "target_image_height": 480.0,
+        "circle_centre_x": 345.0,
+        "circle_centre_y": 260.0,
+        "circle_radius": 170.0,
+        "shell_inner_r": 35.33333333333333,
+        "shell_outer_r": 36.33333333333333
+    },
+    "files": {
+        "vitactip_photo_default_state": "difftactile/tasks/vitactip_photo_default_state.png",
+        "vitactip_photo_default_state_detected_markers": "difftactile/tasks/output/vitactip_photo_default_state_detected_markers.png",
+        "vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d": "difftactile/tasks/output/vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d.png",
+        "vitactip_photo_default_state_predicted_markers": "difftactile/tasks/output/vitactip_photo_default_state_predicted_markers.png",
+        "biomimetic_tip_points": "difftactile/sensor_model/biomimetic-tip-points.pkl",
+        "cnn_preprocessing_params": "saved_models/cnn_preprocessing_params.pkl",
+        "eda_marker_snapshots_and_labels": "../tasks/output/marker_snapshots_and_labels.pkl",
+        "gnn_preprocessing_params": "saved_models/gnn_preprocessing_params.pkl",
+        "preprocessing_params": "saved_models/preprocessing_params.pkl",
+        "vascular_tumour_press_results": "../sensor_model/vascular-tumour-press-experimental-results.pkl",
+        "init_marker_positions": "../sensor_model/init-marker-positions.pkl",
+        "gmsh_mesh": "../tasks/output/gmsh-mesh.pkl",
+        "vitactip_photo_default": "../tasks/vitactip_photo_default_state.png",
+        "init_principal_point": "../tasks/output/init-principal-point.png",
+        "system_id_video": "difftactile/sensor_model/system-id-screws-3-reps.mkv",
+        "processed_video": "difftactile/sensor_model/processed_video.mkv",
+        "system_id_output_video": "output/marker_tracker/marker-tracker.mkv",
+        "fisheye_params": "fisheye_params.npz",
+        "markers_paired": "./markers-paired.pkl",
+        "manual_annotations": "manual-annotations.json",
+        "deformed_node_coordinates": "../tasks/output/tactile_sensor.deformed_node_coordinates.ts={}.pkl",
+        "tactile_sensor_f2v": "../tasks/output/tactile_sensor.f2v.pkl",
+        "sim_markers_initial_positions": "output/sim-markers-initial-positions.pkl",
+        "raw_mesh_vertices": "output/raw_mesh.vertices.csv",
+        "normalized_mesh_vertices": "output/normalized_mesh.vertices.csv",
+        "marker_snapshots_and_labels": "output/marker_snapshots_and_labels.pkl",
+        "predict_markers_snapshots": "output/predict_markers_snapshots.csv",
+        "virtual_markers_snapshots": "output/virtual_markers_snapshots.csv",
+        "ground_truth_labels": "output/ground_truth_labels.csv",
+        "vitactip_cam_3d_nodes": "../tasks/output/vitactip.cam_3d_nodes.pkl",
+        "vitactip_surface_id": "output/vitactip.surface_id_np.pkl",
+        "fisheye_model_project_points_to_pix": "../tasks/output/fisheye_model.project_points_to_pix.png",
+        "fisheye_model_project_points_to_pix_cv2": "../tasks/output/fisheye_model.project_points_to_pix_cv2.png",
+        "output_dir": "../tasks/output/",
+        "init_with_circle": "../tasks/output/init_with_circle.png",
+        "marker_tracker_markers": "output/marker_tracker/markers.json",
+        "marker_tracker_manual_annotations": "output/marker_tracker/manual-annotations.json",
+        "tactile_sensor_all_nodes": "output/tactile_sensor.all_nodes.pkl",
+        "system_params_computed": "../tasks/system-system-params-computed.json",
+        "vitactip_interp_idx_flat": "../tasks/output/vitactip.interp_idx_flat.pkl",
+        "phantom": "../meshes/objects/cylinder.stl"
+    }
+}

@@ -9,7 +9,7 @@ import torch
 import json
 
 from difftactile.object_model.obj_loader import ObjLoader
-from difftactile.tasks.constants import *
+from difftactile.main.constants import *
 
 TI_TYPE = ti.f32
 TC_TYPE = torch.float32
@@ -42,8 +42,7 @@ class Phantom:
         self.set_stiffness()
 
     def load_obj(self):
-        data_path = os.path.join("..", "meshes", "objects", SYSTEM_PARAMS.contact.phantom_name)
-        obj_loader = ObjLoader(data_path, num_particles_cube_1d=SYSTEM_PARAMS.phantom.num_particles_cube_1d)
+        obj_loader = ObjLoader(SYSTEM_PARAMS.files.phantom, num_particles_cube_1d=SYSTEM_PARAMS.phantom.num_particles_cube_1d)
         obj_loader.generate_particles()
         self.actual_total_num_particles = len(obj_loader.particles)
         self.particles = ti.Vector.field(3, dtype=float, shape=(self.actual_total_num_particles,))
