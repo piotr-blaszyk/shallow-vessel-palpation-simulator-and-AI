@@ -138,7 +138,7 @@ class Contact:
 
     def set_up_initial_positions_and_trajectory(self):
         ix = self.vitactip.get_keypoint_indices_numpy_point_a()
-        camera_lens_to_sensor_tip = self.vitactip.nodes[ix, 1]
+        camera_lens_to_sensor_tip = self.vitactip.node_coordinates[ix, 1]
         tumour_present = False
         self.tumour_present[None] = tumour_present
         self.phantom.set_state_from_outside(

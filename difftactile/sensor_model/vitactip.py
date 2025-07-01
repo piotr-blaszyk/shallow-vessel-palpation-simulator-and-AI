@@ -99,6 +99,7 @@ class ViTacTip:
             mesh_data = pickle.load(f)
         
         # Unpack mesh data
+        self.surface_node_tags = mesh_data['surface_node_tags']
         all_tetrahedra = mesh_data['all_tetrahedra']
         node_coordinates = mesh_data['node_coordinates'] / 1_000
         node_labels = mesh_data['node_labels']
@@ -155,7 +156,7 @@ class ViTacTip:
         translation_vector = np.array([0, y_translation, 0])
         node_coordinates = node_coordinates + translation_vector
 
-        self.nodes = node_coordinates
+        self.node_coordinates = node_coordinates
         self.tetrahedra_npy = all_tetrahedra
         self.outer_surface_triangles = surface_triangles
         self.node_labels = node_labels
@@ -167,11 +168,11 @@ class ViTacTip:
         self.marker_node_tags = ti.field(shape=(self.num_markers,), dtype=int)
         self.marker_node_tags.from_numpy(self.marker_node_tags_np)
         
-        self.is_fixed_layer = ti.field(int, len(self.nodes))
+        self.is_fixed_layer = ti.field(int, len(self.node_coordinates))
         is_fixed_layer_data = self.node_labels[:,-1].astype(np.int32)
         self.is_fixed_layer.from_numpy(is_fixed_layer_data)
         
-        self.num_vertices = len(self.nodes)
+        self.num_vertices = len(self.node_coordinates)
         self.num_tetrahedra = len(self.tetrahedra_npy)
         self.num_contact_surface_triangles = len(self.outer_surface_triangles)
 
@@ -181,7 +182,7 @@ class ViTacTip:
         self.vertex_mass.from_numpy(self.vertex_masses_npy)
 
         self.initial_vertex_positions = ti.Vector.field(3, float, self.num_vertices, needs_grad=False)
-        self.initial_vertex_positions.from_numpy(self.nodes.astype(np.float32))
+        self.initial_vertex_positions.from_numpy(self.node_coordinates.astype(np.float32))
 
         self.deformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.undeformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
@@ -275,66 +276,53 @@ class ViTacTip:
     def init_cam_model(self):
         init_img = cv2.imread("./init.png")
         initial_markers, _, _ = get_marker_image(init_img)
-
         overlay_img = init_img.copy()
         for pos in initial_markers:
             center = (int(round(pos[0])), int(round(pos[1])))
             cv2.circle(overlay_img, center, radius=5, color=(0, 0, 255), thickness=2)
         cv2.imwrite("../tasks/output/init_cam_model.png", overlay_img)
 
-        surface_nodes = self.all_nodes[self.markers_surface_id_np]
-        cam_3D_nodes = np.array([surface_nodes[:,0], surface_nodes[:,2], surface_nodes[:,1]]).T
-        with open(f"output/fem_sensor.cam_3d_nodes.pkl", 'wb') as f:
-            pickle.dump(cam_3D_nodes, f)
-        np.savetxt(f'output/fem_sensor.cam_3d_nodes.csv', cam_3D_nodes, delimiter=",", fmt='%.2f')
-        cam_points = project_points_to_pix(cam_3D_nodes)
-        # Overlay cam_points as green circles and save
+        surface_nodes_coordinates_y_up = self.node_coordinates[self.surface_node_tags]
+        # OpenCV has camera.position(0,0,0), camera.lookat(0,0,1), camera.up(0,1,0)
+        surface_nodes_coordinates_z_up = np.array([surface_nodes_coordinates_y_up[:,0], surface_nodes_coordinates_y_up[:,2], surface_nodes_coordinates_y_up[:,1]]).T
+        projections_2d = project_points_to_pix(surface_nodes_coordinates_z_up)
+
         cam_points_img = init_img.copy()
-        for pt in cam_points:
+        for pt in projections_2d:
             center = (int(round(pt[0])), int(round(pt[1])))
-            cv2.circle(cam_points_img, center, radius=3, color=(0, 255, 0), thickness=2)  # Green circle
+            cv2.circle(cam_points_img, center, radius=3, color=(0, 255, 0), thickness=2)
         cv2.imwrite("../tasks/output/cam_points.png", cam_points_img)
-        # interpolated markers in 2d & 3d
-        interp_idx = []
-        interp_weight = []
-        surf_2d = []
-        for i in range(initial_markers.shape[0]):
-            offset = np.linalg.norm(initial_markers[i,0:2] - cam_points,axis=1)
-            idx = np.argpartition(offset, self.num_k_closest)
-            smallest_idx = idx[:self.num_k_closest]
-            inv_offset = 1/offset[smallest_idx]
-            total_offset = np.sum(inv_offset)
-            weights = inv_offset / total_offset
-            loc_2d = np.matmul(cam_points[smallest_idx].T, weights).T
-            surf_2d.append(loc_2d)
-            interp_idx.append(smallest_idx)
-            interp_weight.append(weights)
 
-        surf_2d = np.array(surf_2d)
-        interp_idx = np.array(interp_idx)
-        interp_weight = np.array(interp_weight)
-
-        # Flatten interp_idx before saving
-        interp_idx_flat = interp_idx.flatten()
-        with open(f"output/fem_sensor.interp_idx_flat.pkl", 'wb') as f:
-            pickle.dump(interp_idx_flat, f)
-        with open(f"output/fem_sensor.markers_surface_id_np.pkl", 'wb') as f:
-            pickle.dump(self.markers_surface_id_np, f)
-        np.savetxt('output/fem_sensor.interp_idx_flat.csv', interp_idx_flat, delimiter=",", fmt='%d')
-        np.savetxt('output/fem_sensor.markers_surface_id_np.csv', self.markers_surface_id_np, delimiter=",", fmt='%d')
+        marker_interpolation_indices = []
+        marker_interpolation_weights = []
+        interpolated_marker_positions_2d = []
+        for marker_idx in range(initial_markers.shape[0]):
+            distances_to_projections = np.linalg.norm(initial_markers[marker_idx,0:2] - projections_2d,axis=1)
+            neighbor_indices = np.argpartition(distances_to_projections, self.marker_interpolation_knn_k)
+            k_nearest_indices = neighbor_indices[:self.marker_interpolation_knn_k]
+            inverse_distances = 1/distances_to_projections[k_nearest_indices]
+            total_inverse_distance = np.sum(inverse_distances)
+            interpolation_weights = inverse_distances / total_inverse_distance
+            interpolated_position = np.matmul(projections_2d[k_nearest_indices].T, interpolation_weights).T
+            interpolated_marker_positions_2d.append(interpolated_position)
+            marker_interpolation_indices.append(k_nearest_indices)
+            marker_interpolation_weights.append(interpolation_weights)
+        interpolated_marker_positions_2d = np.array(interpolated_marker_positions_2d)
+        marker_interpolation_indices = np.array(marker_interpolation_indices)
+        marker_interpolation_weights = np.array(marker_interpolation_weights)
     
-        self.num_k_closest = 5
-        self.initial_markers = surf_2d
-        self.num_markers = len(self.initial_markers)
-        self.visualise_2d(interp_idx)
+        self.marker_interpolation_knn_k = 5
+        self.markers_2d_initial_undeformed = interpolated_marker_positions_2d
+        self.num_markers = len(self.markers_2d_initial_undeformed)
+        self.visualise_2d(marker_interpolation_indices)
 
         self.predict_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.virtual_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
 
-        self.interp_weight = ti.Vector.field(self.num_k_closest, float, self.num_markers, needs_grad=False)
-        self.interp_weight.from_numpy(interp_weight.astype(np.float32))
-        self.interp_idx = ti.Vector.field(self.num_k_closest, int, self.num_markers)
-        self.interp_idx.from_numpy(interp_idx.astype(np.int32))
+        self.interp_weight = ti.Vector.field(self.marker_interpolation_knn_k, float, self.num_markers, needs_grad=False)
+        self.interp_weight.from_numpy(marker_interpolation_weights.astype(np.float32))
+        self.interp_idx = ti.Vector.field(self.marker_interpolation_knn_k, int, self.num_markers)
+        self.interp_idx.from_numpy(marker_interpolation_indices.astype(np.int32))
 
     def set_up_pose(self, rot_x, rot_y, rot_z, t_dx, t_dy, t_dz):
         # rotation_quaternion: rotation quaternion from Euler angles (dimensionless)
@@ -383,7 +371,7 @@ class ViTacTip:
         self.set_up_pose_helper()
 
     def validate_markers_via_2d_projection(self):
-        marker_points_3d = self.nodes[self.marker_node_tags_np]
+        marker_points_3d = self.node_coordinates[self.marker_node_tags_np]
         camera_3D_points = np.array([marker_points_3d[:,0], marker_points_3d[:,2], marker_points_3d[:,1]]).T
         marker_points_2d = project_points_to_pix(camera_3D_points)
 
@@ -473,7 +461,7 @@ class ViTacTip:
             weights = self.interp_weight[i]
             loc_2d = ti.Vector([0.0, 0.0])
             init_loc_2d = ti.Vector([0.0, 0.0])
-            for j in range(self.num_k_closest):
+            for j in range(self.marker_interpolation_knn_k):
                 loc_2d += weights[j] * self.surface_cam_loc[smallest_idx[j]]
                 init_loc_2d += weights[j] * self.surface_cam_virtual_loc[smallest_idx[j]]
             self.predict_markers[i] = loc_2d
@@ -1009,7 +997,7 @@ class ViTacTip:
 
     def get_keypoint_indices_numpy_point_a(self):
         # Convert positions to numpy array
-        positions = self.nodes
+        positions = self.node_coordinates
         
         # Point A: max y coordinate
         y_coords = positions[:, 1]
