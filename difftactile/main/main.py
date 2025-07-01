@@ -30,9 +30,9 @@ class Contact:
             dtype=int,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                self.phantom.n_grid_x,
-                self.phantom.n_grid_y,
-                self.phantom.n_grid_z,
+                SYSTEM_PARAMS.phantom.n_grid_x,
+                SYSTEM_PARAMS.phantom.n_grid_y,
+                SYSTEM_PARAMS.phantom.n_grid_z,
             ),
         )
         self.contact_detect_flag = ti.field(float, (), needs_grad=False)
@@ -231,15 +231,15 @@ class Contact:
             frame: current simulation frame (dimensionless)
         """
         for i, j, k in ti.ndrange(
-            self.phantom.n_grid_x, self.phantom.n_grid_y, self.phantom.n_grid_z
+            SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z
         ):
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 # grid_node_position: position vector in m
                 grid_node_position = ti.Vector(
                     [
-                        (i + 0.5) * self.phantom.mpm_grid_cube_size,
-                        (j + 0.5) * self.phantom.mpm_grid_cube_size,
-                        (k + 0.5) * self.phantom.mpm_grid_cube_size,
+                        (i + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (j + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (k + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
                     ]
                 )
                 # closest_sensor_vertex_idx: vertex index (dimensionless)
@@ -256,20 +256,20 @@ class Contact:
             frame: current simulation frame (dimensionless)
         """
         for i, j, k in ti.ndrange(
-            self.phantom.n_grid_x, self.phantom.n_grid_y, self.phantom.n_grid_z
+            SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z
         ):
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 # grid_node_position: position vector in m
                 grid_node_position = ti.Vector(
                     [
-                        (i + 0.5) * self.phantom.mpm_grid_cube_size,
-                        (j + 0.5) * self.phantom.mpm_grid_cube_size,
-                        (k + 0.5) * self.phantom.mpm_grid_cube_size,
+                        (i + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (j + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (k + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
                     ]
                 )
                 # grid_node_velocity: velocity vector in m/s
                 grid_node_velocity = self.phantom.grid_node_momentum_in[frame, i, j, k] / (
-                    self.phantom.grid_node_mass[frame, i, j, k] + self.phantom.eps
+                    self.phantom.grid_node_mass[frame, i, j, k] + SYSTEM_PARAMS.phantom.eps
                 )
                 # closest_sensor_vertex_idx: vertex index (dimensionless)
                 closest_sensor_vertex_idx = self.contact_idx[frame, i, j, k]

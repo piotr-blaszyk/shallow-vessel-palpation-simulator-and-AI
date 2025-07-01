@@ -16,3 +16,4 @@ experiment-capture-completed/
 *.pt
 saved_models/
 *.msh
+*.ini

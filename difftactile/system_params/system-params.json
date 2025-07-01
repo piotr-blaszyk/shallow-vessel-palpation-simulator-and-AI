@@ -150,7 +150,7 @@
         "tactile_sensor_all_nodes": "difftactile/output/tactile_sensor.all_nodes.pkl",
         "system_params_computed": "difftactile/system_params/system-params-computed.json",
         "vitactip_interp_idx_flat": "difftactile/output/vitactip.interp_idx_flat.pkl",
-        "phantom": "difftactile/meshes/objects/cylinder.stl",
+        "phantom": "difftactile/meshes/cylinder.stl",
         "root_dir": "/home/psb120/Documents/DiffTactile/"
     }
 }
