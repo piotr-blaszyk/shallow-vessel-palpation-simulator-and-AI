@@ -9,10 +9,10 @@ with open(os.path.join(os.path.dirname(__file__), '../tasks/output/vitactip.cam_
     cam_3D_nodes = pickle.load(f)
 
 # Load image
-img_path = os.path.join(os.path.dirname(__file__), 'init.png')
+img_path = os.path.join(os.path.dirname(__file__), 'vitactip_photo_default_state.png')
 if not os.path.exists(img_path):
-    # Try tasks/init.png if not found
-    img_path = os.path.join(os.path.dirname(__file__), '../tasks/init.png')
+    # Try tasks/vitactip_photo_default_state.png if not found
+    img_path = os.path.join(os.path.dirname(__file__), '../tasks/vitactip_photo_default_state.png')
 img = cv2.imread(img_path)
 
 # Project using project_points_to_pix

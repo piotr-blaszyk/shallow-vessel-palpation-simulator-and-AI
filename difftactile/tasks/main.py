@@ -132,7 +132,6 @@ class Contact:
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate((
             self.vitactip.get_keypoint_indices(0), 
-            self.vitactip.marker_node_tags_np, 
             self.phantom.get_keypoint_index(),
         ), dtype=int)
 
@@ -673,6 +672,7 @@ def main():
         contact_model.visualisation_reset_3d_scene()
         if opts == 0:
             contact_model.vitactip.extract_initial_markers(0)
+            contact_model.vitactip.save_predicted_markers_to_image()
             contact_model.vitactip.extract_markers(0)
             initial_markers = contact_model.vitactip.deformed_markers.to_numpy()
             with open('output/sim-markers-initial-positions.pkl', 'wb') as f:

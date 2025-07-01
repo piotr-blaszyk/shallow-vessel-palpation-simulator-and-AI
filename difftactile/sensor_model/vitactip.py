@@ -9,6 +9,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import pickle
 import json
+import sys
 
 from difftactile.sensor_model.fisheye_model import * 
 
@@ -20,8 +21,8 @@ NP_TYPE = np.float32
 class ViTacTip:
     def __init__(self):
         self.set_up_system_params()
-        self.init_mesh()
-        self.init_cam_model()
+        self.load_mesh()
+        self.initialise_camera_model()
         self.set_up_physical_state()
     
     def set_up_system_params(self):
@@ -94,13 +95,15 @@ class ViTacTip:
         self.hourglass_coefficient[None] = self.vitactip_params['hourglass_control']['coefficient']
         self.hourglass_modulus_scale[None] = self.vitactip_params['hourglass_control']['modulus_scale']
 
-    def init_mesh(self):
+    def load_mesh(self):
         # Load mesh data from gmsh
         with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
             mesh_data = pickle.load(f)
         
         # Unpack mesh data
-        self.surface_node_tags = mesh_data['surface_node_tags']
+        self.surface_node_tags_npy = mesh_data['surface_node_tags']
+        self.surface_node_tags = ti.field(dtype=int, shape=(self.surface_node_tags_npy.shape[0],), needs_grad=False)
+        self.surface_node_tags.from_numpy(self.surface_node_tags_npy)
         all_tetrahedra = mesh_data['all_tetrahedra']
         node_coordinates = mesh_data['node_coordinates'] / 1_000
         node_labels = mesh_data['node_labels']
@@ -184,51 +187,51 @@ class ViTacTip:
         self.contact_surface = ti.Vector.field(3, int, self.num_contact_surface_triangles) # surface triangle mesh
         self.contact_surface.from_numpy(self.outer_surface_triangles.astype(np.int32))
 
-        self.projection_2d_surface_nodes_deformed = ti.Vector.field(2, float, self.surface_node_tags.shape[0], needs_grad=False)
-        self.projection_2d_surface_nodes_undeformed = ti.Vector.field(2, float, self.surface_node_tags.shape[0], needs_grad=False)
+        self.projection_2d_surface_nodes_deformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=False)
+        self.projection_2d_surface_nodes_undeformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=False)
 
-    def init_cam_model(self):
-        init_img = cv2.imread("./init.png")
-        initial_markers, _, _ = get_marker_image(init_img)
-        overlay_img = init_img.copy()
-        for pos in initial_markers:
-            center = (int(round(pos[0])), int(round(pos[1])))
-            cv2.circle(overlay_img, center, radius=5, color=(0, 0, 255), thickness=2)
-        cv2.imwrite("../tasks/output/init_cam_model.png", overlay_img)
+    def initialise_camera_model(self):
+        self.marker_interpolation_knn_k = 5
 
-        surface_nodes_coordinates_y_up = self.node_coordinates[self.surface_node_tags]
+        initial_camera_image = cv2.imread("../tasks/vitactip_photo_default_state.png")
+        initial_marker_positions, _, _ = get_marker_image(initial_camera_image)
+        marker_visualization_image = initial_camera_image.copy()
+        for marker_position in initial_marker_positions:
+            marker_center = (int(round(marker_position[0])), int(round(marker_position[1])))
+            cv2.circle(marker_visualization_image, marker_center, radius=5, color=(0, 0, 255), thickness=2)
+        cv2.imwrite("../tasks/output/vitactip_photo_default_state_detected_markers.png", marker_visualization_image)
+
+        surface_nodes_y_up = self.node_coordinates[self.surface_node_tags_npy]
         # OpenCV has camera.position(0,0,0), camera.lookat(0,0,1), camera.up(0,1,0)
-        surface_nodes_coordinates_z_up = np.array([surface_nodes_coordinates_y_up[:,0], surface_nodes_coordinates_y_up[:,2], surface_nodes_coordinates_y_up[:,1]]).T
-        projections_2d = project_points_to_pix(surface_nodes_coordinates_z_up)
+        surface_nodes_z_up = np.array([surface_nodes_y_up[:,0], surface_nodes_y_up[:,2], surface_nodes_y_up[:,1]]).T
+        surface_node_projections_2d = project_points_to_pix(surface_nodes_z_up)
 
-        cam_points_img = init_img.copy()
-        for pt in projections_2d:
-            center = (int(round(pt[0])), int(round(pt[1])))
-            cv2.circle(cam_points_img, center, radius=3, color=(0, 255, 0), thickness=2)
-        cv2.imwrite("../tasks/output/cam_points.png", cam_points_img)
+        surface_node_visualization = initial_camera_image.copy()
+        for projected_point in surface_node_projections_2d:
+            point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
+            cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
+        cv2.imwrite("../tasks/output/vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d.png", surface_node_visualization)
 
         marker_interpolation_indices = []
         marker_interpolation_weights = []
         interpolated_marker_positions_2d = []
-        for marker_idx in range(initial_markers.shape[0]):
-            distances_to_projections = np.linalg.norm(initial_markers[marker_idx,0:2] - projections_2d,axis=1)
+        for marker_idx in range(initial_marker_positions.shape[0]):
+            distances_to_projections = np.linalg.norm(initial_marker_positions[marker_idx,0:2] - surface_node_projections_2d, axis=1)
             neighbor_indices = np.argpartition(distances_to_projections, self.marker_interpolation_knn_k)
             k_nearest_indices = neighbor_indices[:self.marker_interpolation_knn_k]
             inverse_distances = 1/distances_to_projections[k_nearest_indices]
             total_inverse_distance = np.sum(inverse_distances)
             interpolation_weights = inverse_distances / total_inverse_distance
-            interpolated_position = np.matmul(projections_2d[k_nearest_indices].T, interpolation_weights).T
+            interpolated_position = np.matmul(surface_node_projections_2d[k_nearest_indices].T, interpolation_weights).T
             interpolated_marker_positions_2d.append(interpolated_position)
             marker_interpolation_indices.append(k_nearest_indices)
             marker_interpolation_weights.append(interpolation_weights)
         interpolated_marker_positions_2d = np.array(interpolated_marker_positions_2d)
         marker_interpolation_indices = np.array(marker_interpolation_indices)
         marker_interpolation_weights = np.array(marker_interpolation_weights)
-    
-        self.marker_interpolation_knn_k = 5
+
         self.markers_2d_initial_undeformed = interpolated_marker_positions_2d
         self.num_markers = len(self.markers_2d_initial_undeformed)
-        self.visualise_2d(marker_interpolation_indices)
 
         self.deformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.undeformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
@@ -238,8 +241,6 @@ class ViTacTip:
         self.marker_interpolation_weights.from_numpy(marker_interpolation_weights.astype(np.float32))
         self.marker_interpolation_indices = ti.Vector.field(self.marker_interpolation_knn_k, int, self.num_markers)
         self.marker_interpolation_indices.from_numpy(marker_interpolation_indices.astype(np.int32))
-
-        self.validate_markers_via_2d_projection()
 
     def set_up_physical_state(self):
         # vertex_positions_ideal: ideal/undeformed vertex positions in m
@@ -358,25 +359,20 @@ class ViTacTip:
         self.first_initialization_flag[None] = 0
         self.set_up_pose_helper()
 
-    def validate_markers_via_2d_projection(self):
-        marker_points_3d = self.node_coordinates[self.marker_node_tags_np]
-        camera_3D_points = np.array([marker_points_3d[:,0], marker_points_3d[:,2], marker_points_3d[:,1]]).T
-        marker_points_2d = project_points_to_pix(camera_3D_points)
+    def save_predicted_markers_to_image(self):
+        initial_camera_image = cv2.imread("../tasks/vitactip_photo_default_state.png")
+        surface_node_visualization = initial_camera_image.copy()
+        for projected_point in self.initial_undeformed_markers.to_numpy():
+            point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
+            cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
+        cv2.imwrite("../tasks/output/vitactip_photo_default_state_predicted_markers.png", surface_node_visualization)
+        sys.exit()
 
-        img = cv2.imread('./init.png')
-        if img is None:
-            print('Error: Could not load ./init.png')
-            return
-        for pt in marker_points_2d:
-            x, y = int(round(pt[0])), int(round(pt[1]))
-            cv2.circle(img, (x, y), 4, (0,0,255), -1)  # Red dot
-        cv2.imwrite('output/init-3d-markers.png', img)
-    
     @ti.kernel
     def extract_initial_markers(self, frame_idx: ti.i32):
         for marker_idx in range(self.num_markers):
             surface_node_idx = self.surface_node_tags[marker_idx]
-            initial_vertex_pos = self.initial_vertex_positions_undeformed[frame_idx, surface_node_idx]
+            initial_vertex_pos = self.initial_vertex_positions_undeformed[surface_node_idx]
             homogeneous_initial_pos = ti.Vector([initial_vertex_pos[0], initial_vertex_pos[1], initial_vertex_pos[2], 1.0])
             transformed_initial_pos = self.inverse_transformation_matrix[None] @ homogeneous_initial_pos
             camera_space_initial_pos = ti.Vector([transformed_initial_pos[0], transformed_initial_pos[2], transformed_initial_pos[1]])
@@ -395,7 +391,7 @@ class ViTacTip:
     @ti.kernel
     def extract_markers(self, frame_idx: ti.i32):
         for surface_idx in range(self.num_surface):
-            surface_node_idx = self.surface_node_tags[surface_idx]
+            surface_node_idx = self.surface_node_tags_npy[surface_idx]
             deformed_vertex_pos = self.vertex_positions_deformed[frame_idx, surface_node_idx]
             undeformed_vertex_pos = self.vertex_positions_undeformed[frame_idx, surface_node_idx]
             homogeneous_deformed_pos = ti.Vector([deformed_vertex_pos[0], deformed_vertex_pos[1], deformed_vertex_pos[2], 1.0])
@@ -420,20 +416,6 @@ class ViTacTip:
                 interpolated_undeformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_surface_nodes_undeformed[nearest_surface_indices[neighbor_idx]]
             self.deformed_markers[marker_idx] = interpolated_deformed_pos_2d
             self.undeformed_markers[marker_idx] = interpolated_undeformed_pos_2d
-
-    @ti.kernel
-    def set_material_params(self, shell_E:ti.f32, shell_nu:ti.f32, gel_E:ti.f32, gel_nu:ti.f32):
-        return
-
-        # Set shell material parameters (Vytaflex 60)
-        self.shell_youngs_modulus[None], self.shell_poissons_ratio[None] = shell_E, shell_nu
-        self.shell_mu[None] = self.shell_youngs_modulus[None] / 2 / (1 + self.shell_poissons_ratio[None])
-        self.shell_lam[None] = self.shell_youngs_modulus[None] * self.shell_poissons_ratio[None] / (1 + self.shell_poissons_ratio[None]) / (1 - 2 * self.shell_poissons_ratio[None])
-        
-        # Set gel material parameters (RTV27905)
-        self.gel_youngs_modulus[None], self.gel_poissons_ratio[None] = gel_E, gel_nu
-        self.gel_mu[None] = self.gel_youngs_modulus[None] / 2 / (1 + self.gel_poissons_ratio[None])
-        self.gel_lam[None] = self.gel_youngs_modulus[None] * self.gel_poissons_ratio[None] / (1 + self.gel_poissons_ratio[None]) / (1 - 2 * self.gel_poissons_ratio[None])
 
     @ti.func
     def eul2mat(self, rot_v, trans_v):

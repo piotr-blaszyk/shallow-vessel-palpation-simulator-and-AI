@@ -322,9 +322,9 @@ def extract_experimental_markers_and_save_to_file(image_dir):
 
 def save_init_marker_positions():
     # Read the image
-    img = cv2.imread('init.png', cv2.IMREAD_GRAYSCALE)
+    img = cv2.imread('../tasks/vitactip_photo_default_state.png', cv2.IMREAD_GRAYSCALE)
     if img is None:
-        raise FileNotFoundError("Could not find or open init.png")
+        raise FileNotFoundError("Could not find or open vitactip_photo_default_state.png")
     
     # Get marker positions
     marker_positions, circle_center, circle_radius = get_marker_image(img)

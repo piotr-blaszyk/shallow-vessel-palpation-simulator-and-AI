@@ -17,7 +17,7 @@ with open('output/sim-markers-initial-positions.pkl', 'rb') as f:
     marker_positions = pickle.load(f)
 
 # Read the image
-image = cv2.imread('init.png')
+image = cv2.imread('../tasks/vitactip_photo_default_state.png')
 
 # Draw markers on the image
 marker_color = (0, 0, 255)  # Red color in BGR
