@@ -13,6 +13,8 @@ import pickle
 import matplotlib.pyplot as plt
 import json
 
+from ..tasks.constants import *
+
 class FisheyeModel:
     def __init__(self):
         self.image_dir = "../experiment-capture-completed"

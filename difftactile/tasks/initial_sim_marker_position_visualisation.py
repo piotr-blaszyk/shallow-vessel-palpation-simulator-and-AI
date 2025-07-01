@@ -4,6 +4,8 @@ import pickle
 import signal
 import sys
 
+from ..tasks.constants import *
+
 def signal_handler(sig, frame):
     print('\nClosing visualization...')
     cv2.destroyAllWindows()

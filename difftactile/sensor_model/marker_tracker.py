@@ -10,6 +10,8 @@ from scipy.spatial.distance import cdist
 import json
 import pickle
 
+from ..tasks.constants import *
+
 class MarkerTracker:
     def __init__(self, video_path, output_path=None):
         """

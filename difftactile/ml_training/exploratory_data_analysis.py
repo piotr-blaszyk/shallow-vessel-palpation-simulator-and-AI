@@ -2,6 +2,8 @@ import pickle
 import numpy as np
 import cv2
 
+from ..tasks.constants import *
+
 def load_sim_data():
     with open("../tasks/output/marker_snapshots_and_labels.pkl", "rb") as f:
         data = pickle.load(f)

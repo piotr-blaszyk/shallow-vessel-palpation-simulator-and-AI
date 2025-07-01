@@ -3,6 +3,8 @@ import math
 import json
 import pickle
 
+from ..tasks.constants import *
+
 def arr_str(xs):
     if len(xs.shape) == 1:
         return "[" + ", ".join([f'{x:.6f}' for x in xs]) + "]"

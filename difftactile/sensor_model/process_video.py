@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 
+from ..tasks.constants import *
+
 # Input and output video paths
 input_video_path = "difftactile/sensor_model/system-id-screws-3-reps.mkv"
 output_video_path = "difftactile/sensor_model/processed_video.mkv"

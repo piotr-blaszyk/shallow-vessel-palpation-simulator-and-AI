@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 
+from ..tasks.constants import *
+
 # Load the image
 image_path = "../tasks/vitactip_photo_default_state.png"
 img = cv2.imread(image_path)

@@ -28,6 +28,6 @@ class ConstantsFromJson:
         attrs = [f"{key}={repr(value)}" for key, value in self.__dict__.items()]
         return f"{self.__class__.__name__}({', '.join(attrs)})"
 
-if __name__ == '__main__':
-    constants = ConstantsFromJson('../tasks/system-params.json')
-    foo = 7
+# Create a global instance with the system parameters
+SYSTEM_PARAMS = ConstantsFromJson("difftactile/tasks/system-params.json")
+SYSTEM_PARAMS_COMPUTED = ConstantsFromJson("difftactile/tasks/system-params-computed.json")

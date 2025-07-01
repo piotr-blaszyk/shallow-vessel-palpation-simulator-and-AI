@@ -8,6 +8,8 @@ import os
 import itertools
 import json
 
+from ..tasks.constants import *
+
 class MeshGenerator:
     def __init__(self):
         self.params = None

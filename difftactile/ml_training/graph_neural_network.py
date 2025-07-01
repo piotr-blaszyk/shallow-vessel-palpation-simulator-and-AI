@@ -13,6 +13,7 @@ import os
 import pickle
 
 from exploratory_data_analysis import *
+from ..tasks.constants import *
 
 class GNNClassifier(pl.LightningModule):
     def __init__(self, node_dim=4):

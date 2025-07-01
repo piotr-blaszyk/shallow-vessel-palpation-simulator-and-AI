@@ -1,6 +1,8 @@
 import numpy as np
 import pickle
 
+from ..tasks.constants import *
+
 # Load the 2D numpy array from the pickle file
 with open('output/tactile_sensor.all_nodes.pkl', 'rb') as f:
     arr = pickle.load(f)

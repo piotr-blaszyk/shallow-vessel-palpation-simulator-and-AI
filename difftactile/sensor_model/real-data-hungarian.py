@@ -10,6 +10,8 @@ from sklearn.metrics import confusion_matrix, f1_score, accuracy_score, recall_s
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from ..tasks.constants import *
+
 def load_data():
     # Load experimental data
     with open('vascular-tumour-press-experimental-results.pkl', 'rb') as f:

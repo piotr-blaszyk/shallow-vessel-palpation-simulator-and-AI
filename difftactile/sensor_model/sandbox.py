@@ -2,6 +2,8 @@ import numpy as np
 from scipy.spatial import Delaunay
 import matplotlib.pyplot as plt
 
+from ..tasks.constants import *
+
 # Define a set of points
 points = np.array([
     [0, 0], [0, 1.1], [1, 0], [1, 1],

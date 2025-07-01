@@ -9,6 +9,7 @@ import torch
 import json
 
 from difftactile.object_model.obj_loader import ObjLoader
+from ..tasks.constants import *
 
 TI_TYPE = ti.f32
 TC_TYPE = torch.float32
@@ -24,38 +25,15 @@ class Phantom:
         self.cache = dict() # for grad backward
 
     def set_up_system_params(self):
-        with open('../tasks/system-params.json', 'r') as f:
-            self.params = json.load(f)
-        self.phantom_params = self.params['phantom']
-        self.contact_params = self.params['contact']
-        with open('../tasks/system-params-computed.json', 'r') as f:
-            self.coordinates = json.load(f)
-        
         # Add Rayleigh damping coefficients
         self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)  # mass damping coefficient
         self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)   # stiffness damping coefficient
         # Set default values from system parameters
-        self.rayleigh_damping_alpha[None] = self.phantom_params['rayleigh_damping_alpha']  # typical values range from 0 to 0.1
-        self.rayleigh_damping_beta[None] = self.phantom_params['rayleigh_damping_beta']  # typical values range from 0.001 to 0.01
+        self.rayleigh_damping_alpha[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_alpha  # typical values range from 0 to 0.1
+        self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_beta  # typical values range from 0.001 to 0.01
 
-        self.keypoint_search_xy_threshold = self.phantom_params['keypoint_search_xy_threshold']
-        self.fix_bottom_points = self.phantom_params['fix_bottom_points'] == 1
-        self.fixed_points_z_ratio = self.phantom_params['fixed_points_z_ratio']
-        self.num_particles_cube_1d = self.phantom_params['num_particles_cube_1d']
-        self.total_volume = self.coordinates['phantom_volume']
-
-        self.sub_steps = self.contact_params['num_sub_frames']
-        self.dt = self.contact_params['dt']
-        self.bound = self.phantom_params['bound']
-        self.n_grid_x = self.phantom_params['n_grid_x']
-        self.n_grid_y = self.phantom_params['n_grid_y']
-        self.n_grid_z = self.phantom_params['n_grid_z']
-        self.healthy_tissue_mass_density = self.phantom_params['silicone']['density']
-        self.gravity = ti.Vector(self.phantom_params['gravity'])
-
-        self.mpm_grid_cube_size = self.phantom_params['mpm_grid_cube_size']
-        self.inverse_mpm_grid_cube_size =  1 / self.mpm_grid_cube_size
-        self.eps = self.phantom_params['eps']
+        self.gravity = ti.Vector(SYSTEM_PARAMS.phantom.gravity)
+        self.inverse_mpm_grid_cube_size =  1 / SYSTEM_PARAMS.phantom.mpm_grid_cube_size
         
         self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
         self.poissons_ratio_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
@@ -65,12 +43,8 @@ class Phantom:
         self.set_stiffness()
 
     def load_obj(self):
-        self.obj_name = self.params['contact']['phantom_name']
-        if self.obj_name is None:
-            raise Exception("Please specify the name of the phantom object to load")
-        
-        data_path = os.path.join("..", "meshes", "objects", self.obj_name)
-        obj_loader = ObjLoader(data_path, num_particles_cube_1d=self.num_particles_cube_1d)
+        data_path = os.path.join("..", "meshes", "objects", SYSTEM_PARAMS.contact.phantom_name)
+        obj_loader = ObjLoader(data_path, num_particles_cube_1d=SYSTEM_PARAMS.phantom.num_particles_cube_1d)
         obj_loader.generate_particles()
         self.actual_total_num_particles = len(obj_loader.particles)
         self.particles = ti.Vector.field(3, dtype=float, shape=(self.actual_total_num_particles,))
@@ -81,21 +55,19 @@ class Phantom:
         particles_np = self.particles.to_numpy()
         z_coords = particles_np[:, 2]
         z_min, z_max = np.min(z_coords), np.max(z_coords)
-        z_threshold = z_min + self.fixed_points_z_ratio * (z_max - z_min)
+        z_threshold = z_min + SYSTEM_PARAMS.phantom.fixed_points_z_ratio * (z_max - z_min)
         is_fixed_np = (z_coords <= z_threshold)
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
 
-        self.initial_particle_volume = self.total_volume / self.actual_total_num_particles
-        self.healthy_tissue_particle_mass = self.initial_particle_volume * self.healthy_tissue_mass_density
-        self.total_healthy_tissue_mass = self.total_volume * self.healthy_tissue_mass_density
+        self.initial_particle_volume = SYSTEM_PARAMS_COMPUTED.phantom_volume / self.actual_total_num_particles
+        self.healthy_tissue_particle_mass = self.initial_particle_volume * SYSTEM_PARAMS.phantom.silicone.density
+        self.total_healthy_tissue_mass = SYSTEM_PARAMS_COMPUTED.phantom_volume * SYSTEM_PARAMS.phantom.silicone.density
 
     def set_stiffness(self):
-        healthy_tissue = self.phantom_params['silicone']
-        tumour = self.phantom_params['hard_plastic']
-        self.youngs_modulus_0[0] = healthy_tissue['youngs_modulus']
-        self.poissons_ratio_0[0] = healthy_tissue['poissons_ratio']
-        self.youngs_modulus_0[1] = tumour['youngs_modulus']
-        self.poissons_ratio_0[1] = tumour['poissons_ratio']
+        self.youngs_modulus_0[0] = SYSTEM_PARAMS.phantom.silicone.youngs_modulus
+        self.poissons_ratio_0[0] = SYSTEM_PARAMS.phantom.silicone.poissons_ratio
+        self.youngs_modulus_0[1] = SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus
+        self.poissons_ratio_0[1] = SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio
 
         for item in range(2):
             self.mu_0[item] = self.youngs_modulus_0[item] / 2 / (1 + self.poissons_ratio_0[item])
@@ -114,37 +86,37 @@ class Phantom:
         self.transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape=())
 
         # particle_position: position vectors in m
-        self.particle_position = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
+        self.particle_position = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # particle_velocity: velocity vectors in m/s
-        self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
+        self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
 
         # affine_velocity: affine velocity field matrix (m/s)
-        self.affine_velocity_field = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
+        self.affine_velocity_field = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # trial_deformation_gradient: trial deformation gradient matrix (dimensionless)
-        self.trial_deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
+        self.trial_deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # deformation_gradient: deformation gradient matrix (dimensionless)
-        self.deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
+        self.deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # U_svd: left singular vectors matrix (dimensionless)
-        self.U_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
+        self.U_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # V_svd: right singular vectors matrix (dimensionless)
-        self.V_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
+        self.V_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # S_svd: singular values matrix (dimensionless)
-        self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(self.sub_steps, self.actual_total_num_particles), needs_grad=False)
+        self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
 
         # grid_node_momentum_in: momentum vectors in kg⋅m/s
-        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid_x, self.n_grid_y, self.n_grid_z), needs_grad=False)
+        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
         # grid_node_velocity_out: velocity vectors in m/s
-        self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid_x, self.n_grid_y, self.n_grid_z), needs_grad=False)
+        self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
         # grid_node_mass: mass values in kg
-        self.grid_node_mass = ti.field(dtype=float, shape=(self.sub_steps, self.n_grid_x, self.n_grid_y, self.n_grid_z), needs_grad=False)
+        self.grid_node_mass = ti.field(dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
         # grid_node_external_force: force vectors in N
-        self.grid_node_external_impulse = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_grid_x, self.n_grid_y, self.n_grid_z), needs_grad=False)
+        self.grid_node_external_impulse = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
         # grid_occupy: occupancy flags (dimensionless)
-        self.grid_occupy = ti.field(dtype=int, shape=(self.sub_steps, self.n_grid_x, self.n_grid_y, self.n_grid_z))
+        self.grid_occupy = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z))
         # total_surface_external_force: total surface force vector in N
-        self.total_surface_external_force = ti.Vector.field(3, float, shape=(self.sub_steps), needs_grad=False)
+        self.total_surface_external_force = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=False)
         # von_mises: von Mises stress in Pa
-        self.particle_von_mises_stress = ti.field(dtype=float, shape=(self.sub_steps, self.actual_total_num_particles))
+        self.particle_von_mises_stress = ti.field(dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles))
 
         self.keypoint_idx = ti.field(dtype=int, shape=())
         self.keypoint_idx[None] = -1
@@ -245,19 +217,19 @@ class Phantom:
 
     @ti.kernel
     def get_external_force(self, f:ti.i32):
-        for i, j, k in ti.ndrange(self.n_grid_x, self.n_grid_y, self.n_grid_z):
+        for i, j, k in ti.ndrange(SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z):
             # external force in N
-            self.total_surface_external_force[f] += self.grid_node_external_impulse[f, i, j, k] / self.dt
+            self.total_surface_external_force[f] += self.grid_node_external_impulse[f, i, j, k] / SYSTEM_PARAMS.contact.dt
 
     @ti.func
     def update_contact_impulse(self, external_force, f, i, j, k):
         # extrnal impulse in N * s
-        self.grid_node_external_impulse[f, i, j, k] += external_force * self.dt
+        self.grid_node_external_impulse[f, i, j, k] += external_force * SYSTEM_PARAMS.contact.dt
 
     @ti.kernel
     def compute_trial_deformation_gradient(self, f: ti.i32):
         for p in range(self.actual_total_num_particles):
-            self.trial_deformation_gradient[f, p] = (ti.Matrix.diag(dim=3, val=1) + self.dt * self.affine_velocity_field[f, p]) @ self.deformation_gradient[f, p]
+            self.trial_deformation_gradient[f, p] = (ti.Matrix.diag(dim=3, val=1) + SYSTEM_PARAMS.contact.dt * self.affine_velocity_field[f, p]) @ self.deformation_gradient[f, p]
 
     @ti.kernel
     def svd_of_trial_deformation_gradient(self, f: ti.i32):
@@ -311,7 +283,7 @@ class Phantom:
             # force_term: force contribution in N
             force_term = cauchy_stress * self.initial_particle_volume
             # impulse_term: kg * m / s
-            impulse_term = force_term * -self.dt
+            impulse_term = force_term * -SYSTEM_PARAMS.contact.dt
             # impulse_term_scaled: kg * m / s
             impulse_term_scaled_quadratic_B_spline = 4 * self.inverse_mpm_grid_cube_size ** 2 * impulse_term
 
@@ -323,7 +295,7 @@ class Phantom:
                 # grid_offset: grid offset vector (dimensionless)
                 grid_offset = ti.Vector([i, j, k])
                 # dist_to_grid: distance to grid node in m
-                dist_to_grid = (grid_offset.cast(float) - particle_grid_diff) * self.mpm_grid_cube_size
+                dist_to_grid = (grid_offset.cast(float) - particle_grid_diff) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size
                 # weight: interpolation weight (dimensionless)
                 weight = weight_functions[i][0] * weight_functions[j][1] * weight_functions[k][2]
                 self.grid_node_momentum_in[frame, grid_base_index + grid_offset] += weight * (self.healthy_tissue_particle_mass * self.particle_velocity[frame, particle_id] + momentum_contribution @ dist_to_grid)
@@ -339,8 +311,8 @@ class Phantom:
         Args:
             f: current simulation frame (dimensionless)
         """
-        for i, j, k in ti.ndrange(self.n_grid_x, self.n_grid_y, self.n_grid_z):
-            if self.grid_node_mass[f, i, j, k] > self.eps:
+        for i, j, k in ti.ndrange(SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z):
+            if self.grid_node_mass[f, i, j, k] > SYSTEM_PARAMS.phantom.eps:
                 self.grid_occupy[f, i, j, k] = 1
 
     @ti.kernel
@@ -352,10 +324,10 @@ class Phantom:
         Args:
             frame: current simulation frame (dimensionless)
         """
-        for grid_x, grid_y, grid_z in ti.ndrange(self.n_grid_x, self.n_grid_y, self.n_grid_z):
+        for grid_x, grid_y, grid_z in ti.ndrange(SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z):
             if self.grid_occupy[frame, grid_x, grid_y, grid_z] == 1:
                 # inverse_mass: inverse mass in kg^-1
-                inverse_mass = 1 / (self.grid_node_mass[frame, grid_x, grid_y, grid_z] + self.eps)
+                inverse_mass = 1 / (self.grid_node_mass[frame, grid_x, grid_y, grid_z] + SYSTEM_PARAMS.phantom.eps)
                 # grid_mass: mass at grid node in kg
                 grid_mass = self.grid_node_mass[frame, grid_x, grid_y, grid_z]
 
@@ -364,11 +336,11 @@ class Phantom:
                 grid_velocity = ti.Vector([0.0, 0.0, 0.0])
                 grid_velocity += inverse_mass * self.grid_node_momentum_in[frame, grid_x, grid_y, grid_z] # Momentum to velocity
                 grid_velocity += inverse_mass * self.grid_node_external_impulse[frame, grid_x, grid_y, grid_z]
-                grid_velocity += self.dt * self.gravity  # gravity
+                grid_velocity += SYSTEM_PARAMS.contact.dt * self.gravity  # gravity
 
                 # Calculate elastic forces (from momentum)
                 # elastic_force: elastic force in N
-                elastic_force = self.grid_node_momentum_in[frame, grid_x, grid_y, grid_z] / self.dt
+                elastic_force = self.grid_node_momentum_in[frame, grid_x, grid_y, grid_z] / SYSTEM_PARAMS.contact.dt
 
                 # Apply Rayleigh damping
                 # mass_damping: mass-proportional damping force in N
@@ -377,20 +349,20 @@ class Phantom:
                 stiffness_damping = -self.rayleigh_damping_beta[None] * elastic_force
 
                 # Apply damping forces to velocity
-                grid_velocity += inverse_mass * (mass_damping + stiffness_damping) * self.dt
+                grid_velocity += inverse_mass * (mass_damping + stiffness_damping) * SYSTEM_PARAMS.contact.dt
 
                 # Apply boundary conditions at domain edges
-                if grid_x < self.bound and grid_velocity[0] < 0:
+                if grid_x < SYSTEM_PARAMS.phantom.bound and grid_velocity[0] < 0:
                     grid_velocity[0] = 0  # Left boundary
-                if grid_x > self.n_grid_x - self.bound and grid_velocity[0] > 0:
+                if grid_x > SYSTEM_PARAMS.phantom.n_grid_x - SYSTEM_PARAMS.phantom.bound and grid_velocity[0] > 0:
                     grid_velocity[0] = 0  # Right boundary
-                if grid_y < self.bound and grid_velocity[1] < 0:
+                if grid_y < SYSTEM_PARAMS.phantom.bound and grid_velocity[1] < 0:
                     grid_velocity[1] = 0  # Bottom boundary
-                if grid_y > self.n_grid_y - self.bound and grid_velocity[1] > 0:
+                if grid_y > SYSTEM_PARAMS.phantom.n_grid_y - SYSTEM_PARAMS.phantom.bound and grid_velocity[1] > 0:
                     grid_velocity[1] = 0  # Top boundary
-                if grid_z < self.bound and grid_velocity[2] < 0:
+                if grid_z < SYSTEM_PARAMS.phantom.bound and grid_velocity[2] < 0:
                     grid_velocity[2] = 0  # Front boundary
-                if grid_z > self.n_grid_y - self.bound and grid_velocity[2] > 0:
+                if grid_z > SYSTEM_PARAMS.phantom.n_grid_y - SYSTEM_PARAMS.phantom.bound and grid_velocity[2] > 0:
                     grid_velocity[2] = 0  # Back boundary
 
                 self.grid_node_velocity_out[frame, grid_x, grid_y, grid_z] = grid_velocity
@@ -426,17 +398,14 @@ class Phantom:
                 updated_velocity += weight * grid_node_velocity
                 updated_affine += 4 * self.inverse_mpm_grid_cube_size * weight * grid_node_velocity.outer_product(grid_relative_offset)
 
-            # fixed_particle: flag for fixed particles (dimensionless)
-            # fixed_particle = self.is_fixed[particle_id] == 1
-            fixed_particle = self.fix_bottom_points
-            if fixed_particle:
+            if SYSTEM_PARAMS.phantom.fix_bottom_points == 1:
                 self.particle_velocity[frame+1, particle_id] = ti.Vector([0.0, 0.0, 0.0])
                 self.affine_velocity_field[frame+1, particle_id] = ti.Matrix.zero(float, 3, 3)
                 self.particle_position[frame+1, particle_id] = self.particle_position[frame, particle_id]
             else:
                 self.particle_velocity[frame+1, particle_id] = updated_velocity
                 self.affine_velocity_field[frame+1, particle_id] = updated_affine
-                self.particle_position[frame+1, particle_id] = self.particle_position[frame, particle_id] + self.dt * updated_velocity  # advection
+                self.particle_position[frame+1, particle_id] = self.particle_position[frame, particle_id] + SYSTEM_PARAMS.contact.dt * updated_velocity  # advection
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):
@@ -479,11 +448,11 @@ class Phantom:
         self.cache[cur_step_name]['F_0'] = torch.zeros((self.actual_total_num_particles, 3, 3), dtype=TC_TYPE, device=device)
 
         self.add_step_to_cache(0, self.cache[cur_step_name]['x_0'], self.cache[cur_step_name]['v_0'], self.cache[cur_step_name]['C_0'], self.cache[cur_step_name]['F_0'])
-        self.copy_frame(self.sub_steps-1, 0)
+        self.copy_frame(SYSTEM_PARAMS.contact.num_sub_frames-1, 0)
 
     def memory_from_cache(self, t):
         cur_step_name = f'{t:06d}'
-        self.copy_frame(0, self.sub_steps-1)
+        self.copy_frame(0, SYSTEM_PARAMS.contact.num_sub_frames-1)
 
         self.load_step_from_cache(0, self.cache[cur_step_name]['x_0'], self.cache[cur_step_name]['v_0'], self.cache[cur_step_name]['C_0'], self.cache[cur_step_name]['F_0'])
 
@@ -499,12 +468,12 @@ class Phantom:
         positions = self.particle_position.to_numpy()[0]
         
         # Get phantom centroid x,y coordinates from coordinates
-        centroid_x = self.coordinates['phantom_centroid_pose'][0]
-        centroid_y = self.coordinates['phantom_centroid_pose'][1]
+        centroid_x = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[0]
+        centroid_y = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[1]
         
         # Create mask for points within 0.01 of centroid x,y
-        x_mask = np.abs(positions[:, 0] - centroid_x) < self.keypoint_search_xy_threshold
-        y_mask = np.abs(positions[:, 1] - centroid_y) < self.keypoint_search_xy_threshold
+        x_mask = np.abs(positions[:, 0] - centroid_x) < SYSTEM_PARAMS.phantom.keypoint_search_xy_threshold
+        y_mask = np.abs(positions[:, 1] - centroid_y) < SYSTEM_PARAMS.phantom.keypoint_search_xy_threshold
         xy_mask = x_mask & y_mask
         
         # Among points that satisfy xy criteria, find one with minimum z

@@ -4,6 +4,8 @@ import pickle
 from collections import Counter
 import json
 
+from ..tasks.constants import *
+
 with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
     mesh_data = pickle.load(f)
         

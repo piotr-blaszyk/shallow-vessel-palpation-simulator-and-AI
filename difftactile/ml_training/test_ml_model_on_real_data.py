@@ -7,6 +7,8 @@ from sklearn.metrics import confusion_matrix
 from torch_geometric.data import Data, DataLoader
 import pytorch_lightning as pl
 
+from ..tasks.constants import *
+
 def load_and_preprocess_data():
     # Load experimental data
     with open('../sensor_model/vascular-tumour-press-experimental-results.pkl', 'rb') as f:

@@ -1,6 +1,8 @@
 import numpy as np
 import json
 
+from ..tasks.constants import *
+
 # Helper function to calculate wave speed for a material
 def calculate_wave_speed(density, E, nu):
     lambda_param = E * nu / ((1 + nu) * (1 - 2 * nu))

@@ -1,6 +1,8 @@
 import numpy as np
 import cv2
 
+from ..tasks.constants import *
+
 # Load the saved parameters
 params = np.load("fisheye_params.npz")
 
