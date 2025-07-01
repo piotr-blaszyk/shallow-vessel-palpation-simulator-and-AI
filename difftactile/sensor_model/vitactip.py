@@ -32,6 +32,14 @@ class ViTacTip:
         self.vitactip_params = self.params['vitactip']
         self.contact_params = self.params['contact']
         self.geometry_params = self.params['geometry']
+        self.files_params = self.params['files']
+        
+        # Unpack file paths
+        self.vitactip_photo_default_state = self.files_params['vitactip_photo_default_state']
+        self.vitactip_photo_default_state_detected_markers = self.files_params['vitactip_photo_default_state_detected_markers']
+        self.vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d = self.files_params['vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d']
+        self.vitactip_photo_default_state_predicted_markers = self.files_params['vitactip_photo_default_state_predicted_markers']
+        self.gmsh_mesh = self.files_params['gmsh_mesh']
 
         self.max_num_materials = self.vitactip_params['maximum_number_of_materials']
         self.number_of_materials = ti.field(dtype=int, shape=(), needs_grad=False)
@@ -194,24 +202,24 @@ class ViTacTip:
     def initialise_camera_model(self):
         self.marker_interpolation_knn_k = 5
 
-        initial_camera_image = cv2.imread("../tasks/vitactip_photo_default_state.png")
+        initial_camera_image = cv2.imread(self.vitactip_photo_default_state)
         initial_marker_positions, _, _ = self.fisheye_model.get_marker_image(initial_camera_image)
         marker_visualization_image = initial_camera_image.copy()
         for marker_position in initial_marker_positions:
             marker_center = (int(round(marker_position[0])), int(round(marker_position[1])))
             cv2.circle(marker_visualization_image, marker_center, radius=5, color=(0, 0, 255), thickness=2)
-        cv2.imwrite("../tasks/output/vitactip_photo_default_state_detected_markers.png", marker_visualization_image)
+        cv2.imwrite(self.vitactip_photo_default_state_detected_markers, marker_visualization_image)
 
         surface_nodes_y_up = self.node_coordinates[self.surface_node_tags_npy]
         # OpenCV has camera.position(0,0,0), camera.lookat(0,0,1), camera.up(0,1,0)
         surface_nodes_z_up = np.array([surface_nodes_y_up[:,0], surface_nodes_y_up[:,2], surface_nodes_y_up[:,1]]).T
-        surface_node_projections_2d = project_points_to_pix(surface_nodes_z_up)
+        surface_node_projections_2d = self.fisheye_model.project_points_to_pix(surface_nodes_z_up)
 
         surface_node_visualization = initial_camera_image.copy()
         for projected_point in surface_node_projections_2d:
             point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
             cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
-        cv2.imwrite("../tasks/output/vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d.png", surface_node_visualization)
+        cv2.imwrite(self.vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d, surface_node_visualization)
 
         marker_interpolation_indices = []
         marker_interpolation_weights = []
@@ -361,12 +369,12 @@ class ViTacTip:
         self.set_up_pose_helper()
 
     def save_predicted_markers_to_image(self):
-        initial_camera_image = cv2.imread("../tasks/vitactip_photo_default_state.png")
+        initial_camera_image = cv2.imread(self.vitactip_photo_default_state)
         surface_node_visualization = initial_camera_image.copy()
         for projected_point in self.initial_undeformed_markers.to_numpy():
             point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
             cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
-        cv2.imwrite("../tasks/output/vitactip_photo_default_state_predicted_markers.png", surface_node_visualization)
+        cv2.imwrite(self.vitactip_photo_default_state_predicted_markers, surface_node_visualization)
         sys.exit()
 
     @ti.kernel

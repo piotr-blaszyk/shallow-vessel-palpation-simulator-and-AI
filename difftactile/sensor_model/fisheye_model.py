@@ -343,30 +343,19 @@ class FisheyeModel:
             pickle.dump(marker_positions, f)
         
         print(f"Found {len(marker_positions)} markers")
-        print(f"Marker positions saved to init-marker-positions.pkl")
+        print(f"Marker positions saved")
         
         return marker_positions
 
     def generate_marker_3d_projection(self):
-        """
-        Loads 2D marker positions from init-marker-positions.pkl,
-        projects them to 3D points on a hemisphere using project_pix_to_points,
-        and saves the 3D positions to init-marker-positions-3d.pkl
-        """
-        # Load 2D marker positions
         with open('init-marker-positions.pkl', 'rb') as f:
             marker_positions_2d = pickle.load(f)
-        
-        # Project to 3D using hemisphere radius of 2.9
-        A_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=self.shell_inner_r-1)
+        A_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=self.shell_outer_r)
         B_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=self.shell_outer_r+2)
-
         obj = {
             'A_points': A_points,
             'B_points': B_points,
         }
-        
-        # Save 3D marker positions to pickle file
         with open('biomimetic-tip-points.pkl', 'wb') as f:
             pickle.dump(obj, f)
 

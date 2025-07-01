@@ -110,5 +110,12 @@
         "circle_radius": 170.0,
         "shell_inner_r": 35.33333333333333,
         "shell_outer_r": 36.33333333333333
+    },
+    "files": {
+        "vitactip_photo_default_state": "../tasks/vitactip_photo_default_state.png",
+        "vitactip_photo_default_state_detected_markers": "../tasks/output/vitactip_photo_default_state_detected_markers.png",
+        "vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d": "../tasks/output/vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d.png",
+        "vitactip_photo_default_state_predicted_markers": "../tasks/output/vitactip_photo_default_state_predicted_markers.png",
+        "gmsh_mesh": "../tasks/output/gmsh-mesh.pkl"
     }
 }
