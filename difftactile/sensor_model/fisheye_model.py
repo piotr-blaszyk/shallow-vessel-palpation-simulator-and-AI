@@ -11,19 +11,29 @@ import taichi as ti
 from glob import glob
 import pickle
 import matplotlib.pyplot as plt
-
-F = 230.0
-FX = F
-FY = F
-CX = 359.0
-CY = 266.0
+import json
 
 class FisheyeModel:
     def __init__(self):
         self.image_dir = "../experiment-capture-completed"
+        with open('../tasks/system-params.json', 'r') as f:
+            self.params = json.load(f)
+        self.fisheye_model_params = self.params['fisheye_model']
+        self.image_dir = self.fisheye_model_params['image_dir']
+        self.focal_length_x = self.fisheye_model_params['focal_length_x']
+        self.focal_length_y = self.fisheye_model_params['focal_length_y']
+        self.principal_point_x = self.fisheye_model_params['principal_point_x']
+        self.principal_point_y = self.fisheye_model_params['principal_point_y']
+        self.target_image_width = self.fisheye_model_params['target_image_width']
+        self.target_image_height = self.fisheye_model_params['target_image_height']
+        self.circle_centre_x = self.fisheye_model_params['circle_centre_x']
+        self.circle_centre_y = self.fisheye_model_params['circle_centre_y']
+        self.circle_radius = self.fisheye_model_params['circle_radius']
+        self.shell_inner_r = self.fisheye_model_params['shell_inner_r']
+        self.shell_outer_r = self.fisheye_model_params['shell_outer_r']
 
     @ti.func
-    def project_3d_2d(self, a, fx=FX, fy=FY, cx=CX, cy=CY):
+    def project_3d_2d(self, a):
         #ref. Universal Semantic Segmentation for Fisheye Urban Driving Images Ye et al.
         #a is 3d vec
         a[2] += 2.0*0.01 # distance to the image plane
@@ -34,16 +44,16 @@ class FisheyeModel:
         cos = ti.max(-1.0, cos)
         theta = ti.acos(cos)
         omega = ti.atan2(a[1],a[0]+1e-8) + ti.math.pi
-        r_x = fx * theta
-        r_y = fy * theta
+        r_x = self.focal_length_x * theta
+        r_y = self.focal_length_y * theta
 
         p = ti.Vector([0.0, 0.0])
-        p[0] = r_x * ti.cos(omega) + cx
-        p[1] = r_y * ti.sin(omega) + cy
+        p[0] = r_x * ti.cos(omega) + self.principal_point_x
+        p[1] = r_y * ti.sin(omega) + self.principal_point_y
 
         return p
 
-    def project_points_to_pix(self, a, fx=FX, fy=FY, cx=CX, cy=CY):
+    def project_points_to_pix(self, a):
         #ref. Universal Semantic Segmentation for Fisheye Urban Driving Images Ye et al.
         #a is a point cloud if (n, 3)
         a[:,2] += 2.0*0.01 #(14-0.7-9)* 0.01 # distance to the image plane
@@ -56,16 +66,16 @@ class FisheyeModel:
         theta = np.arccos(cos)
         omega = np.arctan2(a[:,1],a[:,0]) + np.pi
 
-        r_x = fx * theta
-        r_y = fy * theta
+        r_x = self.focal_length_x * theta
+        r_y = self.focal_length_y * theta
 
         p = np.zeros((len(a),2))
-        p[:,0] = r_x * np.cos(omega) + cx
-        p[:,1] = r_y * np.sin(omega) + cy
+        p[:,0] = r_x * np.cos(omega) + self.principal_point_x
+        p[:,1] = r_y * np.sin(omega) + self.principal_point_y
 
         return p
 
-    def project_pix_to_points(self, p, hemisphere_radius, fx=FX, fy=FY, cx=CX, cy=CY):
+    def project_pix_to_points(self, p, hemisphere_radius):
         """
         Projects 2D pixel coordinates to 3D points on a hemisphere.
         Camera configuration:
@@ -75,16 +85,16 @@ class FisheyeModel:
         Args:
             p: numpy array of shape (n, 2) containing pixel coordinates
             hemisphere_radius: radius of the hemisphere the points will lie on
-            fx, fy: focal lengths in x and y directions
-            cx, cy: principal point coordinates
+            self.focal_length_x, self.focal_length_y: focal lengths in x and y directions
+            self.principal_point_x, self.principal_point_y: principal point coordinates
         Returns:
             numpy array of shape (n, 3) containing 3D points
         Raises:
             ValueError: If any projected point falls outside the valid circle on x-y plane
         """
         # Convert to normalized coordinates
-        x_norm = (p[:, 0] - cx) / fx  # normalize by focal length
-        y_norm = (p[:, 1] - cy) / fy  # normalize by focal length
+        x_norm = (p[:, 0] - self.principal_point_x) / self.focal_length_x  # normalize by focal length
+        y_norm = (p[:, 1] - self.principal_point_y) / self.focal_length_y  # normalize by focal length
         
         # Calculate radial distance in normalized coordinates
         r = np.sqrt(x_norm**2 + y_norm**2)
@@ -115,9 +125,8 @@ class FisheyeModel:
         else:
             source_height, source_width = img.shape
         
-        # Scale factors for adapting from original 640x480 to current image size
-        scale_x = source_width / 640.0
-        scale_y = source_height / 480.0
+        scale_x = source_width / self.target_image_width
+        scale_y = source_height / self.target_image_height
         
         params = cv2.SimpleBlobDetector_Params()
 
@@ -125,8 +134,8 @@ class FisheyeModel:
         keypoints = detector.detect(img)
 
         # Circle parameters - scaled to match the input image resolution
-        circle_center = np.array([345 * scale_x, 260 * scale_y])
-        circle_radius = 170 * min(scale_x, scale_y)  # Use minimum scale to maintain circular shape
+        circle_center = np.array([self.circle_centre_x * scale_x, self.circle_centre_y * scale_y])
+        circle_radius = self.circle_radius * min(scale_x, scale_y)  # Use minimum scale to maintain circular shape
 
         MarkerCenter = []
         for pt in keypoints:
@@ -140,12 +149,12 @@ class FisheyeModel:
 
         return MarkerCenter, circle_center, circle_radius
 
-    def project_points_to_pix_cv2(self, points3d, K=None, D=None, rvec=None, tvec=None):
+    def project_points_to_pix_cv2(self, points3d):
         """
         Project 3D points to 2D image coordinates using cv2.fisheye.projectPoints.
         Args:
             points3d: (num_points, 3) or (3,) array-like, the 3D points in camera coordinates.
-            K: (3,3) camera intrinsic matrix. If None, uses default fx, fy, cx, cy.
+            K: (3,3) camera intrinsic matrix. If None, uses default self.focal_length_x, self.focal_length_y, self.principal_point_x, self.principal_point_y.
             D: (4,) distortion coefficients. If None, uses default values.
             rvec: (3,1) rotation vector. If None, assumes zero rotation.
             tvec: (3,1) translation vector. If None, assumes zero translation.
@@ -156,14 +165,10 @@ class FisheyeModel:
         if points3d.ndim == 1:
             points3d = points3d.reshape(1, 3)
         points3d = points3d.reshape(-1, 1, 3)
-        if K is None:
-            K = np.array([[FX, 0, CX], [0, FY, CY], [0, 0, 1]], dtype=np.float64)
-        if D is None:
-            D = np.zeros((4, 1), dtype=np.float64)
-        if rvec is None:
-            rvec = np.zeros((3, 1), dtype=np.float64)
-        if tvec is None:
-            tvec = np.zeros((3, 1), dtype=np.float64)
+        K = np.array([[self.focal_length_x, 0, self.principal_point_x], [0, self.focal_length_y, self.principal_point_y], [0, 0, 1]], dtype=np.float64)
+        D = np.zeros((4, 1), dtype=np.float64)
+        rvec = np.zeros((3, 1), dtype=np.float64)
+        tvec = np.zeros((3, 1), dtype=np.float64)
         imgpts, _ = cv2.fisheye.projectPoints(points3d, rvec, tvec, K, D)
         res = imgpts.reshape(-1, 2)
         return res
@@ -351,19 +356,10 @@ class FisheyeModel:
         # Load 2D marker positions
         with open('init-marker-positions.pkl', 'rb') as f:
             marker_positions_2d = pickle.load(f)
-
-        if False:
-            with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
-                gmsh_data = pickle.load(f)
-            shell_inner_r = gmsh_data['radius_of_curvature_inner']
-            shell_outer_r = gmsh_data['radius_of_curvature_outer']
-        else:
-            shell_inner_r = 35 + 1/3
-            shell_outer_r = 36 + 1/3
         
         # Project to 3D using hemisphere radius of 2.9
-        A_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=shell_inner_r-1)
-        B_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=shell_outer_r+2)
+        A_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=self.shell_inner_r-1)
+        B_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=self.shell_outer_r+2)
 
         obj = {
             'A_points': A_points,

@@ -96,5 +96,19 @@
     },
     "visualise_mesh": {
         "frame_number": 200
+    },
+    "fisheye_model": {
+        "image_dir": "../experiment-capture-completed",
+        "focal_length_x": 230.0,
+        "focal_length_y": 230.0,
+        "principal_point_x": 359.0,
+        "principal_point_y": 266.0,
+        "target_image_width": 640.0,
+        "target_image_height": 480.0,
+        "circle_centre_x": 345.0,
+        "circle_centre_y": 260.0,
+        "circle_radius": 170.0,
+        "shell_inner_r": 35.33333333333333,
+        "shell_outer_r": 36.33333333333333
     }
 }
