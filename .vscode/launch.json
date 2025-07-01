@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+        
         {
             "name": "psb120 debug python module (/scripts/)",
             "type": "debugpy",
@@ -42,6 +43,14 @@
             "console": "integratedTerminal",
             "args": "--use_tactile --use_state",
             "cwd": "${workspaceFolder}/difftactile/tasks",
+        },
+        {
+            "name": "psb120 debug current file (root)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "/home/psb120/Documents/DiffTactile"
         }
     ]
 }
