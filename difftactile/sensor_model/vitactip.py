@@ -21,6 +21,7 @@ class ViTacTip:
     def __init__(self):
         self.set_up_system_params()
         self.init_mesh()
+        self.init_cam_model()
         self.set_up_physical_state()
     
     def set_up_system_params(self):
@@ -106,7 +107,6 @@ class ViTacTip:
         surface_triangles = mesh_data['surface_triangles']
         group_to_idx = mesh_data['group_to_idx']
         y_bottom = mesh_data['y_bottom'] / 1_000
-        marker_node_tags = mesh_data['marker_node_tags']
         
         # Compute fixed layer nodes (nodes at the bottom)
         is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < self.fixed_layer_distance_from_bottom  # Check if y-coordinate is at bottom
@@ -162,11 +162,6 @@ class ViTacTip:
         self.node_labels = node_labels
         self.element_materials_npy = element_materials
         self.vertex_masses_npy = vertex_masses
-        self.marker_node_tags_np = marker_node_tags
-
-        self.num_markers = self.marker_node_tags_np.shape[0]
-        self.marker_node_tags = ti.field(shape=(self.num_markers,), dtype=int)
-        self.marker_node_tags.from_numpy(self.marker_node_tags_np)
         
         self.is_fixed_layer = ti.field(int, len(self.node_coordinates))
         is_fixed_layer_data = self.node_labels[:,-1].astype(np.int32)
@@ -181,24 +176,68 @@ class ViTacTip:
         self.element_materials.from_numpy(self.element_materials_npy)
         self.vertex_mass.from_numpy(self.vertex_masses_npy)
 
-        self.initial_vertex_positions = ti.Vector.field(3, float, self.num_vertices, needs_grad=False)
-        self.initial_vertex_positions.from_numpy(self.node_coordinates.astype(np.float32))
-
-        self.deformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
-        self.undeformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
-        self.initial_undeformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
+        self.initial_vertex_positions_undeformed = ti.Vector.field(3, float, self.num_vertices, needs_grad=False)
+        self.initial_vertex_positions_undeformed.from_numpy(self.node_coordinates.astype(np.float32))
 
         self.tetrahedra = ti.Vector.field(4, int, self.num_tetrahedra)
         self.tetrahedra.from_numpy(self.tetrahedra_npy.astype(np.int32))
         self.contact_surface = ti.Vector.field(3, int, self.num_contact_surface_triangles) # surface triangle mesh
         self.contact_surface.from_numpy(self.outer_surface_triangles.astype(np.int32))
 
-        self.markers_surface_id_np = np.where(self.layer_idxs==self.N_t*3-1)[0]
-        self.markers_surface_id = ti.field(int, len(self.markers_surface_id_np))
-        self.markers_surface_id.from_numpy(self.markers_surface_id_np.astype(np.int32))
-        self.num_surface = len(self.markers_surface_id_np)
-        self.surface_cam_loc = ti.Vector.field(2, float, self.num_surface, needs_grad=False)
-        self.surface_cam_virtual_loc = ti.Vector.field(2, float, self.num_surface, needs_grad=False)
+        self.projection_2d_surface_nodes_deformed = ti.Vector.field(2, float, self.surface_node_tags.shape[0], needs_grad=False)
+        self.projection_2d_surface_nodes_undeformed = ti.Vector.field(2, float, self.surface_node_tags.shape[0], needs_grad=False)
+
+    def init_cam_model(self):
+        init_img = cv2.imread("./init.png")
+        initial_markers, _, _ = get_marker_image(init_img)
+        overlay_img = init_img.copy()
+        for pos in initial_markers:
+            center = (int(round(pos[0])), int(round(pos[1])))
+            cv2.circle(overlay_img, center, radius=5, color=(0, 0, 255), thickness=2)
+        cv2.imwrite("../tasks/output/init_cam_model.png", overlay_img)
+
+        surface_nodes_coordinates_y_up = self.node_coordinates[self.surface_node_tags]
+        # OpenCV has camera.position(0,0,0), camera.lookat(0,0,1), camera.up(0,1,0)
+        surface_nodes_coordinates_z_up = np.array([surface_nodes_coordinates_y_up[:,0], surface_nodes_coordinates_y_up[:,2], surface_nodes_coordinates_y_up[:,1]]).T
+        projections_2d = project_points_to_pix(surface_nodes_coordinates_z_up)
+
+        cam_points_img = init_img.copy()
+        for pt in projections_2d:
+            center = (int(round(pt[0])), int(round(pt[1])))
+            cv2.circle(cam_points_img, center, radius=3, color=(0, 255, 0), thickness=2)
+        cv2.imwrite("../tasks/output/cam_points.png", cam_points_img)
+
+        marker_interpolation_indices = []
+        marker_interpolation_weights = []
+        interpolated_marker_positions_2d = []
+        for marker_idx in range(initial_markers.shape[0]):
+            distances_to_projections = np.linalg.norm(initial_markers[marker_idx,0:2] - projections_2d,axis=1)
+            neighbor_indices = np.argpartition(distances_to_projections, self.marker_interpolation_knn_k)
+            k_nearest_indices = neighbor_indices[:self.marker_interpolation_knn_k]
+            inverse_distances = 1/distances_to_projections[k_nearest_indices]
+            total_inverse_distance = np.sum(inverse_distances)
+            interpolation_weights = inverse_distances / total_inverse_distance
+            interpolated_position = np.matmul(projections_2d[k_nearest_indices].T, interpolation_weights).T
+            interpolated_marker_positions_2d.append(interpolated_position)
+            marker_interpolation_indices.append(k_nearest_indices)
+            marker_interpolation_weights.append(interpolation_weights)
+        interpolated_marker_positions_2d = np.array(interpolated_marker_positions_2d)
+        marker_interpolation_indices = np.array(marker_interpolation_indices)
+        marker_interpolation_weights = np.array(marker_interpolation_weights)
+    
+        self.marker_interpolation_knn_k = 5
+        self.markers_2d_initial_undeformed = interpolated_marker_positions_2d
+        self.num_markers = len(self.markers_2d_initial_undeformed)
+        self.visualise_2d(marker_interpolation_indices)
+
+        self.deformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
+        self.undeformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
+        self.initial_undeformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
+
+        self.marker_interpolation_weights = ti.Vector.field(self.marker_interpolation_knn_k, float, self.num_markers, needs_grad=False)
+        self.marker_interpolation_weights.from_numpy(marker_interpolation_weights.astype(np.float32))
+        self.marker_interpolation_indices = ti.Vector.field(self.marker_interpolation_knn_k, int, self.num_markers)
+        self.marker_interpolation_indices.from_numpy(marker_interpolation_indices.astype(np.int32))
 
         self.validate_markers_via_2d_projection()
 
@@ -273,57 +312,6 @@ class ViTacTip:
         # rotation_matrix: 3x3 rotation matrix (dimensionless)
         self.rotation_matrix = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
 
-    def init_cam_model(self):
-        init_img = cv2.imread("./init.png")
-        initial_markers, _, _ = get_marker_image(init_img)
-        overlay_img = init_img.copy()
-        for pos in initial_markers:
-            center = (int(round(pos[0])), int(round(pos[1])))
-            cv2.circle(overlay_img, center, radius=5, color=(0, 0, 255), thickness=2)
-        cv2.imwrite("../tasks/output/init_cam_model.png", overlay_img)
-
-        surface_nodes_coordinates_y_up = self.node_coordinates[self.surface_node_tags]
-        # OpenCV has camera.position(0,0,0), camera.lookat(0,0,1), camera.up(0,1,0)
-        surface_nodes_coordinates_z_up = np.array([surface_nodes_coordinates_y_up[:,0], surface_nodes_coordinates_y_up[:,2], surface_nodes_coordinates_y_up[:,1]]).T
-        projections_2d = project_points_to_pix(surface_nodes_coordinates_z_up)
-
-        cam_points_img = init_img.copy()
-        for pt in projections_2d:
-            center = (int(round(pt[0])), int(round(pt[1])))
-            cv2.circle(cam_points_img, center, radius=3, color=(0, 255, 0), thickness=2)
-        cv2.imwrite("../tasks/output/cam_points.png", cam_points_img)
-
-        marker_interpolation_indices = []
-        marker_interpolation_weights = []
-        interpolated_marker_positions_2d = []
-        for marker_idx in range(initial_markers.shape[0]):
-            distances_to_projections = np.linalg.norm(initial_markers[marker_idx,0:2] - projections_2d,axis=1)
-            neighbor_indices = np.argpartition(distances_to_projections, self.marker_interpolation_knn_k)
-            k_nearest_indices = neighbor_indices[:self.marker_interpolation_knn_k]
-            inverse_distances = 1/distances_to_projections[k_nearest_indices]
-            total_inverse_distance = np.sum(inverse_distances)
-            interpolation_weights = inverse_distances / total_inverse_distance
-            interpolated_position = np.matmul(projections_2d[k_nearest_indices].T, interpolation_weights).T
-            interpolated_marker_positions_2d.append(interpolated_position)
-            marker_interpolation_indices.append(k_nearest_indices)
-            marker_interpolation_weights.append(interpolation_weights)
-        interpolated_marker_positions_2d = np.array(interpolated_marker_positions_2d)
-        marker_interpolation_indices = np.array(marker_interpolation_indices)
-        marker_interpolation_weights = np.array(marker_interpolation_weights)
-    
-        self.marker_interpolation_knn_k = 5
-        self.markers_2d_initial_undeformed = interpolated_marker_positions_2d
-        self.num_markers = len(self.markers_2d_initial_undeformed)
-        self.visualise_2d(marker_interpolation_indices)
-
-        self.predict_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
-        self.virtual_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
-
-        self.interp_weight = ti.Vector.field(self.marker_interpolation_knn_k, float, self.num_markers, needs_grad=False)
-        self.interp_weight.from_numpy(marker_interpolation_weights.astype(np.float32))
-        self.interp_idx = ti.Vector.field(self.marker_interpolation_knn_k, int, self.num_markers)
-        self.interp_idx.from_numpy(marker_interpolation_indices.astype(np.int32))
-
     def set_up_pose(self, rot_x, rot_y, rot_z, t_dx, t_dy, t_dz):
         # rotation_quaternion: rotation quaternion from Euler angles (dimensionless)
         rotation_object = R.from_rotvec(np.deg2rad([rot_x, rot_y, rot_z]))
@@ -383,89 +371,55 @@ class ViTacTip:
             x, y = int(round(pt[0])), int(round(pt[1]))
             cv2.circle(img, (x, y), 4, (0,0,255), -1)  # Red dot
         cv2.imwrite('output/init-3d-markers.png', img)
-
+    
     @ti.kernel
-    def extract_initial_markers_biomimetic_tips(self, f:ti.i32):
-        for i in range(self.num_markers):
-            node_ix = self.marker_node_tags[i]
-            init_pos = self.vertex_positions_undeformed[f, node_ix]
-            hom_init_pos = ti.Vector([init_pos[0], init_pos[1], init_pos[2], 1.0])
-            inv_init_pos = self.inverse_transformation_matrix[None] @ hom_init_pos
-            cam_init_pos = ti.Vector([inv_init_pos[0], inv_init_pos[2], inv_init_pos[1]])
-            cam_init_loc = project_3d_2d(cam_init_pos)
-            self.initial_undeformed_markers[i] = cam_init_loc
+    def extract_initial_markers(self, frame_idx: ti.i32):
+        for marker_idx in range(self.num_markers):
+            surface_node_idx = self.surface_node_tags[marker_idx]
+            initial_vertex_pos = self.initial_vertex_positions_undeformed[frame_idx, surface_node_idx]
+            homogeneous_initial_pos = ti.Vector([initial_vertex_pos[0], initial_vertex_pos[1], initial_vertex_pos[2], 1.0])
+            transformed_initial_pos = self.inverse_transformation_matrix[None] @ homogeneous_initial_pos
+            camera_space_initial_pos = ti.Vector([transformed_initial_pos[0], transformed_initial_pos[2], transformed_initial_pos[1]])
+            camera_space_initial_2d = project_3d_2d(camera_space_initial_pos)
+            self.initial_undeformed_markers[marker_idx] = camera_space_initial_2d
             if False:
                 print('extract_initial_markers')
-                print(f'node_ix: {node_ix}')
-                print(f'init_pos: {init_pos}')
-                print(f'hom_init_pos: {hom_init_pos}')
-                print(f'inv_init_pos: {inv_init_pos}')
-                print(f'cam_init_pos: {cam_init_pos}')
-                print(f'cam_init_loc: {cam_init_loc}')
+                print(f'surface_node_idx: {surface_node_idx}')
+                print(f'initial_vertex_pos: {initial_vertex_pos}')
+                print(f'homogeneous_initial_pos: {homogeneous_initial_pos}')
+                print(f'transformed_initial_pos: {transformed_initial_pos}')
+                print(f'camera_space_initial_pos: {camera_space_initial_pos}')
+                print(f'camera_space_initial_2d: {camera_space_initial_2d}')
                 print(0)
 
     @ti.kernel
-    def extract_markers_biomimetic_tips(self, f:ti.i32):
-        for i in range(self.num_markers):
-            node_ix = self.marker_node_tags[i]
-            pos = self.vertex_positions_deformed[f, node_ix]
-            init_pos = self.vertex_positions_undeformed[f, node_ix]
-            hom_pos = ti.Vector([pos[0], pos[1], pos[2], 1.0])
-            hom_init_pos = ti.Vector([init_pos[0], init_pos[1], init_pos[2], 1.0])
-            inv_pos = self.inverse_transformation_matrix[None] @ hom_pos
-            inv_init_pos = self.inverse_transformation_matrix[None] @ hom_init_pos
-            cam_pos = ti.Vector([inv_pos[0], inv_pos[2], inv_pos[1]])
-            cam_init_pos = ti.Vector([inv_init_pos[0], inv_init_pos[2], inv_init_pos[1]])
-            cam_loc = project_3d_2d(cam_pos)
-            cam_init_loc = project_3d_2d(cam_init_pos)
-            drift = cam_init_loc - self.initial_undeformed_markers[i]
-            self.deformed_markers[i] = cam_loc - drift
-            self.undeformed_markers[i] = cam_init_loc - drift
-            if False:
-                print('extract_markers')
-                print(f'node_ix: {node_ix}')
-                print(f'pos: {pos}')
-                print(f'init_pos: {init_pos}')
-                print(f'hom_pos: {hom_pos}')
-                print(f'hom_init_pos: {hom_init_pos}')
-                print(f'inv_pos: {inv_pos}')
-                print(f'inv_init_pos: {inv_init_pos}')
-                print(f'cam_pos: {cam_pos}')
-                print(f'cam_init_pos: {cam_init_pos}')
-                print(f'cam_loc: {cam_loc}')
-                print(f'cam_init_loc: {cam_init_loc}')
-                print(f'drift: {drift}')
-                print(f'cam_loc - drift: {cam_loc - drift}')
-                print(f'cam_init_loc - drift: {cam_init_loc - drift}')
-                print()
-    
-    @ti.kernel
-    def extract_markers(self, f:ti.i32):
-        for i in range(self.num_surface):
-            pos = self.pos[f, self.markers_surface_id[i]]
-            init_pos = self.virtual_pos[f, self.markers_surface_id[i]]
-            hom_pos = ti.Vector([pos[0], pos[1], pos[2], 1.0])
-            hom_init_pos = ti.Vector([init_pos[0], init_pos[1], init_pos[2], 1.0])
-            inv_pos = self.inv_trans_h[None] @ hom_pos
-            inv_init_pos = self.inv_trans_h[None] @ hom_init_pos
-            cam_pos = ti.Vector([inv_pos[0], inv_pos[2], inv_pos[1]])
+    def extract_markers(self, frame_idx: ti.i32):
+        for surface_idx in range(self.num_surface):
+            surface_node_idx = self.surface_node_tags[surface_idx]
+            deformed_vertex_pos = self.vertex_positions_deformed[frame_idx, surface_node_idx]
+            undeformed_vertex_pos = self.vertex_positions_undeformed[frame_idx, surface_node_idx]
+            homogeneous_deformed_pos = ti.Vector([deformed_vertex_pos[0], deformed_vertex_pos[1], deformed_vertex_pos[2], 1.0])
+            homogeneous_undeformed_pos = ti.Vector([undeformed_vertex_pos[0], undeformed_vertex_pos[1], undeformed_vertex_pos[2], 1.0])
+            transformed_deformed_pos = self.inverse_transformation_matrix[None] @ homogeneous_deformed_pos
+            transformed_undeformed_pos = self.inverse_transformation_matrix[None] @ homogeneous_undeformed_pos
+            camera_space_deformed_pos = ti.Vector([transformed_deformed_pos[0], transformed_deformed_pos[2], transformed_deformed_pos[1]])
+            camera_space_undeformed_pos = ti.Vector([transformed_undeformed_pos[0], transformed_undeformed_pos[2], transformed_undeformed_pos[1]])
+            camera_space_deformed_2d = project_3d_2d(camera_space_deformed_pos)
+            camera_space_undeformed_2d = project_3d_2d(camera_space_undeformed_pos)
+            marker_drift = camera_space_undeformed_2d - self.initial_undeformed_markers[surface_idx]
+            self.projection_2d_surface_nodes_deformed[surface_idx] = camera_space_deformed_2d - marker_drift
+            self.projection_2d_surface_nodes_undeformed[surface_idx] = camera_space_undeformed_2d - marker_drift
 
-            cam_init_pos = ti.Vector([inv_init_pos[0], inv_init_pos[2], inv_init_pos[1]])
-            cam_loc = project_3d_2d(cam_pos)
-            cam_init_loc = project_3d_2d(cam_init_pos)
-            self.surface_cam_loc[i] = cam_loc
-            self.surface_cam_virtual_loc[i] = cam_init_loc
-
-        for i in range(self.num_markers):
-            smallest_idx = self.interp_idx[i]
-            weights = self.interp_weight[i]
-            loc_2d = ti.Vector([0.0, 0.0])
-            init_loc_2d = ti.Vector([0.0, 0.0])
-            for j in range(self.marker_interpolation_knn_k):
-                loc_2d += weights[j] * self.surface_cam_loc[smallest_idx[j]]
-                init_loc_2d += weights[j] * self.surface_cam_virtual_loc[smallest_idx[j]]
-            self.predict_markers[i] = loc_2d
-            self.virtual_markers[i] = init_loc_2d
+        for marker_idx in range(self.num_markers):
+            nearest_surface_indices = self.marker_interpolation_indices[marker_idx]
+            interpolation_weights = self.marker_interpolation_weights[marker_idx]
+            interpolated_deformed_pos_2d = ti.Vector([0.0, 0.0])
+            interpolated_undeformed_pos_2d = ti.Vector([0.0, 0.0])
+            for neighbor_idx in range(self.marker_interpolation_knn_k):
+                interpolated_deformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_surface_nodes_deformed[nearest_surface_indices[neighbor_idx]]
+                interpolated_undeformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_surface_nodes_undeformed[nearest_surface_indices[neighbor_idx]]
+            self.deformed_markers[marker_idx] = interpolated_deformed_pos_2d
+            self.undeformed_markers[marker_idx] = interpolated_undeformed_pos_2d
 
     @ti.kernel
     def set_material_params(self, shell_E:ti.f32, shell_nu:ti.f32, gel_E:ti.f32, gel_nu:ti.f32):
@@ -614,7 +568,7 @@ class ViTacTip:
     @ti.kernel
     def set_up_pose_helper(self):
         for idx in range(self.num_vertices):
-            current_vertex_positions_undeformed = self.initial_vertex_positions[idx] # before any world transformation
+            current_vertex_positions_undeformed = self.initial_vertex_positions_undeformed[idx] # before any world transformation
             target_vertex_positions_undeformed = self.homogeneous_transformation_matrix[None] @ ti.Vector([current_vertex_positions_undeformed[0], current_vertex_positions_undeformed[1], current_vertex_positions_undeformed[2], 1.0]) # 4 x 1 homogeneous
 
             self.vertex_positions_deformed[0, idx] = ti.Vector([target_vertex_positions_undeformed[0], target_vertex_positions_undeformed[1], target_vertex_positions_undeformed[2]])
