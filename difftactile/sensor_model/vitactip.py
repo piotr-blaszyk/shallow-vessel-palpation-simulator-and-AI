@@ -84,9 +84,10 @@ class ViTacTip:
             mesh_data = pickle.load(f)
         
         # Unpack mesh data
+        self.dome_surface_node_tags_npy = mesh_data['dome_surface_node_tags']
+        self.dome_surface_node_tags = ti.field(dtype=int, shape=(self.dome_surface_node_tags_npy.shape[0],), needs_grad=False)
+        self.dome_surface_node_tags.from_numpy(self.dome_surface_node_tags_npy)
         self.surface_node_tags_npy = mesh_data['surface_node_tags']
-        self.surface_node_tags = ti.field(dtype=int, shape=(self.surface_node_tags_npy.shape[0],), needs_grad=False)
-        self.surface_node_tags.from_numpy(self.surface_node_tags_npy)
         all_tetrahedra = mesh_data['all_tetrahedra']
         node_coordinates = mesh_data['node_coordinates'] / 1_000
         node_labels = mesh_data['node_labels']
@@ -349,11 +350,12 @@ class ViTacTip:
             point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
             cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
         cv2.imwrite(SYSTEM_PARAMS.files.vitactip_photo_default_state_predicted_markers, surface_node_visualization)
+        sys.exit()
 
     @ti.kernel
-    def extract_initial_markers(self, frame_idx: ti.i32):
+    def extract_initial_markers(self):
         for marker_idx in range(self.num_markers):
-            surface_node_idx = self.surface_node_tags[marker_idx]
+            surface_node_idx = self.dome_surface_node_tags[marker_idx]
             initial_vertex_pos = self.initial_vertex_positions_undeformed[surface_node_idx]
             homogeneous_initial_pos = ti.Vector([initial_vertex_pos[0], initial_vertex_pos[1], initial_vertex_pos[2], 1.0])
             transformed_initial_pos = self.inverse_transformation_matrix[None] @ homogeneous_initial_pos
@@ -372,8 +374,8 @@ class ViTacTip:
 
     @ti.kernel
     def extract_markers(self, frame_idx: ti.i32):
-        for surface_idx in range(self.surface_node_tags.shape[0]):
-            surface_node_idx = self.surface_node_tags[surface_idx]
+        for surface_idx in range(self.dome_surface_node_tags.shape[0]):
+            surface_node_idx = self.dome_surface_node_tags[surface_idx]
             deformed_vertex_pos = self.vertex_positions_deformed[frame_idx, surface_node_idx]
             undeformed_vertex_pos = self.vertex_positions_undeformed[frame_idx, surface_node_idx]
             homogeneous_deformed_pos = ti.Vector([deformed_vertex_pos[0], deformed_vertex_pos[1], deformed_vertex_pos[2], 1.0])

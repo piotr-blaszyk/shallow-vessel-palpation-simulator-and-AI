@@ -9,8 +9,8 @@ with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
     mesh_data = pickle.load(f)
 
 print('hello')
-print(mesh_data.node_coordinates.shape)
-print(mesh_data.all_tetrahedra.shape)
+print(mesh_data['node_coordinates'].shape)
+print(mesh_data['all_tetrahedra'].shape)
 
 with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(SYSTEM_PARAMS.visualise_mesh.frame_number), 'rb') as f:
     deformed_node_coordinates = pickle.load(f)
@@ -27,13 +27,13 @@ old_to_new_idx[valid_nodes] = np.arange(len(valid_nodes))  # Map old indices to 
 deformed_node_coordinates = deformed_node_coordinates[valid_nodes]
 
 # Convert all tetrahedra to new indices
-all_tetrahedra_new_idx = np.array([[old_to_new_idx[i] for i in tetra] for tetra in mesh_data.all_tetrahedra])
+all_tetrahedra_new_idx = np.array([[old_to_new_idx[i] for i in tetra] for tetra in mesh_data['all_tetrahedra']])
 
 good_tetrahedra = []
 for tetra in all_tetrahedra_new_idx:
-    tetra_node_labels = mesh_data.node_labels[tetra]
-    gel_count = np.sum(tetra_node_labels[:, mesh_data.group_to_idx.gel])
-    shell_count = np.sum(tetra_node_labels[:, mesh_data.group_to_idx.shell])
+    tetra_node_labels = mesh_data['node_labels'][tetra]
+    gel_count = np.sum(tetra_node_labels[:, mesh_data['group_to_idx'].gel])
+    shell_count = np.sum(tetra_node_labels[:, mesh_data['group_to_idx'].shell])
     is_gel = gel_count == 4 and shell_count <= 3
     if not is_gel:
         if np.any(tetra == -1):
@@ -49,15 +49,16 @@ print(len(good_tetrahedra) // 4)
 # deformed_node_coordinates = deformed_node_coordinates[1:]
 # good_tetrahedra -= 1
 
-with open(SYSTEM_PARAMS.files.vitactip_interp_idx_flat, 'rb') as f:
-    interp_idx_flat = pickle.load(f)
+if False:
+    with open(SYSTEM_PARAMS.files.vitactip_interp_idx_flat, 'rb') as f:
+        interp_idx_flat = pickle.load(f)
 
-with open(SYSTEM_PARAMS.files.vitactip_cam_3d_nodes, 'rb') as f:
-    cam_3d_nodes = pickle.load(f)
+    with open(SYSTEM_PARAMS.files.vitactip_cam_3d_nodes, 'rb') as f:
+        cam_3d_nodes = pickle.load(f)
 
-with open(SYSTEM_PARAMS.files.tactile_sensor_f2v, 'rb') as f:
-    tetrahedra_indices = pickle.load(f)
-tetrahedra_indices = tetrahedra_indices.astype(int)
+    with open(SYSTEM_PARAMS.files.tactile_sensor_f2v, 'rb') as f:
+        tetrahedra_indices = pickle.load(f)
+    tetrahedra_indices = tetrahedra_indices.astype(int)
 
 if False:
     counter = Counter(interp_idx_flat)

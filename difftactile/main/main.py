@@ -646,7 +646,7 @@ def main():
         contact_model.reset_pid_controller()
         contact_model.visualisation_reset_3d_scene()
         if opts == 0:
-            contact_model.vitactip.extract_initial_markers(0)
+            contact_model.vitactip.extract_initial_markers()
             contact_model.vitactip.save_predicted_markers_to_image()
             contact_model.vitactip.extract_markers(0)
             initial_markers = contact_model.vitactip.deformed_markers.to_numpy()
