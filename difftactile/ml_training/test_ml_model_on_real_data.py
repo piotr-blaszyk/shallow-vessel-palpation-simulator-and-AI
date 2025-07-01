@@ -7,7 +7,7 @@ from sklearn.metrics import confusion_matrix
 from torch_geometric.data import Data, DataLoader
 import pytorch_lightning as pl
 
-from difftactile.tasks.constants import SYSTEM_PARAMS
+from difftactile.tasks.constants import *
 
 def load_and_preprocess_data():
     # Load experimental data

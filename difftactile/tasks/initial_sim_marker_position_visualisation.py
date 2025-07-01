@@ -4,7 +4,7 @@ import pickle
 import signal
 import sys
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import *
 
 def signal_handler(sig, frame):
     print('\nClosing visualization...')

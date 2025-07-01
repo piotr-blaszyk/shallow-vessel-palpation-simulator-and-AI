@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial import Delaunay
 import matplotlib.pyplot as plt
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import *
 
 # Define a set of points
 points = np.array([

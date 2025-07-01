@@ -10,7 +10,7 @@ from sklearn.metrics import confusion_matrix, f1_score, accuracy_score, recall_s
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from difftactile.tasks.constants import SYSTEM_PARAMS
+from difftactile.tasks.constants import *
 
 def load_data():
     # Load experimental data

@@ -9,7 +9,7 @@ from scipy.spatial.distance import cdist
 import json
 import pickle
 
-from difftactile.tasks.constants import SYSTEM_PARAMS
+from difftactile.tasks.constants import *
 
 class MarkerTracker:
     def __init__(self, video_path, output_path=None):

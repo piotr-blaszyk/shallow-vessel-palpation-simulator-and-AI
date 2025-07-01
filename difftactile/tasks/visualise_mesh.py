@@ -3,7 +3,7 @@ import open3d as o3d
 import pickle
 from collections import Counter
 
-from difftactile.tasks.constants import SYSTEM_PARAMS
+from difftactile.tasks.constants import *
 
 with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
     mesh_data = pickle.load(f)

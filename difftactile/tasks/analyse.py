@@ -1,7 +1,7 @@
 import numpy as np
 import pickle
 
-from difftactile.tasks.constants import SYSTEM_PARAMS
+from difftactile.tasks.constants import *
 
 # Load the 2D numpy array from the pickle file
 with open(SYSTEM_PARAMS.files.tactile_sensor_all_nodes, 'rb') as f:

@@ -9,7 +9,7 @@ import torch
 import json
 
 from difftactile.object_model.obj_loader import ObjLoader
-from ..tasks.constants import *
+from difftactile.tasks.constants import *
 
 TI_TYPE = ti.f32
 TC_TYPE = torch.float32

@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import *
 
 # Load the image
 image_path = SYSTEM_PARAMS.files.vitactip_photo_default_state

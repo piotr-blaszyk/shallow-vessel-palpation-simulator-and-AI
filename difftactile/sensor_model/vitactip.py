@@ -11,7 +11,7 @@ import pickle
 import sys
 
 from difftactile.sensor_model.fisheye_model import * 
-from ..tasks.constants import *
+from difftactile.tasks.constants import *
 
 TI_TYPE = ti.f32
 TC_TYPE = torch.float32

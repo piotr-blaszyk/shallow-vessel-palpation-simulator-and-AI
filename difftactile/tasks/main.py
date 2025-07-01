@@ -6,7 +6,7 @@ import json
 
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
-from difftactile.tasks.constants import SYSTEM_PARAMS
+from difftactile.tasks.constants import *
 
 RUN_ON_LAB_MACHINE = True
 @ti.data_oriented

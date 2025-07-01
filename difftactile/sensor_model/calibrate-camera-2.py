@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 
-from difftactile.tasks.constants import SYSTEM_PARAMS
+from difftactile.tasks.constants import *
 
 # Load the saved parameters
 params = np.load(SYSTEM_PARAMS.files.fisheye_params)

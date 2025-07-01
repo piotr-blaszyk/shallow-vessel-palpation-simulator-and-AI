@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import glob
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import *
 
 # Checkerboard dimensions (inner corners)
 CHECKERBOARD = (4-1, 5-1)  # Adjust to your board

@@ -4,7 +4,7 @@ import pickle
 import os
 
 from fisheye_model import *
-from ..tasks.constants import *
+from difftactile.tasks.constants import *
 
 fisheye_model = FisheyeModel()
 

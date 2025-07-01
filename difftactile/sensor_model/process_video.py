@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from difftactile.tasks.constants import SYSTEM_PARAMS
+from difftactile.tasks.constants import *
 
 # Input and output video paths
 input_video_path = SYSTEM_PARAMS.files.system_id_video

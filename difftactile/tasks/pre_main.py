@@ -3,7 +3,7 @@ import math
 import json
 import pickle
 
-from difftactile.tasks.constants import SYSTEM_PARAMS
+from difftactile.tasks.constants import *
 
 def arr_str(xs):
     if len(xs.shape) == 1:

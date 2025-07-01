@@ -13,7 +13,7 @@ import pickle
 import matplotlib.pyplot as plt
 import json
 
-from difftactile.tasks.constants import SYSTEM_PARAMS
+from difftactile.tasks.constants import *
 
 class FisheyeModel:
     def __init__(self):

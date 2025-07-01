@@ -8,7 +8,7 @@ import numpy as np
 import json
 
 from mesh_to_sdf import *
-from difftactile.tasks.constants import SYSTEM_PARAMS
+from difftactile.tasks.constants import *
 
 class ObjLoader:
     def __init__(self, data_path, num_particles_cube_1d):

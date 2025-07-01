@@ -1,6 +1,6 @@
 import numpy as np
 
-from ..tasks.constants import *
+from difftactile.tasks.constants import *
 
 # Helper function to calculate wave speed for a material
 def calculate_wave_speed(density, E, nu):
