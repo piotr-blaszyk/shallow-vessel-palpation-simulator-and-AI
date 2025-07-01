@@ -345,3 +345,10 @@ class FisheyeModel:
         }
         with open(SYSTEM_PARAMS.files.biomimetic_tip_points, 'wb') as f:
             pickle.dump(obj, f)
+
+def main():
+    fisheye_model = FisheyeModel()
+    # fisheye_model.interactive_exploration()
+    # fisheye_model.save_init_marker_positions()
+    # fisheye_model.extract_experimental_markers_and_save_to_file()
+    fisheye_model.generate_marker_3d_projection()

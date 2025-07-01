@@ -2,6 +2,15 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "psb120 debug python module (/scripts/)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "difftactile.scripts.${fileBasenameNoExtension}",
+            "console": "integratedTerminal",
+            "cwd": "/home/psb120/Documents/DiffTactile",
+        },
+    
+        {
             "name": "psb120 debug current file (/sensor_model/)",
             "type": "debugpy",
             "request": "launch",

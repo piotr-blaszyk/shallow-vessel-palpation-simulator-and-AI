@@ -67,17 +67,17 @@ def calculate_cfl_timestep():
     for material in materials:
         # Calculate wave speed
         c = calculate_wave_speed(
-            material.density,
-            material.youngs_modulus,
-            material.poissons_ratio
+            material['density'],
+            material['youngs_modulus'],
+            material['poissons_ratio']
         )
         
         # Calculate dt
-        dt = cfl_number * material.particle_spacing / c
-        dt_values[material.name] = dt
+        dt = cfl_number * material['particle_spacing'] / c
+        dt_values[material['name']] = dt
         num_frames_per_second = 1 / (dt * SYSTEM_PARAMS.contact.num_sub_frames)
-        print(f"dt_{material.name}: {dt:0.3e}")
-        print(f"num_frames_per_second_{material.name}: {num_frames_per_second:0.0f}")
+        print(f"dt_{material['name']}: {dt:0.3e}")
+        print(f"num_frames_per_second_{material['name']}: {num_frames_per_second:0.0f}")
 
     # Take minimum dt for stability
     dt = min(dt_values.values())
@@ -211,6 +211,6 @@ def calculate_contact_parameters():
         }
     }
 
-if __name__ == '__main__':
+def main():
     calculate_cfl_timestep()
     calculate_contact_parameters()

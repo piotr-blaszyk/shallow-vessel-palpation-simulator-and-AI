@@ -387,6 +387,6 @@ class MeshGenerator:
             'gel': spacing_gel
         }
 
-if __name__ == "__main__":
+def main():
     mesh_generator = MeshGenerator()
     mesh_generator.generate_vitactip_mesh()

@@ -84,15 +84,15 @@ class ViTacTip:
             mesh_data = pickle.load(f)
         
         # Unpack mesh data
-        self.surface_node_tags_npy = mesh_data.surface_node_tags
+        self.surface_node_tags_npy = mesh_data['surface_node_tags']
         self.surface_node_tags = ti.field(dtype=int, shape=(self.surface_node_tags_npy.shape[0],), needs_grad=False)
         self.surface_node_tags.from_numpy(self.surface_node_tags_npy)
-        all_tetrahedra = mesh_data.all_tetrahedra
-        node_coordinates = mesh_data.node_coordinates / 1_000
-        node_labels = mesh_data.node_labels
-        surface_triangles = mesh_data.surface_triangles
-        group_to_idx = mesh_data.group_to_idx
-        y_bottom = mesh_data.y_bottom / 1_000
+        all_tetrahedra = mesh_data['all_tetrahedra']
+        node_coordinates = mesh_data['node_coordinates'] / 1_000
+        node_labels = mesh_data['node_labels']
+        surface_triangles = mesh_data['surface_triangles']
+        group_to_idx = mesh_data['group_to_idx']
+        y_bottom = mesh_data['y_bottom'] / 1_000
         
         # Compute fixed layer nodes (nodes at the bottom)
         is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < SYSTEM_PARAMS.vitactip.fixed_layer_distance_from_bottom  # Check if y-coordinate is at bottom
@@ -119,15 +119,15 @@ class ViTacTip:
             tetra_node_labels = node_labels[tetra]
             
             # Check if any node is part of the gel
-            gel_count = np.sum(tetra_node_labels[:, group_to_idx.gel])
+            gel_count = np.sum(tetra_node_labels[:, group_to_idx['gel']])
             # Check if all nodes are part of the shell
-            shell_count = np.sum(tetra_node_labels[:, group_to_idx.shell])
+            shell_count = np.sum(tetra_node_labels[:, group_to_idx['shell']])
             
             # Assign material based on node composition
             if gel_count == 4 and shell_count <= 3:
-                element_materials[i] = group_to_idx.gel  # gel material
+                element_materials[i] = group_to_idx['gel']  # gel material
             else:
-                element_materials[i] = group_to_idx.shell  # shell material
+                element_materials[i] = group_to_idx['shell']  # shell material
             
             # Determine density based on material
             material_density = self.mass_density[element_materials[i]]

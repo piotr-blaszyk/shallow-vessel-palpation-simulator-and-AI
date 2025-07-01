@@ -110,19 +110,20 @@
         "shell_outer_r": 36.33333333333333
     },
     "files": {
+        "init_marker_positions": "difftactile/output/init-marker-positions.pkl",
+        "biomimetic_tip_points": "difftactile/output/biomimetic-tip-points.pkl",
+        "gmsh_mesh": "difftactile/output/gmsh-mesh.pkl",
+
         "fisheye_model_image_dir": "difftactile/manual_or_experimental_data/downward-press-vascular-phantom",
         "vitactip_photo_default_state": "difftactile/manual_or_experimental_data/vitactip_photo_default_state.png",
         "vitactip_photo_default_state_detected_markers": "difftactile/output/vitactip_photo_default_state_detected_markers.png",
         "vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d": "difftactile/output/vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d.png",
         "vitactip_photo_default_state_predicted_markers": "difftactile/output/vitactip_photo_default_state_predicted_markers.png",
-        "biomimetic_tip_points": "difftactile/output/biomimetic-tip-points.pkl",
         "cnn_preprocessing_params": "difftactile/output/saved_models/cnn_preprocessing_params.pkl",
         "eda_marker_snapshots_and_labels": "difftactile/output/marker_snapshots_and_labels.pkl",
         "gnn_preprocessing_params": "difftactile/output/saved_models/gnn_preprocessing_params.pkl",
         "preprocessing_params": "difftactile/output/saved_models/preprocessing_params.pkl",
         "vascular_tumour_press_results": "difftactile/output/vascular-tumour-press-experimental-results.pkl",
-        "init_marker_positions": "difftactile/output/init-marker-positions.pkl",
-        "gmsh_mesh": "difftactile/output/gmsh-mesh.pkl",
         "init_principal_point": "difftactile/output/init-principal-point.png",
         "system_id_video": "difftactile/manual_or_experimental_data/system-id-screws-3-reps.mkv",
         "processed_video": "difftactile/output/processed_video.mkv",
@@ -149,6 +150,7 @@
         "tactile_sensor_all_nodes": "difftactile/output/tactile_sensor.all_nodes.pkl",
         "system_params_computed": "difftactile/system_params/system-params-computed.json",
         "vitactip_interp_idx_flat": "difftactile/output/vitactip.interp_idx_flat.pkl",
-        "phantom": "difftactile/meshes/objects/cylinder.stl"
+        "phantom": "difftactile/meshes/objects/cylinder.stl",
+        "root_dir": "/home/psb120/Documents/DiffTactile/"
     }
 }
