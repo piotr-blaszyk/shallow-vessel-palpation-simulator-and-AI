@@ -176,7 +176,7 @@ class ViTacTip:
     def initialise_camera_model(self):
         self.marker_interpolation_knn_k = 5
 
-        initial_camera_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
+        initial_camera_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default)
         initial_marker_positions, _, _ = self.fisheye_model.get_marker_image(initial_camera_image)
         marker_visualization_image = initial_camera_image.copy()
         for marker_position in initial_marker_positions:
@@ -343,7 +343,7 @@ class ViTacTip:
         self.set_up_pose_helper()
 
     def save_predicted_markers_to_image(self):
-        initial_camera_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
+        initial_camera_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default)
         surface_node_visualization = initial_camera_image.copy()
         for projected_point in self.initial_undeformed_markers.to_numpy():
             point_center = (int(round(projected_point[0])), int(round(projected_point[1])))

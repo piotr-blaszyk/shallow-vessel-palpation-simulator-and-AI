@@ -165,14 +165,14 @@ class FisheyeModel:
         image_files = []
         
         for ext in image_extensions:
-            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.fisheye_model.image_dir, ext)))
-            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.fisheye_model.image_dir, ext.upper())))
+            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.files.fisheye_model_image_dir, ext)))
+            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.files.fisheye_model_image_dir, ext.upper())))
         
         # Sort files for consistent ordering
         image_files.sort()
         
         if not image_files:
-            print(f"No image files found in {SYSTEM_PARAMS.fisheye_model.image_dir}")
+            print(f"No image files found in {SYSTEM_PARAMS.files.fisheye_model_image_dir}")
             exit()
         
         print(f"Found {len(image_files)} images")
@@ -235,14 +235,14 @@ class FisheyeModel:
         image_files = []
         
         for ext in image_extensions:
-            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.fisheye_model.image_dir, ext)))
-            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.fisheye_model.image_dir, ext.upper())))
+            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.files.fisheye_model_image_dir, ext)))
+            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.files.fisheye_model_image_dir, ext.upper())))
         
         # Sort files for consistent ordering
         image_files.sort()
         
         if not image_files:
-            print(f"No image files found in {SYSTEM_PARAMS.fisheye_model.image_dir}")
+            print(f"No image files found in {SYSTEM_PARAMS.files.fisheye_model_image_dir}")
             exit()
         
         print(f"Found {len(image_files)} images")
