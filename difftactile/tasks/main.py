@@ -29,7 +29,7 @@ class Contact:
             self.num_sensor,
             dtype=int,
             shape=(
-                self.num_sub_frames,
+                self.SYSTEM_PARAMS.contact.num_sub_frames,
                 self.phantom.n_grid_x,
                 self.phantom.n_grid_y,
                 self.phantom.n_grid_z,
@@ -38,49 +38,47 @@ class Contact:
         self.contact_detect_flag = ti.field(float, (), needs_grad=False)
 
     def set_up_system_params(self):
-        with open('../tasks/system-params.json', 'r') as f:
-            self.params = json.load(f)
-        self.contact_params = self.params['contact']
-        self.geometry_params = self.params['geometry']
-        self.phantom_params = self.params['phantom']
+        self.SYSTEM_PARAMS.contact = SYSTEM_PARAMS.contact
+        self.geometry_params = SYSTEM_PARAMS.geometry
+        self.phantom_params = SYSTEM_PARAMS.phantom
 
-        self.num_opt_steps = self.contact_params['num_opt_steps']
-        self.num_frames = self.contact_params['num_frames']
-        self.num_sub_frames = self.contact_params['num_sub_frames']
-        self.dt = self.contact_params['dt']
-        self.gap = self.geometry_params['gap']
-        self.mpm_grid_cube_size = self.phantom_params['mpm_grid_cube_size']
+        self.SYSTEM_PARAMS.contact.num_opt_steps = self.SYSTEM_PARAMS.contact.SYSTEM_PARAMS.contact.num_opt_steps
+        self.SYSTEM_PARAMS.contact.num_frames = self.SYSTEM_PARAMS.contact.SYSTEM_PARAMS.contact.num_frames
+        self.SYSTEM_PARAMS.contact.num_sub_frames = self.SYSTEM_PARAMS.contact.SYSTEM_PARAMS.contact.num_sub_frames
+        self.dt = self.SYSTEM_PARAMS.contact.dt
+        self.gap = self.geometry_params.gap
+        self.mpm_grid_cube_size = self.phantom_params.mpm_grid_cube_size
 
         self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
         self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=False)
         self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
         self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.normal_stiffness[None] = self.contact_params['normal_stiffness']
-        self.normal_damping[None] = self.contact_params['normal_damping']
-        self.tangential_stiffness[None] = self.contact_params['tangential_stiffness']
-        self.coulomb_friction_coeff[None] = self.contact_params['coulomb_friction_coeff']
+        self.normal_stiffness[None] = self.SYSTEM_PARAMS.contact.normal_stiffness
+        self.normal_damping[None] = self.SYSTEM_PARAMS.contact.normal_damping
+        self.tangential_stiffness[None] = self.SYSTEM_PARAMS.contact.tangential_stiffness
+        self.coulomb_friction_coeff[None] = self.SYSTEM_PARAMS.contact.coulomb_friction_coeff
 
-        self.norm_eps = self.contact_params['norm_eps']
-        self.tangential_velocity_detection_threshold = self.contact_params['tangential_velocity_detection_threshold']
+        self.norm_eps = self.SYSTEM_PARAMS.contact.norm_eps
+        self.tangential_velocity_detection_threshold = self.SYSTEM_PARAMS.contact.tangential_velocity_detection_threshold
 
-    def set_up_snapshot(self):        # Allocate snapshot fields (num_opt_steps, num_markers, 2)
-        self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
-        self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
-        self.ground_truth_labels = ti.field(dtype=int, shape=(self.num_opt_steps,), needs_grad=False)
+    def set_up_snapshot(self):        # Allocate snapshot fields (SYSTEM_PARAMS.contact.num_opt_steps, num_markers, 2)
+        self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
+        self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(self.SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
+        self.ground_truth_labels = ti.field(dtype=int, shape=(self.SYSTEM_PARAMS.contact.num_opt_steps,), needs_grad=False)
 
     def set_up_pid(self):
         # PID controller parameters
         self.pid_controller_kp = ti.field(dtype=float, shape=(), needs_grad=False)  # Proportional gain
         self.pid_controller_ki = ti.field(dtype=float, shape=(), needs_grad=False)  # Integral gain
         self.pid_controller_kd = ti.field(dtype=float, shape=(), needs_grad=False)  # Derivative gain
-        self.pid_controller_kp[None] = self.contact_params['pid_kp']
-        self.pid_controller_ki[None] = self.contact_params['pid_ki']
-        self.pid_controller_kd[None] = self.contact_params['pid_kd']
+        self.pid_controller_kp[None] = self.SYSTEM_PARAMS.contact.pid_kp
+        self.pid_controller_ki[None] = self.SYSTEM_PARAMS.contact.pid_ki
+        self.pid_controller_kd[None] = self.SYSTEM_PARAMS.contact.pid_kd
 
         self.pid_controller_max_speed_translation = ti.field(dtype=float, shape=(), needs_grad=False)
         self.pid_controller_max_speed_rotation = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.pid_controller_max_speed_translation[None] = self.contact_params['pid_max_speed_translation']
-        self.pid_controller_max_speed_rotation[None] = self.contact_params['pid_max_speed_rotation']
+        self.pid_controller_max_speed_translation[None] = self.SYSTEM_PARAMS.contact.pid_max_speed_translation
+        self.pid_controller_max_speed_rotation[None] = self.SYSTEM_PARAMS.contact.pid_max_speed_rotation
         
         # Error accumulation for integral term
         self.pos_error_sum = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
@@ -94,13 +92,13 @@ class Contact:
         self.current_target_idx = ti.field(dtype=int, shape=(), needs_grad=False)
         self.current_target_idx[None] = 0
         self.position_tolerance = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.position_tolerance[None] = self.contact_params['pid_position_tolerance']
+        self.position_tolerance[None] = self.SYSTEM_PARAMS.contact.pid_position_tolerance
         self.orientation_tolerance = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.orientation_tolerance[None] = self.contact_params['pid_orientation_tolerance']
+        self.orientation_tolerance[None] = self.SYSTEM_PARAMS.contact.pid_orientation_tolerance
         
         # Add fields for dwell time control
         self.dwell_frames = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.dwell_frames[None] = self.contact_params['dwell_frames'] # Number of frames to stay at each target
+        self.dwell_frames[None] = self.SYSTEM_PARAMS.contact.dwell_frames # Number of frames to stay at each target
         self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dwell_counter[None] = 0
         self.is_dwelling = ti.field(dtype=int, shape=(), needs_grad=False)
@@ -111,16 +109,13 @@ class Contact:
         self.frames_since_last_target_reached[None] = 0
 
     def set_up_initial_positions_and_trajectory_first_init_only(self):
-        with open('../tasks/system-params-computed.json', 'r') as f:
-            self.coordinates = json.load(f)
-
-        self.phantom_closest_vertex = self.coordinates['phantom_closest_vertex']
-        self.phantom_centroid_pose = self.coordinates['phantom_centroid_pose']
-        self.vitactip_tip_pose = self.coordinates['vitactip_tip_pose']
-        self.min_coord = self.coordinates['min_coord']
-        self.max_coord_x = self.coordinates['max_coord_x']
-        self.max_coord_y = self.coordinates['max_coord_y']
-        self.max_coord_z = self.coordinates['max_coord_z']
+        self.phantom_closest_vertex = SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex
+        self.phantom_centroid_pose = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose
+        self.vitactip_tip_pose = SYSTEM_PARAMS_COMPUTED.vitactip_tip_pose
+        self.min_coord = SYSTEM_PARAMS_COMPUTED.min_coord
+        self.max_coord_x = SYSTEM_PARAMS_COMPUTED.max_coord_x
+        self.max_coord_y = SYSTEM_PARAMS_COMPUTED.max_coord_y
+        self.max_coord_z = SYSTEM_PARAMS_COMPUTED.max_coord_z
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
@@ -583,8 +578,8 @@ class Contact:
     def visualisation_update_gui(self, ts):
         move_to_the_front_offset = np.array([-0.050, 0, 0], dtype=float)
         z = self.min_coord
-        x0, y0, _ = self.coordinates['phantom_centroid_pose'][:3]
-        x1, y1, _ = self.coordinates['phantom_closest_vertex']
+        x0, y0, _ = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[:3]
+        x1, y1, _ = SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex
         floor = np.array([
             [x0, y1, z],
             [x0, y0, z],
@@ -655,19 +650,12 @@ def main():
     else:
         ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)
     
-    with open('../tasks/system-params.json', 'r') as f:
-        params = json.load(f)
-        contact_params = params['contact']
-    num_sub_frames = contact_params['num_sub_frames']
-    num_frames = contact_params['num_frames']
-    num_opt_steps = contact_params['num_opt_steps']
-
     contact_model = Contact()
     contact_model.visualisation_set_up_gui()
     contact_model.save_tactile_sensor_mesh_node_mapping_to_pickle()
     
-    for opts in range(num_opt_steps):
-        print(f"optimisation step: {opts} / {num_opt_steps}")
+    for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
+        print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps}")
         contact_model.set_up_initial_positions_and_trajectory()
         contact_model.reset_pid_controller()
         contact_model.visualisation_reset_3d_scene()
@@ -679,14 +667,14 @@ def main():
             with open('output/sim-markers-initial-positions.pkl', 'wb') as f:
                 pickle.dump(initial_markers, f)
         print('forward')
-        for ts in range(num_frames - 1):
+        for ts in range(SYSTEM_PARAMS.contact.num_frames - 1):
             contact_model.pid_controller(ts)
             contact_model.vitactip.set_pose_control()
             contact_model.vitactip.set_pose_control_maybe_print()
             contact_model.vitactip.set_control_vel(0)
             contact_model.vitactip.set_vel(0)
             contact_model.reset()
-            for ss in range(num_sub_frames - 1):
+            for ss in range(SYSTEM_PARAMS.contact.num_sub_frames - 1):
                 contact_model.update(ss)
             contact_model.memory_to_cache(0)
 

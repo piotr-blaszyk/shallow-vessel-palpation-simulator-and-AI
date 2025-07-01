@@ -8,7 +8,6 @@ import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import pickle
-import json
 import sys
 
 from difftactile.sensor_model.fisheye_model import * 
@@ -28,61 +27,35 @@ class ViTacTip:
         self.set_up_physical_state()
     
     def set_up_system_params(self):
-        with open('../tasks/system-params.json', 'r') as f:
-            self.params = json.load(f)
-        self.vitactip_params = self.params['vitactip']
-        self.contact_params = self.params['contact']
-        self.geometry_params = self.params['geometry']
-        self.files_params = self.params['files']
-        
-        # Unpack file paths
-        self.vitactip_photo_default_state = self.files_params['vitactip_photo_default_state']
-        self.vitactip_photo_default_state_detected_markers = self.files_params['vitactip_photo_default_state_detected_markers']
-        self.vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d = self.files_params['vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d']
-        self.vitactip_photo_default_state_predicted_markers = self.files_params['vitactip_photo_default_state_predicted_markers']
-        self.gmsh_mesh = self.files_params['gmsh_mesh']
-
-        self.max_num_materials = self.vitactip_params['maximum_number_of_materials']
-        self.number_of_materials = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.number_of_materials[None] = self.vitactip_params['number_of_materials']
-        self.fixed_layer_distance_from_bottom = self.vitactip_params['fixed_layer_distance_from_bottom']
-        self.keypoint_search_z_threshold = self.vitactip_params['keypoint_search_z_threshold']
-        self.collision_search_distance = self.vitactip_params['collision_search_distance']
-        self.distance_from_camera_lens_to_outer_shell_surface = self.geometry_params['distance_from_camera_lens_to_outer_shell_surface']
-        
-        self.sub_steps = self.contact_params['num_sub_frames']
-        self.dt = self.contact_params['dt']
-        self.norm_eps = self.contact_params['norm_eps']
-
         # Material parameters for all materials
-        self.mass_density = ti.field(dtype=ti.f32, shape=(self.number_of_materials[None],), needs_grad=False)
-        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(self.number_of_materials[None],), needs_grad=False)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(self.number_of_materials[None],), needs_grad=False)
-        self.mu = ti.field(dtype=ti.f32, shape=(self.number_of_materials[None],), needs_grad=False)
-        self.lam = ti.field(dtype=ti.f32, shape=(self.number_of_materials[None],), needs_grad=False)
+        self.mass_density = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
+        self.mu = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
+        self.lam = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
 
-        if self.number_of_materials[None] == 1:
-            self.mass_density[0] = self.vitactip_params['single_material']['density']
-            self.youngs_modulus[0] = self.vitactip_params['single_material']['youngs_modulus']
-            self.poissons_ratio[0] = self.vitactip_params['single_material']['poissons_ratio']
+        if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
+            self.mass_density[0] = SYSTEM_PARAMS.vitactip.single_material.density
+            self.youngs_modulus[0] = SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
+            self.poissons_ratio[0] = SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
 
-            self.mass_density[1] = self.vitactip_params['single_material']['density']
-            self.youngs_modulus[1] = self.vitactip_params['single_material']['youngs_modulus']
-            self.poissons_ratio[1] = self.vitactip_params['single_material']['poissons_ratio']
+            self.mass_density[1] = SYSTEM_PARAMS.vitactip.single_material.density
+            self.youngs_modulus[1] = SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
+            self.poissons_ratio[1] = SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
         else:
             # Initialize material parameters
             # Shell (Vytaflex 60) - material index 0
-            self.mass_density[0] = self.vitactip_params['shell']['density']
-            self.youngs_modulus[0] = self.vitactip_params['shell']['youngs_modulus']
-            self.poissons_ratio[0] = self.vitactip_params['shell']['poissons_ratio']
+            self.mass_density[0] = SYSTEM_PARAMS.vitactip.shell.density
+            self.youngs_modulus[0] = SYSTEM_PARAMS.vitactip.shell.youngs_modulus
+            self.poissons_ratio[0] = SYSTEM_PARAMS.vitactip.shell.poissons_ratio
             
             # Gel (RTV27905) - material index 1
-            self.mass_density[1] = self.vitactip_params['gel']['density']
-            self.youngs_modulus[1] = self.vitactip_params['gel']['youngs_modulus']
-            self.poissons_ratio[1] = self.vitactip_params['gel']['poissons_ratio']
+            self.mass_density[1] = SYSTEM_PARAMS.vitactip.gel.density
+            self.youngs_modulus[1] = SYSTEM_PARAMS.vitactip.gel.youngs_modulus
+            self.poissons_ratio[1] = SYSTEM_PARAMS.vitactip.gel.poissons_ratio
         
         # Compute Lamé parameters for all materials
-        for i in range(self.max_num_materials):
+        for i in range(SYSTEM_PARAMS.vitactip.maximum_number_of_materials):
             self.mu[i] = self.youngs_modulus[i] / 2 / (1 + self.poissons_ratio[i])
             self.lam[i] = (self.youngs_modulus[i] * self.poissons_ratio[i] / 
                           ((1 + self.poissons_ratio[i]) * (1 - 2 * self.poissons_ratio[i])))
@@ -92,8 +65,8 @@ class ViTacTip:
         self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)   # stiffness damping coefficient
         
         # Set default values (these should be tuned based on your specific needs)
-        self.rayleigh_damping_alpha[None] = self.vitactip_params['rayleigh_damping_alpha']  # typical values range from 0 to 0.1
-        self.rayleigh_damping_beta[None] = self.vitactip_params['rayleigh_damping_beta']  # typical values range from 0.001 to 0.01
+        self.rayleigh_damping_alpha[None] = SYSTEM_PARAMS.vitactip.rayleigh_damping_alpha  # typical values range from 0 to 0.1
+        self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.vitactip.rayleigh_damping_beta  # typical values range from 0.001 to 0.01
 
         # Add hourglass control parameters
         self.hourglass_enabled = ti.field(dtype=ti.i32, shape=(), needs_grad=False)
@@ -101,9 +74,9 @@ class ViTacTip:
         self.hourglass_modulus_scale = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         
         # Set hourglass control parameters from config
-        self.hourglass_enabled[None] = self.vitactip_params['hourglass_control']['enabled']
-        self.hourglass_coefficient[None] = self.vitactip_params['hourglass_control']['coefficient']
-        self.hourglass_modulus_scale[None] = self.vitactip_params['hourglass_control']['modulus_scale']
+        self.hourglass_enabled[None] = SYSTEM_PARAMS.vitactip.hourglass_control.enabled
+        self.hourglass_coefficient[None] = SYSTEM_PARAMS.vitactip.hourglass_control.coefficient
+        self.hourglass_modulus_scale[None] = SYSTEM_PARAMS.vitactip.hourglass_control.modulus_scale
 
     def load_mesh(self):
         # Load mesh data from gmsh
@@ -111,18 +84,18 @@ class ViTacTip:
             mesh_data = pickle.load(f)
         
         # Unpack mesh data
-        self.surface_node_tags_npy = mesh_data['surface_node_tags']
+        self.surface_node_tags_npy = mesh_data.surface_node_tags
         self.surface_node_tags = ti.field(dtype=int, shape=(self.surface_node_tags_npy.shape[0],), needs_grad=False)
         self.surface_node_tags.from_numpy(self.surface_node_tags_npy)
-        all_tetrahedra = mesh_data['all_tetrahedra']
-        node_coordinates = mesh_data['node_coordinates'] / 1_000
-        node_labels = mesh_data['node_labels']
-        surface_triangles = mesh_data['surface_triangles']
-        group_to_idx = mesh_data['group_to_idx']
-        y_bottom = mesh_data['y_bottom'] / 1_000
+        all_tetrahedra = mesh_data.all_tetrahedra
+        node_coordinates = mesh_data.node_coordinates / 1_000
+        node_labels = mesh_data.node_labels
+        surface_triangles = mesh_data.surface_triangles
+        group_to_idx = mesh_data.group_to_idx
+        y_bottom = mesh_data.y_bottom / 1_000
         
         # Compute fixed layer nodes (nodes at the bottom)
-        is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < self.fixed_layer_distance_from_bottom  # Check if y-coordinate is at bottom
+        is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < SYSTEM_PARAMS.vitactip.fixed_layer_distance_from_bottom  # Check if y-coordinate is at bottom
         
         # Append is_fixed_layer to node_labels
         node_labels = np.column_stack([node_labels, is_fixed_layer])
@@ -146,15 +119,15 @@ class ViTacTip:
             tetra_node_labels = node_labels[tetra]
             
             # Check if any node is part of the gel
-            gel_count = np.sum(tetra_node_labels[:, group_to_idx['gel']])
+            gel_count = np.sum(tetra_node_labels[:, group_to_idx.gel])
             # Check if all nodes are part of the shell
-            shell_count = np.sum(tetra_node_labels[:, group_to_idx['shell']])
+            shell_count = np.sum(tetra_node_labels[:, group_to_idx.shell])
             
             # Assign material based on node composition
             if gel_count == 4 and shell_count <= 3:
-                element_materials[i] = group_to_idx['gel']  # gel material
+                element_materials[i] = group_to_idx.gel  # gel material
             else:
-                element_materials[i] = group_to_idx['shell']  # shell material
+                element_materials[i] = group_to_idx.shell  # shell material
             
             # Determine density based on material
             material_density = self.mass_density[element_materials[i]]
@@ -165,7 +138,7 @@ class ViTacTip:
                 vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
         
         max_y = np.max(node_coordinates[:, 1])
-        y_translation = self.distance_from_camera_lens_to_outer_shell_surface - max_y
+        y_translation = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - max_y
         translation_vector = np.array([0, y_translation, 0])
         node_coordinates = node_coordinates + translation_vector
 
@@ -203,13 +176,13 @@ class ViTacTip:
     def initialise_camera_model(self):
         self.marker_interpolation_knn_k = 5
 
-        initial_camera_image = cv2.imread(self.vitactip_photo_default_state)
+        initial_camera_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
         initial_marker_positions, _, _ = self.fisheye_model.get_marker_image(initial_camera_image)
         marker_visualization_image = initial_camera_image.copy()
         for marker_position in initial_marker_positions:
             marker_center = (int(round(marker_position[0])), int(round(marker_position[1])))
             cv2.circle(marker_visualization_image, marker_center, radius=5, color=(0, 0, 255), thickness=2)
-        cv2.imwrite(self.vitactip_photo_default_state_detected_markers, marker_visualization_image)
+        cv2.imwrite(SYSTEM_PARAMS.files.vitactip_photo_default_state_detected_markers, marker_visualization_image)
 
         surface_nodes_y_up = self.node_coordinates[self.surface_node_tags_npy]
         # OpenCV has camera.position(0,0,0), camera.lookat(0,0,1), camera.up(0,1,0)
@@ -220,7 +193,7 @@ class ViTacTip:
         for projected_point in surface_node_projections_2d:
             point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
             cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
-        cv2.imwrite(self.vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d, surface_node_visualization)
+        cv2.imwrite(SYSTEM_PARAMS.files.vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d, surface_node_visualization)
 
         marker_interpolation_indices = []
         marker_interpolation_weights = []
@@ -254,11 +227,11 @@ class ViTacTip:
 
     def set_up_physical_state(self):
         # vertex_positions_ideal: ideal/undeformed vertex positions in m
-        self.vertex_positions_undeformed = ti.Vector.field(3, float, shape=(self.sub_steps, self.num_vertices), needs_grad=False)
+        self.vertex_positions_undeformed = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
         # vertex_positions_deformed: current deformed vertex positions in m
-        self.vertex_positions_deformed = ti.Vector.field(3, float, shape=(self.sub_steps, self.num_vertices), needs_grad=False)
+        self.vertex_positions_deformed = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
         # vertex_velocities: vertex velocities in m/s
-        self.vertex_velocities = ti.Vector.field(3, float, shape=(self.sub_steps, self.num_vertices), needs_grad=False)
+        self.vertex_velocities = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
 
         # deformation_gradient_inverse: inverse of deformation gradient matrix (dimensionless)
         self.deformation_gradient_inverse = ti.Matrix.field(3, 3, float, self.num_tetrahedra, needs_grad=False)
@@ -266,9 +239,9 @@ class ViTacTip:
         self.element_potential_energy = ti.field(float, self.num_tetrahedra, needs_grad=False)  # potential energy of each face (Neo-Hookean)
 
         # contact_forces_on_vertices: external contact forces applied to vertices in N
-        self.contact_forces_on_vertices = ti.Vector.field(3, dtype=ti.f32, shape=(self.sub_steps, self.num_vertices), needs_grad=False) # contact force between FEM node to the closest particle
+        self.contact_forces_on_vertices = ti.Vector.field(3, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False) # contact force between FEM node to the closest particle
         # surface_force_resultant: total surface force vector in N
-        self.total_surface_force = ti.Vector.field(3, float, shape=(self.sub_steps), needs_grad=False) # surface aggreated 3-axis forces
+        self.total_surface_force = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=False) # surface aggreated 3-axis forces
 
         # contact model parameters (default)
         # sensor_outward_normal: outward normal direction vector (dimensionless)
@@ -370,12 +343,12 @@ class ViTacTip:
         self.set_up_pose_helper()
 
     def save_predicted_markers_to_image(self):
-        initial_camera_image = cv2.imread(self.vitactip_photo_default_state)
+        initial_camera_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
         surface_node_visualization = initial_camera_image.copy()
         for projected_point in self.initial_undeformed_markers.to_numpy():
             point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
             cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
-        cv2.imwrite(self.vitactip_photo_default_state_predicted_markers, surface_node_visualization)
+        cv2.imwrite(SYSTEM_PARAMS.files.vitactip_photo_default_state_predicted_markers, surface_node_visualization)
         sys.exit()
 
     @ti.kernel
@@ -455,8 +428,8 @@ class ViTacTip:
         self.local_translational_velocity[None] = self.inverse_rotation_matrix[None] @ self.global_translational_velocity[None]
         self.local_angular_velocity[None] = self.inverse_rotation_matrix[None] @ self.global_angular_velocity_degrees[None]
 
-        self.rotation_vector_degrees[None] = self.local_angular_velocity[None] * self.dt * (self.sub_steps -1)
-        self.translation_vector[None] = self.local_translational_velocity[None] * self.dt * (self.sub_steps -1)
+        self.rotation_vector_degrees[None] = self.local_angular_velocity[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
+        self.translation_vector[None] = self.local_translational_velocity[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
         self.transformation_matrix[None], self.rotation_matrix[None] = self.eul2mat(self.rotation_vector_degrees[None], self.translation_vector[None])
 
         self.delta_transformation_matrix[None] = self.world_transformation_matrix[None] @ self.transformation_matrix[None] @ (self.world_transformation_matrix[None].inverse())
@@ -504,8 +477,8 @@ class ViTacTip:
     @ti.kernel
     def set_pose_control_bp(self):
 
-        rot_v = self.local_angular_velocity[None] * self.dt * (self.sub_steps -1)
-        trans_v = self.local_translational_velocity[None] * self.dt * (self.sub_steps -1)
+        rot_v = self.local_angular_velocity[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
+        trans_v = self.local_translational_velocity[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
         trans_mat, rot_mat = self.eul2mat(rot_v, trans_v)
         self.delta_transformation_matrix[None] = self.world_transformation_matrix[None] @ trans_mat @ (self.world_transformation_matrix[None].inverse())
 
@@ -517,9 +490,9 @@ class ViTacTip:
         for i in range(self.num_vertices):
             current_vertex_positions_undeformed = self.vertex_positions_undeformed[f, i]
             target_vertex_positions_undeformed = self.delta_transformation_matrix[None] @ ti.Vector([current_vertex_positions_undeformed[0], current_vertex_positions_undeformed[1], current_vertex_positions_undeformed[2], 1.0]) # 4 x 1 homogeneous
-            self.vertex_control_velocities[i][0] = (target_vertex_positions_undeformed[0] - current_vertex_positions_undeformed[0]) / (self.dt * (self.sub_steps -1))
-            self.vertex_control_velocities[i][1] = (target_vertex_positions_undeformed[1] - current_vertex_positions_undeformed[1]) / (self.dt * (self.sub_steps -1))
-            self.vertex_control_velocities[i][2] = (target_vertex_positions_undeformed[2] - current_vertex_positions_undeformed[2]) / (self.dt * (self.sub_steps -1))
+            self.vertex_control_velocities[i][0] = (target_vertex_positions_undeformed[0] - current_vertex_positions_undeformed[0]) / (SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1))
+            self.vertex_control_velocities[i][1] = (target_vertex_positions_undeformed[1] - current_vertex_positions_undeformed[1]) / (SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1))
+            self.vertex_control_velocities[i][2] = (target_vertex_positions_undeformed[2] - current_vertex_positions_undeformed[2]) / (SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1))
 
     @ti.kernel
     def get_external_force(self, f:ti.i32):
@@ -588,7 +561,7 @@ class ViTacTip:
             cur_min_idx: index of closest triangle segment (dimensionless)
         """
         # cur_min_offset: distance in m
-        cur_min_offset = self.collision_search_distance # arbitrary large value
+        cur_min_offset = SYSTEM_PARAMS.vitactip.collision_search_distance # arbitrary large value
         # cur_min_idx: triangle index (dimensionless)
         cur_min_idx = -1
         for k in range(self.num_contact_surface_triangles):
@@ -600,7 +573,7 @@ class ViTacTip:
             # p_c: triangle centroid position in m
             p_c = 1/3 * (p_1 + p_2 + p_3) # center of the segment
             # offset_p: distance in m
-            offset_p = (p_c - grid_p).norm(self.norm_eps) # distance to the center point of the segment
+            offset_p = (p_c - grid_p).norm(SYSTEM_PARAMS.contact.norm_eps) # distance to the center point of the segment
 
             if (offset_p < cur_min_offset):
                 cur_min_offset = offset_p
@@ -634,7 +607,7 @@ class ViTacTip:
 
         # triangle_normal: unit normal vector (dimensionless)
         triangle_normal = ti.math.cross(vertex2_pos-vertex1_pos, vertex3_pos-vertex1_pos) # plane's norm
-        triangle_normal = triangle_normal.normalized(self.norm_eps)
+        triangle_normal = triangle_normal.normalized(SYSTEM_PARAMS.contact.norm_eps)
         # normal_direction: sign value (dimensionless)
         normal_direction = ti.math.sign(triangle_normal.dot(self.sensor_outward_normal[None]))
         triangle_normal = normal_direction * triangle_normal # facing up
@@ -824,8 +797,8 @@ class ViTacTip:
             vertex_indices = ti.Vector([vertex1_idx, vertex2_idx, vertex3_idx, vertex4_idx])
             for k in ti.static(range(3)):
                 vertex_force = ti.Vector([force_matrix[j,k] for j in range(3)])
-                self.vertex_velocities[frame,vertex_indices[k]] += self.dt * vertex_force / self.vertex_mass[vertex_indices[k]]
-                self.vertex_velocities[frame,vertex_indices[3]] += -1*self.dt * vertex_force / self.vertex_mass[vertex_indices[3]]
+                self.vertex_velocities[frame,vertex_indices[k]] += SYSTEM_PARAMS.contact.dt * vertex_force / self.vertex_mass[vertex_indices[k]]
+                self.vertex_velocities[frame,vertex_indices[3]] += -1*SYSTEM_PARAMS.contact.dt * vertex_force / self.vertex_mass[vertex_indices[3]]
 
 
     @ti.kernel
@@ -841,7 +814,7 @@ class ViTacTip:
             # updated_velocity: velocity vector in m/s
             updated_velocity = ti.Vector([0.0, 0.0, 0.0])
             updated_velocity += self.vertex_velocities[frame,vertex_idx]
-            updated_velocity += self.dt * self.contact_forces_on_vertices[frame,vertex_idx] / self.vertex_mass[vertex_idx]
+            updated_velocity += SYSTEM_PARAMS.contact.dt * self.contact_forces_on_vertices[frame,vertex_idx] / self.vertex_mass[vertex_idx]
 
             ### stick the bottom layer to be fixed using node_labels information
             # is_fixed_layer: boolean flag (dimensionless)
@@ -849,9 +822,9 @@ class ViTacTip:
             if is_fixed_layer:
                 updated_velocity = self.vertex_control_velocities[vertex_idx]
             self.vertex_velocities[frame+1, vertex_idx] = updated_velocity
-            self.vertex_positions_deformed[frame+1, vertex_idx] = self.vertex_positions_deformed[frame, vertex_idx] + self.dt * updated_velocity
+            self.vertex_positions_deformed[frame+1, vertex_idx] = self.vertex_positions_deformed[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * updated_velocity
             # update virtual pos
-            self.vertex_positions_undeformed[frame+1, vertex_idx] = self.vertex_positions_undeformed[frame, vertex_idx] + self.dt * self.vertex_control_velocities[vertex_idx]
+            self.vertex_positions_undeformed[frame+1, vertex_idx] = self.vertex_positions_undeformed[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * self.vertex_control_velocities[vertex_idx]
 
 
     @ti.kernel
@@ -907,11 +880,11 @@ class ViTacTip:
         self.simulation_cache[cur_step_name]['virtual_pos'] = torch.zeros((self.num_vertices, 3), dtype=TC_TYPE, device=device)
         self.simulation_cache[cur_step_name]['predict_markers'] = torch.zeros((self.num_markers, 2), dtype=TC_TYPE, device=device)
         self.add_step_to_cache(0, self.simulation_cache[cur_step_name]['pos'], self.simulation_cache[cur_step_name]['vel'], self.simulation_cache[cur_step_name]['trans_h'], self.simulation_cache[cur_step_name]['virtual_pos'], self.simulation_cache[cur_step_name]['rot_h'], self.simulation_cache[cur_step_name]['predict_markers'])
-        self.copy_frame(self.sub_steps-1, 0)
+        self.copy_frame(SYSTEM_PARAMS.contact.num_sub_frames-1, 0)
 
     def memory_from_cache(self, t):
         cur_step_name = f'{t:06d}'
-        self.copy_frame(0, self.sub_steps-1)
+        self.copy_frame(0, SYSTEM_PARAMS.contact.num_sub_frames-1)
 
         self.load_step_from_cache(0, self.simulation_cache[cur_step_name]['pos'], self.simulation_cache[cur_step_name]['vel'], self.simulation_cache[cur_step_name]['trans_h'], self.simulation_cache[cur_step_name]['virtual_pos'], self.simulation_cache[cur_step_name]['rot_h'], self.simulation_cache[cur_step_name]['predict_markers'])
 
@@ -925,7 +898,7 @@ class ViTacTip:
         
         # Points B and C: high z coordinate points
         max_z = float(np.max(z_coords))
-        z_mask = (z_coords >= (max_z - self.keypoint_search_z_threshold))
+        z_mask = (z_coords >= (max_z - SYSTEM_PARAMS.vitactip.keypoint_search_z_threshold))
         
         # Point B: max x coordinate among high z points
         x_coords = positions[:, 0]

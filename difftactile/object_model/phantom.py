@@ -32,7 +32,6 @@ class Phantom:
         self.rayleigh_damping_alpha[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_alpha  # typical values range from 0 to 0.1
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_beta  # typical values range from 0.001 to 0.01
 
-        self.gravity = ti.Vector(SYSTEM_PARAMS.phantom.gravity)
         self.inverse_mpm_grid_cube_size =  1 / SYSTEM_PARAMS.phantom.mpm_grid_cube_size
         
         self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
@@ -336,7 +335,7 @@ class Phantom:
                 grid_velocity = ti.Vector([0.0, 0.0, 0.0])
                 grid_velocity += inverse_mass * self.grid_node_momentum_in[frame, grid_x, grid_y, grid_z] # Momentum to velocity
                 grid_velocity += inverse_mass * self.grid_node_external_impulse[frame, grid_x, grid_y, grid_z]
-                grid_velocity += SYSTEM_PARAMS.contact.dt * self.gravity  # gravity
+                grid_velocity += SYSTEM_PARAMS.contact.dt * ti.Vector(SYSTEM_PARAMS.phantom.gravity)  # gravity
 
                 # Calculate elastic forces (from momentum)
                 # elastic_force: elastic force in N

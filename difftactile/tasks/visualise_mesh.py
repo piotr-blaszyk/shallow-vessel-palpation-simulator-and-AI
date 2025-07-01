@@ -2,37 +2,19 @@ import numpy as np
 import open3d as o3d
 import pickle
 from collections import Counter
-import json
 
 from ..tasks.constants import *
 
 with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
     mesh_data = pickle.load(f)
-        
-with open('../tasks/system-params.json', 'r') as f:
-    params = json.load(f)
-visualise_mesh_params = params['visualise_mesh']
-frame_number = visualise_mesh_params['frame_number']
-
-# Unpack mesh data
-all_tetrahedra = mesh_data['all_tetrahedra']
-node_coordinates = mesh_data['node_coordinates']
-node_labels = mesh_data['node_labels']
-surface_node_tags = mesh_data['surface_node_tags']
-surface_triangles = mesh_data['surface_triangles']
-node_tags = mesh_data['node_tags']
-group_to_idx = mesh_data['group_to_idx']
-y_bottom = mesh_data['y_bottom']
-radius_of_curvature_inner = mesh_data['radius_of_curvature_inner']
-radius_of_curvature_outer = mesh_data['radius_of_curvature_outer']
 
 print('hello')
-print(node_coordinates.shape)
-print(all_tetrahedra.shape)
+print(mesh_data.node_coordinates.shape)
+print(mesh_data.all_tetrahedra.shape)
 
-with open(f'../tasks/output/tactile_sensor.deformed_node_coordinates.ts={frame_number}.pkl', 'rb') as f:
+with open(f'../tasks/output/tactile_sensor.deformed_node_coordinates.ts={SYSTEM_PARAMS.visualise_mesh.frame_number}.pkl', 'rb') as f:
     deformed_node_coordinates = pickle.load(f)
-print(f'ts={frame_number}; num nan: {np.sum(np.isnan(deformed_node_coordinates))}')
+print(f'ts={SYSTEM_PARAMS.visualise_mesh.frame_number}; num nan: {np.sum(np.isnan(deformed_node_coordinates))}')
 
 nan_nodes = np.where(np.any(np.isnan(deformed_node_coordinates), axis=1))[0]
 
@@ -45,13 +27,13 @@ old_to_new_idx[valid_nodes] = np.arange(len(valid_nodes))  # Map old indices to 
 deformed_node_coordinates = deformed_node_coordinates[valid_nodes]
 
 # Convert all tetrahedra to new indices
-all_tetrahedra_new_idx = np.array([[old_to_new_idx[i] for i in tetra] for tetra in all_tetrahedra])
+all_tetrahedra_new_idx = np.array([[old_to_new_idx[i] for i in tetra] for tetra in mesh_data.all_tetrahedra])
 
 good_tetrahedra = []
 for tetra in all_tetrahedra_new_idx:
-    tetra_node_labels = node_labels[tetra]
-    gel_count = np.sum(tetra_node_labels[:, group_to_idx['gel']])
-    shell_count = np.sum(tetra_node_labels[:, group_to_idx['shell']])
+    tetra_node_labels = mesh_data.node_labels[tetra]
+    gel_count = np.sum(tetra_node_labels[:, mesh_data.group_to_idx.gel])
+    shell_count = np.sum(tetra_node_labels[:, mesh_data.group_to_idx.shell])
     is_gel = gel_count == 4 and shell_count <= 3
     if not is_gel:
         if np.any(tetra == -1):

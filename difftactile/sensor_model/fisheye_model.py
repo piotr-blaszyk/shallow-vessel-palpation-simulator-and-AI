@@ -17,22 +17,7 @@ from ..tasks.constants import *
 
 class FisheyeModel:
     def __init__(self):
-        self.image_dir = "../experiment-capture-completed"
-        with open('../tasks/system-params.json', 'r') as f:
-            self.params = json.load(f)
-        self.fisheye_model_params = self.params['fisheye_model']
-        self.image_dir = self.fisheye_model_params['image_dir']
-        self.focal_length_x = self.fisheye_model_params['focal_length_x']
-        self.focal_length_y = self.fisheye_model_params['focal_length_y']
-        self.principal_point_x = self.fisheye_model_params['principal_point_x']
-        self.principal_point_y = self.fisheye_model_params['principal_point_y']
-        self.target_image_width = self.fisheye_model_params['target_image_width']
-        self.target_image_height = self.fisheye_model_params['target_image_height']
-        self.circle_centre_x = self.fisheye_model_params['circle_centre_x']
-        self.circle_centre_y = self.fisheye_model_params['circle_centre_y']
-        self.circle_radius = self.fisheye_model_params['circle_radius']
-        self.shell_inner_r = self.fisheye_model_params['shell_inner_r']
-        self.shell_outer_r = self.fisheye_model_params['shell_outer_r']
+        pass
 
     @ti.func
     def project_3d_2d(self, a):
@@ -46,12 +31,12 @@ class FisheyeModel:
         cos = ti.max(-1.0, cos)
         theta = ti.acos(cos)
         omega = ti.atan2(a[1],a[0]+1e-8) + ti.math.pi
-        r_x = self.focal_length_x * theta
-        r_y = self.focal_length_y * theta
+        r_x = SYSTEM_PARAMS.fisheye_model.focal_length_x * theta
+        r_y = SYSTEM_PARAMS.fisheye_model.focal_length_y * theta
 
         p = ti.Vector([0.0, 0.0])
-        p[0] = r_x * ti.cos(omega) + self.principal_point_x
-        p[1] = r_y * ti.sin(omega) + self.principal_point_y
+        p[0] = r_x * ti.cos(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_x
+        p[1] = r_y * ti.sin(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_y
 
         return p
 
@@ -68,12 +53,12 @@ class FisheyeModel:
         theta = np.arccos(cos)
         omega = np.arctan2(a[:,1],a[:,0]) + np.pi
 
-        r_x = self.focal_length_x * theta
-        r_y = self.focal_length_y * theta
+        r_x = SYSTEM_PARAMS.fisheye_model.focal_length_x * theta
+        r_y = SYSTEM_PARAMS.fisheye_model.focal_length_y * theta
 
         p = np.zeros((len(a),2))
-        p[:,0] = r_x * np.cos(omega) + self.principal_point_x
-        p[:,1] = r_y * np.sin(omega) + self.principal_point_y
+        p[:,0] = r_x * np.cos(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_x
+        p[:,1] = r_y * np.sin(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_y
 
         return p
 
@@ -87,16 +72,16 @@ class FisheyeModel:
         Args:
             p: numpy array of shape (n, 2) containing pixel coordinates
             hemisphere_radius: radius of the hemisphere the points will lie on
-            self.focal_length_x, self.focal_length_y: focal lengths in x and y directions
-            self.principal_point_x, self.principal_point_y: principal point coordinates
+            SYSTEM_PARAMS.fisheye_model.focal_length_x, SYSTEM_PARAMS.fisheye_model.focal_length_y: focal lengths in x and y directions
+            SYSTEM_PARAMS.fisheye_model.principal_point_x, SYSTEM_PARAMS.fisheye_model.principal_point_y: principal point coordinates
         Returns:
             numpy array of shape (n, 3) containing 3D points
         Raises:
             ValueError: If any projected point falls outside the valid circle on x-y plane
         """
         # Convert to normalized coordinates
-        x_norm = (p[:, 0] - self.principal_point_x) / self.focal_length_x  # normalize by focal length
-        y_norm = (p[:, 1] - self.principal_point_y) / self.focal_length_y  # normalize by focal length
+        x_norm = (p[:, 0] - SYSTEM_PARAMS.fisheye_model.principal_point_x) / SYSTEM_PARAMS.fisheye_model.focal_length_x  # normalize by focal length
+        y_norm = (p[:, 1] - SYSTEM_PARAMS.fisheye_model.principal_point_y) / SYSTEM_PARAMS.fisheye_model.focal_length_y  # normalize by focal length
         
         # Calculate radial distance in normalized coordinates
         r = np.sqrt(x_norm**2 + y_norm**2)
@@ -127,8 +112,8 @@ class FisheyeModel:
         else:
             source_height, source_width = img.shape
         
-        scale_x = source_width / self.target_image_width
-        scale_y = source_height / self.target_image_height
+        scale_x = source_width / SYSTEM_PARAMS.fisheye_model.target_image_width
+        scale_y = source_height / SYSTEM_PARAMS.fisheye_model.target_image_height
         
         params = cv2.SimpleBlobDetector_Params()
 
@@ -136,8 +121,8 @@ class FisheyeModel:
         keypoints = detector.detect(img)
 
         # Circle parameters - scaled to match the input image resolution
-        circle_center = np.array([self.circle_centre_x * scale_x, self.circle_centre_y * scale_y])
-        circle_radius = self.circle_radius * min(scale_x, scale_y)  # Use minimum scale to maintain circular shape
+        circle_center = np.array([SYSTEM_PARAMS.fisheye_model.circle_centre_x * scale_x, SYSTEM_PARAMS.fisheye_model.circle_centre_y * scale_y])
+        circle_radius = SYSTEM_PARAMS.fisheye_model.circle_radius * min(scale_x, scale_y)  # Use minimum scale to maintain circular shape
 
         MarkerCenter = []
         for pt in keypoints:
@@ -156,7 +141,7 @@ class FisheyeModel:
         Project 3D points to 2D image coordinates using cv2.fisheye.projectPoints.
         Args:
             points3d: (num_points, 3) or (3,) array-like, the 3D points in camera coordinates.
-            K: (3,3) camera intrinsic matrix. If None, uses default self.focal_length_x, self.focal_length_y, self.principal_point_x, self.principal_point_y.
+            K: (3,3) camera intrinsic matrix. If None, uses default SYSTEM_PARAMS.fisheye_model.focal_length_x, SYSTEM_PARAMS.fisheye_model.focal_length_y, SYSTEM_PARAMS.fisheye_model.principal_point_x, SYSTEM_PARAMS.fisheye_model.principal_point_y.
             D: (4,) distortion coefficients. If None, uses default values.
             rvec: (3,1) rotation vector. If None, assumes zero rotation.
             tvec: (3,1) translation vector. If None, assumes zero translation.
@@ -167,7 +152,7 @@ class FisheyeModel:
         if points3d.ndim == 1:
             points3d = points3d.reshape(1, 3)
         points3d = points3d.reshape(-1, 1, 3)
-        K = np.array([[self.focal_length_x, 0, self.principal_point_x], [0, self.focal_length_y, self.principal_point_y], [0, 0, 1]], dtype=np.float64)
+        K = np.array([[SYSTEM_PARAMS.fisheye_model.focal_length_x, 0, SYSTEM_PARAMS.fisheye_model.principal_point_x], [0, SYSTEM_PARAMS.fisheye_model.focal_length_y, SYSTEM_PARAMS.fisheye_model.principal_point_y], [0, 0, 1]], dtype=np.float64)
         D = np.zeros((4, 1), dtype=np.float64)
         rvec = np.zeros((3, 1), dtype=np.float64)
         tvec = np.zeros((3, 1), dtype=np.float64)
@@ -180,14 +165,14 @@ class FisheyeModel:
         image_files = []
         
         for ext in image_extensions:
-            image_files.extend(glob(os.path.join(self.image_dir, ext)))
-            image_files.extend(glob(os.path.join(self.image_dir, ext.upper())))
+            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.fisheye_model.image_dir, ext)))
+            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.fisheye_model.image_dir, ext.upper())))
         
         # Sort files for consistent ordering
         image_files.sort()
         
         if not image_files:
-            print(f"No image files found in {self.image_dir}")
+            print(f"No image files found in {SYSTEM_PARAMS.fisheye_model.image_dir}")
             exit()
         
         print(f"Found {len(image_files)} images")
@@ -250,14 +235,14 @@ class FisheyeModel:
         image_files = []
         
         for ext in image_extensions:
-            image_files.extend(glob(os.path.join(self.image_dir, ext)))
-            image_files.extend(glob(os.path.join(self.image_dir, ext.upper())))
+            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.fisheye_model.image_dir, ext)))
+            image_files.extend(glob(os.path.join(SYSTEM_PARAMS.fisheye_model.image_dir, ext.upper())))
         
         # Sort files for consistent ordering
         image_files.sort()
         
         if not image_files:
-            print(f"No image files found in {self.image_dir}")
+            print(f"No image files found in {SYSTEM_PARAMS.fisheye_model.image_dir}")
             exit()
         
         print(f"Found {len(image_files)} images")
@@ -352,8 +337,8 @@ class FisheyeModel:
     def generate_marker_3d_projection(self):
         with open('init-marker-positions.pkl', 'rb') as f:
             marker_positions_2d = pickle.load(f)
-        A_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=self.shell_outer_r)
-        B_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=self.shell_outer_r+2)
+        A_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=SYSTEM_PARAMS.fisheye_model.shell_outer_r)
+        B_points = self.project_pix_to_points(marker_positions_2d, hemisphere_radius=SYSTEM_PARAMS.fisheye_model.shell_outer_r+2)
         obj = {
             'A_points': A_points,
             'B_points': B_points,

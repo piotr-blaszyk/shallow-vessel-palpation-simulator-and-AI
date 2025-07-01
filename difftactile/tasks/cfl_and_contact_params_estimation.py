@@ -1,5 +1,4 @@
 import numpy as np
-import json
 
 from ..tasks.constants import *
 
@@ -16,27 +15,22 @@ def calculate_cfl_timestep():
     Returns:
         float: Recommended maximum stable time step in seconds
     """
-    with open('../tasks/system-params.json', 'r') as f:
-        system_params = json.load(f)
-    with open('../tasks/system-params-computed.json', 'r') as f:
-        system_params_computed = json.load(f)
     
-    vitactip_params = system_params['vitactip']
-    if vitactip_params['number_of_materials'] == 1:
+    if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
         materials = [
             {
                 'name': 'phantom',
-                'density': system_params['phantom']['silicone']['density'],
-                'youngs_modulus': system_params['phantom']['silicone']['youngs_modulus'],
-                'poissons_ratio': system_params['phantom']['silicone']['poissons_ratio'],
-                'particle_spacing': system_params_computed['phantom_min_max_particle_spacing']
+                'density': SYSTEM_PARAMS.phantom.silicone.density,
+                'youngs_modulus': SYSTEM_PARAMS.phantom.silicone.youngs_modulus,
+                'poissons_ratio': SYSTEM_PARAMS.phantom.silicone.poissons_ratio,
+                'particle_spacing': SYSTEM_PARAMS_COMPUTED.phantom_min_max_particle_spacing
             },
             {
                 'name': 'vitactip',
-                'density': system_params['vitactip']['single_material']['density'],
-                'youngs_modulus': system_params['vitactip']['single_material']['youngs_modulus'],
-                'poissons_ratio': system_params['vitactip']['single_material']['poissons_ratio'],
-                'particle_spacing': system_params_computed['vitactip_min_particle_spacing']['all']
+                'density': SYSTEM_PARAMS.vitactip.single_material.density,
+                'youngs_modulus': SYSTEM_PARAMS.vitactip.single_material.youngs_modulus,
+                'poissons_ratio': SYSTEM_PARAMS.vitactip.single_material.poissons_ratio,
+                'particle_spacing': SYSTEM_PARAMS_COMPUTED.vitactip_min_particle_spacing.all
             }
         ]
     else:
@@ -44,50 +38,50 @@ def calculate_cfl_timestep():
         materials = [
             {
                 'name': 'phantom',
-                'density': system_params['phantom']['silicone']['density'],
-                'youngs_modulus': system_params['phantom']['silicone']['youngs_modulus'],
-                'poissons_ratio': system_params['phantom']['silicone']['poissons_ratio'],
-                'particle_spacing': system_params_computed['phantom_min_max_particle_spacing']
+                'density': SYSTEM_PARAMS.phantom.silicone.density,
+                'youngs_modulus': SYSTEM_PARAMS.phantom.silicone.youngs_modulus,
+                'poissons_ratio': SYSTEM_PARAMS.phantom.silicone.poissons_ratio,
+                'particle_spacing': SYSTEM_PARAMS_COMPUTED.phantom_min_max_particle_spacing
             },
             {
                 'name': 'vitactip_shell',
-                'density': system_params['vitactip']['shell']['density'],
-                'youngs_modulus': system_params['vitactip']['shell']['youngs_modulus'],
-                'poissons_ratio': system_params['vitactip']['shell']['poissons_ratio'],
-                'particle_spacing': system_params_computed['vitactip_min_particle_spacing']['shell']
+                'density': SYSTEM_PARAMS.vitactip.shell.density,
+                'youngs_modulus': SYSTEM_PARAMS.vitactip.shell.youngs_modulus,
+                'poissons_ratio': SYSTEM_PARAMS.vitactip.shell.poissons_ratio,
+                'particle_spacing': SYSTEM_PARAMS_COMPUTED.vitactip_min_particle_spacing.shell
             },
             {
                 'name': 'vitactip_gel',
-                'density': system_params['vitactip']['gel']['density'],
-                'youngs_modulus': system_params['vitactip']['gel']['youngs_modulus'],
-                'poissons_ratio': system_params['vitactip']['gel']['poissons_ratio'],
-                'particle_spacing': system_params_computed['vitactip_min_particle_spacing']['gel']
+                'density': SYSTEM_PARAMS.vitactip.gel.density,
+                'youngs_modulus': SYSTEM_PARAMS.vitactip.gel.youngs_modulus,
+                'poissons_ratio': SYSTEM_PARAMS.vitactip.gel.poissons_ratio,
+                'particle_spacing': SYSTEM_PARAMS_COMPUTED.vitactip_min_particle_spacing.gel
             }
         ]
 
     # Calculate dt for each material
     # C can be between 0.0 (safest simulation) and 1.0 (fastest simulation)
-    cfl_number = system_params['meta']['target_courant_number']
+    cfl_number = SYSTEM_PARAMS.meta.target_courant_number
     dt_values = {}
     
     for material in materials:
         # Calculate wave speed
         c = calculate_wave_speed(
-            material['density'],
-            material['youngs_modulus'],
-            material['poissons_ratio']
+            material.density,
+            material.youngs_modulus,
+            material.poissons_ratio
         )
         
         # Calculate dt
-        dt = cfl_number * material['particle_spacing'] / c
-        dt_values[material['name']] = dt
-        num_frames_per_second = 1 / (dt * system_params['contact']['num_sub_frames'])
-        print(f"dt_{material['name']}: {dt:0.3e}")
-        print(f"num_frames_per_second_{material['name']}: {num_frames_per_second:0.0f}")
+        dt = cfl_number * material.particle_spacing / c
+        dt_values[material.name] = dt
+        num_frames_per_second = 1 / (dt * SYSTEM_PARAMS.contact.num_sub_frames)
+        print(f"dt_{material.name}: {dt:0.3e}")
+        print(f"num_frames_per_second_{material.name}: {num_frames_per_second:0.0f}")
 
     # Take minimum dt for stability
     dt = min(dt_values.values())
-    num_frames_per_second = 1 / (dt * system_params['contact']['num_sub_frames'])
+    num_frames_per_second = 1 / (dt * SYSTEM_PARAMS.contact.num_sub_frames)
     print(f'\nrequired dt: {dt:0.3e}')
     print(f'num_frames_per_second: {num_frames_per_second:0.0f}')
 
@@ -127,31 +121,26 @@ def calculate_contact_parameters():
     Uses actual contact surface area for more accurate mass calculation.
     Also estimates initial contact parameters using rule-of-thumb approaches.
     """
-    with open('../tasks/system-params.json', 'r') as f:
-        system_params = json.load(f)
-    with open('../tasks/system-params-computed.json', 'r') as f:
-        system_params_computed = json.load(f)
-    
-    contact_params = system_params['contact']
-    vitactip_params = system_params['vitactip']
-    phantom_params = system_params['phantom']
+    contact_params = SYSTEM_PARAMS.contact
+    SYSTEM_PARAMS.vitactip = SYSTEM_PARAMS.vitactip
+    phantom_params = SYSTEM_PARAMS.phantom
     
     # Get material properties
-    if vitactip_params['number_of_materials'] == 1:
-        E_vitactip = vitactip_params['single_material']['youngs_modulus']
-        rho_vitactip = vitactip_params['single_material']['density']
+    if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
+        E_vitactip = SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
+        rho_vitactip = SYSTEM_PARAMS.vitactip.single_material.density
     else:
         # Use shell properties as it dominates contact behavior
-        E_vitactip = vitactip_params['shell']['youngs_modulus']
-        rho_vitactip = vitactip_params['shell']['density']
+        E_vitactip = SYSTEM_PARAMS.vitactip.shell.youngs_modulus
+        rho_vitactip = SYSTEM_PARAMS.vitactip.shell.density
     
-    E_phantom = phantom_params['silicone']['youngs_modulus']
-    rho_phantom = phantom_params['silicone']['density']
+    E_phantom = phantom_params.silicone.youngs_modulus
+    rho_phantom = phantom_params.silicone.density
     
     # Get contact surface area
-    contact_area = system_params_computed['contact_surface_area']  # m²
-    phantom_min_max_particle_spacing = system_params_computed['phantom_min_max_particle_spacing']
-    vitactip_min_particle_spacing_all = system_params_computed['vitactip_min_particle_spacing']['all']
+    contact_area = SYSTEM_PARAMS_COMPUTED.contact_surface_area  # m²
+    phantom_min_max_particle_spacing = SYSTEM_PARAMS_COMPUTED.phantom_min_max_particle_spacing
+    vitactip_min_particle_spacing_all = SYSTEM_PARAMS_COMPUTED.vitactip_min_particle_spacing.all
     
     # Estimate contact volumes for both objects
     phantom_contact_volume = contact_area * (phantom_min_max_particle_spacing * 2)
@@ -177,10 +166,10 @@ def calculate_contact_parameters():
     mu_estimated = 0.85
     
     # Get current parameters (for comparison)
-    k_n_current = contact_params['normal_stiffness']
-    k_t_current = contact_params['tangential_stiffness']
-    c_current = contact_params['normal_damping']
-    mu_current = contact_params['coulomb_friction_coeff']
+    k_n_current = contact_params.normal_stiffness
+    k_t_current = contact_params.tangential_stiffness
+    c_current = contact_params.normal_damping
+    mu_current = contact_params.coulomb_friction_coeff
 
     # Calculate current damping ratio for comparison
     c_critical_current = calculate_critical_damping(k_n_current, effective_mass)
