@@ -15,11 +15,11 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 # Load the marker positions from pickle file
-with open('output/sim-markers-initial-positions.pkl', 'rb') as f:
+with open(SYSTEM_PARAMS.files.sim_markers_initial_positions, 'rb') as f:
     marker_positions = pickle.load(f)
 
 # Read the image
-image = cv2.imread('../tasks/vitactip_photo_default_state.png')
+image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
 
 # Draw markers on the image
 marker_color = (0, 0, 255)  # Red color in BGR

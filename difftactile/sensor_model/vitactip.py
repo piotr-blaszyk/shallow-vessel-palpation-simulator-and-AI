@@ -80,7 +80,7 @@ class ViTacTip:
 
     def load_mesh(self):
         # Load mesh data from gmsh
-        with open('../tasks/output/gmsh-mesh.pkl', 'rb') as f:
+        with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
             mesh_data = pickle.load(f)
         
         # Unpack mesh data

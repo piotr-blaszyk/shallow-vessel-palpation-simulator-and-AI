@@ -49,15 +49,15 @@ print(len(good_tetrahedra) // 4)
 # deformed_node_coordinates = deformed_node_coordinates[1:]
 # good_tetrahedra -= 1
 
-# with open(f'../tasks/output/vitactip.interp_idx_flat.pkl', 'rb') as f:
-#     interp_idx_flat = pickle.load(f)
+with open(SYSTEM_PARAMS.files.vitactip_interp_idx_flat, 'rb') as f:
+    interp_idx_flat = pickle.load(f)
 
-# with open(f'../tasks/output/vitactip.cam_3d_nodes.pkl', 'rb') as f:
-#     cam_3d_nodes = pickle.load(f)
+with open(SYSTEM_PARAMS.files.vitactip_cam_3d_nodes, 'rb') as f:
+    cam_3d_nodes = pickle.load(f)
 
-# with open(f'../tasks/output/tactile_sensor.f2v.pkl', 'rb') as f:
-#     tetrahedra_indices = pickle.load(f)
-# tetrahedra_indices = tetrahedra_indices.astype(int)
+with open(SYSTEM_PARAMS.files.tactile_sensor_f2v, 'rb') as f:
+    tetrahedra_indices = pickle.load(f)
+tetrahedra_indices = tetrahedra_indices.astype(int)
 
 if False:
     counter = Counter(interp_idx_flat)

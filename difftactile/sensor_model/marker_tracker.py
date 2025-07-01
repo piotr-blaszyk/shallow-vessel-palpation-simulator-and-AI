@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-from pathlib import Path
 import matplotlib.pyplot as plt
 from fisheye_model import *
 import tkinter as tk
@@ -22,8 +21,8 @@ class MarkerTracker:
             output_path (str, optional): Path for output video file
         """
         self.fisheye_model = FisheyeModel()
-        self.video_path = Path(video_path)
-        self.output_path = Path(output_path) if output_path else self.video_path.parent / f"{self.video_path.stem}_tracked.mkv"
+        self.video_path = video_path
+        self.output_path = None
         self.frame_markers = []  # List to store markers for each frame
         self.frame_mappings = []  # List to store mappings between consecutive frames
         self.base_frame_mappings = []  # List to store mappings to frame 0
@@ -43,8 +42,8 @@ class MarkerTracker:
         Args:
             calculate_markers (bool): If True, calculate markers from frames. If False, load from json file.
         """
-        json_path = self.video_path.parent / f"{self.video_path.stem}_markers.json"
-        manual_annotations_path = self.video_path.parent / "manual-annotations.json"
+        json_path = SYSTEM_PARAMS.files.marker_tracker_markers
+        manual_annotations_path = SYSTEM_PARAMS.files.marker_tracker_manual_annotations
         
         # Load manual annotations if they exist
         manual_annotations = {}
@@ -378,7 +377,7 @@ class VideoPlayer:
         # Convert frame indices from int to str for JSON serialization
         annotations_dict = {str(k): v for k, v in self.manual_annotations.items()}
         
-        json_path = Path(self.video_path).parent / "manual-annotations.json"
+        json_path = SYSTEM_PARAMS.files.marker_tracker_manual_annotations
         
         # Load existing annotations if they exist
         existing_annotations = {}
@@ -426,7 +425,7 @@ def process_and_view_video(input_path, output_path=None):
 
 
 if __name__ == '__main__':
-    process_and_view_video(SYSTEM_PARAMS.files.system_id_video, f'difftactile/sensor_model/marker-tracker.mkv')
+    process_and_view_video(SYSTEM_PARAMS.files.system_id_video, SYSTEM_PARAMS.files.system_id_output_video)
 
-    player = VideoPlayer(f'difftactile/sensor_model/marker-tracker.mkv')
+    player = VideoPlayer(SYSTEM_PARAMS.files.system_id_output_video)
     player.run()

@@ -113,7 +113,7 @@ system_params_computed = {
 }
 
 # Save coordinates to JSON file
-with open('../tasks/system-system-params-computed.json', 'w') as f:
+with open(SYSTEM_PARAMS.files.system_params_computed, 'w') as f:
     json.dump(system_params_computed, f, indent=2)
 
 print('difftactile coordinates')

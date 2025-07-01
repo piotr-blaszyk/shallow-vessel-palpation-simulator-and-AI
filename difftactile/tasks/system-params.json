@@ -128,6 +128,7 @@
         "init_principal_point": "../tasks/output/init-principal-point.png",
         "system_id_video": "difftactile/sensor_model/system-id-screws-3-reps.mkv",
         "processed_video": "difftactile/sensor_model/processed_video.mkv",
+        "system_id_output_video": "output/marker_tracker/marker-tracker.mkv",
         "fisheye_params": "fisheye_params.npz",
         "markers_paired": "./markers-paired.pkl",
         "manual_annotations": "manual-annotations.json",
@@ -145,6 +146,11 @@
         "fisheye_model_project_points_to_pix": "../tasks/output/fisheye_model.project_points_to_pix.png",
         "fisheye_model_project_points_to_pix_cv2": "../tasks/output/fisheye_model.project_points_to_pix_cv2.png",
         "output_dir": "../tasks/output/",
-        "init_with_circle": "../tasks/output/init_with_circle.png"
+        "init_with_circle": "../tasks/output/init_with_circle.png",
+        "marker_tracker_markers": "output/marker_tracker/markers.json",
+        "marker_tracker_manual_annotations": "output/marker_tracker/manual-annotations.json",
+        "tactile_sensor_all_nodes": "output/tactile_sensor.all_nodes.pkl",
+        "system_params_computed": "../tasks/system-system-params-computed.json",
+        "vitactip_interp_idx_flat": "../tasks/output/vitactip.interp_idx_flat.pkl",
     }
 }
