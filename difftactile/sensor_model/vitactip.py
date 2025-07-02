@@ -93,10 +93,10 @@ class ViTacTip:
         node_labels = mesh_data['node_labels']
         surface_triangles = mesh_data['surface_triangles']
         group_to_idx = mesh_data['group_to_idx']
-        y_bottom = mesh_data['y_bottom'] / 1_000
+        z_bottom = mesh_data['z_bottom'] / 1_000
         
         # Compute fixed layer nodes (nodes at the bottom)
-        is_fixed_layer = np.abs(node_coordinates[:, 1] - y_bottom) < SYSTEM_PARAMS.vitactip.fixed_layer_distance_from_bottom  # Check if y-coordinate is at bottom
+        is_fixed_layer = np.abs(node_coordinates[:, 2] - z_bottom) < SYSTEM_PARAMS.vitactip.fixed_layer_distance_from_bottom  # Check if y-coordinate is at bottom
         
         # Append is_fixed_layer to node_labels
         node_labels = np.column_stack([node_labels, is_fixed_layer])
@@ -136,9 +136,9 @@ class ViTacTip:
             for vertex_idx in tetra:
                 vertex_masses[vertex_idx] += element_mass / 4.0  # Equal distribution
         
-        max_y = np.max(node_coordinates[:, 1])
-        y_translation = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - max_y
-        translation_vector = np.array([0, y_translation, 0])
+        max_z = np.max(node_coordinates[:, 2])
+        z_translation = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - max_z
+        translation_vector = np.array([0, 0, z_translation])
         node_coordinates = node_coordinates + translation_vector
 
         self.node_coordinates = node_coordinates
@@ -186,9 +186,8 @@ class ViTacTip:
             cv2.circle(marker_visualization_image, marker_center, radius=5, color=(0, 0, 255), thickness=2)
         cv2.imwrite(SYSTEM_PARAMS.files.vitactip_photo_default_state_detected_markers, marker_visualization_image)
 
-        surface_nodes_y_up = self.node_coordinates[self.dome_surface_node_tags_npy]
-        # OpenCV has camera.position(0,0,0), camera.lookat(0,0,1), camera.up(0,1,0)
-        surface_nodes_z_up = np.array([surface_nodes_y_up[:,0], surface_nodes_y_up[:,2], surface_nodes_y_up[:,1]]).T
+        # OpenCV has camera.position(0,0,0), camera.lookat(0,0,1), camera.up(0,-1,0)
+        surface_nodes_z_up = self.node_coordinates[self.dome_surface_node_tags_npy]
         surface_node_projections_2d = self.fisheye_model.project_points_to_pix(surface_nodes_z_up)
 
         surface_node_visualization = initial_camera_image.copy()
@@ -361,10 +360,8 @@ class ViTacTip:
             homogeneous_undeformed_pos = ti.Vector([undeformed_vertex_pos[0], undeformed_vertex_pos[1], undeformed_vertex_pos[2], 1.0])
             transformed_deformed_pos = self.inverse_transformation_matrix[None] @ homogeneous_deformed_pos
             transformed_undeformed_pos = self.inverse_transformation_matrix[None] @ homogeneous_undeformed_pos
-            camera_space_deformed_pos = ti.Vector([transformed_deformed_pos[0], transformed_deformed_pos[2], transformed_deformed_pos[1]])
-            camera_space_undeformed_pos = ti.Vector([transformed_undeformed_pos[0], transformed_undeformed_pos[2], transformed_undeformed_pos[1]])
-            camera_space_deformed_2d = self.fisheye_model.project_3d_2d(camera_space_deformed_pos)
-            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(camera_space_undeformed_pos)
+            camera_space_deformed_2d = self.fisheye_model.project_3d_2d(transformed_deformed_pos)
+            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(transformed_undeformed_pos)
             self.projection_2d_dome_surface_nodes_deformed[i] = camera_space_deformed_2d
             self.projection_2d_dome_surface_nodes_undeformed[i] = camera_space_undeformed_2d
 
@@ -423,8 +420,7 @@ class ViTacTip:
             undeformed_vertex_pos = self.vertex_positions_undeformed_global_coordinates[frame_idx, node_idx]
             homogeneous_undeformed_pos = ti.Vector([undeformed_vertex_pos[0], undeformed_vertex_pos[1], undeformed_vertex_pos[2], 1.0])
             transformed_undeformed_pos = self.inverse_transformation_matrix[None] @ homogeneous_undeformed_pos
-            camera_space_undeformed_pos = ti.Vector([transformed_undeformed_pos[0], transformed_undeformed_pos[2], transformed_undeformed_pos[1]])
-            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(camera_space_undeformed_pos)
+            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(transformed_undeformed_pos)
             self.projection_2d_clock_arms[i] = camera_space_undeformed_2d
 
     @ti.func

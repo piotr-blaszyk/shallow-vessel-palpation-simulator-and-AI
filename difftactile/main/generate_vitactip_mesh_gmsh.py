@@ -60,11 +60,9 @@ class MeshGenerator:
             self.biomimetic_tip_points = pickle.load(f)
         self.A_points = self.biomimetic_tip_points['A_points']
         self.B_points = self.biomimetic_tip_points['B_points']
-        self.A_points = self.A_points[:, [0, 2, 1]]
-        self.B_points = self.B_points[:, [0, 2, 1]]
         
-        # Find the point closest to (0,0) in the xz plane for A_points
-        distances_A = np.sqrt(self.A_points[:, 0]**2 + self.A_points[:, 2]**2)  # xz plane distance
+        # Find the point closest to (0,0) in the xy plane for A_points
+        distances_A = np.sqrt(self.A_points[:, 0]**2 + self.A_points[:, 1]**2)  # xy plane distance
         closest_A_idx = np.argmin(distances_A)
         self.A_points = self.A_points[closest_A_idx:closest_A_idx+1]  # Keep only the closest point
         self.B_points = self.B_points[closest_A_idx:closest_A_idx+1]  # Keep only the closest point
@@ -87,8 +85,8 @@ class MeshGenerator:
 
         radius_of_curvature_outer = self.dome_radius_of_curvature(stem_wall_radius_outer, cap_height)
         radius_of_curvature_inner = radius_of_curvature_outer - 1
-        y_cap_base = radius_of_curvature_outer - cap_height
-        y_bottom = y_cap_base - stem_height
+        z_cap_base = radius_of_curvature_outer - cap_height
+        z_bottom = z_cap_base - stem_height
         
         self.geometry_data = {
             'stem_wall_radius_outer': stem_wall_radius_outer,
@@ -97,8 +95,8 @@ class MeshGenerator:
             'stem_height': stem_height,
             'radius_of_curvature_outer': radius_of_curvature_outer,
             'radius_of_curvature_inner': radius_of_curvature_inner,
-            'y_cap_base': y_cap_base,
-            'y_bottom': y_bottom
+            'z_cap_base': z_cap_base,
+            'z_bottom': z_bottom
         }
 
     def generate_vitactip_mesh(self):
@@ -109,20 +107,20 @@ class MeshGenerator:
         self.number_of_biomimetic_tips = SYSTEM_PARAMS.vitactip.number_of_biomimetic_tips
         radius_of_curvature_outer = self.geometry_data['radius_of_curvature_outer']
         radius_of_curvature_inner = self.geometry_data['radius_of_curvature_inner']
-        y_cap_base = self.geometry_data['y_cap_base']
-        y_bottom = self.geometry_data['y_bottom']
+        z_cap_base = self.geometry_data['z_cap_base']
+        z_bottom = self.geometry_data['z_bottom']
         stem_wall_radius_outer = self.geometry_data['stem_wall_radius_outer']
         stem_height = self.geometry_data['stem_height']
 
         if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
             outer_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_outer)
-            cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
+            cyl_helper = gmsh.model.occ.addCylinder(0, 0, z_bottom, 0, 0, stem_height * 2, stem_wall_radius_outer)
             all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
         elif SYSTEM_PARAMS.vitactip.number_of_materials == 2:
             outer_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_outer)
             inner_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_inner)
             cap = gmsh.model.occ.cut([(3, outer_ball)], [(3, inner_ball)])[0]
-            cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
+            cyl_helper = gmsh.model.occ.addCylinder(0, 0, z_bottom, 0, 0, stem_height * 2, stem_wall_radius_outer)
             cap = gmsh.model.occ.intersect(cap, [(3, cyl_helper)])[0]
 
             if self.number_of_biomimetic_tips == 0:
@@ -131,7 +129,7 @@ class MeshGenerator:
                 A = self.A_points[0]
                 B = self.B_points[0]
                 AB = B-A
-                tip_cylinder = gmsh.model.occ.addCylinder(0, A[1], 0, AB[0], AB[1], AB[2], 0.25)
+                tip_cylinder = gmsh.model.occ.addCylinder(A[0], A[1], A[2], AB[0], AB[1], AB[2], 0.25)
                 gmsh.model.occ.synchronize()
                 cap = gmsh.model.occ.fragment(cap, [(3, tip_cylinder)])[0]
             else:
@@ -155,13 +153,13 @@ class MeshGenerator:
                     continue
                 new_fragments.append((dim, tag))
             
-            stem_wall_outer = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, stem_wall_radius_outer)
-            stem_wall_inner = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height, 0, self.geometry_data['stem_wall_radius_inner'])
+            stem_wall_outer = gmsh.model.occ.addCylinder(0, 0, z_bottom, 0, 0, stem_height, stem_wall_radius_outer)
+            stem_wall_inner = gmsh.model.occ.addCylinder(0, 0, z_bottom, 0, 0, stem_height, self.geometry_data['stem_wall_radius_inner'])
             stem_wall = gmsh.model.occ.cut([(3, stem_wall_outer)], [(3, stem_wall_inner)])[0]
             shell = gmsh.model.occ.fuse(new_fragments, stem_wall)[0]
 
             outer_ball = gmsh.model.occ.addSphere(0, 0, 0, radius_of_curvature_outer)
-            cyl_helper = gmsh.model.occ.addCylinder(0, y_bottom, 0, 0, stem_height * 2, 0, stem_wall_radius_outer)
+            cyl_helper = gmsh.model.occ.addCylinder(0, 0, z_bottom, 0, 0, stem_height * 2, stem_wall_radius_outer)
             all_volume = gmsh.model.occ.intersect([(3, outer_ball)], [(3, cyl_helper)])[0]
             gel = gmsh.model.occ.cut(all_volume, shell, removeTool=False)[0]
             gmsh.model.occ.synchronize()
@@ -169,24 +167,12 @@ class MeshGenerator:
             raise Exception("number of materials must be 1 or 2")
 
         if SYSTEM_PARAMS.gmsh_mm.refine_mesh == 1:
-            # r_max = radius_of_curvature_outer
-            # r_min = radius_of_curvature_outer - 4
-            # a = SYSTEM_PARAMS.gmsh_mm.refine_min_mesh_size
-            # b = SYSTEM_PARAMS.gmsh_mm.refine_mesh_size_distance_offset
-            # f1 = f"{a}+max(0.0,min({b},{r_max}-sqrt(x^2+y^2+z^2)))"
-            # print(f1)
-            y_poi = y_bottom + 18
+            z_poi = z_bottom + 18
 
-            f1 = f"max(1.0, min(4.0, 2.5 - (y-{y_poi}) * 3.0 / (2.0 * 2.0)))"
+            f1 = f"max(1.0, min(4.0, 2.5 - (z-{z_poi}) * 3.0 / (2.0 * 2.0)))"
 
             gmsh.model.mesh.field.add("MathEval", 1)
             gmsh.model.mesh.field.setString(1, "F", f1)
-
-            # gmsh.model.mesh.field.add("MathEval", 2)
-            # gmsh.model.mesh.field.setString(2, "F", f"6.0")
-
-            # gmsh.model.mesh.field.add("Min", 3)
-            # gmsh.model.mesh.field.setNumbers(3, "FieldsList", [1, 2])
 
             gmsh.model.mesh.field.setAsBackgroundMesh(1)
 
@@ -214,8 +200,8 @@ class MeshGenerator:
         stem_height = self.geometry_data['stem_height']
         radius_of_curvature_outer = self.geometry_data['radius_of_curvature_outer']
         radius_of_curvature_inner = self.geometry_data['radius_of_curvature_inner']
-        y_cap_base = self.geometry_data['y_cap_base']
-        y_bottom = self.geometry_data['y_bottom']
+        z_cap_base = self.geometry_data['z_cap_base']
+        z_bottom = self.geometry_data['z_bottom']
 
         # element_types is irrelevant
         # triangle_tags[0] is a 1d int numpy array of shape (num_triangles,)
@@ -242,13 +228,13 @@ class MeshGenerator:
             tag = self.node_tags[i]
             node = self.node_coordinates[i]
             x,y,z = node
-            if y > y_cap_base:
+            if z > z_cap_base:
                 if np.linalg.norm(node) > radius_of_curvature_outer - 0.1:
                     surface_node_tags.append(tag)
                     surface_coords.append(node)
             else:
-                xz = np.array([x, z])
-                if np.linalg.norm(xz) > stem_wall_radius_outer - 0.1:
+                xy = np.array([x, y])
+                if np.linalg.norm(xy) > stem_wall_radius_outer - 0.1:
                     surface_node_tags.append(tag)
                     surface_coords.append(node)
         surface_node_tags = np.array(surface_node_tags)
@@ -261,8 +247,8 @@ class MeshGenerator:
             surface_triangles_mask.append(all_nodes_surface)
         self.surface_triangles = self.surface_triangles[surface_triangles_mask]
 
-        # Filter surface nodes to get dome surface nodes (those above y_cap_base)
-        dome_surface_node_tags = surface_node_tags[self.node_coordinates[surface_node_tags, 1] >= y_cap_base]
+        # Filter surface nodes to get dome surface nodes (those above z_cap_base)
+        dome_surface_node_tags = surface_node_tags[self.node_coordinates[surface_node_tags, 2] >= z_cap_base]
 
         for dim, tag in physical_groups:
             name = gmsh.model.getPhysicalName(dim, tag)
@@ -276,32 +262,36 @@ class MeshGenerator:
         if self.number_of_biomimetic_tips not in [0, 1]:
             raise Exception("self.number_of_biomimetic_tips must be 0 or 1")
 
-        min_dist = float('inf')
-        A = self.A_points[0]
-        min_node_tag = None
-        for x in np.unique(self.all_tetrahedra.flatten()):
-            dist = np.linalg.norm(self.node_coordinates[x-1]-A)
-            if dist < min_dist:
-                min_dist = dist
-                min_node_tag = x
-        assert min_node_tag is not None, "no marker node found"
-        marker_node_tags = np.array([min_node_tag])-1
+        if SYSTEM_PARAMS.vitactip.number_of_biomimetic_tips > 0:
+            min_dist = float('inf')
+            A = self.A_points[0]
+            min_node_tag = None
+            for x in np.unique(self.all_tetrahedra.flatten()):
+                dist = np.linalg.norm(self.node_coordinates[x-1]-A)
+                if dist < min_dist:
+                    min_dist = dist
+                    min_node_tag = x
+            assert min_node_tag is not None, "no marker node found"
+            marker_node_tags = np.array([min_node_tag])-1
+        else:
+            marker_node_tags = np.array([0])
 
-        self.node_coordinates = self.node_coordinates[1:]
-        self.node_labels = self.node_labels[1:]
-        self.all_tetrahedra -= 1
-        self.surface_triangles -= 1
-        marker_node_tags -= 1
-        all_tetrahedra_temp = []
-        for tetra in self.all_tetrahedra:
-            if -1 not in tetra:
-                all_tetrahedra_temp.append(tetra)
-        self.all_tetrahedra = np.array(all_tetrahedra_temp)
-        surface_triangles_temp = []
-        for tetra in self.surface_triangles:
-            if -1 not in tetra:
-                surface_triangles_temp.append(tetra)
-        self.surface_triangles = np.array(surface_triangles_temp)
+        if False:
+            self.node_coordinates = self.node_coordinates[1:]
+            self.node_labels = self.node_labels[1:]
+            self.all_tetrahedra -= 1
+            self.surface_triangles -= 1
+            marker_node_tags -= 1
+            all_tetrahedra_temp = []
+            for tetra in self.all_tetrahedra:
+                if -1 not in tetra:
+                    all_tetrahedra_temp.append(tetra)
+            self.all_tetrahedra = np.array(all_tetrahedra_temp)
+            surface_triangles_temp = []
+            for tetra in self.surface_triangles:
+                if -1 not in tetra:
+                    surface_triangles_temp.append(tetra)
+            self.surface_triangles = np.array(surface_triangles_temp)
 
         self.all_tetrahedra -= 1
         surface_node_tags -= 1
@@ -325,7 +315,7 @@ class MeshGenerator:
             'marker_node_tags': marker_node_tags,
             'dome_surface_node_tags': dome_surface_node_tags,
 
-            'y_bottom': y_bottom,
+            'z_bottom': z_bottom,
             'radius_of_curvature_inner': radius_of_curvature_inner,
             'radius_of_curvature_outer': radius_of_curvature_outer,
             'min_particle_spacing': min_particle_spacing,
