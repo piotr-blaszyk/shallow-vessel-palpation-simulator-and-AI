@@ -21,16 +21,15 @@ class FisheyeModel:
 
     @ti.func
     def project_3d_2d(self, a):
-        #ref. Universal Semantic Segmentation for Fisheye Urban Driving Images Ye et al.
-        #a is 3d vec
-        a[2] += 2.0*0.0001 # distance to the image plane
         a_norm = a.norm(1e-12)
         cos = a[2] / a_norm
 
         cos = ti.min(1.0, cos)
         cos = ti.max(-1.0, cos)
         theta = ti.acos(cos)
-        omega = ti.atan2(a[1],a[0]+1e-10) + ti.math.pi
+        # Add a small epsilon to denominator while preserving its sign
+        x_normalized = ti.select(abs(a[0]) < 1e-10, ti.select(a[0] >= 0, 1e-10, -1e-10), a[0])
+        omega = ti.atan2(a[1], x_normalized) + ti.math.pi
         r_x = SYSTEM_PARAMS.fisheye_model.focal_length_x * theta
         r_y = SYSTEM_PARAMS.fisheye_model.focal_length_y * theta
 
@@ -41,9 +40,6 @@ class FisheyeModel:
         return p
 
     def project_points_to_pix(self, a):
-        #ref. Universal Semantic Segmentation for Fisheye Urban Driving Images Ye et al.
-        #a is a point cloud if (n, 3)
-        a[:,2] += 2.0*0.0001 #(14-0.7-9)* 0.01 # distance to the image plane
         b = np.array([[0., 0., 1.]]).repeat(len(a), axis=0)
         inner_product = (a * b).sum(axis=1)
         a_norm = np.linalg.norm(a,axis=1)

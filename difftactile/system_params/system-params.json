@@ -119,6 +119,7 @@
         "vitactip_photo_default_state_detected_markers": "difftactile/output/vitactip_photo_default_state_detected_markers.png",
         "vitactip_photo_default_state_dome_surface_3d_vertices_projected_to_2d": "difftactile/output/vitactip_photo_default_state_dome_surface_3d_vertices_projected_to_2d.png",
         "vitactip_photo_default_state_predicted_markers": "difftactile/output/vitactip_photo_default_state_predicted_markers.png",
+        "vitactip_photo_default_state_interpolated_marker_positions_2d": "difftactile/output/vitactip_photo_default_state_interpolated_marker_positions_2d.png",
         "cnn_preprocessing_params": "difftactile/output/saved_models/cnn_preprocessing_params.pkl",
         "eda_marker_snapshots_and_labels": "difftactile/output/marker_snapshots_and_labels.pkl",
         "gnn_preprocessing_params": "difftactile/output/saved_models/gnn_preprocessing_params.pkl",

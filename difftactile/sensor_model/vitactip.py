@@ -212,6 +212,12 @@ class ViTacTip:
         marker_interpolation_indices = np.array(marker_interpolation_indices)
         marker_interpolation_weights = np.array(marker_interpolation_weights)
 
+        surface_node_visualization = initial_camera_image.copy()
+        for projected_point in interpolated_marker_positions_2d:
+            point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
+            cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
+        cv2.imwrite(SYSTEM_PARAMS.files.vitactip_photo_default_state_interpolated_marker_positions_2d, surface_node_visualization)
+
         self.num_markers = len(interpolated_marker_positions_2d)
 
         self.deformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
@@ -356,23 +362,22 @@ class ViTacTip:
             camera_space_undeformed_pos = ti.Vector([transformed_undeformed_pos[0], transformed_undeformed_pos[2], transformed_undeformed_pos[1]])
             camera_space_deformed_2d = self.fisheye_model.project_3d_2d(camera_space_deformed_pos)
             camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(camera_space_undeformed_pos)
-            marker_drift = camera_space_undeformed_2d - self.initial_markers[i]
-            self.projection_2d_surface_nodes_deformed[i] = camera_space_deformed_2d - marker_drift
-            self.projection_2d_surface_nodes_undeformed[i] = camera_space_undeformed_2d - marker_drift
+            self.projection_2d_surface_nodes_deformed[i] = camera_space_deformed_2d
+            self.projection_2d_surface_nodes_undeformed[i] = camera_space_undeformed_2d
 
-        for marker_idx in range(self.num_markers):
-            nearest_surface_indices = self.marker_interpolation_indices[marker_idx]
-            interpolation_weights = self.marker_interpolation_weights[marker_idx]
+        for i in range(self.num_markers):
+            nearest_surface_indices = self.marker_interpolation_indices[i]
+            interpolation_weights = self.marker_interpolation_weights[i]
             interpolated_deformed_pos_2d = ti.Vector([0.0, 0.0])
             interpolated_undeformed_pos_2d = ti.Vector([0.0, 0.0])
             for neighbor_idx in range(self.marker_interpolation_knn_k):
                 interpolated_deformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_surface_nodes_deformed[nearest_surface_indices[neighbor_idx]]
                 interpolated_undeformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_surface_nodes_undeformed[nearest_surface_indices[neighbor_idx]]
-            self.deformed_markers[marker_idx] = interpolated_deformed_pos_2d
-            self.undeformed_markers[marker_idx] = interpolated_undeformed_pos_2d
-    
+            self.deformed_markers[i] = interpolated_deformed_pos_2d
+            self.undeformed_markers[i] = interpolated_undeformed_pos_2d
+
     @ti.kernel
-    def copy_markers_to_initial_markers(self):
+    def copy_markers_to_initial_markers_for_drift_correction(self):
         for marker_idx in range(self.num_markers):
             self.initial_markers[marker_idx] = self.undeformed_markers[marker_idx]
     

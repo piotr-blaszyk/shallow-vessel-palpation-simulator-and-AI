@@ -648,7 +648,7 @@ def main():
         if opts == 0:
             contact_model.vitactip.test_mapping_from_global_space_to_camera_space()
             contact_model.vitactip.extract_markers(0)
-            contact_model.vitactip.copy_markers_to_initial_markers()
+            contact_model.vitactip.copy_markers_to_initial_markers_for_drift_correction()
             contact_model.vitactip.save_predicted_markers_to_image()
             initial_markers = contact_model.vitactip.deformed_markers.to_numpy()
             with open(SYSTEM_PARAMS.files.sim_markers_initial_positions, 'wb') as f:
