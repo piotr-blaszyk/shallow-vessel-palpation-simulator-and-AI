@@ -390,7 +390,6 @@ class ViTacTip:
             point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
             cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
         cv2.imwrite(SYSTEM_PARAMS.files.vitactip_photo_default_state_predicted_markers, surface_node_visualization)
-        sys.exit()
 
     @ti.kernel
     def test_mapping_from_global_space_to_camera_space(self):
@@ -401,6 +400,8 @@ class ViTacTip:
             camera_space_initial_pos = ti.Vector([transformed_initial_pos[0], transformed_initial_pos[2], transformed_initial_pos[1]])
             self.camera_coordinate_system_vertices[0, i] = camera_space_initial_pos
     
+    def debug_marker_drift(self, ts):
+        print(f'ts: {ts}; marker coords: {self.deformed_markers[0]}')
 
     @ti.func
     def eul2mat(self, rot_v, trans_v):

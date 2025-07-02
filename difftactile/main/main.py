@@ -108,8 +108,6 @@ class Contact:
         self.trajectory = ti.Vector.field(6, dtype=float, shape=3, needs_grad=False)
         self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
         self.tumour_present[None] = 0
-        self.pid_on = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.pid_on[None] = 1
     
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate((
@@ -385,8 +383,7 @@ class Contact:
             if clamp_speed and ori_control_norm > max_speed_ori:
                 ori_control = ori_control / ori_control_norm * max_speed_ori
 
-            pid_is_on = self.pid_on[None] == 1
-            if pid_is_on:
+            if SYSTEM_PARAMS.meta.enable_pid_controller == 1:
                 self.vitactip.global_translational_velocity[None] = pos_control
                 self.vitactip.global_angular_velocity_degrees[None] = ori_control
             else:
@@ -464,7 +461,7 @@ class Contact:
         # print('mesh node mapping exported!')
     
     def visualisation_initialise(self):
-        self.enable_tactile_map = False
+        self.enable_tactile_map = SYSTEM_PARAMS.meta.enable_tactile_map == 1
         self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(7,), needs_grad=False)
         self.sensor_points = ti.Vector.field(
             3, dtype=float, shape=(self.vitactip.num_vertices)
@@ -666,6 +663,7 @@ def main():
             contact_model.memory_to_cache(0)
 
             contact_model.visualisation_update_gui(ts)
+            contact_model.vitactip.debug_marker_drift(ts)
 
             if ts % 1_000 == 0:
                 print(f'ts: {ts}')
