@@ -102,8 +102,8 @@
     "fisheye_model": {
         "focal_length_x": 190.0,
         "focal_length_y": 190.0,
-        "principal_point_x": 359.0,
-        "principal_point_y": 264.0,
+        "principal_point_x": 320.0,
+        "principal_point_y": 240.0,
         "target_image_width": 640.0,
         "target_image_height": 480.0,
         "circle_centre_x": 345.0,
@@ -118,7 +118,7 @@
         "gmsh_mesh": "difftactile/output/gmsh-mesh.pkl",
 
         "fisheye_model_image_dir": "difftactile/manual_or_experimental_data/downward-press-vascular-phantom",
-        "vitactip_photo_default_state": "difftactile/manual_or_experimental_data/vitactip_photo_default_state.png",
+        "vitactip_photo_default_state": "difftactile/manual_or_experimental_data/my_shape.png",
         "vitactip_photo_default_state_detected_markers": "difftactile/output/vitactip_photo_default_state_detected_markers.png",
         "vitactip_photo_default_state_dome_surface_3d_vertices_projected_to_2d": "difftactile/output/vitactip_photo_default_state_dome_surface_3d_vertices_projected_to_2d.png",
         "vitactip_photo_default_state_predicted_markers": "difftactile/output/vitactip_photo_default_state_predicted_markers.png",
@@ -134,7 +134,7 @@
         "system_id_output_video": "difftactile/output/marker_tracker/marker-tracker.mkv",
         "fisheye_params": "difftactile/output/fisheye_params.npz",
         "markers_paired": "difftactile/output/markers-paired.pkl",
-        "deformed_node_coordinates": "difftactile/output/tactile_sensor.deformed_node_coordinates.ts={}.pkl",
+        "deformed_node_coordinates": "difftactile/output/mesh_snapshots/tactile_sensor.deformed_node_coordinates.ts={}.pkl",
         "tactile_sensor_f2v": "difftactile/output/tactile_sensor.f2v.pkl",
         "sim_markers_initial_positions": "difftactile/output/sim-markers-initial-positions.pkl",
         "raw_mesh_vertices": "difftactile/output/raw_mesh.vertices.csv",

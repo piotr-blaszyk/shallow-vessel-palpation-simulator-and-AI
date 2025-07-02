@@ -4,6 +4,7 @@ np.set_printoptions(precision=6, suppress=False, formatter={'float': '{:0.6e}'.f
 import pickle
 import json
 import cv2
+import sys
 
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
@@ -523,8 +524,8 @@ class Contact:
             deformed = self.vitactip.deformed_markers[i]
             
             # Flip y coordinates
-            undeformed[1] = self.window_size[None][1] - undeformed[1]
-            deformed[1] = self.window_size[None][1] - deformed[1]
+            # undeformed[1] = self.window_size[None][1] - undeformed[1]
+            # deformed[1] = self.window_size[None][1] - deformed[1]
             
             # Calculate offset
             offset = deformed - undeformed
@@ -545,7 +546,7 @@ class Contact:
         for i in range(2):
             point = self.vitactip.projection_2d_clock_arms[i]
             # Flip y coordinate
-            point[1] = self.window_size[None][1] - point[1]
+            # point[1] = self.window_size[None][1] - point[1]
             # Normalize coordinates by window size
             self.clock_arm_points[i] = point / self.window_size[None]
 
@@ -564,7 +565,7 @@ class Contact:
         # Draw clock arm points
         self.tactile_canvas.circles(
             self.clock_arm_points, 
-            radius=0.01, 
+            radius=0.05, 
             per_vertex_color=self.clock_arm_points_per_vertex_color,
         )
         
