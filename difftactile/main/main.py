@@ -524,8 +524,8 @@ class Contact:
             deformed = self.vitactip.deformed_markers[i]
             
             # Flip y coordinates
-            # undeformed[1] = self.window_size[None][1] - undeformed[1]
-            # deformed[1] = self.window_size[None][1] - deformed[1]
+            undeformed[1] = self.window_size[None][1] - undeformed[1]
+            deformed[1] = self.window_size[None][1] - deformed[1]
             
             # Calculate offset
             offset = deformed - undeformed
@@ -546,7 +546,7 @@ class Contact:
         for i in range(2):
             point = self.vitactip.projection_2d_clock_arms[i]
             # Flip y coordinate
-            # point[1] = self.window_size[None][1] - point[1]
+            point[1] = self.window_size[None][1] - point[1]
             # Normalize coordinates by window size
             self.clock_arm_points[i] = point / self.window_size[None]
 
@@ -584,7 +584,7 @@ class Contact:
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
         self.camera.position(x, y, z+1.0)
-        self.camera.up(1, 0, 0)
+        self.camera.up(0, 1, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(8)
         
