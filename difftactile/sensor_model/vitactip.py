@@ -395,7 +395,8 @@ class ViTacTip:
             undeformed_vertex_pos = self.vertex_positions_undeformed_global_coordinates[frame_idx, node_idx]
             homogeneous_undeformed_pos = ti.Vector([undeformed_vertex_pos[0], undeformed_vertex_pos[1], undeformed_vertex_pos[2], 1.0])
             transformed_undeformed_pos = self.inverse_transformation_matrix[None] @ homogeneous_undeformed_pos
-            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(transformed_undeformed_pos)
+            camera_space_undeformed_pos = ti.Vector([transformed_undeformed_pos[0], transformed_undeformed_pos[1], transformed_undeformed_pos[2]])
+            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(camera_space_undeformed_pos)
             self.projection_2d_clock_arms[i] = camera_space_undeformed_2d
 
     @ti.func

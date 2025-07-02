@@ -16,7 +16,8 @@ class VisualiseMesh:
         print(f'number of nan vertices: {np.sum(np.isnan(self.point_coordinates))}')
     
     def use_dome_surface_points(self):
-        self.point_coordinates = self.point_coordinates[self.mesh_data['dome_surface_node_tags']]
+        # self.point_coordinates = self.point_coordinates[self.mesh_data['dome_surface_node_tags']]
+        self.point_coordinates = self.point_coordinates[[23, 31]]
 
     def remove_nans_and_filter_on_material(self):
         nan_nodes = np.where(np.any(np.isnan(self.point_coordinates), axis=1))[0]

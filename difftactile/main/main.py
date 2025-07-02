@@ -565,7 +565,7 @@ class Contact:
         # Draw clock arm points
         self.tactile_canvas.circles(
             self.clock_arm_points, 
-            radius=0.05, 
+            radius=0.02, 
             per_vertex_color=self.clock_arm_points_per_vertex_color,
         )
         
