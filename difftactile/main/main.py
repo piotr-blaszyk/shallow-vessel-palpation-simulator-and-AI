@@ -119,7 +119,7 @@ class Contact:
 
     def set_up_initial_positions_and_trajectory(self):
         ix = self.vitactip.get_keypoint_indices_numpy_point_a()
-        camera_lens_to_sensor_tip = self.vitactip.node_coordinates[ix, 1]
+        camera_lens_to_sensor_tip = self.vitactip.node_coordinates[ix, 2]
         tumour_present = False
         self.tumour_present[None] = tumour_present
         self.phantom.set_state_from_outside(
@@ -583,8 +583,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y, z+1.0)
-        self.camera.up(0, -1, 0)
+        self.camera.position(x-1.0, y, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(8)
         
@@ -664,7 +664,7 @@ class Contact:
                 self.key_points,
                 color=(1.0, 0.0, 0.0),
                 per_vertex_color=self.key_points_per_vertex_color,
-                radius=6e-3,
+                radius=9e-4,
             )
         
         self.canvas.scene(self.scene)

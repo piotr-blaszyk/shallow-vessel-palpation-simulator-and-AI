@@ -83,9 +83,9 @@
         "refine_mesh": 1
     },
     "geometry": {
-        "gap": 0.005,
+        "gap": 0.050,
         "phantom_orientation": [0, 0, 0],
-        "sensor_orientation": [-90, 0, 0],
+        "sensor_orientation": [0, 180, 0],
         "phantom_h": 0.022,
         "phantom_r": 0.040,
         "distance_from_camera_lens_to_outer_shell_surface": 0.020
@@ -93,8 +93,7 @@
     "meta": {
         "target_courant_number": 0.5,
         "enable_tactile_map": 1,
-        "enable_pid_controller": 1,
-        "num_circle_points_tactile_readout": 100
+        "enable_pid_controller": 0
     },
     "visualise_mesh": {
         "frame_number": 200

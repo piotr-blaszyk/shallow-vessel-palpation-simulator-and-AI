@@ -15,14 +15,14 @@
   "vitactip_tip_position": [
     0.07200000000000001,
     0.07200000000000001,
-    0.033
+    0.078
   ],
   "vitactip_tip_pose": [
     0.07200000000000001,
     0.07200000000000001,
-    0.033,
-    -90,
+    0.078,
     0,
+    180,
     0
   ],
   "phantom_volume": 0.0001105840614063607,
@@ -33,7 +33,7 @@
   "object_scale": 0.08,
   "phantom_min_max_particle_spacing": 0.0033333333333333335,
   "vitactip_min_particle_spacing": {
-    "all": 0.0033640720805741013,
+    "all": 0.0030580072677906895,
     "shell": Infinity,
     "gel": Infinity
   },

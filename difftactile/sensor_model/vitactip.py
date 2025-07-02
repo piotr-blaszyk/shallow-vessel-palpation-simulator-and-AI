@@ -569,7 +569,7 @@ class ViTacTip:
             deformation_gradient = ti.Matrix.cols([a - d, b - d, c - d])
             self.deformation_gradient_inverse[i] = deformation_gradient.inverse()
 
-        self.sensor_outward_normal[None] = self.homogeneous_rotation_matrix[None] @ ti.Vector([0.0, 1.0, 0.0])
+        self.sensor_outward_normal[None] = self.homogeneous_rotation_matrix[None] @ ti.Vector([0.0, 0.0, 1.0])
 
     @ti.func
     def find_closest(self, grid_p, f):
@@ -942,8 +942,8 @@ class ViTacTip:
         positions = self.node_coordinates
         
         # Point A: max y coordinate
-        y_coords = positions[:, 1]
-        point_a_idx = int(np.argmax(y_coords))
+        z_coords = positions[:, 2]
+        point_a_idx = int(np.argmax(z_coords))
 
         return point_a_idx
 
