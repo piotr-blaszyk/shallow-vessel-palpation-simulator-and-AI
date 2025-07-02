@@ -3,6 +3,7 @@ import numpy as np
 np.set_printoptions(precision=6, suppress=False, formatter={'float': '{:0.6e}'.format})
 import pickle
 import json
+import cv2
 
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
@@ -461,7 +462,6 @@ class Contact:
         # print('mesh node mapping exported!')
     
     def visualisation_initialise(self):
-        self.enable_tactile_map = SYSTEM_PARAMS.meta.enable_tactile_map == 1
         self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(7,), needs_grad=False)
         self.sensor_points = ti.Vector.field(
             3, dtype=float, shape=(self.vitactip.num_vertices)
@@ -478,6 +478,20 @@ class Contact:
         self.tumour_points_von_mises_stress = ti.field(
             dtype=float, shape=(self.phantom.actual_total_num_particles,)
         )
+        
+        # Initialize fields for tactile readout visualization
+        # For marker points and their deformed positions
+        self.marker_points = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers,))
+        self.marker_offsets = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers,))
+        
+        # For circle outline
+        num_circle_points = SYSTEM_PARAMS.meta.num_circle_points_tactile_readout
+        self.circle_points = ti.Vector.field(2, dtype=float, shape=(num_circle_points,))
+        # For line segments of circle (each segment needs start and end point)
+        self.circle_line_vertices = ti.Vector.field(2, dtype=float, shape=((num_circle_points + 1) * 2,))
+        
+        # For arrow lines (each arrow needs start and end point)
+        self.arrow_line_vertices = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers * 2,))
 
     @ti.kernel
     def visualisation_reset_3d_scene(self):
@@ -499,50 +513,44 @@ class Contact:
 
     def visualisation_draw_tactile_readout(self):
         self.vitactip.extract_markers(0)
+        undeformed = self.vitactip.undeformed_markers.to_numpy().copy()
+        deformed = self.vitactip.deformed_markers.to_numpy().copy()
+        window_size = np.array([640, 480])
 
-        img_height = 480
-        img_width = 640
-        # Scale x by img_width and y by img_height
-        draw_points = self.vitactip.undeformed_markers.to_numpy().copy()
-        draw_points[:, 0] = draw_points[:, 0] / img_width
-        draw_points[:, 1] = draw_points[:, 1] / img_height
-        offset = self.vitactip.deformed_markers.to_numpy().copy()
-        offset[:, 0] = offset[:, 0] / img_width
-        offset[:, 1] = offset[:, 1] / img_height
-        offset = offset - draw_points
-        # Draw circle outline using line segments
-        circle_centre = np.array([359, 266])
-        circle_radius = 180
+        undeformed[:, 1] = window_size[1] - undeformed[:, 1]
+
+        offset = deformed - undeformed
+        arrow_vertices = np.zeros((len(undeformed) * 2, 2))
+        arrow_vertices[0::2] = undeformed  # Start points
+        arrow_vertices[1::2] = undeformed + offset  # End points
+
+
+        # Normalize coordinates
+        undeformed = undeformed / window_size
+        arrow_vertices = arrow_vertices / window_size
+
+
+        # draw_points = np.zeros_like(draw_points)
+        # draw_points[0] = np.array([100, 100])
+        # draw_points[1] = np.array([200, 100])
+        # draw_points = draw_points / window_size
+
+        self.marker_points.from_numpy(undeformed)
+        self.arrow_line_vertices.from_numpy(arrow_vertices)
+
+        # Set background image each frame
+        self.tactile_canvas.set_image(self.bg_image)
+        self.tactile_canvas.circles(self.marker_points, radius=0.01, color=(1, 0, 0))
+        # self.tactile_canvas.lines(self.arrow_line_vertices, color=(0, 1, 0), width=0.01)
         
-        # Generate 100 points around the circle
-        theta = np.linspace(0, 2*np.pi, 100)
-        points_x = circle_centre[0] + circle_radius * np.cos(theta)
-        points_y = circle_centre[1] + circle_radius * np.sin(theta)
-        points = np.stack([points_x, points_y], axis=1)
-        points[:, 0] /= img_width
-        points[:, 1] /= img_height
-        
-        # Create begin and end points for lines (connecting consecutive points)
-        begin_points = points[:-1]  # All points except the last
-        end_points = points[1:]     # All points except the first
-        # Add final line connecting last point to first point
-        begin_points = np.vstack([begin_points, points[-1]])
-        end_points = np.vstack([end_points, points[0]])
-        
-        # Draw the lines
-        self.tactile_readout_gui.lines(begin=begin_points, end=end_points, radius=1, color=0xFFFFFF)
-        self.tactile_readout_gui.circles(draw_points, radius=2, color=0xF542A1)
-        self.tactile_readout_gui.arrows(draw_points, offset, radius=2, color=0xE6C949)
+        self.tactile_window.show()
 
     def visualisation_set_up_gui(self):
         screen_width = 1920
         screen_height = 1080
-        grid_rows = 2
-        grid_cols = 2
-        window_width = screen_width // grid_cols
-        window_height = screen_height // grid_rows
-        window_res = (int(window_width * 0.75), int(window_height * 0.75))
-        self.window = ti.ui.Window("high-level camera", (int(screen_width * 0.9), int(screen_height * 0.9)))
+        
+        # Main 3D visualization window
+        self.window = ti.ui.Window("high-level camera", (int(screen_width * 0.25), int(screen_height * 0.25)))
         self.canvas = self.window.get_canvas()
         self.canvas.set_background_color((0, 0, 0))
         self.scene = ti.ui.Scene()
@@ -553,11 +561,15 @@ class Contact:
         self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(8)
-        if self.enable_tactile_map:
-            self.tactile_readout_gui = ti.GUI("tactile readout 1", res=window_res)
-        else:
-            self.tactile_readout_gui = None
         
+        self.tactile_window = ti.ui.Window("tactile readout", (640, 480))
+        self.tactile_canvas = self.tactile_window.get_canvas()
+        # Load and store background image
+        self.bg_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
+        self.bg_image = cv2.cvtColor(self.bg_image, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
+        # Rotate image to correct orientation
+        self.bg_image = cv2.rotate(self.bg_image, cv2.ROTATE_90_CLOCKWISE)
+
     def visualisation_update_gui(self, ts):
         move_to_the_front_offset = np.array([-0.050, 0, 0], dtype=float)
         z = self.min_coord
@@ -589,9 +601,9 @@ class Contact:
             nan_count = np.any(np.isnan(phantom_coords), axis=1).sum()
             print(f'phantom contains {nan_count} / {phantom_coords.shape[0]} nan vertices at ts: {ts}')
 
-        if self.enable_tactile_map:
-            self.visualisation_draw_tactile_readout()
+        self.visualisation_draw_tactile_readout()
         
+        # Update main 3D scene
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
         self.scene.point_light(pos=(0.5, 1.5, 1.5), color=(1, 1, 1))
@@ -663,7 +675,6 @@ def main():
             contact_model.memory_to_cache(0)
 
             contact_model.visualisation_update_gui(ts)
-            contact_model.vitactip.debug_marker_drift(ts)
 
             if ts % 1_000 == 0:
                 print(f'ts: {ts}')
