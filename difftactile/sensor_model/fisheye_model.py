@@ -40,6 +40,7 @@ class FisheyeModel:
         return p
 
     def project_points_to_pix(self, a):
+        raise Exception("use the taichi version instead")
         b = np.array([[0., 0., 1.]]).repeat(len(a), axis=0)
         inner_product = (a * b).sum(axis=1)
         a_norm = np.linalg.norm(a,axis=1)

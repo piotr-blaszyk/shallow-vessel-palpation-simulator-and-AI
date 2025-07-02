@@ -175,6 +175,14 @@ class ViTacTip:
         self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=False)
         self.projection_2d_clock_arms = ti.Vector.field(2, float, (2,), needs_grad=False)
 
+    @ti.kernel
+    def project_surface_nodes_to_2d(self, surface_nodes: ti.types.ndarray(), output_projections: ti.types.ndarray()):
+        for i in range(surface_nodes.shape[0]):
+            pos = ti.Vector([surface_nodes[i, 0], surface_nodes[i, 1], surface_nodes[i, 2]])
+            proj = self.fisheye_model.project_3d_2d(pos)
+            output_projections[i, 0] = proj[0]
+            output_projections[i, 1] = proj[1]
+
     def initialise_camera_model(self):
         self.marker_interpolation_knn_k = 5
 
@@ -188,7 +196,8 @@ class ViTacTip:
 
         # OpenCV has camera.position(0,0,0), camera.lookat(0,0,1), camera.up(0,-1,0)
         surface_nodes_z_up = self.node_coordinates[self.dome_surface_node_tags_npy]
-        surface_node_projections_2d = self.fisheye_model.project_points_to_pix(surface_nodes_z_up)
+        surface_node_projections_2d = np.zeros((len(surface_nodes_z_up), 2), dtype=np.float32)
+        self.project_surface_nodes_to_2d(surface_nodes_z_up, surface_node_projections_2d)
 
         surface_node_visualization = initial_camera_image.copy()
         for projected_point in surface_node_projections_2d:
