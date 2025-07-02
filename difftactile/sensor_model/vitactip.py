@@ -169,8 +169,11 @@ class ViTacTip:
         self.contact_surface = ti.Vector.field(3, int, self.num_contact_surface_triangles) # surface triangle mesh
         self.contact_surface.from_numpy(self.outer_surface_triangles.astype(np.int32))
 
-        self.projection_2d_surface_nodes_deformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=False)
-        self.projection_2d_surface_nodes_undeformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=False)
+        self.projection_2d_dome_surface_nodes_deformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=False)
+        self.projection_2d_dome_surface_nodes_undeformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=False)
+
+        self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=False)
+        self.projection_2d_clock_arms = ti.Vector.field(2, float, (2,), needs_grad=False)
 
     def initialise_camera_model(self):
         self.marker_interpolation_knn_k = 5
@@ -362,8 +365,8 @@ class ViTacTip:
             camera_space_undeformed_pos = ti.Vector([transformed_undeformed_pos[0], transformed_undeformed_pos[2], transformed_undeformed_pos[1]])
             camera_space_deformed_2d = self.fisheye_model.project_3d_2d(camera_space_deformed_pos)
             camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(camera_space_undeformed_pos)
-            self.projection_2d_surface_nodes_deformed[i] = camera_space_deformed_2d
-            self.projection_2d_surface_nodes_undeformed[i] = camera_space_undeformed_2d
+            self.projection_2d_dome_surface_nodes_deformed[i] = camera_space_deformed_2d
+            self.projection_2d_dome_surface_nodes_undeformed[i] = camera_space_undeformed_2d
 
         for i in range(self.num_markers):
             nearest_surface_indices = self.marker_interpolation_indices[i]
@@ -371,8 +374,8 @@ class ViTacTip:
             interpolated_deformed_pos_2d = ti.Vector([0.0, 0.0])
             interpolated_undeformed_pos_2d = ti.Vector([0.0, 0.0])
             for neighbor_idx in range(self.marker_interpolation_knn_k):
-                interpolated_deformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_surface_nodes_deformed[nearest_surface_indices[neighbor_idx]]
-                interpolated_undeformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_surface_nodes_undeformed[nearest_surface_indices[neighbor_idx]]
+                interpolated_deformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_dome_surface_nodes_deformed[nearest_surface_indices[neighbor_idx]]
+                interpolated_undeformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_dome_surface_nodes_undeformed[nearest_surface_indices[neighbor_idx]]
             self.deformed_markers[i] = interpolated_deformed_pos_2d
             self.undeformed_markers[i] = interpolated_undeformed_pos_2d
 
@@ -381,6 +384,16 @@ class ViTacTip:
         for marker_idx in range(self.num_markers):
             self.initial_markers[marker_idx] = self.undeformed_markers[marker_idx]
     
+    def get_keypoint_idxs(self):
+        # Convert the field to numpy array for easier max operations
+        points = self.projection_2d_dome_surface_nodes_deformed.to_numpy()
+        # Find index of point with maximum x-coordinate
+        idx = np.argmax(points[:, 0])
+        self.clock_arms_node_idxs[0] = self.dome_surface_node_tags[idx]
+        # Find index of point with maximum y-coordinate
+        idx = np.argmax(points[:, 1])
+        self.clock_arms_node_idxs[1] = self.dome_surface_node_tags[idx]
+
     def save_predicted_markers_to_image(self):
         initial_camera_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
         surface_node_visualization = initial_camera_image.copy()
@@ -402,6 +415,17 @@ class ViTacTip:
     
     def debug_marker_drift(self, ts):
         print(f'ts: {ts}; marker coords: {self.deformed_markers[0]}')
+    
+    @ti.kernel
+    def extract_clock_arm_2d_projections(self, frame_idx: ti.i32):
+        for i in range(self.clock_arms_node_idxs.shape[0]):
+            node_idx = self.clock_arms_node_idxs[i]
+            undeformed_vertex_pos = self.vertex_positions_undeformed_global_coordinates[frame_idx, node_idx]
+            homogeneous_undeformed_pos = ti.Vector([undeformed_vertex_pos[0], undeformed_vertex_pos[1], undeformed_vertex_pos[2], 1.0])
+            transformed_undeformed_pos = self.inverse_transformation_matrix[None] @ homogeneous_undeformed_pos
+            camera_space_undeformed_pos = ti.Vector([transformed_undeformed_pos[0], transformed_undeformed_pos[2], transformed_undeformed_pos[1]])
+            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(camera_space_undeformed_pos)
+            self.projection_2d_clock_arms[i] = camera_space_undeformed_2d
 
     @ti.func
     def eul2mat(self, rot_v, trans_v):

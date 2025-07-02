@@ -462,7 +462,8 @@ class Contact:
         # print('mesh node mapping exported!')
     
     def visualisation_initialise(self):
-        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(7,), needs_grad=False)
+        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(9,), needs_grad=False)
+        self.key_points_per_vertex_color = ti.Vector.field(3, dtype=ti.f32, shape=(9,), needs_grad=False)
         self.sensor_points = ti.Vector.field(
             3, dtype=float, shape=(self.vitactip.num_vertices)
         )
@@ -484,14 +485,16 @@ class Contact:
         self.marker_points = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers,))
         self.marker_offsets = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers,))
         
-        # For circle outline
-        num_circle_points = SYSTEM_PARAMS.meta.num_circle_points_tactile_readout
-        self.circle_points = ti.Vector.field(2, dtype=float, shape=(num_circle_points,))
-        # For line segments of circle (each segment needs start and end point)
-        self.circle_line_vertices = ti.Vector.field(2, dtype=float, shape=((num_circle_points + 1) * 2,))
-        
         # For arrow lines (each arrow needs start and end point)
         self.arrow_line_vertices = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers * 2,))
+        
+        # For clock arm points
+        self.clock_arm_points = ti.Vector.field(2, dtype=float, shape=(2,))
+        self.clock_arm_points_per_vertex_color = ti.Vector.field(3, dtype=ti.f32, shape=(2,), needs_grad=False)
+        
+        # Window size field for tactile readout
+        self.window_size = ti.Vector.field(2, dtype=float, shape=())
+        self.window_size[None] = [640.0, 480.0]
 
     @ti.kernel
     def visualisation_reset_3d_scene(self):
@@ -511,37 +514,59 @@ class Contact:
         for p in range(self.vitactip.num_vertices):
             self.sensor_points[p] = self.vitactip.vertex_positions_deformed_global_coordinates[f, p]
 
+    @ti.kernel
+    def prepare_tactile_readout_data(self):
+        # Process marker positions and create arrow vertices
+        for i in range(self.vitactip.num_markers):
+            # Get undeformed and deformed positions
+            undeformed = self.vitactip.undeformed_markers[i]
+            deformed = self.vitactip.deformed_markers[i]
+            
+            # Flip y coordinates
+            undeformed[1] = self.window_size[None][1] - undeformed[1]
+            deformed[1] = self.window_size[None][1] - deformed[1]
+            
+            # Calculate offset
+            offset = deformed - undeformed
+            
+            # Normalize coordinates by window size
+            undeformed = undeformed / self.window_size[None]
+            
+            # Store normalized undeformed position for marker points
+            self.marker_points[i] = undeformed
+            
+            # Store arrow vertices (start and end points)
+            self.arrow_line_vertices[i * 2] = undeformed  # Start point
+            self.arrow_line_vertices[i * 2 + 1] = undeformed + (offset / self.window_size[None])  # End point
+
+    @ti.kernel
+    def prepare_clock_arm_points(self):
+        # Process clock arm positions
+        for i in range(2):
+            point = self.vitactip.projection_2d_clock_arms[i]
+            # Flip y coordinate
+            point[1] = self.window_size[None][1] - point[1]
+            # Normalize coordinates by window size
+            self.clock_arm_points[i] = point / self.window_size[None]
+
     def visualisation_draw_tactile_readout(self):
         self.vitactip.extract_markers(0)
-        undeformed = self.vitactip.undeformed_markers.to_numpy().copy()
-        deformed = self.vitactip.deformed_markers.to_numpy().copy()
-        window_size = np.array([640, 480])
+        self.prepare_tactile_readout_data()
 
-        undeformed[:, 1] = window_size[1] - undeformed[:, 1]
-
-        offset = deformed - undeformed
-        arrow_vertices = np.zeros((len(undeformed) * 2, 2))
-        arrow_vertices[0::2] = undeformed  # Start points
-        arrow_vertices[1::2] = undeformed + offset  # End points
-
-
-        # Normalize coordinates
-        undeformed = undeformed / window_size
-        arrow_vertices = arrow_vertices / window_size
-
-
-        # draw_points = np.zeros_like(draw_points)
-        # draw_points[0] = np.array([100, 100])
-        # draw_points[1] = np.array([200, 100])
-        # draw_points = draw_points / window_size
-
-        self.marker_points.from_numpy(undeformed)
-        self.arrow_line_vertices.from_numpy(arrow_vertices)
+        self.vitactip.extract_clock_arm_2d_projections(0)
+        self.prepare_clock_arm_points()
 
         # Set background image each frame
         self.tactile_canvas.set_image(self.bg_image)
         self.tactile_canvas.circles(self.marker_points, radius=0.01, color=(1, 0, 0))
-        # self.tactile_canvas.lines(self.arrow_line_vertices, color=(0, 1, 0), width=0.01)
+        self.tactile_canvas.lines(self.arrow_line_vertices, color=(0, 1, 0), width=0.01)
+        
+        # Draw clock arm points
+        self.tactile_canvas.circles(
+            self.clock_arm_points, 
+            radius=0.01, 
+            per_vertex_color=self.clock_arm_points_per_vertex_color,
+        )
         
         self.tactile_window.show()
 
@@ -550,15 +575,15 @@ class Contact:
         screen_height = 1080
         
         # Main 3D visualization window
-        self.window = ti.ui.Window("high-level camera", (int(screen_width * 0.25), int(screen_height * 0.25)))
+        self.window = ti.ui.Window("high-level camera", (int(screen_width * 0.5), int(screen_height * 0.5)))
         self.canvas = self.window.get_canvas()
         self.canvas.set_background_color((0, 0, 0))
         self.scene = ti.ui.Scene()
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x-1.0, y, z)
-        self.camera.up(0, 0, 1)
+        self.camera.position(x, y, z+1.0)
+        self.camera.up(0, -1, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(8)
         
@@ -570,7 +595,26 @@ class Contact:
         # Rotate image to correct orientation
         self.bg_image = cv2.rotate(self.bg_image, cv2.ROTATE_90_CLOCKWISE)
 
+        clock_arm_points_per_vertex_color_npy = np.array([
+            [1, 0, 1],
+            [1, 1, 0],
+        ], dtype=float)
+        self.clock_arm_points_per_vertex_color.from_numpy(clock_arm_points_per_vertex_color_npy)
+
+        key_points_per_vertex_color_npy = np.tile([1., 0., 0.], (9, 1))
+        key_points_per_vertex_color_npy[-2:, :] = clock_arm_points_per_vertex_color_npy
+        self.key_points_per_vertex_color.from_numpy(key_points_per_vertex_color_npy)
+
     def visualisation_update_gui(self, ts):
+        vitactip_coords = self.vitactip.vertex_positions_deformed_global_coordinates.to_numpy()[0]
+        if np.isnan(vitactip_coords).any():
+            nan_count = np.any(np.isnan(vitactip_coords), axis=1).sum()
+            print(f'ViTacTip contains {nan_count} / {vitactip_coords.shape[0]} nan vertices at ts: {ts}')
+        phantom_coords = self.phantom.particle_position.to_numpy()[0]
+        if np.isnan(phantom_coords).any():
+            nan_count = np.any(np.isnan(phantom_coords), axis=1).sum()
+            print(f'phantom contains {nan_count} / {phantom_coords.shape[0]} nan vertices at ts: {ts}')
+
         move_to_the_front_offset = np.array([-0.050, 0, 0], dtype=float)
         z = self.min_coord
         x0, y0, _ = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[:3]
@@ -585,21 +629,8 @@ class Contact:
         trajectory_keypoints = self.trajectory_npy[:, :3].copy()
         vitactip_bottom += move_to_the_front_offset
         trajectory_keypoints += move_to_the_front_offset
-        keypoint_coords = np.vstack((vitactip_bottom, trajectory_keypoints, floor))
-
-        phantom_top_z = self.vitactip_tip_pose[2] - SYSTEM_PARAMS.geometry.gap
-        if False and ts % 100 == 0:
-            print(f'ViTacTip bottom node z coordinate: {vitactip_bottom[0][2]:0.3e}; phantom top surface z coordinate: {phantom_top_z:0.3e}; diff: {abs(vitactip_bottom[0][2] - phantom_top_z):0.3e}')
-
-        vitactip_coords = self.vitactip.vertex_positions_deformed_global_coordinates.to_numpy()[0]
-        if np.isnan(vitactip_coords).any():
-            nan_count = np.any(np.isnan(vitactip_coords), axis=1).sum()
-            print(f'ViTacTip contains {nan_count} / {vitactip_coords.shape[0]} nan vertices at ts: {ts}')
-        
-        phantom_coords = self.phantom.particle_position.to_numpy()[0]
-        if np.isnan(phantom_coords).any():
-            nan_count = np.any(np.isnan(phantom_coords), axis=1).sum()
-            print(f'phantom contains {nan_count} / {phantom_coords.shape[0]} nan vertices at ts: {ts}')
+        vitactip_clock_arms = self.vitactip.get_keypoint_coordinates(f=0, keypoint_indices=self.vitactip.clock_arms_node_idxs.to_numpy())
+        self.keypoint_coords = np.vstack((vitactip_bottom, trajectory_keypoints, floor, vitactip_clock_arms))
 
         self.visualisation_draw_tactile_readout()
         
@@ -608,32 +639,31 @@ class Contact:
         self.scene.ambient_light((0.8, 0.8, 0.8))
         self.scene.point_light(pos=(0.5, 1.5, 1.5), color=(1, 1, 1))
         self.visualisation_draw_3d_scene(0)
-
-        sf = 100
         
         self.scene.particles(
             self.healthy_tissue_points,
             color=(0.0, 0.0, 1.0),
-            radius=0.06 / sf,
+            radius=6e-4,
         )
         self.scene.particles(
             self.tumour_points,
             color=(1.0, 1.0, 0.0),
-            radius=0.06 / sf,
+            radius=6e-4,
         )
         self.scene.particles(
             self.sensor_points,
             color=(0.0, 1.0, 0.0),
-            radius=0.06 / sf,
+            radius=6e-4,
         )
         
-        assert keypoint_coords.shape[0] == self.key_points.shape[0], f"Set self.key_points to shape ({keypoint_coords.shape[0]},)"
-        if keypoint_coords is not None:
-            self.key_points.from_numpy(keypoint_coords)
+        assert self.keypoint_coords.shape[0] == self.key_points.shape[0], f"Set self.key_points to shape ({self.keypoint_coords.shape[0]},)"
+        if self.keypoint_coords is not None:
+            self.key_points.from_numpy(self.keypoint_coords)
             self.scene.particles(
                 self.key_points,
                 color=(1.0, 0.0, 0.0),
-                radius=0.06 / sf,
+                per_vertex_color=self.key_points_per_vertex_color,
+                radius=6e-3,
             )
         
         self.canvas.scene(self.scene)
@@ -659,6 +689,7 @@ def main():
             contact_model.vitactip.extract_markers(0)
             contact_model.vitactip.copy_markers_to_initial_markers_for_drift_correction()
             contact_model.vitactip.save_predicted_markers_to_image()
+            contact_model.vitactip.get_keypoint_idxs()
             initial_markers = contact_model.vitactip.deformed_markers.to_numpy()
             with open(SYSTEM_PARAMS.files.sim_markers_initial_positions, 'wb') as f:
                 pickle.dump(initial_markers, f)

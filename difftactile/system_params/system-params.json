@@ -93,7 +93,7 @@
     "meta": {
         "target_courant_number": 0.5,
         "enable_tactile_map": 1,
-        "enable_pid_controller": 0,
+        "enable_pid_controller": 1,
         "num_circle_points_tactile_readout": 100
     },
     "visualise_mesh": {
