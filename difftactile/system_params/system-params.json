@@ -99,8 +99,8 @@
         "frame_number": 200
     },
     "fisheye_model": {
-        "focal_length_x": 190.0,
-        "focal_length_y": 190.0,
+        "focal_length_x": 100.0,
+        "focal_length_y": 100.0,
         "principal_point_x": 320.0,
         "principal_point_y": 240.0,
         "target_image_width": 640.0,

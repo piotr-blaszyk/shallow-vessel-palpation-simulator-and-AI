@@ -62,6 +62,6 @@ class VisualiseMesh:
 
 if __name__ == '__main__':
     visualise_mesh = VisualiseMesh()
-    # visualise_mesh.use_dome_surface_points()
+    visualise_mesh.use_dome_surface_points()
     visualise_mesh.visualise_point_cloud()
     

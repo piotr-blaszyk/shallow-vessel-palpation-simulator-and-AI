@@ -291,9 +291,6 @@ class ViTacTip:
         self.signed_distance_function = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         # simulation_cache: cache for gradient computation (dimensionless)
         self.simulation_cache = dict() # for grad backward
-        # first_initialization_flag: flag for first initialization (dimensionless)
-        self.first_initialization_flag = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.first_initialization_flag[None] = 1
 
         # rotation_vector_degrees: rotation vector in degrees (dimensionless)
         self.rotation_vector_degrees = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
@@ -323,31 +320,7 @@ class ViTacTip:
         self.world_transformation_matrix[None] = initial_transformation_matrix
         self.homogeneous_transformation_matrix[None] = self.world_transformation_matrix[None] @ self.local_transformation_matrix[None]
         self.inverse_transformation_matrix[None] = self.local_transformation_matrix[None].inverse() @ self.world_transformation_matrix[None].inverse()
-
-        if False and self.first[None]:
-            print("\nInitial rotation matrix (init_rot):")
-            print(initial_rotation_matrix)
-            print("\nInitial transformation matrix (trans_mat):")
-            print(initial_transformation_matrix)
-            print("\nLocal rotation matrix (rot_local):")
-            print(self.local_rotation_matrix[None].to_numpy())
-            print("\nWorld rotation matrix (rot_world):")
-            print(self.world_rotation_matrix[None].to_numpy())
-            print("\nHomogeneous rotation matrix (rot_h):")
-            print(self.homogeneous_rotation_matrix[None].to_numpy())
-            print("\nInverse rotation matrix (inv_rot):")
-            print(self.inverse_rotation_matrix[None].to_numpy())
-            print("\nLocal transformation matrix (trans_local):")
-            print(self.local_transformation_matrix[None].to_numpy())
-            print("\nWorld transformation matrix (trans_world):")
-            print(self.world_transformation_matrix[None].to_numpy())
-            print("\nHomogeneous transformation matrix (trans_h):")
-            print(self.homogeneous_transformation_matrix[None].to_numpy())
-            print("\nInverse transformation matrix (inv_trans_h):")
-            print(self.inverse_transformation_matrix[None].to_numpy())
-            print()
         
-        self.first_initialization_flag[None] = 0
         self.set_up_pose_helper()
 
     @ti.kernel
@@ -360,8 +333,10 @@ class ViTacTip:
             homogeneous_undeformed_pos = ti.Vector([undeformed_vertex_pos[0], undeformed_vertex_pos[1], undeformed_vertex_pos[2], 1.0])
             transformed_deformed_pos = self.inverse_transformation_matrix[None] @ homogeneous_deformed_pos
             transformed_undeformed_pos = self.inverse_transformation_matrix[None] @ homogeneous_undeformed_pos
-            camera_space_deformed_2d = self.fisheye_model.project_3d_2d(transformed_deformed_pos)
-            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(transformed_undeformed_pos)
+            camera_space_deformed_pos = ti.Vector([transformed_deformed_pos[0], transformed_deformed_pos[1], transformed_deformed_pos[2]])
+            camera_space_undeformed_pos = ti.Vector([transformed_undeformed_pos[0], transformed_undeformed_pos[1], transformed_undeformed_pos[2]])
+            camera_space_deformed_2d = self.fisheye_model.project_3d_2d(camera_space_deformed_pos)
+            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(camera_space_undeformed_pos)
             self.projection_2d_dome_surface_nodes_deformed[i] = camera_space_deformed_2d
             self.projection_2d_dome_surface_nodes_undeformed[i] = camera_space_undeformed_2d
 
@@ -407,7 +382,7 @@ class ViTacTip:
             initial_vertex_pos = self.vertex_positions_undeformed_global_coordinates[0, i]
             homogeneous_initial_pos = ti.Vector([initial_vertex_pos[0], initial_vertex_pos[1], initial_vertex_pos[2], 1.0])
             transformed_initial_pos = self.inverse_transformation_matrix[None] @ homogeneous_initial_pos
-            camera_space_initial_pos = ti.Vector([transformed_initial_pos[0], transformed_initial_pos[2], transformed_initial_pos[1]])
+            camera_space_initial_pos = ti.Vector([transformed_initial_pos[0], transformed_initial_pos[1], transformed_initial_pos[2]])
             self.camera_coordinate_system_vertices[0, i] = camera_space_initial_pos
     
     def debug_marker_drift(self, ts):
@@ -465,38 +440,6 @@ class ViTacTip:
         self.homogeneous_rotation_matrix[None] = self.world_rotation_matrix[None] @ self.local_rotation_matrix[None]
         self.inverse_rotation_matrix[None] = self.homogeneous_rotation_matrix[None].inverse()
 
-        if False:
-            print(f'self.d_pos_global[None]: {self.global_translational_velocity[None]}')
-            print(f'self.d_pos_local[None]: {self.local_translational_velocity[None]}')
-            print(f'target angular speed (rotation matrix): self.my_rot_mat[None]: {self.rotation_matrix[None]}')
-            print()
-
-    def set_pose_control_maybe_print(self):
-        if False:
-            print("\nInput rotation vector (self.my_rot_v[None]):")
-            print(self.rotation_vector_degrees[None].to_numpy())
-            print("\nInput translation vector (self.my_trans_v[None]):")
-            print(self.translation_vector[None].to_numpy())
-            print("\nComputed transformation matrix (self.my_trans_mat[None]):")
-            print(self.transformation_matrix[None].to_numpy())
-            print("\nComputed rotation matrix (self.my_rot_mat[None]):")
-            print(self.rotation_matrix[None].to_numpy())
-            print("\nDelta transformation matrix (dtrans_h):")
-            print(self.delta_transformation_matrix[None].to_numpy())
-            print("\nLocal transformation matrix (trans_local):")
-            print(self.local_transformation_matrix[None].to_numpy())
-            print("\nHomogeneous transformation matrix (trans_h):")
-            print(self.homogeneous_transformation_matrix[None].to_numpy())
-            print("\nInverse transformation matrix (inv_trans_h):")
-            print(self.inverse_transformation_matrix[None].to_numpy())
-            print("\nLocal rotation matrix (rot_local):")
-            print(self.local_rotation_matrix[None].to_numpy())
-            print("\nHomogeneous rotation matrix (rot_h):")
-            print(self.homogeneous_rotation_matrix[None].to_numpy())
-            print("\nInverse rotation matrix (inv_rot):")
-            print(self.inverse_rotation_matrix[None].to_numpy())
-            print()
-
     @ti.kernel
     def set_pose_control_bp(self):
 
@@ -545,11 +488,6 @@ class ViTacTip:
         yaw_deg = ti.math.degrees(yaw)
         
         euler_angles = ti.Vector([roll_deg, pitch_deg, yaw_deg])
-
-        if False:
-            print(f'rotation matrix (self.rot_h[None]): {self.homogeneous_rotation_matrix[None]}')
-            print(f'euler angles (euler_angles): {euler_angles}')
-            print()
 
         return euler_angles
 

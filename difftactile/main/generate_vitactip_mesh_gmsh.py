@@ -248,7 +248,7 @@ class MeshGenerator:
         self.surface_triangles = self.surface_triangles[surface_triangles_mask]
 
         # Filter surface nodes to get dome surface nodes (those above z_cap_base)
-        dome_surface_node_tags = surface_node_tags[self.node_coordinates[surface_node_tags, 2] >= z_cap_base]
+        dome_surface_node_tags = surface_node_tags[self.node_coordinates[(surface_node_tags-1), 2] >= z_cap_base]
 
         for dim, tag in physical_groups:
             name = gmsh.model.getPhysicalName(dim, tag)

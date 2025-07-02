@@ -583,8 +583,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x-1.0, y, z)
-        self.camera.up(0, 0, 1)
+        self.camera.position(x, y, z+1.0)
+        self.camera.up(1, 0, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(8)
         
@@ -698,7 +698,6 @@ def main():
         for ts in range(SYSTEM_PARAMS.contact.num_frames - 1):
             contact_model.pid_controller(ts)
             contact_model.vitactip.set_pose_control()
-            contact_model.vitactip.set_pose_control_maybe_print()
             contact_model.vitactip.set_control_vel(0)
             contact_model.vitactip.set_vel(0)
             contact_model.reset()
