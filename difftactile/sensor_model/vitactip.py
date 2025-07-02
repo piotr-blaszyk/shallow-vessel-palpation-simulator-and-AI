@@ -183,7 +183,7 @@ class ViTacTip:
             cv2.circle(marker_visualization_image, marker_center, radius=5, color=(0, 0, 255), thickness=2)
         cv2.imwrite(SYSTEM_PARAMS.files.vitactip_photo_default_state_detected_markers, marker_visualization_image)
 
-        surface_nodes_y_up = self.node_coordinates[self.surface_node_tags_npy]
+        surface_nodes_y_up = self.node_coordinates[self.dome_surface_node_tags_npy]
         # OpenCV has camera.position(0,0,0), camera.lookat(0,0,1), camera.up(0,1,0)
         surface_nodes_z_up = np.array([surface_nodes_y_up[:,0], surface_nodes_y_up[:,2], surface_nodes_y_up[:,1]]).T
         surface_node_projections_2d = self.fisheye_model.project_points_to_pix(surface_nodes_z_up)
@@ -192,7 +192,7 @@ class ViTacTip:
         for projected_point in surface_node_projections_2d:
             point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
             cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
-        cv2.imwrite(SYSTEM_PARAMS.files.vitactip_photo_default_state_all_surface_3d_vertices_projected_to_2d, surface_node_visualization)
+        cv2.imwrite(SYSTEM_PARAMS.files.vitactip_photo_default_state_dome_surface_3d_vertices_projected_to_2d, surface_node_visualization)
 
         marker_interpolation_indices = []
         marker_interpolation_weights = []
