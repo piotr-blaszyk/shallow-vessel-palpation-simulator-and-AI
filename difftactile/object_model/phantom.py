@@ -34,10 +34,10 @@ class Phantom:
 
         self.inverse_mpm_grid_cube_size =  1 / SYSTEM_PARAMS.phantom.mpm_grid_cube_size
         
-        self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.poissons_ratio_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.lamda_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.mu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
+        self.poissons_ratio_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
+        self.lamda_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
+        self.mu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
 
         self.set_stiffness()
 
@@ -235,6 +235,37 @@ class Phantom:
             self.U_svd[f, p], self.S_svd[f, p], self.V_svd[f, p] = ti.svd(self.trial_deformation_gradient[f, p])
 
     @ti.kernel
+    def svd_of_trial_deformation_gradient_grad(self, f: ti.i32):
+        for p in range(self.actual_total_num_particles):
+            self.trial_deformation_gradient.grad[f, p] += self.single_svd_grad(f, p)
+
+    @ti.func
+    def clamp(self, a: ti.f32):
+        if a>=0:
+            a = ti.max(a, 1e-8)
+        else:
+            a = ti.min(a, -1e-8)
+        return a
+
+    @ti.func
+    def single_svd_grad(self, f: ti.i32, p: ti.i32):
+        vt = self.V_svd[f, p].transpose()
+        ut = self.U_svd[f, p].transpose()
+        s_term = self.U_svd[f, p] @ self.S_svd.grad[f, p] @ vt
+
+        s = ti.Vector.zero(ti.f32, 3)
+        s = ti.Vector([self.S_svd[f, p][0, 0], self.S_svd[f, p][1, 1], self.S_svd[f, p][2, 2]]) ** 2
+        ff = ti.Matrix.zero(ti.f32, 3, 3)
+        for i, j in ti.static(ti.ndrange(3, 3)):
+            if i == j:
+                ff[i, j] = 0
+            else:
+                ff[i, j] = 1.0 / self.clamp(s[j] - s[i])
+        u_term = self.U_svd[f, p] @ ((ff * (ut @ self.U_svd.grad[f, p] - self.U_svd.grad[f, p].transpose() @ self.U_svd[f, p])) @ self.S_svd[f, p]) @ vt
+        v_term = self.U_svd[f, p] @ (self.S_svd[f, p] @ ((ff * (vt @ self.V_svd.grad[f, p] - self.V_svd.grad[f, p].transpose() @ self.V_svd[f, p])) @ vt))
+        return u_term + v_term + s_term
+
+    @ti.kernel
     def p2g(self, frame:ti.i32):
         """
         Particle to grid (P2G) step in MPM.
@@ -412,6 +443,14 @@ class Phantom:
             self.particle_velocity[target, p] = self.particle_velocity[source, p]
             self.affine_velocity_field[target, p] = self.affine_velocity_field[source, p]
             self.deformation_gradient[target, p] = self.deformation_gradient[source, p]
+    
+    @ti.kernel
+    def copy_grad(self, source: ti.i32, target: ti.i32):
+        for p in range(self.actual_total_num_particles):
+            self.particle_position.grad[target, p] = self.particle_position.grad[source, p]
+            self.particle_velocity.grad[target, p] = self.particle_velocity.grad[source, p]
+            self.affine_velocity_field.grad[target, p] = self.affine_velocity_field.grad[source, p]
+            self.deformation_gradient.grad[target, p] = self.deformation_gradient.grad[source, p]
 
     @ti.kernel
     def load_step_from_cache(self, f: ti.i32, cache_x_0: ti.types.ndarray(), cache_v_0: ti.types.ndarray(), cache_C_0: ti.types.ndarray(), cache_F_0: ti.types.ndarray()):
@@ -453,6 +492,33 @@ class Phantom:
         self.copy_frame(0, SYSTEM_PARAMS.contact.num_sub_frames-1)
 
         self.load_step_from_cache(0, self.cache[cur_step_name]['x_0'], self.cache[cur_step_name]['v_0'], self.cache[cur_step_name]['C_0'], self.cache[cur_step_name]['F_0'])
+    
+    @ti.kernel
+    def clear_loss_grad(self):
+        self.youngs_modulus_0.grad.fill(0.0)
+        self.poissons_ratio_0.grad.fill(0.0)
+        self.lamda_0.grad.fill(0.0)
+        self.mu_0.grad.fill(0.0)
+
+    @ti.kernel
+    def clear_step_grad(self, f:ti.i32):
+        self.grid_node_momentum_in.grad.fill(0.0)
+        self.grid_node_velocity_out.grad.fill(0.0)
+        self.grid_node_mass.grad.fill(0.0)
+        self.grid_node_external_impulse.grad.fill(0.0)
+        self.trial_deformation_gradient.grad.fill(0.0)
+        self.U_svd.grad.fill(0.0)
+        self.V_svd.grad.fill(0.0)
+        self.S_svd.grad.fill(0.0)
+        for p in range(self.actual_total_num_particles):
+            for t in range(f):
+                self.particle_position.grad[t,p].fill(0.0)
+                self.particle_velocity.grad[t,p].fill(0.0)
+                self.affine_velocity_field.grad[t,p].fill(0.0)
+                self.deformation_gradient.grad[t,p].fill(0.0)
+
+        for t in range(f):
+            self.total_surface_external_force.grad[t].fill(0.0) 
 
     def get_keypoint_index(self) -> int:
         """
@@ -504,62 +570,3 @@ class Phantom:
         coordinates = positions[keypoint_indices]
         
         return coordinates
-
-    @ti.kernel
-    def svd_grad(self, f: ti.i32):
-        for p in range(self.actual_total_num_particles):
-            self.trial_deformation_gradient.grad[f, p] += self.single_svd_grad(f, p)
-
-    @ti.func
-    def clamp(self, a: ti.f32):
-        if a>=0:
-            a = ti.max(a, 1e-8)
-        else:
-            a = ti.min(a, -1e-8)
-        return a
-
-    @ti.func
-    def single_svd_grad(self, f: ti.i32, p: ti.i32):
-        vt = self.V_svd[f, p].transpose()
-        ut = self.U_svd[f, p].transpose()
-        s_term = self.U_svd[f, p] @ self.S_svd.grad[f, p] @ vt
-
-        s = ti.Vector.zero(ti.f32, 3)
-        s = ti.Vector([self.S_svd[f, p][0, 0], self.S_svd[f, p][1, 1], self.S_svd[f, p][2, 2]]) ** 2
-        ff = ti.Matrix.zero(ti.f32, 3, 3)
-        for i, j in ti.static(ti.ndrange(3, 3)):
-            if i == j:
-                ff[i, j] = 0
-            else:
-                ff[i, j] = 1.0 / self.clamp(s[j] - s[i])
-        u_term = self.U_svd[f, p] @ ((ff * (ut @ self.U_svd.grad[f, p] - self.U_svd.grad[f, p].transpose() @ self.U_svd[f, p])) @ self.S_svd[f, p]) @ vt
-        v_term = self.U_svd[f, p] @ (self.S_svd[f, p] @ ((ff * (vt @ self.V_svd.grad[f, p] - self.V_svd.grad[f, p].transpose() @ self.V_svd[f, p])) @ vt))
-        return u_term + v_term + s_term
-
-    @ti.kernel
-    def copy_grad(self, source: ti.i32, target: ti.i32):
-        for p in range(self.actual_total_num_particles):
-            self.particle_position.grad[target, p] = self.particle_position.grad[source, p]
-            self.particle_velocity.grad[target, p] = self.particle_velocity.grad[source, p]
-            self.affine_velocity_field.grad[target, p] = self.affine_velocity_field.grad[source, p]
-            self.deformation_gradient.grad[target, p] = self.deformation_gradient.grad[source, p]
-
-    @ti.kernel
-    def clear_step_grad(self, f:ti.i32):
-        self.grid_node_momentum_in.grad.fill(0.0)
-        self.grid_node_velocity_out.grad.fill(0.0)
-        self.grid_node_mass.grad.fill(0.0)
-        self.grid_node_external_impulse.grad.fill(0.0)
-        self.trial_deformation_gradient.grad.fill(0.0)
-        self.U_svd.grad.fill(0.0)
-        self.V_svd.grad.fill(0.0)
-        self.S_svd.grad.fill(0.0)
-        for p in range(self.actual_total_num_particles):
-            for t in range(f):
-                self.particle_position.grad[t,p].fill(0.0)
-                self.particle_velocity.grad[t,p].fill(0.0)
-                self.affine_velocity_field.grad[t,p].fill(0.0)
-                self.deformation_gradient.grad[t,p].fill(0.0)
-
-        for t in range(f):
-            self.total_surface_external_force.grad[t].fill(0.0) 

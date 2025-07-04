@@ -181,18 +181,14 @@ class Contact:
     
     def update_grad(self, f):
         self.vitactip.update_external_forces.grad(f)
-        self.phantom.compute_R.grad(f)
-        self.phantom.compute_H_svd_grad(f)
-        self.phantom.compute_H.grad(f)
-        self.phantom.compute_COM.grad(f)
         self.phantom.g2p.grad(f)
         self.phantom.grid_op.grad(f)
         self.clamp_grid(f)
         self.collision.grad(f)
         self.vitactip.update_internal_forces.grad(f)
         self.phantom.p2g.grad(f)
-        self.phantom.svd_grad(f)
-        self.phantom.compute_new_F.grad(f)
+        self.phantom.svd_of_trial_deformation_gradient_grad(f)
+        self.phantom.compute_trial_deformation_gradient.grad(f)
 
     @ti.kernel
     def clamp_grid(self, f: ti.i32):
