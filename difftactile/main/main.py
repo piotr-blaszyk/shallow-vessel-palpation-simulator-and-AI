@@ -457,7 +457,7 @@ class Contact:
                 self.vitactip.global_translational_velocity[None] = ti.Vector([0.0, 0.0, 0.0])
                 self.vitactip.global_angular_velocity_degrees[None] = ti.Vector([0.0, 0.0, 0.0])
         
-            if False:
+            if True:
                 # Print all variables used in the function
                 print("\nPID Control Variables:")
                 print(f"Current Position (current_pos): {current_pos}")
@@ -581,7 +581,7 @@ class Contact:
             self.sensor_points[p] = self.vitactip.vertex_positions_deformed_global_coordinates[f, p]
 
     @ti.kernel
-    def prepare_tactile_readout_data(self):
+    def visualisation_prepare_tactile_readout_data(self):
         # Process marker positions and create arrow vertices
         for i in range(self.vitactip.num_markers):
             # Get undeformed and deformed positions
@@ -606,7 +606,7 @@ class Contact:
             self.arrow_line_vertices[i * 2 + 1] = undeformed + (offset / self.window_size[None])  # End point
 
     @ti.kernel
-    def prepare_clock_arm_points(self):
+    def visualisation_prepare_clock_arm_points(self):
         # Process clock arm positions
         for i in range(2):
             point = self.vitactip.projection_2d_clock_arms[i]
@@ -617,10 +617,10 @@ class Contact:
 
     def visualisation_draw_tactile_readout(self):
         self.vitactip.extract_markers(0)
-        self.prepare_tactile_readout_data()
+        self.visualisation_prepare_tactile_readout_data()
 
         self.vitactip.extract_clock_arm_2d_projections(0)
-        self.prepare_clock_arm_points()
+        self.visualisation_prepare_clock_arm_points()
 
         # Set background image each frame
         self.tactile_canvas.set_image(self.bg_image)
@@ -648,8 +648,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y, z+1.0)
-        self.camera.up(0, 1, 0)
+        self.camera.position(x-1.0, y, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(8)
         
@@ -735,6 +735,21 @@ class Contact:
         self.canvas.scene(self.scene)
         self.window.show()
 
+    def forward_pass_common_part(self):
+        self.vitactip.set_pose_control()
+        self.vitactip.set_control_vel(0)
+        self.vitactip.set_vel(0)
+        self.reset()
+        for ss in range(SYSTEM_PARAMS.contact.num_sub_frames-1):
+            self.update(ss)
+
+    def backward_pass_common_part(self):
+        for ss in range(SYSTEM_PARAMS.contact.num_sub_frames-2, -1, -1):
+            self.update_grad(ss)
+        self.vitactip.set_vel.grad(0)
+        self.vitactip.set_control_vel.grad(0)
+        self.vitactip.set_pose_control.grad()
+
 def main():
     if RUN_ON_LAB_MACHINE:
         ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cuda, device_memory_GB=9)
@@ -765,14 +780,8 @@ def main():
         print('forward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames):
             contact_model.pid_controller(ts)
-            contact_model.vitactip.set_pose_control()
-            contact_model.vitactip.set_control_vel(0)
-            contact_model.vitactip.set_vel(0)
-            contact_model.reset()
-            for ss in range(SYSTEM_PARAMS.contact.num_sub_frames - 1):
-                contact_model.update(ss)
+            contact_model.forward_pass_common_part()
             contact_model.memory_to_cache(ts)
-
             contact_model.visualisation_update_gui(ts)
 
             if ts % 1_000 == 0:
@@ -785,13 +794,7 @@ def main():
         print('backward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames-1, -1, -1):
             contact_model.memory_from_cache(ts)
-
-            contact_model.vitactip.set_pose_control()
-            contact_model.vitactip.set_control_vel(0)
-            contact_model.vitactip.set_vel(0)
-            contact_model.reset()
-            for ss in range(SYSTEM_PARAMS.contact.num_sub_frames - 1):
-                contact_model.update(ss)
+            contact_model.forward_pass_common_part()
             contact_model.vitactip.extract_markers(SYSTEM_PARAMS.contact.num_sub_frames-1)
             contact_model.compute_marker_loss_1(ts)
             contact_model.compute_marker_loss_2(ts)
@@ -801,12 +804,7 @@ def main():
             contact_model.compute_marker_loss_2.grad(ts)
             contact_model.compute_marker_loss_1.grad(ts)
             contact_model.vitactip.extract_markers.grad(SYSTEM_PARAMS.contact.num_sub_frames-1)
-            for ss in range(SYSTEM_PARAMS.contact.num_sub_frames-2, -1, -1):
-                contact_model.update_grad(ss)
-            contact_model.vitactip.set_vel.grad(0)
-            contact_model.vitactip.set_control_vel.grad(0)
-            contact_model.vitactip.set_pose_control.grad()
-            contact_model.set_pos_control.grad(ts)
+            contact_model.backward_pass_common_part()
             
 
 if __name__ == "__main__":

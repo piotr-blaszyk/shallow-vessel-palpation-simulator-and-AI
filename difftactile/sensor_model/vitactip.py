@@ -936,6 +936,7 @@ class ViTacTip:
         self.youngs_modulus.grad.fill(0.0)
         self.mu.grad.fill(0.0)
         self.lam.grad.fill(0.0)
+
         self.deformed_markers.grad.fill(0.0)
         self.global_translational_velocity.grad[None].fill(0.0)
         self.global_angular_velocity_degrees.grad[None].fill(0.0)

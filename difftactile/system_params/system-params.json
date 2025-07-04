@@ -63,8 +63,8 @@
         "num_sub_frames": 500,
         "num_frames": 10000,
         "num_opt_steps": 10,
-        "pid_max_speed_translation": 0.050,
-        "pid_max_speed_rotation": 45.0,
+        "pid_max_speed_translation": 0.100,
+        "pid_max_speed_rotation": 90.0,
         "pid_kp": 100.0,
         "pid_ki": 0.0,
         "pid_kd": 0.0,
@@ -93,7 +93,7 @@
     "meta": {
         "target_courant_number": 0.5,
         "enable_tactile_map": 1,
-        "enable_pid_controller": 0
+        "enable_pid_controller": 1
     },
     "visualise_mesh": {
         "frame_number": 200
