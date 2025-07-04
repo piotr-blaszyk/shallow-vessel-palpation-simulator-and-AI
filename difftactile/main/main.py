@@ -180,19 +180,19 @@ class Contact:
         self.vitactip.update_external_forces(f)
     
     def update_grad(self, f):
-        self.fem_sensor1.update2.grad(f)
-        self.mpm_object.compute_R.grad(f)
-        self.mpm_object.compute_H_svd_grad(f)
-        self.mpm_object.compute_H.grad(f)
-        self.mpm_object.compute_COM.grad(f)
-        self.mpm_object.g2p.grad(f)
-        self.mpm_object.grid_op.grad(f)
+        self.vitactip.update_external_forces.grad(f)
+        self.phantom.compute_R.grad(f)
+        self.phantom.compute_H_svd_grad(f)
+        self.phantom.compute_H.grad(f)
+        self.phantom.compute_COM.grad(f)
+        self.phantom.g2p.grad(f)
+        self.phantom.grid_op.grad(f)
         self.clamp_grid(f)
         self.collision.grad(f)
-        self.fem_sensor1.update.grad(f)
-        self.mpm_object.p2g.grad(f)
-        self.mpm_object.svd_grad(f)
-        self.mpm_object.compute_new_F.grad(f)
+        self.vitactip.update_internal_forces.grad(f)
+        self.phantom.p2g.grad(f)
+        self.phantom.svd_grad(f)
+        self.phantom.compute_new_F.grad(f)
 
     @ti.kernel
     def clamp_grid(self, f: ti.i32):
@@ -206,32 +206,23 @@ class Contact:
     
     @ti.kernel
     def clear_loss_grad(self):
-        self.kn.grad[None] = 0.0
-        self.kd.grad[None] = 0.0
-        self.kt.grad[None] = 0.0
-        self.friction_coeff.grad[None] = 0.0
-        self.contact_detect_flag.grad[None] = 0.0
-        self.contact_force1.grad[None].fill(0.0)
-        self.predict_force1.grad.fill(0.0)
+        self.normal_stiffness.grad[None] = 0.0
+        self.normal_damping.grad[None] = 0.0
+        self.tangential_stiffness.grad[None] = 0.0
+        self.coulomb_friction_coeff.grad[None] = 0.0
 
         self.loss[None] = 0.0
         self.loss.grad[None] = 1.0
-        self.p_sensor1.grad.fill(0.0)
-        self.o_sensor1.grad.fill(0.0)
-
-        self.angle_x[None] = 0.0
-        self.angle_y[None] = 0.0
-        self.angle_z[None] = 0.0
     
     def clear_traj_grad(self):
-        self.fem_sensor1.clear_loss_grad()
-        self.mpm_object.clear_loss_grad()
+        self.vitactip.clear_loss_grad()
+        self.phantom.clear_loss_grad()
         self.clear_loss_grad()
 
     def clear_all_grad(self):
         self.clear_traj_grad()
-        self.fem_sensor1.clear_step_grad(self.sub_steps)
-        self.mpm_object.clear_step_grad(self.sub_steps)
+        self.vitactip.clear_step_grad(SYSTEM_PARAMS.contact.num_sub_frames)
+        self.phantom.clear_step_grad(SYSTEM_PARAMS.contact.num_sub_frames)
 
     def reset(self):
         self.vitactip.reset_contact()
@@ -240,8 +231,8 @@ class Contact:
     
     @ti.kernel
     def compute_marker_loss_1(self, f: ti.i32):
-        for i in range(self.fem_sensor1.num_markers):
-            sim_marker = self.fem_sensor1.predict_markers[i]
+        for i in range(self.vitactip.num_markers):
+            sim_marker = self.vitactip.deformed_markers[i]
             exp_marker = self.target_marker_positions[f, i]
 
             dx = exp_marker[0] - sim_marker[0]
@@ -251,7 +242,7 @@ class Contact:
 
     @ti.kernel
     def compute_marker_loss_2(self, f: ti.i32):
-        rmse = ti.sqrt(self.squared_error_sum[f] / self.fem_sensor1.num_markers)
+        rmse = ti.sqrt(self.squared_error_sum[f] / self.vitactip.num_markers)
         self.loss[None] += rmse
 
     @ti.func
