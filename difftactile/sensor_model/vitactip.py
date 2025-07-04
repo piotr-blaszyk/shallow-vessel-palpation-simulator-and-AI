@@ -346,7 +346,7 @@ class ViTacTip:
             camera_space_undeformed_pos = ti.Vector([transformed_undeformed_pos[0], transformed_undeformed_pos[1], transformed_undeformed_pos[2]])
             camera_space_deformed_2d = self.fisheye_model.project_3d_2d(camera_space_deformed_pos)
             camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(camera_space_undeformed_pos)
-            self.projection_2d_dome_surface_nodes_deformed[i] += camera_space_deformed_2d
+            self.projection_2d_dome_surface_nodes_deformed[i] = camera_space_deformed_2d
             self.projection_2d_dome_surface_nodes_undeformed[i] = camera_space_undeformed_2d
 
         for i in range(self.num_markers):
@@ -357,7 +357,7 @@ class ViTacTip:
             for neighbor_idx in range(self.marker_interpolation_knn_k):
                 interpolated_deformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_dome_surface_nodes_deformed[nearest_surface_indices[neighbor_idx]]
                 interpolated_undeformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_dome_surface_nodes_undeformed[nearest_surface_indices[neighbor_idx]]
-            self.deformed_markers[i] += interpolated_deformed_pos_2d
+            self.deformed_markers[i] = interpolated_deformed_pos_2d
             self.undeformed_markers[i] = interpolated_undeformed_pos_2d
 
     @ti.kernel
@@ -793,7 +793,7 @@ class ViTacTip:
             if is_fixed_layer:
                 updated_velocity = self.vertex_control_velocities[vertex_idx]
             self.vertex_velocities[frame+1, vertex_idx] = updated_velocity
-            self.vertex_positions_deformed_global_coordinates[frame+1, vertex_idx] += self.vertex_positions_deformed_global_coordinates[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * updated_velocity
+            self.vertex_positions_deformed_global_coordinates[frame+1, vertex_idx] = self.vertex_positions_deformed_global_coordinates[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * updated_velocity
             # update virtual pos
             self.vertex_positions_undeformed_global_coordinates[frame+1, vertex_idx] = self.vertex_positions_undeformed_global_coordinates[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * self.vertex_control_velocities[vertex_idx]
 
@@ -963,11 +963,3 @@ class ViTacTip:
                 self.vertex_positions_deformed_global_coordinates.grad[t, p].fill(0.0)
                 self.vertex_velocities.grad[t, p].fill(0.0)
                 self.vertex_positions_undeformed_global_coordinates.grad[t, p].fill(0.0)
-
-    def zero_selected_fields(self):
-        """
-        Zero out selected fields that need to be reset between iterations.
-        """
-        self.deformed_markers.fill(0.0)
-        self.vertex_positions_deformed_global_coordinates.fill(0.0)
-        self.vertex_velocities.fill(0.0)
