@@ -7,6 +7,7 @@ import torch
 import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Slerp
 import pickle
 import sys
 
@@ -268,12 +269,13 @@ class ViTacTip:
         # global_translational_velocity: global translational velocity in m/s
         self.global_translational_velocity = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
         # global_angular_velocity_degrees: global angular velocity in degrees/s
-        self.global_angular_velocity_degrees = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
+        self.global_quaternion_speed = ti.Vector.field(4, ti.f32, shape = (), needs_grad=True)
+        self.current_orientation_quat = ti.Vector.field(4, ti.f32, shape = (), needs_grad=True)
 
         # local_translational_velocity: local translational velocity in m/s
         self.local_translational_velocity = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
         # local_angular_velocity: local angular velocity in degrees/s
-        self.local_angular_velocity = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
+        self.local_rotation_over_big_step = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
 
         # homogeneous_rotation_matrix: 3x3 rotation matrix (dimensionless)
         self.homogeneous_rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=True)
@@ -309,16 +311,17 @@ class ViTacTip:
         self.transformation_matrix = ti.Matrix.field(4, 4, dtype=float, shape=(), needs_grad=False)
         # rotation_matrix: 3x3 rotation matrix (dimensionless)
         self.rotation_matrix = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
+        self.global_rotation_over_big_step = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
 
-    def set_up_pose(self, rot_x, rot_y, rot_z, t_dx, t_dy, t_dz):
+    def set_up_pose(self, pose):
         # rotation_quaternion: rotation quaternion from Euler angles (dimensionless)
-        rotation_object = R.from_rotvec(np.deg2rad([rot_x, rot_y, rot_z]))
+        rotation_object = R.from_quat(pose[3:])
         # initial_rotation_matrix: 3x3 rotation matrix (dimensionless)
         initial_rotation_matrix = rotation_object.as_matrix()
         # initial_transformation_matrix: 4x4 homogeneous transformation matrix (dimensionless)
         initial_transformation_matrix = np.eye(4)
         initial_transformation_matrix[0:3,0:3] = initial_rotation_matrix
-        initial_transformation_matrix[0,3] = t_dx; initial_transformation_matrix[1,3] = t_dy; initial_transformation_matrix[2,3] = t_dz
+        initial_transformation_matrix[0,3] = pose[0]; initial_transformation_matrix[1,3] = pose[1]; initial_transformation_matrix[2,3] = pose[2]
 
         self.local_rotation_matrix[None] = np.eye(3)
         self.world_rotation_matrix[None] = initial_rotation_matrix
@@ -430,15 +433,28 @@ class ViTacTip:
         for p in range(self.num_vertices):
             self.vertex_velocities[f, p] = self.vertex_control_velocities[p]
 
-    @ti.kernel
-    def set_pose_control(self):
-        # this is in local coord
-        self.local_translational_velocity[None] = self.inverse_rotation_matrix[None] @ self.global_translational_velocity[None]
-        self.local_angular_velocity[None] = self.inverse_rotation_matrix[None] @ self.global_angular_velocity_degrees[None]
+    def set_pose_control_1(self):
+        rotation_over_1s = self.global_quaternion_speed[None].to_numpy()
+        q_start = R.from_quat([0, 0, 0, 1])
+        q_end = R.from_quat(rotation_over_1s)
+        key_times = [0, 1]
+        key_rots = R.concatenate([q_start, q_end])
+        slerp_interpolator = Slerp(key_times, key_rots)
+        time_per_frame = SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
+        quaternion_scaled = slerp_interpolator(time_per_frame).as_quat()
+        self.global_rotation_over_big_step.from_numpy(quaternion_scaled.as_matrix())
 
-        self.rotation_vector_degrees[None] = self.local_angular_velocity[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
+    @ti.kernel
+    def set_pose_control_2(self):
+        # this is in local coord
+        self.local_rotation_over_big_step[None] = self.inverse_rotation_matrix[None] @ self.global_rotation_over_big_step[None]
+
+        self.local_translational_velocity[None] = self.inverse_rotation_matrix[None] @ self.global_translational_velocity[None]
         self.translation_vector[None] = self.local_translational_velocity[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
-        self.transformation_matrix[None], self.rotation_matrix[None] = self.eul2mat(self.rotation_vector_degrees[None], self.translation_vector[None])
+
+        self.transformation_matrix[None] = ti.Matrix.identity(float, 4)
+        self.transformation_matrix[0:3, 0:3] = self.local_rotation_over_big_step[None]
+        self.transformation_matrix[0:3, 3] = self.translation_vector[None]
 
         self.delta_transformation_matrix[None] = self.world_transformation_matrix[None] @ self.transformation_matrix[None] @ (self.world_transformation_matrix[None].inverse())
 
@@ -451,9 +467,9 @@ class ViTacTip:
         self.inverse_rotation_matrix[None] = self.homogeneous_rotation_matrix[None].inverse()
 
     @ti.kernel
-    def set_pose_control_bp(self):
+    def set_pose_control_2_bp_unused(self):
 
-        rot_v = self.local_angular_velocity[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
+        rot_v = self.local_rotation_over_big_step[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
         trans_v = self.local_translational_velocity[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
         trans_mat, rot_mat = self.eul2mat(rot_v, trans_v)
         self.delta_transformation_matrix[None] = self.world_transformation_matrix[None] @ trans_mat @ (self.world_transformation_matrix[None].inverse())
@@ -478,28 +494,10 @@ class ViTacTip:
             self.total_surface_force[f] += 1/3 * self.contact_forces_on_vertices[f,b] * self.dx
             self.total_surface_force[f] += 1/3 * self.contact_forces_on_vertices[f,c] * self.dx
 
-    @ti.func
-    def get_euler_angles(self) -> ti.types.vector(3, ti.f32):
-        # Extract Euler angles from rotation matrix
-        rot_mat = self.homogeneous_rotation_matrix[None]
-        
-        # Extract roll (x-axis rotation)
-        roll = ti.math.atan2(rot_mat[2, 1], rot_mat[2, 2])
-        
-        # Extract pitch (y-axis rotation)
-        pitch = ti.math.atan2(-rot_mat[2, 0], ti.sqrt(rot_mat[2, 1] * rot_mat[2, 1] + rot_mat[2, 2] * rot_mat[2, 2]))
-        
-        # Extract yaw (z-axis rotation)
-        yaw = ti.math.atan2(rot_mat[1, 0], rot_mat[0, 0])
-        
-        # Convert to degrees
-        roll_deg = ti.math.degrees(roll)
-        pitch_deg = ti.math.degrees(pitch)
-        yaw_deg = ti.math.degrees(yaw)
-        
-        euler_angles = ti.Vector([roll_deg, pitch_deg, yaw_deg])
-
-        return euler_angles
+    def compute_current_orientation(self):
+        rot_mat = self.homogeneous_rotation_matrix[None].to_numpy()
+        rotation_object = R.from_matrix(rot_mat)
+        self.current_orientation_quat[None].from_numpy(rotation_object.as_quat())
 
     @ti.kernel
     def set_up_pose_helper(self):
@@ -939,7 +937,7 @@ class ViTacTip:
 
         self.deformed_markers.grad.fill(0.0)
         self.global_translational_velocity.grad[None].fill(0.0)
-        self.global_angular_velocity_degrees.grad[None].fill(0.0)
+        self.global_quaternion_speed.grad[None].fill(0.0)
         self.homogeneous_rotation_matrix.grad[None].fill(0.0)
         self.local_rotation_matrix.grad[None].fill(0.0)
         self.inverse_rotation_matrix.grad[None].fill(0.0)

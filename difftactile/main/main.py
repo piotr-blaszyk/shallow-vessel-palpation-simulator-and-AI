@@ -9,6 +9,7 @@ import sys
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
 from difftactile.main.constants import *
+from scipy.spatial.transform import Rotation as R
 
 RUN_ON_LAB_MACHINE = True
 @ti.data_oriented
@@ -79,11 +80,11 @@ class Contact:
         
         # Error accumulation for integral term
         self.pos_error_sum = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
-        self.ori_error_sum = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)  # Changed from 4 to 3 for Euler angles
+        self.ori_error_sum = ti.Vector.field(4, dtype=float, shape=(), needs_grad=False)  # Changed from 4 to 3 for Euler angles
         
         # Previous error for derivative term
         self.prev_pos_error = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
-        self.prev_ori_error = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)  # Changed from 4 to 3 for Euler angles
+        self.prev_ori_error = ti.Vector.field(4, dtype=float, shape=(), needs_grad=False)  # Changed from 4 to 3 for Euler angles
 
         # Add fields to track current target and control state
         self.current_target_idx = ti.field(dtype=int, shape=(), needs_grad=False)
@@ -139,21 +140,21 @@ class Contact:
             stiffness_tuple=None,
             tumour_present=tumour_present,
         )
-        x, y, z, xr, yr, zr = self.vitactip_tip_pose
+        x, y, z, xr, yr, zr, wr = self.vitactip_tip_pose
         press_depth = SYSTEM_PARAMS.geometry.gap + 0.006
         self.trajectory_npy = np.array([
-            [x, y, z, xr, yr, zr],
-            [x, y, z-press_depth, xr, yr, zr],
-            [x, y+0.020, z-press_depth, xr, yr, zr],
+            [x, y, z, xr, yr, zr, wr],
+            [x, y, z-press_depth, xr, yr, zr, wr],
+            [x, y+0.020, z-press_depth, xr, yr, zr, wr],
         ], dtype=float)
         assert self.trajectory.shape[0] == self.trajectory_npy.shape[0], f"Set self.trajectory length to {self.trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(self.trajectory_npy)
 
-        self.sensor_dome_tip_initial_pose = self.trajectory_npy[0].tolist()
-        self.sensor_dome_tip_initial_pose[2] += camera_lens_to_sensor_tip
-        t_dx, t_dy, t_dz, rot_x, rot_y, rot_z = self.sensor_dome_tip_initial_pose
-        self.vitactip.set_up_pose(rot_x, rot_y, rot_z, t_dx, t_dy, t_dz)
-        self.tactile_sensor_initial_position[0] = ti.Vector(self.sensor_dome_tip_initial_pose[:3])
+        sensor_dome_tip_initial_pose = self.trajectory_npy[0].tolist()
+        sensor_dome_tip_initial_pose[2] += camera_lens_to_sensor_tip
+        sensor_dome_tip_initial_pose = np.array(sensor_dome_tip_initial_pose)
+        self.vitactip.set_up_pose(sensor_dome_tip_initial_pose)
+        self.tactile_sensor_initial_position[0] = ti.Vector(sensor_dome_tip_initial_pose[:3])
         self.phantom_initial_position[0] = ti.Vector(self.phantom_centroid_pose[:3])
     
     def reset_pid_controller(self):
@@ -360,16 +361,19 @@ class Contact:
         self.vitactip.memory_from_cache(t)
         self.phantom.memory_from_cache(t)
 
+    def pid_controller_1(self):
+        self.vitactip.compute_current_orientation()
+
     @ti.kernel
-    def pid_controller(self, ts: ti.i32):
+    def pid_controller_2(self, ts: ti.i32):
         # Get current position and orientation using reference keypoint
         current_pos = self.vitactip.vertex_positions_undeformed_global_coordinates[0, self.keypoint_indices[0]]
-        current_ori = self.vitactip.get_euler_angles()
+        current_ori = self.vitactip.current_orientation_quat[None]
         
         # Get current target position and orientation
         target = self.trajectory[self.current_target_idx[None]]
         target_pos = ti.Vector([target[0], target[1], target[2]])
-        target_ori = ti.Vector([target[3], target[4], target[5]])  # Now using Euler angles
+        target_ori = ti.Vector([target[3], target[4], target[5], target[6]])
         
         # Compute position and orientation errors
         pos_error = target_pos - current_pos
@@ -399,14 +403,14 @@ class Contact:
                     self.current_target_idx[None] += 1
                     # Reset error sums when switching targets
                     self.pos_error_sum[None] = ti.Vector([0.0, 0.0, 0.0])
-                    self.ori_error_sum[None] = ti.Vector([0.0, 0.0, 0.0])
+                    self.ori_error_sum[None] = ti.Vector([0.0, 0.0, 0.0, 0.0])
                     self.prev_pos_error[None] = ti.Vector([0.0, 0.0, 0.0])
-                    self.prev_ori_error[None] = ti.Vector([0.0, 0.0, 0.0])
+                    self.prev_ori_error[None] = ti.Vector([0.0, 0.0, 0.0, 0.0])
                     
                     # Get new target position and orientation
                     target = self.trajectory[self.current_target_idx[None]]
                     target_pos = ti.Vector([target[0], target[1], target[2]])
-                    target_ori = ti.Vector([target[3], target[4], target[5]])
+                    target_ori = ti.Vector([target[3], target[4], target[5], target[6]])
                     
                     # Recompute errors for new target
                     pos_error = target_pos - current_pos
@@ -418,7 +422,7 @@ class Contact:
         # But if at final target, never dwell, always actively control
         if self.is_dwelling[None] == 1:
             self.vitactip.global_translational_velocity[None] = ti.Vector([0.0, 0.0, 0.0])
-            self.vitactip.global_angular_velocity_degrees[None] = ti.Vector([0.0, 0.0, 0.0])
+            self.vitactip.global_quaternion_speed[None] = ti.Vector([0.0, 0.0, 0.0, 1.0])
         else:
             # Update error sums for integral term
             self.pos_error_sum[None] += pos_error
@@ -452,10 +456,10 @@ class Contact:
 
             if SYSTEM_PARAMS.meta.enable_pid_controller == 1:
                 self.vitactip.global_translational_velocity[None] = pos_control
-                self.vitactip.global_angular_velocity_degrees[None] = ori_control
+                self.vitactip.global_quaternion_speed[None] = ori_control
             else:
                 self.vitactip.global_translational_velocity[None] = ti.Vector([0.0, 0.0, 0.0])
-                self.vitactip.global_angular_velocity_degrees[None] = ti.Vector([0.0, 0.0, 0.0])
+                self.vitactip.global_quaternion_speed[None] = ti.Vector([0.0, 0.0, 0.0, 1.0])
         
             if True:
                 # Print all variables used in the function
@@ -736,7 +740,8 @@ class Contact:
         self.window.show()
 
     def forward_pass_common_part(self):
-        self.vitactip.set_pose_control()
+        self.vitactip.set_pose_control_1()
+        self.vitactip.set_pose_control_2()
         self.vitactip.set_control_vel(0)
         self.vitactip.set_vel(0)
         self.reset()
@@ -748,7 +753,7 @@ class Contact:
             self.update_grad(ss)
         self.vitactip.set_vel.grad(0)
         self.vitactip.set_control_vel.grad(0)
-        self.vitactip.set_pose_control.grad()
+        self.vitactip.set_pose_control_2.grad()
 
 def main():
     if RUN_ON_LAB_MACHINE:
@@ -779,7 +784,7 @@ def main():
 
         print('forward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames):
-            contact_model.pid_controller(ts)
+            contact_model.pid_controller_2(ts)
             contact_model.forward_pass_common_part()
             contact_model.memory_to_cache(ts)
             contact_model.visualisation_update_gui(ts)
