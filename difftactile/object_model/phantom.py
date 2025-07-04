@@ -84,35 +84,35 @@ class Phantom:
         self.transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape=())
 
         # particle_position: position vectors in m
-        self.particle_position = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
+        self.particle_position = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
         # particle_velocity: velocity vectors in m/s
-        self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
+        self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
 
         # affine_velocity: affine velocity field matrix (m/s)
-        self.affine_velocity_field = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
+        self.affine_velocity_field = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
         # trial_deformation_gradient: trial deformation gradient matrix (dimensionless)
-        self.trial_deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
+        self.trial_deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
         # deformation_gradient: deformation gradient matrix (dimensionless)
-        self.deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
+        self.deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
         # U_svd: left singular vectors matrix (dimensionless)
-        self.U_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
+        self.U_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
         # V_svd: right singular vectors matrix (dimensionless)
-        self.V_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
+        self.V_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
         # S_svd: singular values matrix (dimensionless)
-        self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
+        self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
 
         # grid_node_momentum_in: momentum vectors in kg⋅m/s
-        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
+        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=True)
         # grid_node_velocity_out: velocity vectors in m/s
-        self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
+        self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=True)
         # grid_node_mass: mass values in kg
-        self.grid_node_mass = ti.field(dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
+        self.grid_node_mass = ti.field(dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=True)
         # grid_node_external_force: force vectors in N
-        self.grid_node_external_impulse = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
+        self.grid_node_external_impulse = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=True)
         # grid_occupy: occupancy flags (dimensionless)
         self.grid_occupy = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z))
         # total_surface_external_force: total surface force vector in N
-        self.total_surface_external_force = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=False)
+        self.total_surface_external_force = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=True)
         # von_mises: von Mises stress in Pa
         self.particle_von_mises_stress = ti.field(dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles))
 
@@ -504,3 +504,62 @@ class Phantom:
         coordinates = positions[keypoint_indices]
         
         return coordinates
+
+    @ti.kernel
+    def svd_grad(self, f: ti.i32):
+        for p in range(self.actual_total_num_particles):
+            self.trial_deformation_gradient.grad[f, p] += self.single_svd_grad(f, p)
+
+    @ti.func
+    def clamp(self, a: ti.f32):
+        if a>=0:
+            a = ti.max(a, 1e-8)
+        else:
+            a = ti.min(a, -1e-8)
+        return a
+
+    @ti.func
+    def single_svd_grad(self, f: ti.i32, p: ti.i32):
+        vt = self.V_svd[f, p].transpose()
+        ut = self.U_svd[f, p].transpose()
+        s_term = self.U_svd[f, p] @ self.S_svd.grad[f, p] @ vt
+
+        s = ti.Vector.zero(ti.f32, 3)
+        s = ti.Vector([self.S_svd[f, p][0, 0], self.S_svd[f, p][1, 1], self.S_svd[f, p][2, 2]]) ** 2
+        ff = ti.Matrix.zero(ti.f32, 3, 3)
+        for i, j in ti.static(ti.ndrange(3, 3)):
+            if i == j:
+                ff[i, j] = 0
+            else:
+                ff[i, j] = 1.0 / self.clamp(s[j] - s[i])
+        u_term = self.U_svd[f, p] @ ((ff * (ut @ self.U_svd.grad[f, p] - self.U_svd.grad[f, p].transpose() @ self.U_svd[f, p])) @ self.S_svd[f, p]) @ vt
+        v_term = self.U_svd[f, p] @ (self.S_svd[f, p] @ ((ff * (vt @ self.V_svd.grad[f, p] - self.V_svd.grad[f, p].transpose() @ self.V_svd[f, p])) @ vt))
+        return u_term + v_term + s_term
+
+    @ti.kernel
+    def copy_grad(self, source: ti.i32, target: ti.i32):
+        for p in range(self.actual_total_num_particles):
+            self.particle_position.grad[target, p] = self.particle_position.grad[source, p]
+            self.particle_velocity.grad[target, p] = self.particle_velocity.grad[source, p]
+            self.affine_velocity_field.grad[target, p] = self.affine_velocity_field.grad[source, p]
+            self.deformation_gradient.grad[target, p] = self.deformation_gradient.grad[source, p]
+
+    @ti.kernel
+    def clear_step_grad(self, f:ti.i32):
+        self.grid_node_momentum_in.grad.fill(0.0)
+        self.grid_node_velocity_out.grad.fill(0.0)
+        self.grid_node_mass.grad.fill(0.0)
+        self.grid_node_external_impulse.grad.fill(0.0)
+        self.trial_deformation_gradient.grad.fill(0.0)
+        self.U_svd.grad.fill(0.0)
+        self.V_svd.grad.fill(0.0)
+        self.S_svd.grad.fill(0.0)
+        for p in range(self.actual_total_num_particles):
+            for t in range(f):
+                self.particle_position.grad[t,p].fill(0.0)
+                self.particle_velocity.grad[t,p].fill(0.0)
+                self.affine_velocity_field.grad[t,p].fill(0.0)
+                self.deformation_gradient.grad[t,p].fill(0.0)
+
+        for t in range(f):
+            self.total_surface_external_force.grad[t].fill(0.0) 

@@ -23,7 +23,17 @@ class Contact:
         self.set_up_collision_detection()
         self.set_up_pid()
         self.set_up_snapshot()
+        self.set_up_loss_computation()
         self.visualisation_initialise()
+
+    def set_up_loss_computation(self):
+        self.loss = ti.field(float, (), needs_grad=True)
+        self.target_marker_positions = ti.Vector.field(
+            2, dtype=ti.f32, shape=(self.vitactip.num_markers, ), needs_grad=True
+        )
+        target_marker_positions_npy = np.ones(shape=(self.vitactip.num_markers, 2), dtype=float)
+        self.target_marker_positions.from_numpy(target_marker_positions_npy)
+        self.squared_error_sum = ti.field(dtype=float, shape=(), needs_grad=True)
 
     def set_up_collision_detection(self):
         self.num_sensor = 1
@@ -37,13 +47,12 @@ class Contact:
                 SYSTEM_PARAMS.phantom.n_grid_z,
             ),
         )
-        self.contact_detect_flag = ti.field(float, (), needs_grad=False)
 
     def set_up_system_params(self):
-        self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=True)
         self.normal_stiffness[None] = SYSTEM_PARAMS.contact.normal_stiffness
         self.normal_damping[None] = SYSTEM_PARAMS.contact.normal_damping
         self.tangential_stiffness[None] = SYSTEM_PARAMS.contact.tangential_stiffness
@@ -169,12 +178,81 @@ class Contact:
         self.phantom.grid_op(f)
         self.phantom.g2p(f)
         self.vitactip.update_external_forces(f)
+    
+    def update_grad(self, f):
+        self.fem_sensor1.update2.grad(f)
+        self.mpm_object.compute_R.grad(f)
+        self.mpm_object.compute_H_svd_grad(f)
+        self.mpm_object.compute_H.grad(f)
+        self.mpm_object.compute_COM.grad(f)
+        self.mpm_object.g2p.grad(f)
+        self.mpm_object.grid_op.grad(f)
+        self.clamp_grid(f)
+        self.collision.grad(f)
+        self.fem_sensor1.update.grad(f)
+        self.mpm_object.p2g.grad(f)
+        self.mpm_object.svd_grad(f)
+        self.mpm_object.compute_new_F.grad(f)
+
+    @ti.kernel
+    def clamp_grid(self, f: ti.i32):
+        for i in range(self.vitactip.num_vertices):
+            self.vitactip.vertex_positions_deformed_global_coordinates.grad[f, i] = ti.math.clamp(
+                self.vitactip.vertex_positions_deformed_global_coordinates.grad[f, i], -1000.0, 1000.0
+            )
+            self.vitactip.vertex_velocities.grad[f, i] = ti.math.clamp(
+                self.vitactip.vertex_velocities.grad[f, i], -1000.0, 1000.0
+            )
+    
+    @ti.kernel
+    def clear_loss_grad(self):
+        self.kn.grad[None] = 0.0
+        self.kd.grad[None] = 0.0
+        self.kt.grad[None] = 0.0
+        self.friction_coeff.grad[None] = 0.0
+        self.contact_detect_flag.grad[None] = 0.0
+        self.contact_force1.grad[None].fill(0.0)
+        self.predict_force1.grad.fill(0.0)
+
+        self.loss[None] = 0.0
+        self.loss.grad[None] = 1.0
+        self.p_sensor1.grad.fill(0.0)
+        self.o_sensor1.grad.fill(0.0)
+
+        self.angle_x[None] = 0.0
+        self.angle_y[None] = 0.0
+        self.angle_z[None] = 0.0
+    
+    def clear_traj_grad(self):
+        self.fem_sensor1.clear_loss_grad()
+        self.mpm_object.clear_loss_grad()
+        self.clear_loss_grad()
+
+    def clear_all_grad(self):
+        self.clear_traj_grad()
+        self.fem_sensor1.clear_step_grad(self.sub_steps)
+        self.mpm_object.clear_step_grad(self.sub_steps)
 
     def reset(self):
         self.vitactip.reset_contact()
         self.phantom.reset()
         self.contact_idx.fill(-1)
-        self.contact_detect_flag[None] = 0.0
+    
+    @ti.kernel
+    def compute_marker_loss_1(self, f: ti.i32):
+        for i in range(self.fem_sensor1.num_markers):
+            sim_marker = self.fem_sensor1.predict_markers[i]
+            exp_marker = self.target_marker_positions[f, i]
+
+            dx = exp_marker[0] - sim_marker[0]
+            dy = exp_marker[1] - sim_marker[1]
+            squared_error = dx * dx + dy * dy
+            self.squared_error_sum[f] += squared_error
+
+    @ti.kernel
+    def compute_marker_loss_2(self, f: ti.i32):
+        rmse = ti.sqrt(self.squared_error_sum[f] / self.fem_sensor1.num_markers)
+        self.loss[None] += rmse
 
     @ti.func
     def calculate_contact_force(self, signed_distance, surface_normal, relative_velocity):
@@ -685,6 +763,8 @@ def main():
         contact_model.set_up_initial_positions_and_trajectory()
         contact_model.reset_pid_controller()
         contact_model.visualisation_reset_3d_scene()
+        contact_model.clear_all_grad()
+        
         if opts == 0:
             contact_model.vitactip.test_mapping_from_global_space_to_camera_space()
             contact_model.vitactip.extract_markers(0)
@@ -694,8 +774,9 @@ def main():
             initial_markers = contact_model.vitactip.deformed_markers.to_numpy()
             with open(SYSTEM_PARAMS.files.sim_markers_initial_positions, 'wb') as f:
                 pickle.dump(initial_markers, f)
+
         print('forward')
-        for ts in range(SYSTEM_PARAMS.contact.num_frames - 1):
+        for ts in range(SYSTEM_PARAMS.contact.num_frames):
             contact_model.pid_controller(ts)
             contact_model.vitactip.set_pose_control()
             contact_model.vitactip.set_control_vel(0)
@@ -703,7 +784,7 @@ def main():
             contact_model.reset()
             for ss in range(SYSTEM_PARAMS.contact.num_sub_frames - 1):
                 contact_model.update(ss)
-            contact_model.memory_to_cache(0)
+            contact_model.memory_to_cache(ts)
 
             contact_model.visualisation_update_gui(ts)
 
@@ -713,8 +794,33 @@ def main():
             if ts % 100 == 0:
                 contact_model.take_snapshot(opts)
                 contact_model.save_tactile_sensor_mesh_to_pickle(ts)
-                # break
-    # contact_model.save_marker_data_and_ground_truth_labels_to_file()
+
+        print('backward')
+        for ts in range(SYSTEM_PARAMS.contact.num_frames-1, -1, -1):
+            contact_model.memory_from_cache(ts)
+
+            contact_model.vitactip.set_pose_control()
+            contact_model.vitactip.set_control_vel(0)
+            contact_model.vitactip.set_vel(0)
+            contact_model.reset()
+            for ss in range(SYSTEM_PARAMS.contact.num_sub_frames - 1):
+                contact_model.update(ss)
+            contact_model.vitactip.extract_markers(SYSTEM_PARAMS.contact.num_sub_frames-1)
+            contact_model.compute_marker_loss_1(ts)
+            contact_model.compute_marker_loss_2(ts)
+
+            contact_model.clear_all_grad()
+            
+            contact_model.compute_marker_loss_2.grad(ts)
+            contact_model.compute_marker_loss_1.grad(ts)
+            contact_model.vitactip.extract_markers.grad(SYSTEM_PARAMS.contact.num_sub_frames-1)
+            for ss in range(SYSTEM_PARAMS.contact.num_sub_frames-2, -1, -1):
+                contact_model.update_grad(ss)
+            contact_model.vitactip.set_vel.grad(0)
+            contact_model.vitactip.set_control_vel.grad(0)
+            contact_model.vitactip.set_pose_control.grad()
+            contact_model.set_pos_control.grad(ts)
+            
 
 if __name__ == "__main__":
     main()

@@ -29,10 +29,10 @@ class ViTacTip:
     def set_up_system_params(self):
         # Material parameters for all materials
         self.mass_density = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
-        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=True)
         self.poissons_ratio = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
-        self.mu = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
-        self.lam = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
+        self.mu = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=True)
+        self.lam = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=True)
 
         if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
             self.mass_density[0] = SYSTEM_PARAMS.vitactip.single_material.density
@@ -231,73 +231,73 @@ class ViTacTip:
 
         self.num_markers = len(interpolated_marker_positions_2d)
 
-        self.deformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
-        self.undeformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
-        self.initial_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
-        self.initial_undeformed_vertices_after_applying_transformation_matrix = ti.Vector.field(3, float, self.num_markers, needs_grad=False)
+        self.deformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=True)
+        self.undeformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=True)
+        self.initial_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=True)
+        self.initial_undeformed_vertices_after_applying_transformation_matrix = ti.Vector.field(3, float, self.num_markers, needs_grad=True)
 
-        self.marker_interpolation_weights = ti.Vector.field(self.marker_interpolation_knn_k, float, self.num_markers, needs_grad=False)
+        self.marker_interpolation_weights = ti.Vector.field(self.marker_interpolation_knn_k, float, self.num_markers, needs_grad=True)
         self.marker_interpolation_weights.from_numpy(marker_interpolation_weights.astype(np.float32))
         self.marker_interpolation_indices = ti.Vector.field(self.marker_interpolation_knn_k, int, self.num_markers)
         self.marker_interpolation_indices.from_numpy(marker_interpolation_indices.astype(np.int32))
 
     def set_up_physical_state(self):
         # vertex_positions_ideal: ideal/undeformed vertex positions in m
-        self.vertex_positions_undeformed_global_coordinates = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
+        self.vertex_positions_undeformed_global_coordinates = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=True)
         self.camera_coordinate_system_vertices = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
         # vertex_positions_deformed: current deformed vertex positions in m
-        self.vertex_positions_deformed_global_coordinates = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
+        self.vertex_positions_deformed_global_coordinates = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=True)
         # vertex_velocities: vertex velocities in m/s
-        self.vertex_velocities = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
+        self.vertex_velocities = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=True)
 
         # deformation_gradient_inverse: inverse of deformation gradient matrix (dimensionless)
-        self.deformation_gradient_inverse = ti.Matrix.field(3, 3, float, self.num_tetrahedra, needs_grad=False)
+        self.deformation_gradient_inverse = ti.Matrix.field(3, 3, float, self.num_tetrahedra, needs_grad=True)
         # element_potential_energy: potential energy of each tetrahedral element in J
-        self.element_potential_energy = ti.field(float, self.num_tetrahedra, needs_grad=False)  # potential energy of each face (Neo-Hookean)
+        self.element_potential_energy = ti.field(float, self.num_tetrahedra, needs_grad=True)  # potential energy of each face (Neo-Hookean)
 
         # contact_forces_on_vertices: external contact forces applied to vertices in N
-        self.contact_forces_on_vertices = ti.Vector.field(3, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False) # contact force between FEM node to the closest particle
+        self.contact_forces_on_vertices = ti.Vector.field(3, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=True) # contact force between FEM node to the closest particle
         # surface_force_resultant: total surface force vector in N
-        self.total_surface_force = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=False) # surface aggreated 3-axis forces
+        self.total_surface_force = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=True) # surface aggreated 3-axis forces
 
         # contact model parameters (default)
         # sensor_outward_normal: outward normal direction vector (dimensionless)
-        self.sensor_outward_normal = ti.Vector.field(3, float, (), needs_grad=False)
+        self.sensor_outward_normal = ti.Vector.field(3, float, (), needs_grad=True)
 
         ## control parameters
         # global_translational_velocity: global translational velocity in m/s
-        self.global_translational_velocity = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
+        self.global_translational_velocity = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
         # global_angular_velocity_degrees: global angular velocity in degrees/s
-        self.global_angular_velocity_degrees = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
+        self.global_angular_velocity_degrees = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
 
         # local_translational_velocity: local translational velocity in m/s
-        self.local_translational_velocity = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
+        self.local_translational_velocity = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
         # local_angular_velocity: local angular velocity in degrees/s
-        self.local_angular_velocity = ti.Vector.field(3, ti.f32, shape = (), needs_grad=False)
+        self.local_angular_velocity = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
 
         # homogeneous_rotation_matrix: 3x3 rotation matrix (dimensionless)
-        self.homogeneous_rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=False)
+        self.homogeneous_rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=True)
         # world_rotation_matrix: world coordinate rotation matrix (dimensionless)
         self.world_rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape = ())
         # local_rotation_matrix: local coordinate rotation matrix (dimensionless)
-        self.local_rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=False)
+        self.local_rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=True)
         # inverse_rotation_matrix: inverse of rotation matrix (dimensionless)
-        self.inverse_rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=False)
+        self.inverse_rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=True)
 
         # homogeneous_transformation_matrix: 4x4 homogeneous transformation matrix (dimensionless)
-        self.homogeneous_transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False) ##
+        self.homogeneous_transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=True)
         # world_transformation_matrix: world coordinate transformation matrix (dimensionless)
-        self.world_transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape = ()) ## ee to world
+        self.world_transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape = ())
         # local_transformation_matrix: local coordinate transformation matrix (dimensionless)
-        self.local_transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False) ## ee1 -> ee2
+        self.local_transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=True)
         # inverse_transformation_matrix: inverse of transformation matrix (dimensionless)
-        self.inverse_transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False)
+        self.inverse_transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=True)
         # delta_transformation_matrix: incremental transformation matrix (dimensionless)
-        self.delta_transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False)
+        self.delta_transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=True)
         # vertex_control_velocities: prescribed control velocities for vertices in m/s
-        self.vertex_control_velocities = ti.Vector.field(3, float, shape = (self.num_vertices), needs_grad=False)
+        self.vertex_control_velocities = ti.Vector.field(3, float, shape = (self.num_vertices), needs_grad=True)
         # signed_distance_function: signed distance to surface in m
-        self.signed_distance_function = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.signed_distance_function = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         # simulation_cache: cache for gradient computation (dimensionless)
         self.simulation_cache = dict() # for grad backward
 
@@ -346,7 +346,7 @@ class ViTacTip:
             camera_space_undeformed_pos = ti.Vector([transformed_undeformed_pos[0], transformed_undeformed_pos[1], transformed_undeformed_pos[2]])
             camera_space_deformed_2d = self.fisheye_model.project_3d_2d(camera_space_deformed_pos)
             camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(camera_space_undeformed_pos)
-            self.projection_2d_dome_surface_nodes_deformed[i] = camera_space_deformed_2d
+            self.projection_2d_dome_surface_nodes_deformed[i] += camera_space_deformed_2d
             self.projection_2d_dome_surface_nodes_undeformed[i] = camera_space_undeformed_2d
 
         for i in range(self.num_markers):
@@ -357,7 +357,7 @@ class ViTacTip:
             for neighbor_idx in range(self.marker_interpolation_knn_k):
                 interpolated_deformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_dome_surface_nodes_deformed[nearest_surface_indices[neighbor_idx]]
                 interpolated_undeformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_dome_surface_nodes_undeformed[nearest_surface_indices[neighbor_idx]]
-            self.deformed_markers[i] = interpolated_deformed_pos_2d
+            self.deformed_markers[i] += interpolated_deformed_pos_2d
             self.undeformed_markers[i] = interpolated_undeformed_pos_2d
 
     @ti.kernel
@@ -793,7 +793,7 @@ class ViTacTip:
             if is_fixed_layer:
                 updated_velocity = self.vertex_control_velocities[vertex_idx]
             self.vertex_velocities[frame+1, vertex_idx] = updated_velocity
-            self.vertex_positions_deformed_global_coordinates[frame+1, vertex_idx] = self.vertex_positions_deformed_global_coordinates[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * updated_velocity
+            self.vertex_positions_deformed_global_coordinates[frame+1, vertex_idx] += self.vertex_positions_deformed_global_coordinates[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * updated_velocity
             # update virtual pos
             self.vertex_positions_undeformed_global_coordinates[frame+1, vertex_idx] = self.vertex_positions_undeformed_global_coordinates[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * self.vertex_control_velocities[vertex_idx]
 
@@ -913,3 +913,61 @@ class ViTacTip:
         coordinates = positions[keypoint_indices]
         
         return coordinates
+
+    @ti.kernel
+    def copy_grad(self, source: ti.i32, target: ti.i32):
+        """
+        Copy gradient information from source frame to target frame.
+        
+        Args:
+            source: source frame index (dimensionless)
+            target: target frame index (dimensionless)
+        """
+        for p in range(self.num_vertices):
+            self.vertex_positions_deformed_global_coordinates.grad[target, p] = self.vertex_positions_deformed_global_coordinates.grad[source, p]
+            self.vertex_velocities.grad[target, p] = self.vertex_velocities.grad[source, p]
+            self.vertex_positions_undeformed_global_coordinates.grad[target, p] = self.vertex_positions_undeformed_global_coordinates.grad[source, p]
+
+    @ti.kernel
+    def clear_loss_grad(self):
+        """
+        Clear gradients of all loss-related fields.
+        """
+        self.youngs_modulus.grad.fill(0.0)
+        self.mu.grad.fill(0.0)
+        self.lam.grad.fill(0.0)
+        self.deformed_markers.grad.fill(0.0)
+        self.global_translational_velocity.grad[None].fill(0.0)
+        self.global_angular_velocity_degrees.grad[None].fill(0.0)
+        self.homogeneous_rotation_matrix.grad[None].fill(0.0)
+        self.local_rotation_matrix.grad[None].fill(0.0)
+        self.inverse_rotation_matrix.grad[None].fill(0.0)
+        self.homogeneous_transformation_matrix.grad[None].fill(0.0)
+        self.local_transformation_matrix.grad[None].fill(0.0)
+        self.inverse_transformation_matrix.grad[None].fill(0.0)
+        self.delta_transformation_matrix.grad[None].fill(0.0)
+        self.vertex_control_velocities.grad.fill(0.0)
+
+    @ti.kernel
+    def clear_step_grad(self, f:ti.i32):
+        """
+        Clear gradients of step-specific fields up to frame f.
+        
+        Args:
+            f: frame index up to which to clear gradients (dimensionless)
+        """
+        self.total_surface_force.grad.fill(0.0)
+        self.contact_forces_on_vertices.grad.fill(0.0)
+        for p in range(self.num_vertices):
+            for t in range(f):
+                self.vertex_positions_deformed_global_coordinates.grad[t, p].fill(0.0)
+                self.vertex_velocities.grad[t, p].fill(0.0)
+                self.vertex_positions_undeformed_global_coordinates.grad[t, p].fill(0.0)
+
+    def zero_selected_fields(self):
+        """
+        Zero out selected fields that need to be reset between iterations.
+        """
+        self.deformed_markers.fill(0.0)
+        self.vertex_positions_deformed_global_coordinates.fill(0.0)
+        self.vertex_velocities.fill(0.0)
