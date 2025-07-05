@@ -136,7 +136,7 @@ class Contact:
         sensor_dome_tip_initial_pose[2] += camera_lens_to_sensor_tip
         sensor_dome_tip_initial_pose = np.array(sensor_dome_tip_initial_pose)
         self.vitactip.set_up_pose(sensor_dome_tip_initial_pose)
-        self.vitactip.set_up_pose_print()
+        # self.vitactip.set_up_pose_print()
         self.tactile_sensor_initial_position[0] = ti.Vector(sensor_dome_tip_initial_pose[:3])
         self.phantom_initial_position[0] = ti.Vector(self.phantom_centroid_pose[:3])
     
@@ -373,10 +373,10 @@ class Contact:
         self.vitactip.global_rotation_over_big_step_quat.from_numpy(ori_control_quat)
         self.ori_error_magnitude_degrees[None] = np.rad2deg(current_angle_radians)
         
-        print(f'current_ori: {current_ori.as_quat()}')
-        print(f'target_ori: {target_ori.as_quat()}')
-        print(f'ori_control: {ori_control.as_quat()}')
-        print()
+        # print(f'current_ori: {current_ori.as_quat()}')
+        # print(f'target_ori: {target_ori.as_quat()}')
+        # print(f'ori_control: {ori_control.as_quat()}')
+        # print()
 
     @ti.kernel
     def pid_controller_2(self, ts: ti.i32):
@@ -687,7 +687,7 @@ class Contact:
 
     def forward_pass_common_part(self):
         self.vitactip.set_pose_control()
-        self.vitactip.set_pose_control_print()
+        # self.vitactip.set_pose_control_print()
         self.vitactip.set_control_vel(0)
         self.vitactip.set_vel(0)
         self.reset()
@@ -742,8 +742,8 @@ def main():
                 contact_model.take_snapshot(opts)
                 contact_model.save_tactile_sensor_mesh_to_pickle(ts)
             
-            if ts == 1:
-                sys.exit()
+            # if ts == 1:
+            #     sys.exit()
 
         print('backward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames-1, -1, -1):

@@ -447,7 +447,7 @@ class ViTacTip:
     @ti.kernel
     def set_pose_control(self):
         # this is in local coord
-        self.local_rotation_over_big_step_matrix[None] = self.inverse_rotation_matrix[None] @ self.global_rotation_over_big_step_matrix[None]
+        self.local_rotation_over_big_step_matrix[None] = self.global_rotation_over_big_step_matrix[None]
 
         self.local_translational_velocity[None] = self.inverse_rotation_matrix[None] @ self.global_translational_velocity[None]
         self.translation_vector[None] = self.local_translational_velocity[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
