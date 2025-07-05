@@ -63,16 +63,15 @@
         "num_sub_frames": 500,
         "num_frames": 10000,
         "num_opt_steps": 10,
-        "pid_max_speed_translation": 0.100,
+        "pid_max_speed_translation": 1.000,
         "pid_orientation_kp": 1.0,
         "pid_kp": 100.0,
         "pid_ki": 0.0,
         "pid_kd": 0.0,
-        "pid_position_tolerance": 0.001,
+        "pid_position_tolerance": 0.010,
         "pid_orientation_tolerance": 1.0,
         "pid_angle_eps": 1e-8,
-        "pid_max_rotation_per_second_degrees": 90.0,
-        "pid_desired_rotation_per_second_degrees": 90.0,
+        "pid_max_rotation_per_second_degrees": 180.0,
         "dwell_frames": 0,
         "norm_eps": 1e-11,
         "tangential_velocity_detection_threshold": 1e-6
@@ -86,7 +85,7 @@
         "refine_mesh": 1
     },
     "geometry": {
-        "gap": 0.030,
+        "gap": 0.100,
         "phantom_orientation": [0, 0, 0],
         "sensor_orientation": [0.0, 1.0, 0.0, 0.0],
         "phantom_h": 0.022,

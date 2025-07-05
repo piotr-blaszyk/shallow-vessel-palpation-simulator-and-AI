@@ -1,6 +1,6 @@
 import taichi as ti
 import numpy as np
-np.set_printoptions(precision=6, suppress=False, formatter={'float': '{:0.6e}'.format})
+# np.set_printoptions(precision=6, suppress=False, formatter={'float': '{:0.6e}'.format})
 import pickle
 import json
 import cv2
@@ -372,7 +372,7 @@ class Contact:
         time_duration =  SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
         rotation_per_second = current_angle_radians * SYSTEM_PARAMS.contact.pid_orientation_kp / time_duration
         if rotation_per_second > np.deg2rad(SYSTEM_PARAMS.contact.pid_max_rotation_per_second_degrees):
-            ori_control = R.from_rotvec(current_axis * np.deg2rad(SYSTEM_PARAMS.contact.pid_desired_rotation_per_second_degrees) * time_duration)
+            ori_control = R.from_rotvec(current_axis * np.deg2rad(SYSTEM_PARAMS.contact.pid_max_rotation_per_second_degrees) * time_duration)
         else:
             ori_control = R.from_rotvec(current_axis * rotation_per_second * time_duration)
         # Convert to quaternion vector (x,y,z,w format) and update control
@@ -380,9 +380,9 @@ class Contact:
         self.vitactip.global_rotation_over_big_step_quat.from_numpy(ori_control_quat)
         self.ori_error_magnitude_degrees[None] = np.rad2deg(current_angle_radians)
         
-        # print(f'current_ori: {current_ori.as_quat()}')
-        # print(f'target_ori: {target_ori.as_quat()}')
-        # print(f'ori_control: {ori_control.as_quat()}')
+        # print(f'current_ori: {current_ori.as_euler(seq="xyz", degrees=True)}')
+        # print(f'target_ori: {target_ori.as_euler(seq="xyz", degrees=True)}')
+        # print(f'ori_control: {ori_control.as_euler(seq="xyz", degrees=True)}')
         # print()
 
     @ti.kernel
@@ -436,7 +436,7 @@ class Contact:
                 self.vitactip.global_rotation_over_big_step_quat[None] = ti.Vector([0.0, 0.0, 0.0, 1.0])
 
     def pid_controller_3(self):
-        self.vitactip.global_rotation_over_big_step_matrix.from_numpy(R.from_quat(self.vitactip.global_rotation_over_big_step_quat.to_numpy()).as_matrix())
+        self.vitactip.global_rotation_over_1_time_step_matrix.from_numpy(R.from_quat(self.vitactip.global_rotation_over_big_step_quat.to_numpy()).as_matrix())
 
     @ti.kernel
     def take_snapshot(self, opts: ti.i32):
@@ -650,8 +650,8 @@ class Contact:
         floor += move_to_the_front_offset
         vitactip_bottom = self.vitactip.get_keypoint_coordinates(0, self.keypoint_indices[0].reshape((1,)))
         trajectory_keypoints = self.trajectory_npy[:, :3].copy()
-        vitactip_bottom += move_to_the_front_offset
-        trajectory_keypoints += move_to_the_front_offset
+        # vitactip_bottom += move_to_the_front_offset
+        # trajectory_keypoints += move_to_the_front_offset
         vitactip_clock_arms = self.vitactip.get_keypoint_coordinates(f=0, keypoint_indices=self.vitactip.clock_arms_node_idxs.to_numpy())
         self.keypoint_coords = np.vstack((vitactip_bottom, trajectory_keypoints, floor, vitactip_clock_arms))
 
@@ -737,7 +737,7 @@ def main():
 
         print('forward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames):
-            print(f'start of ts: {ts}')
+            # print(f'start of ts: {ts}')
             contact_model.pid_controller_1()
             contact_model.pid_controller_2(ts)
             contact_model.pid_controller_3()
