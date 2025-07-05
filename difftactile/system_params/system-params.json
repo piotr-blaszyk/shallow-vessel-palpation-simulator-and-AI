@@ -86,9 +86,9 @@
         "refine_mesh": 1
     },
     "geometry": {
-        "gap": 0.100,
+        "gap": 0.020,
         "phantom_orientation": [0, 0, 0],
-        "sensor_orientation": [0.0, 0.0, 0.0, 1.0],
+        "sensor_orientation": [0.0, 1.0, 0.0, 0.0],
         "phantom_h": 0.022,
         "phantom_r": 0.040,
         "distance_from_camera_lens_to_outer_shell_surface": 0.020

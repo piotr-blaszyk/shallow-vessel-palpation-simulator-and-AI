@@ -331,6 +331,20 @@ class ViTacTip:
         self.inverse_transformation_matrix[None] = self.local_transformation_matrix[None].inverse() @ self.world_transformation_matrix[None].inverse()
         
         self.set_up_pose_helper()
+    
+    def set_up_pose_print(self):
+        print()
+        print("\n=== Class Fields and Variables Used in set_up_pose ===")
+        print("\nClass Fields:")
+        print(f"local_rotation_matrix:\n{self.local_rotation_matrix[None]}")
+        print(f"world_rotation_matrix:\n{self.world_rotation_matrix[None]}")
+        print(f"homogeneous_rotation_matrix:\n{self.homogeneous_rotation_matrix[None]}")
+        print(f"inverse_rotation_matrix:\n{self.inverse_rotation_matrix[None]}")
+        print(f"local_transformation_matrix:\n{self.local_transformation_matrix[None]}")
+        print(f"world_transformation_matrix:\n{self.world_transformation_matrix[None]}")
+        print(f"homogeneous_transformation_matrix:\n{self.homogeneous_transformation_matrix[None]}")
+        print(f"inverse_transformation_matrix:\n{self.inverse_transformation_matrix[None]}")
+        print()
 
     @ti.kernel
     def extract_markers(self, frame_idx: ti.i32):
@@ -453,6 +467,31 @@ class ViTacTip:
         self.local_rotation_matrix[None] = self.local_rotation_over_big_step_matrix[None] @ self.local_rotation_matrix[None]
         self.homogeneous_rotation_matrix[None] = self.world_rotation_matrix[None] @ self.local_rotation_matrix[None]
         self.inverse_rotation_matrix[None] = self.homogeneous_rotation_matrix[None].inverse()
+
+    def set_pose_control_print(self):
+        print()
+        print("\n=== Class Fields and Variables Used in set_pose_control ===")
+        print("Class Fields:")
+        print(f"local_rotation_over_big_step_matrix:\n{self.local_rotation_over_big_step_matrix[None]}")
+        print(f"inverse_rotation_matrix:\n{self.inverse_rotation_matrix[None]}")
+        print(f"global_rotation_over_big_step_matrix:\n{self.global_rotation_over_big_step_matrix[None]}")
+        print(f"local_translational_velocity:\n{self.local_translational_velocity[None]}")
+        print(f"global_translational_velocity:\n{self.global_translational_velocity[None]}")
+        print(f"translation_vector:\n{self.translation_vector[None]}")
+        print(f"transformation_matrix:\n{self.transformation_matrix[None]}")
+        print(f"delta_transformation_matrix:\n{self.delta_transformation_matrix[None]}")
+        print(f"world_transformation_matrix:\n{self.world_transformation_matrix[None]}")
+        print(f"local_transformation_matrix:\n{self.local_transformation_matrix[None]}")
+        print(f"homogeneous_transformation_matrix:\n{self.homogeneous_transformation_matrix[None]}")
+        print(f"inverse_transformation_matrix:\n{self.inverse_transformation_matrix[None]}")
+        print(f"local_rotation_matrix:\n{self.local_rotation_matrix[None]}")
+        print(f"homogeneous_rotation_matrix:\n{self.homogeneous_rotation_matrix[None]}")
+        print(f"world_rotation_matrix:\n{self.world_rotation_matrix[None]}")
+        
+        print("\nSystem Parameters:")
+        print(f"SYSTEM_PARAMS.contact.dt:\n{SYSTEM_PARAMS.contact.dt}")
+        print(f"SYSTEM_PARAMS.contact.num_sub_frames:\n{SYSTEM_PARAMS.contact.num_sub_frames}")
+        print()
 
     @ti.kernel
     def set_pose_control_2_bp_unused(self):
