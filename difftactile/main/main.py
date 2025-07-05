@@ -122,12 +122,19 @@ class Contact:
             stiffness_tuple=None,
             tumour_present=tumour_present,
         )
-        x, y, z, xr, yr, zr, wr = self.vitactip_tip_pose
+        x, y, z = self.vitactip_tip_pose[:3]
+        quat = self.vitactip_tip_pose[3:]
+        og_r = R.from_quat(quat)
+        offset_1 = R.from_euler(seq='xyz', angles=[45, 0, 0], degrees=True)
+        offset_2 = R.from_euler(seq='xyz', angles=[-45, 0, 0], degrees=True)
+        tilt_1 = og_r * offset_1
+        tilt_2 = og_r * offset_2
+        tilt_1.as_quat()
         press_depth = SYSTEM_PARAMS.geometry.gap + 0.006
         self.trajectory_npy = np.array([
-            [x, y, z, xr, yr, zr, wr],
-            [x, y, z-press_depth, xr, yr, zr, wr],
-            [x, y+0.020, z-press_depth, xr, yr, zr, wr],
+            [x, y, z, *og_r.as_quat()],
+            [x, y, z, *tilt_1.as_quat()],
+            [x, y, z, *tilt_2.as_quat()],
         ], dtype=float)
         assert self.trajectory.shape[0] == self.trajectory_npy.shape[0], f"Set self.trajectory length to {self.trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(self.trajectory_npy)

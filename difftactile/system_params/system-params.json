@@ -86,7 +86,7 @@
         "refine_mesh": 1
     },
     "geometry": {
-        "gap": 0.020,
+        "gap": 0.030,
         "phantom_orientation": [0, 0, 0],
         "sensor_orientation": [0.0, 1.0, 0.0, 0.0],
         "phantom_h": 0.022,
