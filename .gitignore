@@ -17,3 +17,4 @@ experiment-capture-completed/
 saved_models/
 *.msh
 *.ini
+*.code-workspace

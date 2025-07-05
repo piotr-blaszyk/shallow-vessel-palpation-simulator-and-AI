@@ -268,8 +268,6 @@ class ViTacTip:
         ## control parameters
         # global_translational_velocity: global translational velocity in m/s
         self.global_translational_velocity = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
-        # global_angular_velocity_degrees: global angular velocity in degrees/s
-        self.global_quaternion_speed = ti.Vector.field(4, ti.f32, shape = (), needs_grad=True)
         self.current_orientation_quat = ti.Vector.field(4, ti.f32, shape = (), needs_grad=True)
 
         # local_translational_velocity: local translational velocity in m/s
@@ -433,19 +431,8 @@ class ViTacTip:
         for p in range(self.num_vertices):
             self.vertex_velocities[f, p] = self.vertex_control_velocities[p]
 
-    def set_pose_control_1(self):
-        rotation_over_1s = self.global_quaternion_speed[None].to_numpy()
-        q_start = R.from_quat([0, 0, 0, 1])
-        q_end = R.from_quat(rotation_over_1s)
-        key_times = [0, 1]
-        key_rots = R.concatenate([q_start, q_end])
-        slerp_interpolator = Slerp(key_times, key_rots)
-        time_per_frame = SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
-        quaternion_scaled = slerp_interpolator(time_per_frame).as_quat()
-        self.global_rotation_over_big_step.from_numpy(quaternion_scaled.as_matrix())
-
     @ti.kernel
-    def set_pose_control_2(self):
+    def set_pose_control(self):
         # this is in local coord
         self.local_rotation_over_big_step[None] = self.inverse_rotation_matrix[None] @ self.global_rotation_over_big_step[None]
 
@@ -495,9 +482,9 @@ class ViTacTip:
             self.total_surface_force[f] += 1/3 * self.contact_forces_on_vertices[f,c] * self.dx
 
     def compute_current_orientation(self):
-        rot_mat = self.homogeneous_rotation_matrix[None].to_numpy()
+        rot_mat = self.homogeneous_rotation_matrix.to_numpy()
         rotation_object = R.from_matrix(rot_mat)
-        self.current_orientation_quat[None].from_numpy(rotation_object.as_quat())
+        self.current_orientation_quat.from_numpy(rotation_object.as_quat())
 
     @ti.kernel
     def set_up_pose_helper(self):
