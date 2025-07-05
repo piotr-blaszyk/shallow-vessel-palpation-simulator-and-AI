@@ -370,7 +370,12 @@ class Contact:
         # Convert to quaternion vector (x,y,z,w format) and update control
         ori_control_quat = ori_control.as_quat()
         self.vitactip.global_rotation_over_big_step_quat.from_numpy(ori_control_quat)
-        self.ori_error_magnitude_degrees[None] = np.rad2deg(current_angle_radians)
+        self.ori_error_magnitude_degrees[None] = np.rad2deg(current_angle_radians)\
+        
+        print(f'current_ori: {current_ori.as_rotvec()}')
+        print(f'target_ori: {target_ori.as_rotvec()}')
+        print(f'ori_control: {ori_control.as_rotvec()}')
+        print()
 
     @ti.kernel
     def pid_controller_2(self, ts: ti.i32):

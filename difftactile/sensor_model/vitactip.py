@@ -307,8 +307,6 @@ class ViTacTip:
         self.translation_vector = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
         # transformation_matrix: 4x4 transformation matrix (dimensionless)
         self.transformation_matrix = ti.Matrix.field(4, 4, dtype=float, shape=(), needs_grad=False)
-        # rotation_matrix: 3x3 rotation matrix (dimensionless)
-        self.rotation_matrix = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
         self.global_rotation_over_big_step_matrix = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
         self.global_rotation_over_big_step_quat = ti.Vector.field(4, ti.f32, shape = (), needs_grad=True)
 
@@ -452,7 +450,7 @@ class ViTacTip:
         self.homogeneous_transformation_matrix[None] = self.world_transformation_matrix[None] @ self.local_transformation_matrix[None]
         self.inverse_transformation_matrix[None] = self.homogeneous_transformation_matrix[None].inverse()
 
-        self.local_rotation_matrix[None] = self.rotation_matrix[None] @ self.local_rotation_matrix[None]
+        self.local_rotation_matrix[None] = self.local_rotation_over_big_step_matrix[None] @ self.local_rotation_matrix[None]
         self.homogeneous_rotation_matrix[None] = self.world_rotation_matrix[None] @ self.local_rotation_matrix[None]
         self.inverse_rotation_matrix[None] = self.homogeneous_rotation_matrix[None].inverse()
 
