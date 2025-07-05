@@ -273,7 +273,7 @@ class ViTacTip:
         # local_translational_velocity: local translational velocity in m/s
         self.local_translational_velocity = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
         # local_angular_velocity: local angular velocity in degrees/s
-        self.local_rotation_over_big_step = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
+        self.local_rotation_over_big_step_matrix = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=True)
 
         # homogeneous_rotation_matrix: 3x3 rotation matrix (dimensionless)
         self.homogeneous_rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=True)
@@ -309,7 +309,8 @@ class ViTacTip:
         self.transformation_matrix = ti.Matrix.field(4, 4, dtype=float, shape=(), needs_grad=False)
         # rotation_matrix: 3x3 rotation matrix (dimensionless)
         self.rotation_matrix = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
-        self.global_rotation_over_big_step = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
+        self.global_rotation_over_big_step_matrix = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
+        self.global_rotation_over_big_step_quat = ti.Vector.field(4, ti.f32, shape = (), needs_grad=True)
 
     def set_up_pose(self, pose):
         # rotation_quaternion: rotation quaternion from Euler angles (dimensionless)
@@ -434,14 +435,16 @@ class ViTacTip:
     @ti.kernel
     def set_pose_control(self):
         # this is in local coord
-        self.local_rotation_over_big_step[None] = self.inverse_rotation_matrix[None] @ self.global_rotation_over_big_step[None]
+        self.local_rotation_over_big_step_matrix[None] = self.inverse_rotation_matrix[None] @ self.global_rotation_over_big_step_matrix[None]
 
         self.local_translational_velocity[None] = self.inverse_rotation_matrix[None] @ self.global_translational_velocity[None]
         self.translation_vector[None] = self.local_translational_velocity[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
 
         self.transformation_matrix[None] = ti.Matrix.identity(float, 4)
-        self.transformation_matrix[0:3, 0:3] = self.local_rotation_over_big_step[None]
-        self.transformation_matrix[0:3, 3] = self.translation_vector[None]
+        for i, j in ti.ndrange(3, 3):
+            self.transformation_matrix[None][i, j] = self.local_rotation_over_big_step_matrix[None][i, j]
+        for i in range(3):
+            self.transformation_matrix[None][i, 3] = self.translation_vector[None][i]
 
         self.delta_transformation_matrix[None] = self.world_transformation_matrix[None] @ self.transformation_matrix[None] @ (self.world_transformation_matrix[None].inverse())
 
@@ -456,7 +459,7 @@ class ViTacTip:
     @ti.kernel
     def set_pose_control_2_bp_unused(self):
 
-        rot_v = self.local_rotation_over_big_step[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
+        rot_v = self.local_rotation_over_big_step_matrix[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
         trans_v = self.local_translational_velocity[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
         trans_mat, rot_mat = self.eul2mat(rot_v, trans_v)
         self.delta_transformation_matrix[None] = self.world_transformation_matrix[None] @ trans_mat @ (self.world_transformation_matrix[None].inverse())
@@ -924,7 +927,6 @@ class ViTacTip:
 
         self.deformed_markers.grad.fill(0.0)
         self.global_translational_velocity.grad[None].fill(0.0)
-        self.global_quaternion_speed.grad[None].fill(0.0)
         self.homogeneous_rotation_matrix.grad[None].fill(0.0)
         self.local_rotation_matrix.grad[None].fill(0.0)
         self.inverse_rotation_matrix.grad[None].fill(0.0)

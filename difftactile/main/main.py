@@ -66,20 +66,7 @@ class Contact:
         self.ground_truth_labels = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_opt_steps,), needs_grad=False)
 
     def set_up_pid(self):
-        # PID controller parameters
-        self.pid_controller_kp = ti.field(dtype=float, shape=(), needs_grad=False)  # Proportional gain
-        self.pid_controller_ki = ti.field(dtype=float, shape=(), needs_grad=False)  # Integral gain
-        self.pid_controller_kd = ti.field(dtype=float, shape=(), needs_grad=False)  # Derivative gain
-        self.pid_controller_kp[None] = SYSTEM_PARAMS.contact.pid_kp
-        self.pid_controller_ki[None] = SYSTEM_PARAMS.contact.pid_ki
-        self.pid_controller_kd[None] = SYSTEM_PARAMS.contact.pid_kd
-
-        self.pid_controller_max_speed_translation = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.pid_controller_max_speed_rotation = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.pid_controller_max_speed_translation[None] = SYSTEM_PARAMS.contact.pid_max_speed_translation
-        self.pid_controller_max_speed_rotation[None] = SYSTEM_PARAMS.contact.pid_max_speed_rotation
-        
-        # Error accumulation for integral term
+# Error accumulation for integral term
         self.pos_error_sum = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
         # Previous error for derivative term
         self.prev_pos_error = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
@@ -154,9 +141,7 @@ class Contact:
     
     def reset_pid_controller(self):
         self.pos_error_sum.fill(0)
-        self.ori_error_sum.fill(0)
         self.prev_pos_error.fill(0)
-        self.prev_ori_error.fill(0)
         self.current_target_idx[None] = 0
         self.dwell_counter[None] = 0
         self.is_dwelling[None] = 0
@@ -370,7 +355,7 @@ class Contact:
         
         # Get axis and angle from the error rotation
         current_angle_radians = ori_error.magnitude()
-        current_axis = ori_error.as_rotvec() / (current_angle_radians if current_angle_radians < SYSTEM_PARAMS.contact.pid_angle_eps else 1.0)
+        current_axis = ori_error.as_rotvec() / (current_angle_radians if current_angle_radians > SYSTEM_PARAMS.contact.pid_angle_eps else 1.0)
         
         # Handle the case when angle is close to 0 or 2π
         if np.isclose(current_angle_radians % (2 * np.pi), 0) or np.isclose(current_angle_radians % (2 * np.pi), 2 * np.pi):
@@ -384,7 +369,7 @@ class Contact:
             ori_control = R.from_rotvec(current_axis * rotation_per_second * time_duration)
         # Convert to quaternion vector (x,y,z,w format) and update control
         ori_control_quat = ori_control.as_quat()
-        self.vitactip.global_rotation_over_big_step[None] = ti.Vector(ori_control_quat)
+        self.vitactip.global_rotation_over_big_step_quat.from_numpy(ori_control_quat)
         self.ori_error_magnitude_degrees[None] = np.rad2deg(current_angle_radians)
 
     @ti.kernel
@@ -419,13 +404,13 @@ class Contact:
 
         if self.is_dwelling[None] == 1 or target_reached_no_control:
             self.vitactip.global_translational_velocity[None] = ti.Vector([0.0, 0.0, 0.0])
-            self.vitactip.global_rotation_over_big_step[None] = ti.Vector([0.0, 0.0, 0.0, 1.0])
+            self.vitactip.global_rotation_over_big_step_quat[None] = ti.Vector([0.0, 0.0, 0.0, 1.0])
         else:
             self.pos_error_sum[None] += pos_error
             pos_derivative = pos_error - self.prev_pos_error[None]
             self.prev_pos_error[None] = pos_error
 
-            pos_control = self.pid_controller_kp[None] * pos_error + self.pid_controller_ki[None] * self.pos_error_sum[None] + self.pid_controller_kd[None] * pos_derivative
+            pos_control = SYSTEM_PARAMS.contact.pid_kp * pos_error + SYSTEM_PARAMS.contact.pid_ki * self.pos_error_sum[None] + SYSTEM_PARAMS.contact.pid_kd * pos_derivative
             max_speed_pos = SYSTEM_PARAMS.contact.pid_max_speed_translation
             pos_control_norm = pos_control.norm()
             if pos_control_norm > max_speed_pos:
@@ -435,7 +420,10 @@ class Contact:
                 self.vitactip.global_translational_velocity[None] = pos_control
             else:
                 self.vitactip.global_translational_velocity[None] = ti.Vector([0.0, 0.0, 0.0])
-                self.vitactip.global_rotation_over_big_step[None] = ti.Vector([0.0, 0.0, 0.0, 1.0])
+                self.vitactip.global_rotation_over_big_step_quat[None] = ti.Vector([0.0, 0.0, 0.0, 1.0])
+
+    def pid_controller_3(self):
+        self.vitactip.global_rotation_over_big_step_matrix.from_numpy(R.from_quat(self.vitactip.global_rotation_over_big_step_quat.to_numpy()).as_matrix())
 
     @ti.kernel
     def take_snapshot(self, opts: ti.i32):
@@ -692,7 +680,6 @@ class Contact:
         self.window.show()
 
     def forward_pass_common_part(self):
-        self.vitactip.set_pose_control_1()
         self.vitactip.set_pose_control()
         self.vitactip.set_control_vel(0)
         self.vitactip.set_vel(0)
@@ -738,6 +725,7 @@ def main():
         for ts in range(SYSTEM_PARAMS.contact.num_frames):
             contact_model.pid_controller_1()
             contact_model.pid_controller_2(ts)
+            contact_model.pid_controller_3()
             contact_model.forward_pass_common_part()
             contact_model.memory_to_cache(ts)
             contact_model.visualisation_update_gui(ts)
