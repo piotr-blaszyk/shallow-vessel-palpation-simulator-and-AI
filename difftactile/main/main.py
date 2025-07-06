@@ -31,7 +31,7 @@ class Contact:
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
         self.target_marker_positions = ti.Vector.field(
-            2, dtype=ti.f32, shape=(self.vitactip.num_markers, ), needs_grad=True
+            2, dtype=ti.f32, shape=(self.vitactip.num_markers, ), needs_grad=False
         )
         target_marker_positions_npy = np.ones(shape=(self.vitactip.num_markers, 2), dtype=float)
         self.target_marker_positions.from_numpy(target_marker_positions_npy)
@@ -712,6 +712,22 @@ class Contact:
         self.vitactip.set_pose_control_3.grad()
         self.vitactip.set_pose_control_2.grad()
         self.vitactip.set_pose_control_1.grad()
+    
+    def print_gradients(self):
+        print(f'loss: {self.loss.grad[None]}')
+        print(f'squared_error_sum: {self.squared_error_sum.grad[None]}')
+        print(f'deformed_markers: {self.vitactip.deformed_markers.grad[0]}')
+        print(f'vertices_deformed_A: {self.vitactip.vertices_deformed_A.grad[0, 0]}')
+        print(f'vertex_velocities: {self.vitactip.vertex_velocities.grad[0, 0]}')
+        print(f'contact_forces_on_vertices: {self.vitactip.contact_forces_on_vertices.grad[0, 0]}')
+        print(f'mu: {self.vitactip.mu.grad[0]}')
+        print(f'lam: {self.vitactip.lam.grad[0]}')
+        print(f'youngs_modulus: {self.vitactip.youngs_modulus.grad[0]}')
+        print(f'normal_stiffness: {self.normal_stiffness.grad[None]}')
+        print(f'normal_damping: {self.normal_damping.grad[None]}')
+        print(f'tangential_stiffness: {self.tangential_stiffness.grad[None]}')
+        print(f'coulomb_friction_coeff: {self.coulomb_friction_coeff.grad[None]}')
+        print()
 
 def main():
     if RUN_ON_LAB_MACHINE:
@@ -767,5 +783,7 @@ def main():
             contact_model.compute_marker_loss_1.grad(ts)
             contact_model.vitactip.extract_markers.grad(SYSTEM_PARAMS.contact.num_sub_frames-1)
             contact_model.backward_pass_common_part()
+            if ts == SYSTEM_PARAMS.contact.num_frames // 2:
+                contact_model.print_gradients()
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps-1} done")
     print("all done")
