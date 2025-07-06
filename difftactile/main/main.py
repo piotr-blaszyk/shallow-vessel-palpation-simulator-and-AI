@@ -208,7 +208,7 @@ class Contact:
         self.clear_traj_grad()
         self.vitactip.clear_step_grad(SYSTEM_PARAMS.contact.num_sub_frames)
         self.phantom.clear_step_grad(SYSTEM_PARAMS.contact.num_sub_frames)
-
+    
     def reset(self):
         self.vitactip.reset()
         self.phantom.reset()
