@@ -31,7 +31,7 @@ class Contact:
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
         self.target_marker_positions = ti.Vector.field(
-            2, dtype=ti.f32, shape=(self.vitactip.num_markers, ), needs_grad=False
+            2, dtype=ti.f32, shape=(self.vitactip.num_markers, ), needs_grad=True
         )
         target_marker_positions_npy = np.ones(shape=(self.vitactip.num_markers, 2), dtype=float)
         self.target_marker_positions.from_numpy(target_marker_positions_npy)
@@ -47,7 +47,8 @@ class Contact:
                 SYSTEM_PARAMS.phantom.n_grid_x,
                 SYSTEM_PARAMS.phantom.n_grid_y,
                 SYSTEM_PARAMS.phantom.n_grid_z,
-            ),
+            ), 
+            needs_grad=True
         )
 
     def set_up_system_params(self):
@@ -61,31 +62,31 @@ class Contact:
         self.coulomb_friction_coeff[None] = SYSTEM_PARAMS.contact.coulomb_friction_coeff
 
     def set_up_snapshot(self):        # Allocate snapshot fields (SYSTEM_PARAMS.contact.num_opt_steps, num_markers, 2)
-        self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
-        self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
-        self.ground_truth_labels = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_opt_steps,), needs_grad=False)
+        self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=True)
+        self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=True)
+        self.ground_truth_labels = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_opt_steps,), needs_grad=True)
 
     def set_up_pid(self):
 # Error accumulation for integral term
-        self.pos_error_sum = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
+        self.pos_error_sum = ti.Vector.field(3, dtype=float, shape=(), needs_grad=True)
         # Previous error for derivative term
-        self.prev_pos_error = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
+        self.prev_pos_error = ti.Vector.field(3, dtype=float, shape=(), needs_grad=True)
 
         # Add fields to track current target and control state
-        self.current_target_idx = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.current_target_idx = ti.field(dtype=int, shape=(), needs_grad=True)
         self.current_target_idx[None] = 0
-        self.ori_error_magnitude_degrees = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.ori_error_magnitude_degrees = ti.field(dtype=float, shape=(), needs_grad=True)
         
         # Add fields for dwell time control
-        self.dwell_frames = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.dwell_frames = ti.field(dtype=int, shape=(), needs_grad=True)
         self.dwell_frames[None] = SYSTEM_PARAMS.contact.dwell_frames # Number of frames to stay at each target
-        self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=True)
         self.dwell_counter[None] = 0
-        self.is_dwelling = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.is_dwelling = ti.field(dtype=int, shape=(), needs_grad=True)
         self.is_dwelling[None] = 0
-        self.last_target_reached = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.last_target_reached = ti.field(dtype=int, shape=(), needs_grad=True)
         self.last_target_reached[None] = 0
-        self.frames_since_last_target_reached = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.frames_since_last_target_reached = ti.field(dtype=int, shape=(), needs_grad=True)
         self.frames_since_last_target_reached[None] = 0
 
     def set_up_initial_positions_and_trajectory_first_init_only(self):
@@ -97,10 +98,10 @@ class Contact:
         self.max_coord_y = SYSTEM_PARAMS_COMPUTED.max_coord_y
         self.max_coord_z = SYSTEM_PARAMS_COMPUTED.max_coord_z
 
-        self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
-        self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
-        self.trajectory = ti.Vector.field(7, dtype=float, shape=3, needs_grad=False)
-        self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=True)
+        self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=True)
+        self.trajectory = ti.Vector.field(7, dtype=float, shape=3, needs_grad=True)
+        self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=True)
         self.tumour_present[None] = 0
     
     def set_up_keypoints(self):
@@ -493,38 +494,38 @@ class Contact:
         # print('mesh node mapping exported!')
     
     def visualisation_initialise(self):
-        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(9,), needs_grad=False)
-        self.key_points_per_vertex_color = ti.Vector.field(3, dtype=ti.f32, shape=(9,), needs_grad=False)
+        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(9,), needs_grad=True)
+        self.key_points_per_vertex_color = ti.Vector.field(3, dtype=ti.f32, shape=(9,), needs_grad=True)
         self.sensor_points = ti.Vector.field(
-            3, dtype=float, shape=(self.vitactip.num_vertices)
+            3, dtype=float, shape=(self.vitactip.num_vertices), needs_grad=True
         )
         self.healthy_tissue_points = ti.Vector.field(
-            3, dtype=float, shape=(self.phantom.actual_total_num_particles,)
+            3, dtype=float, shape=(self.phantom.actual_total_num_particles,), needs_grad=True
         )
         self.tumour_points = ti.Vector.field(
-            3, dtype=float, shape=(self.phantom.actual_total_num_particles,)
+            3, dtype=float, shape=(self.phantom.actual_total_num_particles,), needs_grad=True
         )
         self.healthy_tissue_points_von_mises_stress = ti.field(
-            dtype=float, shape=(self.phantom.actual_total_num_particles,)
+            dtype=float, shape=(self.phantom.actual_total_num_particles,), needs_grad=True
         )
         self.tumour_points_von_mises_stress = ti.field(
-            dtype=float, shape=(self.phantom.actual_total_num_particles,)
+            dtype=float, shape=(self.phantom.actual_total_num_particles,), needs_grad=True
         )
         
         # Initialize fields for tactile readout visualization
         # For marker points and their deformed positions
-        self.marker_points = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers,))
-        self.marker_offsets = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers,))
+        self.marker_points = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=True)
+        self.marker_offsets = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=True)
         
         # For arrow lines (each arrow needs start and end point)
-        self.arrow_line_vertices = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers * 2,))
+        self.arrow_line_vertices = ti.Vector.field(2, dtype=float, shape=(self.vitactip.num_markers * 2,), needs_grad=True)
         
         # For clock arm points
-        self.clock_arm_points = ti.Vector.field(2, dtype=float, shape=(2,))
-        self.clock_arm_points_per_vertex_color = ti.Vector.field(3, dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.clock_arm_points = ti.Vector.field(2, dtype=float, shape=(2,), needs_grad=True)
+        self.clock_arm_points_per_vertex_color = ti.Vector.field(3, dtype=ti.f32, shape=(2,), needs_grad=True)
         
         # Window size field for tactile readout
-        self.window_size = ti.Vector.field(2, dtype=float, shape=())
+        self.window_size = ti.Vector.field(2, dtype=float, shape=(), needs_grad=True)
         self.window_size[None] = [640.0, 480.0]
 
     @ti.kernel

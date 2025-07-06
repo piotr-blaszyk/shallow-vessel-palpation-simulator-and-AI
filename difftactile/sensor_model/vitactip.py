@@ -29,9 +29,9 @@ class ViTacTip:
     
     def set_up_system_params(self):
         # Material parameters for all materials
-        self.mass_density = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
+        self.mass_density = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
         self.youngs_modulus = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
         self.mu = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
         self.lam = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
 
@@ -62,17 +62,17 @@ class ViTacTip:
                           ((1 + self.poissons_ratio[i]) * (1 - 2 * self.poissons_ratio[i])))
             
         # Add Rayleigh damping coefficients
-        self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)  # mass damping coefficient
-        self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)   # stiffness damping coefficient
+        self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=True)  # mass damping coefficient
+        self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=True)   # stiffness damping coefficient
         
         # Set default values (these should be tuned based on your specific needs)
         self.rayleigh_damping_alpha[None] = SYSTEM_PARAMS.vitactip.rayleigh_damping_alpha  # typical values range from 0 to 0.1
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.vitactip.rayleigh_damping_beta  # typical values range from 0.001 to 0.01
 
         # Add hourglass control parameters
-        self.hourglass_enabled = ti.field(dtype=ti.i32, shape=(), needs_grad=False)
-        self.hourglass_coefficient = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.hourglass_modulus_scale = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.hourglass_enabled = ti.field(dtype=ti.i32, shape=(), needs_grad=True)
+        self.hourglass_coefficient = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
+        self.hourglass_modulus_scale = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         
         # Set hourglass control parameters from config
         self.hourglass_enabled[None] = SYSTEM_PARAMS.vitactip.hourglass_control.enabled
@@ -86,7 +86,7 @@ class ViTacTip:
         
         # Unpack mesh data
         self.dome_surface_node_tags_npy = mesh_data['dome_surface_node_tags']
-        self.dome_surface_node_tags = ti.field(dtype=int, shape=(self.dome_surface_node_tags_npy.shape[0],), needs_grad=False)
+        self.dome_surface_node_tags = ti.field(dtype=int, shape=(self.dome_surface_node_tags_npy.shape[0],), needs_grad=True)
         self.dome_surface_node_tags.from_numpy(self.dome_surface_node_tags_npy)
         self.surface_node_tags_npy = mesh_data['surface_node_tags']
         all_tetrahedra = mesh_data['all_tetrahedra']
@@ -149,7 +149,7 @@ class ViTacTip:
         self.element_materials_npy = element_materials
         self.vertex_masses_npy = vertex_masses
         
-        self.is_fixed_layer = ti.field(int, len(self.node_coordinates))
+        self.is_fixed_layer = ti.field(int, len(self.node_coordinates), needs_grad=True)
         is_fixed_layer_data = self.node_labels[:,-1].astype(np.int32)
         self.is_fixed_layer.from_numpy(is_fixed_layer_data)
         
@@ -157,24 +157,24 @@ class ViTacTip:
         self.num_tetrahedra = len(self.tetrahedra_npy)
         self.num_contact_surface_triangles = len(self.outer_surface_triangles)
 
-        self.element_materials = ti.field(dtype=ti.i32, shape=(self.num_tetrahedra,), needs_grad=False)
-        self.vertex_mass = ti.field(dtype=ti.f32, shape=(self.num_vertices,), needs_grad=False)
+        self.element_materials = ti.field(dtype=ti.i32, shape=(self.num_tetrahedra,), needs_grad=True)
+        self.vertex_mass = ti.field(dtype=ti.f32, shape=(self.num_vertices,), needs_grad=True)
         self.element_materials.from_numpy(self.element_materials_npy)
         self.vertex_mass.from_numpy(self.vertex_masses_npy)
 
-        self.vertex_positions_local_initial = ti.Vector.field(3, float, self.num_vertices, needs_grad=False)
+        self.vertex_positions_local_initial = ti.Vector.field(3, float, self.num_vertices, needs_grad=True)
         self.vertex_positions_local_initial.from_numpy(self.node_coordinates.astype(np.float32))
 
-        self.tetrahedra = ti.Vector.field(4, int, self.num_tetrahedra)
+        self.tetrahedra = ti.Vector.field(4, int, self.num_tetrahedra, needs_grad=True)
         self.tetrahedra.from_numpy(self.tetrahedra_npy.astype(np.int32))
-        self.contact_surface = ti.Vector.field(3, int, self.num_contact_surface_triangles) # surface triangle mesh
+        self.contact_surface = ti.Vector.field(3, int, self.num_contact_surface_triangles, needs_grad=True) # surface triangle mesh
         self.contact_surface.from_numpy(self.outer_surface_triangles.astype(np.int32))
 
-        self.projection_2d_dome_surface_nodes_deformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=False)
-        self.projection_2d_dome_surface_nodes_undeformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=False)
+        self.projection_2d_dome_surface_nodes_deformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=True)
+        self.projection_2d_dome_surface_nodes_undeformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=True)
 
-        self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=False)
-        self.projection_2d_clock_arms = ti.Vector.field(2, float, (2,), needs_grad=False)
+        self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=True)
+        self.projection_2d_clock_arms = ti.Vector.field(2, float, (2,), needs_grad=True)
 
     @ti.kernel
     def project_surface_nodes_to_2d(self, surface_nodes: ti.types.ndarray(), output_projections: ti.types.ndarray()):
@@ -239,13 +239,13 @@ class ViTacTip:
 
         self.marker_interpolation_weights = ti.Vector.field(self.marker_interpolation_knn_k, float, self.num_markers, needs_grad=True)
         self.marker_interpolation_weights.from_numpy(marker_interpolation_weights.astype(np.float32))
-        self.marker_interpolation_indices = ti.Vector.field(self.marker_interpolation_knn_k, int, self.num_markers)
+        self.marker_interpolation_indices = ti.Vector.field(self.marker_interpolation_knn_k, int, self.num_markers, needs_grad=True)
         self.marker_interpolation_indices.from_numpy(marker_interpolation_indices.astype(np.int32))
 
     def set_up_physical_state(self):
         # vertex_positions_ideal: ideal/undeformed vertex positions in m
         self.vertices_undeformed_A = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=True)
-        self.vertices_B = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
+        self.vertices_B = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=True)
         # vertex_positions_deformed: current deformed vertex positions in m
         self.vertices_deformed_A = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=True)
         # vertex_velocities: vertex velocities in m/s
@@ -278,7 +278,7 @@ class ViTacTip:
         # homogeneous_rotation_matrix: 3x3 rotation matrix (dimensionless)
         self.R_BA = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=True)
         # world_rotation_matrix: world coordinate rotation matrix (dimensionless)
-        self.R_CA = ti.Matrix.field(3, 3, ti.f32, shape = ())
+        self.R_CA = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=True)
         # local_rotation_matrix: local coordinate rotation matrix (dimensionless)
         self.R_BC = ti.Matrix.field(3, 3, ti.f32, shape = (), needs_grad=True)
         # inverse_rotation_matrix: inverse of rotation matrix (dimensionless)
@@ -287,7 +287,7 @@ class ViTacTip:
         # homogeneous_transformation_matrix: 4x4 homogeneous transformation matrix (dimensionless)
         self.T_BA = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=True)
         # world_transformation_matrix: world coordinate transformation matrix (dimensionless)
-        self.T_CA = ti.Matrix.field(4, 4, ti.f32, shape = ())
+        self.T_CA = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=True)
         # local_transformation_matrix: local coordinate transformation matrix (dimensionless)
         self.T_BC = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=True)
         # inverse_transformation_matrix: inverse of transformation matrix (dimensionless)
@@ -303,8 +303,8 @@ class ViTacTip:
         self.simulation_cache = dict() # for grad backward
 
         # translation_vector: translation vector in m
-        self.translation_CD = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
-        self.R_A = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
+        self.translation_CD = ti.Vector.field(3, dtype=float, shape=(), needs_grad=True)
+        self.R_A = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=True)
         self.R_A_quat = ti.Vector.field(4, ti.f32, shape = (), needs_grad=True)
 
     def set_up_pose(self, pose):
