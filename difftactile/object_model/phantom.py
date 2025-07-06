@@ -486,30 +486,32 @@ class Phantom:
     
     @ti.kernel
     def clear_loss_grad(self):
-        self.youngs_modulus_0.grad.fill(0.0)
-        self.poissons_ratio_0.grad.fill(0.0)
-        self.lamda_0.grad.fill(0.0)
-        self.mu_0.grad.fill(0.0)
+        pass
+        # self.youngs_modulus_0.grad.fill(0.0)
+        # self.poissons_ratio_0.grad.fill(0.0)
+        # self.lamda_0.grad.fill(0.0)
+        # self.mu_0.grad.fill(0.0)
 
     @ti.kernel
     def clear_step_grad(self, f:ti.i32):
-        self.grid_node_momentum_in.grad.fill(0.0)
-        self.grid_node_velocity_out.grad.fill(0.0)
-        self.grid_node_mass.grad.fill(0.0)
-        self.grid_node_external_impulse.grad.fill(0.0)
-        self.trial_deformation_gradient.grad.fill(0.0)
-        self.U_svd.grad.fill(0.0)
-        self.V_svd.grad.fill(0.0)
-        self.S_svd.grad.fill(0.0)
-        for p in range(self.actual_total_num_particles):
-            for t in range(f):
-                self.particle_position.grad[t,p].fill(0.0)
-                self.particle_velocity.grad[t,p].fill(0.0)
-                self.affine_velocity_field.grad[t,p].fill(0.0)
-                self.deformation_gradient.grad[t,p].fill(0.0)
+        pass
+        # self.grid_node_momentum_in.grad.fill(0.0)
+        # self.grid_node_velocity_out.grad.fill(0.0)
+        # self.grid_node_mass.grad.fill(0.0)
+        # self.grid_node_external_impulse.grad.fill(0.0)
+        # self.trial_deformation_gradient.grad.fill(0.0)
+        # self.U_svd.grad.fill(0.0)
+        # self.V_svd.grad.fill(0.0)
+        # self.S_svd.grad.fill(0.0)
+        # for p in range(self.actual_total_num_particles):
+        #     for t in range(f):
+        #         self.particle_position.grad[t,p].fill(0.0)
+        #         self.particle_velocity.grad[t,p].fill(0.0)
+        #         self.affine_velocity_field.grad[t,p].fill(0.0)
+        #         self.deformation_gradient.grad[t,p].fill(0.0)
 
-        for t in range(f):
-            self.total_surface_external_force.grad[t].fill(0.0) 
+        # for t in range(f):
+        #     self.total_surface_external_force.grad[t].fill(0.0) 
 
     def get_keypoint_index(self) -> int:
         """

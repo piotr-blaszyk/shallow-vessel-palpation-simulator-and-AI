@@ -1000,30 +1000,31 @@ class ViTacTip:
         """
         Clear gradients of all loss-related fields.
         """
-        self.youngs_modulus.grad.fill(0.0)
-        self.mu.grad.fill(0.0)
-        self.lam.grad.fill(0.0)
+        # self.youngs_modulus.grad.fill(0.0)
+        # self.mu.grad.fill(0.0)
+        # self.lam.grad.fill(0.0)
 
         self.deformed_markers.grad.fill(0.0)
-        self.translation_A.grad[None].fill(0.0)
-        self.R_BA.grad[None].fill(0.0)
-        self.R_BC.grad[None].fill(0.0)
-        self.R_AB.grad[None].fill(0.0)
-        self.T_BA.grad[None].fill(0.0)
-        self.T_BC.grad[None].fill(0.0)
-        self.T_AB.grad[None].fill(0.0)
-        self.T_CD.grad[None].fill(0.0)
-        self.vertex_control_velocities.grad.fill(0.0)
+        # self.translation_A.grad[None].fill(0.0)
+        # self.R_BA.grad[None].fill(0.0)
+        # self.R_BC.grad[None].fill(0.0)
+        # self.R_AB.grad[None].fill(0.0)
+        # self.T_BA.grad[None].fill(0.0)
+        # self.T_BC.grad[None].fill(0.0)
+        # self.T_AB.grad[None].fill(0.0)
+        # self.T_CD.grad[None].fill(0.0)
+        # self.vertex_control_velocities.grad.fill(0.0)
 
     @ti.kernel
     def clear_step_grad(self, f:ti.i32):
-        self.total_surface_force.grad.fill(0.0)
-        self.contact_forces_on_vertices.grad.fill(0.0)
-        for p in range(self.num_vertices):
-            for t in range(f):
-                self.vertices_deformed_A.grad[t, p].fill(0.0)
-                self.vertex_velocities.grad[t, p].fill(0.0)
-                self.vertices_undeformed_A.grad[t, p].fill(0.0)
+        pass
+        # self.total_surface_force.grad.fill(0.0)
+        # self.contact_forces_on_vertices.grad.fill(0.0)
+        # for p in range(self.num_vertices):
+        #     for t in range(f):
+        #         self.vertices_deformed_A.grad[t, p].fill(0.0)
+        #         self.vertex_velocities.grad[t, p].fill(0.0)
+        #         self.vertices_undeformed_A.grad[t, p].fill(0.0)
     
 ###############################################################################
 

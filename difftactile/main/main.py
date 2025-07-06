@@ -182,20 +182,21 @@ class Contact:
 
     @ti.kernel
     def clamp_grid(self, f: ti.i32):
-        for i in range(self.vitactip.num_vertices):
-            self.vitactip.vertices_deformed_A.grad[f, i] = ti.math.clamp(
-                self.vitactip.vertices_deformed_A.grad[f, i], -1000.0, 1000.0
-            )
-            self.vitactip.vertex_velocities.grad[f, i] = ti.math.clamp(
-                self.vitactip.vertex_velocities.grad[f, i], -1000.0, 1000.0
-            )
+        pass
+        # for i in range(self.vitactip.num_vertices):
+        #     self.vitactip.vertices_deformed_A.grad[f, i] = ti.math.clamp(
+        #         self.vitactip.vertices_deformed_A.grad[f, i], -1000.0, 1000.0
+        #     )
+        #     self.vitactip.vertex_velocities.grad[f, i] = ti.math.clamp(
+        #         self.vitactip.vertex_velocities.grad[f, i], -1000.0, 1000.0
+        #     )
     
     @ti.kernel
     def clear_loss_grad(self):
-        self.normal_stiffness.grad[None] = 0.0
-        self.normal_damping.grad[None] = 0.0
-        self.tangential_stiffness.grad[None] = 0.0
-        self.coulomb_friction_coeff.grad[None] = 0.0
+        # self.normal_stiffness.grad[None] = 0.0
+        # self.normal_damping.grad[None] = 0.0
+        # self.tangential_stiffness.grad[None] = 0.0
+        # self.coulomb_friction_coeff.grad[None] = 0.0
 
         self.loss[None] = 0.0
         self.loss.grad[None] = 1.0
@@ -716,17 +717,17 @@ class Contact:
     def print_gradients(self):
         print(f'loss: {self.loss.grad[None]}')
         print(f'squared_error_sum: {self.squared_error_sum.grad[None]}')
-        print(f'deformed_markers: {self.vitactip.deformed_markers.grad[0]}')
-        print(f'vertices_deformed_A: {self.vitactip.vertices_deformed_A.grad[SYSTEM_PARAMS.contact.num_sub_frames//2, 0]}')
-        print(f'vertex_velocities: {self.vitactip.vertex_velocities.grad[SYSTEM_PARAMS.contact.num_sub_frames-1, 0]}')
-        print(f'contact_forces_on_vertices: {self.vitactip.contact_forces_on_vertices.grad[SYSTEM_PARAMS.contact.num_sub_frames-1, 0]}')
-        print(f'mu: {self.vitactip.mu.grad[0]}')
-        print(f'lam: {self.vitactip.lam.grad[0]}')
-        print(f'youngs_modulus: {self.vitactip.youngs_modulus.grad[0]}')
-        print(f'normal_stiffness: {self.normal_stiffness.grad[None]}')
-        print(f'normal_damping: {self.normal_damping.grad[None]}')
-        print(f'tangential_stiffness: {self.tangential_stiffness.grad[None]}')
-        print(f'coulomb_friction_coeff: {self.coulomb_friction_coeff.grad[None]}')
+        print(f'deformed_markers max: {self.vitactip.deformed_markers.grad.to_numpy().max()}')
+        # print(f'vertices_deformed_A: {self.vitactip.vertices_deformed_A.grad[SYSTEM_PARAMS.contact.num_sub_frames//2, 0]}')
+        # print(f'vertex_velocities: {self.vitactip.vertex_velocities.grad[SYSTEM_PARAMS.contact.num_sub_frames-1, 0]}')
+        # print(f'contact_forces_on_vertices: {self.vitactip.contact_forces_on_vertices.grad[SYSTEM_PARAMS.contact.num_sub_frames-1, 0]}')
+        # print(f'mu: {self.vitactip.mu.grad[0]}')
+        # print(f'lam: {self.vitactip.lam.grad[0]}')
+        # print(f'youngs_modulus: {self.vitactip.youngs_modulus.grad[0]}')
+        # print(f'normal_stiffness: {self.normal_stiffness.grad[None]}')
+        # print(f'normal_damping: {self.normal_damping.grad[None]}')
+        # print(f'tangential_stiffness: {self.tangential_stiffness.grad[None]}')
+        # print(f'coulomb_friction_coeff: {self.coulomb_friction_coeff.grad[None]}')
         print()
 
 def main():
