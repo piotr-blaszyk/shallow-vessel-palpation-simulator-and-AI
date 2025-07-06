@@ -211,6 +211,7 @@ class Contact:
         self.vitactip.clear_step_grad(SYSTEM_PARAMS.contact.num_sub_frames)
         self.phantom.clear_step_grad(SYSTEM_PARAMS.contact.num_sub_frames)
     
+    @ti.kernel
     def reset(self):
         self.vitactip.reset()
         self.phantom.reset()

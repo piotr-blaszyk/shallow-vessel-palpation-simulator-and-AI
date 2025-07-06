@@ -630,6 +630,7 @@ class ViTacTip:
         is_contact = signed_distance < 0 and barycentric_u >= 0 and barycentric_v >= 0.0 and (barycentric_u + barycentric_v <= 1)
         return signed_distance, surface_normal, relative_velocity, is_contact
 
+    @ti.func
     def reset(self):
         self.contact_forces_on_vertices.fill(0.0)
         self.total_surface_force.fill(0.0)

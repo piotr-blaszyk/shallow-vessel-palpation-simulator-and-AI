@@ -203,6 +203,7 @@ class Phantom:
             self.particle_velocity[0,i] = ti.Matrix([self.initial_velocity[None][0], self.initial_velocity[None][1], self.initial_velocity[None][2]])
             self.deformation_gradient[0,i] = ti.Matrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
 
+    @ti.func
     def reset(self):
         self.grid_node_momentum_in.fill(0.0)
         self.grid_node_velocity_out.fill(0.0)
