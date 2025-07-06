@@ -431,18 +431,23 @@ class ViTacTip:
             self.vertex_velocities[f, p] = self.vertex_control_velocities[p]
 
     @ti.kernel
-    def set_pose_control(self):
+    def set_pose_control_1(self):
         self.R_CD[None] = self.R_CA[None].transpose() @ self.R_A[None] @ self.R_CA[None]
         self.translation_CD[None] = self.R_CA[None].transpose() @ self.translation_A[None]
 
         self.translation_CD[None] = self.translation_CD[None] * SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames -1)
 
         self.T_CD[None] = ti.Matrix.identity(float, 4)
+    
+    @ti.kernel
+    def set_pose_control_2(self):
         for i, j in ti.ndrange(3, 3):
             self.T_CD[None][i, j] = self.R_CD[None][i, j]
         for i in range(3):
             self.T_CD[None][i, 3] = self.translation_CD[None][i]
 
+    @ti.kernel
+    def set_pose_control_3(self):
         self.T_A[None] = self.T_CA[None] @ self.T_CD[None] @ self.T_CA[None].inverse()
 
         self.T_BC[None] = self.T_CD[None] @ self.T_BC[None]

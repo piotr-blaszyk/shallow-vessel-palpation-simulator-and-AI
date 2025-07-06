@@ -213,6 +213,7 @@ class Contact:
         self.vitactip.reset_contact()
         self.phantom.reset()
         self.contact_idx.fill(-1)
+        self.squared_error_sum.fill(0.0)
     
     @ti.kernel
     def compute_marker_loss_1(self, f: ti.i32):
@@ -229,7 +230,6 @@ class Contact:
     def compute_marker_loss_2(self, f: ti.i32):
         rmse = ti.sqrt(self.squared_error_sum[None] / self.vitactip.num_markers)
         self.loss[None] += rmse
-        self.squared_error_sum.fill(0.0)
 
     @ti.func
     def calculate_contact_force(self, signed_distance, surface_normal, relative_velocity):
@@ -694,7 +694,9 @@ class Contact:
         self.window.show()
 
     def forward_pass_common_part(self):
-        self.vitactip.set_pose_control()
+        self.vitactip.set_pose_control_1()
+        self.vitactip.set_pose_control_2()
+        self.vitactip.set_pose_control_3()
         # self.vitactip.set_pose_control_print()
         self.vitactip.set_control_vel(0)
         self.vitactip.set_vel(0)
@@ -707,7 +709,9 @@ class Contact:
             self.update_grad(ss)
         self.vitactip.set_vel.grad(0)
         self.vitactip.set_control_vel.grad(0)
-        self.vitactip.set_pose_control.grad()
+        self.vitactip.set_pose_control_3.grad()
+        self.vitactip.set_pose_control_2.grad()
+        self.vitactip.set_pose_control_1.grad()
 
 def main():
     if RUN_ON_LAB_MACHINE:
@@ -720,7 +724,7 @@ def main():
     contact_model.save_tactile_sensor_mesh_node_mapping_to_pickle()
     
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
-        print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps}")
+        print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps-1}")
         contact_model.set_up_initial_positions_and_trajectory()
         contact_model.reset_pid_controller()
         contact_model.visualisation_reset_3d_scene()
@@ -738,7 +742,6 @@ def main():
 
         print('forward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames):
-            # print(f'start of ts: {ts}')
             contact_model.pid_controller_1()
             contact_model.pid_controller_2(ts)
             contact_model.pid_controller_3()
@@ -749,9 +752,6 @@ def main():
             if ts % 100 == 0:
                 contact_model.take_snapshot(opts)
                 contact_model.save_tactile_sensor_mesh_to_pickle(ts)
-            
-            # if ts == 1:
-            #     sys.exit()
 
         print('backward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames-1, -1, -1):
@@ -767,7 +767,5 @@ def main():
             contact_model.compute_marker_loss_1.grad(ts)
             contact_model.vitactip.extract_markers.grad(SYSTEM_PARAMS.contact.num_sub_frames-1)
             contact_model.backward_pass_common_part()
-            
-
-if __name__ == "__main__":
-    main()
+        print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps-1} done")
+    print("all done")
