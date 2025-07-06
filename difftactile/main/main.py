@@ -182,8 +182,8 @@ class Contact:
     @ti.kernel
     def clamp_grid(self, f: ti.i32):
         for i in range(self.vitactip.num_vertices):
-            self.vitactip.vertex_positions_deformed_global_coordinates.grad[f, i] = ti.math.clamp(
-                self.vitactip.vertex_positions_deformed_global_coordinates.grad[f, i], -1000.0, 1000.0
+            self.vitactip.vertices_deformed_A.grad[f, i] = ti.math.clamp(
+                self.vitactip.vertices_deformed_A.grad[f, i], -1000.0, 1000.0
             )
             self.vitactip.vertex_velocities.grad[f, i] = ti.math.clamp(
                 self.vitactip.vertex_velocities.grad[f, i], -1000.0, 1000.0
@@ -352,7 +352,7 @@ class Contact:
     def pid_controller_1(self):
         self.vitactip.compute_current_orientation()
         # Convert current orientation to scipy Rotation
-        current_ori = R.from_quat(self.vitactip.current_orientation_quat.to_numpy())
+        current_ori = R.from_quat(self.vitactip.R_CA_quat.to_numpy())
         # Get target orientation from trajectory
         target = self.trajectory.to_numpy()[self.current_target_idx[None]]
         target_ori = R.from_quat(target[3:])
@@ -377,7 +377,7 @@ class Contact:
             ori_control = R.from_rotvec(current_axis * rotation_per_second * time_duration)
         # Convert to quaternion vector (x,y,z,w format) and update control
         ori_control_quat = ori_control.as_quat()
-        self.vitactip.global_rotation_over_big_step_quat.from_numpy(ori_control_quat)
+        self.vitactip.R_A_quat.from_numpy(ori_control_quat)
         self.ori_error_magnitude_degrees[None] = np.rad2deg(current_angle_radians)
         
         # print(f'current_ori: {current_ori.as_euler(seq="xyz", degrees=True)}')
@@ -387,7 +387,7 @@ class Contact:
 
     @ti.kernel
     def pid_controller_2(self, ts: ti.i32):
-        current_pos = self.vitactip.vertex_positions_undeformed_global_coordinates[0, self.keypoint_indices[0]]
+        current_pos = self.vitactip.vertices_undeformed_A[0, self.keypoint_indices[0]]
         target = self.trajectory[self.current_target_idx[None]]
         target_pos = ti.Vector([target[0], target[1], target[2]])
         pos_error = target_pos - current_pos
@@ -416,8 +416,8 @@ class Contact:
                     self.last_target_reached[None] = 1
 
         if self.is_dwelling[None] == 1 or target_reached_no_control:
-            self.vitactip.global_translational_velocity[None] = ti.Vector([0.0, 0.0, 0.0])
-            self.vitactip.global_rotation_over_big_step_quat[None] = ti.Vector([0.0, 0.0, 0.0, 1.0])
+            self.vitactip.translation_A[None] = ti.Vector([0.0, 0.0, 0.0])
+            self.vitactip.R_A_quat[None] = ti.Vector([0.0, 0.0, 0.0, 1.0])
         else:
             self.pos_error_sum[None] += pos_error
             pos_derivative = pos_error - self.prev_pos_error[None]
@@ -430,13 +430,13 @@ class Contact:
                 pos_control = pos_control / pos_control_norm * max_speed_pos
 
             if SYSTEM_PARAMS.meta.enable_pid_controller == 1:
-                self.vitactip.global_translational_velocity[None] = pos_control
+                self.vitactip.translation_A[None] = pos_control
             else:
-                self.vitactip.global_translational_velocity[None] = ti.Vector([0.0, 0.0, 0.0])
-                self.vitactip.global_rotation_over_big_step_quat[None] = ti.Vector([0.0, 0.0, 0.0, 1.0])
+                self.vitactip.translation_A[None] = ti.Vector([0.0, 0.0, 0.0])
+                self.vitactip.R_A_quat[None] = ti.Vector([0.0, 0.0, 0.0, 1.0])
 
     def pid_controller_3(self):
-        self.vitactip.global_rotation_over_1_time_step_matrix.from_numpy(R.from_quat(self.vitactip.global_rotation_over_big_step_quat.to_numpy()).as_matrix())
+        self.vitactip.R_A.from_numpy(R.from_quat(self.vitactip.R_A_quat.to_numpy()).as_matrix())
 
     @ti.kernel
     def take_snapshot(self, opts: ti.i32):
@@ -473,7 +473,7 @@ class Contact:
         np.savetxt(SYSTEM_PARAMS.files.ground_truth_labels, labels_np, delimiter=',', fmt='%d')
 
     def save_tactile_sensor_mesh_to_pickle(self, ts):
-        particles = self.vitactip.vertex_positions_deformed_global_coordinates.to_numpy()[0]
+        particles = self.vitactip.vertices_deformed_A.to_numpy()[0]
         with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(ts), 'wb') as f:
             pickle.dump(particles, f)
         # print(f'mesh exported at ts: {ts}!')
@@ -535,7 +535,7 @@ class Contact:
                 self.tumour_points_von_mises_stress[p] = self.phantom.particle_von_mises_stress[0, p]
 
         for p in range(self.vitactip.num_vertices):
-            self.sensor_points[p] = self.vitactip.vertex_positions_deformed_global_coordinates[f, p]
+            self.sensor_points[p] = self.vitactip.vertices_deformed_A[f, p]
 
     @ti.kernel
     def visualisation_prepare_tactile_readout_data(self):
@@ -629,7 +629,7 @@ class Contact:
         self.key_points_per_vertex_color.from_numpy(key_points_per_vertex_color_npy)
 
     def visualisation_update_gui(self, ts):
-        vitactip_coords = self.vitactip.vertex_positions_deformed_global_coordinates.to_numpy()[0]
+        vitactip_coords = self.vitactip.vertices_deformed_A.to_numpy()[0]
         if np.isnan(vitactip_coords).any():
             nan_count = np.any(np.isnan(vitactip_coords), axis=1).sum()
             print(f'ViTacTip contains {nan_count} / {vitactip_coords.shape[0]} nan vertices at ts: {ts}')
