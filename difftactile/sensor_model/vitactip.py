@@ -29,11 +29,11 @@ class ViTacTip:
     
     def set_up_system_params(self):
         # Material parameters for all materials
-        self.mass_density = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
-        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=True)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=False)
-        self.mu = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=True)
-        self.lam = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.number_of_materials,), needs_grad=True)
+        self.mass_density = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
+        self.mu = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
+        self.lam = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
 
         if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
             self.mass_density[0] = SYSTEM_PARAMS.vitactip.single_material.density
@@ -333,6 +333,7 @@ class ViTacTip:
         self.T_AB[None] = self.T_BA[None].inverse()
 
         self.T_CD[None] = np.eye(4)
+        self.sensor_outward_normal[None] = self.R_BA[None] @ ti.Vector([0.0, 0.0, 1.0])
         self.set_up_pose_helper()
     
     def set_up_pose_print(self):
@@ -404,7 +405,7 @@ class ViTacTip:
 
     @ti.kernel
     def test_mapping_from_global_space_to_camera_space(self):
-        for i in range(self.vertices_undeformed_A.shape[0]):
+        for i in range(self.vertices_undeformed_A.shape[1]):
             initial_vertex_pos = self.vertices_undeformed_A[0, i]
             homogeneous_initial_pos = ti.Vector([initial_vertex_pos[0], initial_vertex_pos[1], initial_vertex_pos[2], 1.0])
             transformed_initial_pos = self.T_AB[None] @ homogeneous_initial_pos
@@ -530,8 +531,6 @@ class ViTacTip:
             a, b, c, d = self.vertices_deformed_A[0, ia], self.vertices_deformed_A[0, ib], self.vertices_deformed_A[0, ic], self.vertices_deformed_A[0, id]
             deformation_gradient = ti.Matrix.cols([a - d, b - d, c - d])
             self.deformation_gradient_inverse[i] = deformation_gradient.inverse()
-
-        self.sensor_outward_normal[None] = self.R_BA[None] @ ti.Vector([0.0, 0.0, 1.0])
 
     @ti.func
     def find_closest(self, grid_p, f):

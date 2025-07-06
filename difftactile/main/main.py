@@ -439,11 +439,18 @@ class Contact:
     def pid_controller_3(self):
         self.vitactip.R_A.from_numpy(R.from_quat(self.vitactip.R_A_quat.to_numpy()).as_matrix())
 
+    def take_snapshot(self, opts):
+        self.take_snapshot_1(opts)
+        self.take_snapshot_2(opts)
+
     @ti.kernel
-    def take_snapshot(self, opts: ti.i32):
+    def take_snapshot_1(self, opts: ti.i32):
         for i in range(self.vitactip.num_markers):
             self.predict_markers_snapshots[opts, i] = self.vitactip.deformed_markers[i]
             self.virtual_markers_snapshots[opts, i] = self.vitactip.undeformed_markers[i]
+    
+    @ti.kernel
+    def take_snapshot_2(self, opts: ti.i32):
         self.ground_truth_labels[opts] = self.tumour_present[None]
 
     def save_marker_data_and_ground_truth_labels_to_file(self):
