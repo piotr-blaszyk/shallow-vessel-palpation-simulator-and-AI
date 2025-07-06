@@ -26,18 +26,18 @@ class Phantom:
 
     def set_up_system_params(self):
         # Add Rayleigh damping coefficients
-        self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=True)  # mass damping coefficient
-        self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=True)   # stiffness damping coefficient
+        self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)  # mass damping coefficient
+        self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)   # stiffness damping coefficient
         # Set default values from system parameters
         self.rayleigh_damping_alpha[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_alpha  # typical values range from 0 to 0.1
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_beta  # typical values range from 0.001 to 0.01
 
         self.inverse_mpm_grid_cube_size =  1 / SYSTEM_PARAMS.phantom.mpm_grid_cube_size
         
-        self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
-        self.poissons_ratio_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
-        self.lamda_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
-        self.mu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
+        self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.poissons_ratio_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.lamda_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.mu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
 
         self.set_stiffness()
 
@@ -45,7 +45,7 @@ class Phantom:
         obj_loader = ObjLoader(SYSTEM_PARAMS.files.phantom, num_particles_cube_1d=SYSTEM_PARAMS.phantom.num_particles_cube_1d)
         obj_loader.generate_particles()
         self.actual_total_num_particles = len(obj_loader.particles)
-        self.particles = ti.Vector.field(3, dtype=float, shape=(self.actual_total_num_particles,), needs_grad=True)
+        self.particles = ti.Vector.field(3, dtype=float, shape=(self.actual_total_num_particles,), needs_grad=False)
         self.particles.from_numpy((obj_loader.particles).astype(np.float32))
         self.titles = ti.field(dtype=int, shape=self.actual_total_num_particles, needs_grad=False)
         
@@ -73,48 +73,48 @@ class Phantom:
 
     def set_up_physical_state(self):
         # initial_position: position vector in m
-        self.initial_position = ti.Vector.field(3, dtype=ti.f32, shape=(), needs_grad=True)
+        self.initial_position = ti.Vector.field(3, dtype=ti.f32, shape=(), needs_grad=False)
         # initial_orientation: orientation vector in degrees
-        self.initial_orientation = ti.Vector.field(3, dtype=ti.f32, shape=(), needs_grad=True)
+        self.initial_orientation = ti.Vector.field(3, dtype=ti.f32, shape=(), needs_grad=False)
         # initial_velocity: velocity vector in m/s
-        self.initial_velocity = ti.Vector.field(3, dtype=ti.f32, shape=(), needs_grad=True)
+        self.initial_velocity = ti.Vector.field(3, dtype=ti.f32, shape=(), needs_grad=False)
         # rotation_matrix: 3x3 rotation matrix (dimensionless)
-        self.rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape=(), needs_grad=True)
+        self.rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape=(), needs_grad=False)
         # transformation_matrix: 4x4 transformation matrix (dimensionless)
-        self.transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape=(), needs_grad=True)
+        self.transformation_matrix = ti.Matrix.field(4, 4, ti.f32, shape=(), needs_grad=False)
 
         # particle_position: position vectors in m
-        self.particle_position = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
+        self.particle_position = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # particle_velocity: velocity vectors in m/s
-        self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
+        self.particle_velocity = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
 
         # affine_velocity: affine velocity field matrix (m/s)
-        self.affine_velocity_field = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
+        self.affine_velocity_field = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # trial_deformation_gradient: trial deformation gradient matrix (dimensionless)
-        self.trial_deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
+        self.trial_deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # deformation_gradient: deformation gradient matrix (dimensionless)
-        self.deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
+        self.deformation_gradient = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # U_svd: left singular vectors matrix (dimensionless)
-        self.U_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
+        self.U_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # V_svd: right singular vectors matrix (dimensionless)
-        self.V_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
+        self.V_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
         # S_svd: singular values matrix (dimensionless)
-        self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
+        self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
 
         # grid_node_momentum_in: momentum vectors in kg⋅m/s
-        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=True)
+        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
         # grid_node_velocity_out: velocity vectors in m/s
-        self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=True)
+        self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
         # grid_node_mass: mass values in kg
-        self.grid_node_mass = ti.field(dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=True)
+        self.grid_node_mass = ti.field(dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
         # grid_node_external_force: force vectors in N
-        self.grid_node_external_impulse = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=True)
+        self.grid_node_external_impulse = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
         # grid_occupy: occupancy flags (dimensionless)
         self.grid_occupy = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
         # total_surface_external_force: total surface force vector in N
-        self.total_surface_external_force = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=True)
+        self.total_surface_external_force = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=False)
         # von_mises: von Mises stress in Pa
-        self.particle_von_mises_stress = ti.field(dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
+        self.particle_von_mises_stress = ti.field(dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
 
         self.keypoint_idx = ti.field(dtype=int, shape=(), needs_grad=False)
         self.keypoint_idx[None] = -1
@@ -122,12 +122,12 @@ class Phantom:
     def set_up_domain_randomisation(self):
         self.group_cardinality = ti.field(dtype=int, shape=(2,), needs_grad=False)
 
-        self.cylinder_cx = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.cylinder_cy = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.cylinder_cz = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.cylinder_theta = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.cylinder_h = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.cylinder_r = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.cylinder_cx = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.cylinder_cy = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.cylinder_cz = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.cylinder_theta = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.cylinder_h = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.cylinder_r = ti.field(dtype=float, shape=(), needs_grad=False)
 
     def set_state_from_outside(self, pos, ori, vel, cylinder_tuple, stiffness_tuple, tumour_present):
         if tumour_present:

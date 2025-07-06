@@ -3,9 +3,9 @@ ti.init()
 
 N = 16
 
-x = ti.field(dtype=ti.f32, shape=N, needs_grad=True)
-loss = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
-b = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
+x = ti.field(dtype=ti.f32, shape=N, needs_grad=False)
+loss = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+b = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
 
 @ti.kernel
 def func_broke_rule_1():

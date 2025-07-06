@@ -28,7 +28,8 @@ class FisheyeModel:
         cos = ti.max(-1.0, cos)
         theta = ti.acos(cos)
         # Add a small epsilon to denominator while preserving its sign
-        x_normalized = ti.select(abs(a[0]) < 1e-10, ti.select(a[0] >= 0, 1e-10, -1e-10), a[0])
+        # x_normalized = ti.select(abs(a[0]) < 1e-10, ti.select(a[0] >= 0, 1e-10, -1e-10), a[0])
+        x_normalized = a[0]
         omega = ti.atan2(a[1], x_normalized) + ti.math.pi
         r_x = SYSTEM_PARAMS.fisheye_model.focal_length_x * theta
         r_y = SYSTEM_PARAMS.fisheye_model.focal_length_y * theta
