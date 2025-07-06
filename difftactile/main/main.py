@@ -352,7 +352,7 @@ class Contact:
     def pid_controller_1(self):
         self.vitactip.compute_current_orientation()
         # Convert current orientation to scipy Rotation
-        current_ori = R.from_quat(self.vitactip.R_CA_quat.to_numpy())
+        current_ori = R.from_quat(self.vitactip.R_BA_quat.to_numpy())
         # Get target orientation from trajectory
         target = self.trajectory.to_numpy()[self.current_target_idx[None]]
         target_ori = R.from_quat(target[3:])

@@ -268,7 +268,7 @@ class ViTacTip:
         ## control parameters
         # global_translational_velocity: global translational velocity in m/s
         self.translation_A = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
-        self.R_CA_quat = ti.Vector.field(4, ti.f32, shape = (), needs_grad=True)
+        self.R_BA_quat = ti.Vector.field(4, ti.f32, shape = (), needs_grad=True)
 
         # local_translational_velocity: local translational velocity in m/s
         self.translation_CD = ti.Vector.field(3, ti.f32, shape = (), needs_grad=True)
@@ -507,9 +507,9 @@ class ViTacTip:
             self.total_surface_force[f] += 1/3 * self.contact_forces_on_vertices[f,c] * self.dx
 
     def compute_current_orientation(self):
-        rot_mat = self.R_CA.to_numpy()
+        rot_mat = self.R_BA.to_numpy()
         rotation_object = R.from_matrix(rot_mat)
-        self.R_CA_quat.from_numpy(rotation_object.as_quat())
+        self.R_BA_quat.from_numpy(rotation_object.as_quat())
 
     @ti.kernel
     def set_up_pose_helper(self):
