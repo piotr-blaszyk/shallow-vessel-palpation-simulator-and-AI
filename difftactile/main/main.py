@@ -693,13 +693,6 @@ class Contact:
         self.window.show()
 
     def forward_pass_common_part(self, ts):
-        self.pid_controller_1()
-        self.pid_controller_2(ts)
-        self.pid_controller_3()
-        self.vitactip.set_pose_control_1()
-        self.vitactip.set_pose_control_2()
-        self.vitactip.set_pose_control_3()
-        # self.vitactip.set_pose_control_print()
         self.vitactip.set_control_vel(0)
         self.vitactip.set_vel(0)
         self.reset()
@@ -711,9 +704,6 @@ class Contact:
             self.update_grad(ss)
         self.vitactip.set_vel.grad(0)
         self.vitactip.set_control_vel.grad(0)
-        self.vitactip.set_pose_control_3.grad()
-        self.vitactip.set_pose_control_2.grad()
-        self.vitactip.set_pose_control_1.grad()
     
     def print_gradients(self):
         print(f'loss: {self.loss.grad[None]}')
@@ -760,6 +750,12 @@ def main():
 
         print('forward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames):
+            contact_model.pid_controller_1()
+            contact_model.pid_controller_2(ts)
+            contact_model.pid_controller_3()
+            contact_model.vitactip.set_pose_control_1()
+            contact_model.vitactip.set_pose_control_2()
+            contact_model.vitactip.set_pose_control_3()
             contact_model.forward_pass_common_part(ts)
             contact_model.memory_to_cache(ts)
             contact_model.vitactip.extract_markers(SYSTEM_PARAMS.contact.num_sub_frames-1)

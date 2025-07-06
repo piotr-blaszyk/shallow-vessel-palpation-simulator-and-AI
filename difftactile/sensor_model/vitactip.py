@@ -823,58 +823,124 @@ class ViTacTip:
             self.vertices_undeformed_A[target, p] = self.vertices_undeformed_A[source, p]
 
     @ti.kernel
-    def load_step_from_cache(self, f: ti.i32, cache_pos: ti.types.ndarray(), cache_vel: ti.types.ndarray(), cache_trans: ti.types.ndarray(), cache_virtual_pos: ti.types.ndarray(), cache_rot: ti.types.ndarray(), cache_predict_markers: ti.types.ndarray()):
+    def load_step_from_cache(self, f: ti.i32, cache_pos: ti.types.ndarray(), 
+                            cache_trans: ti.types.ndarray(), cache_virtual_pos: ti.types.ndarray(), 
+                            cache_rot: ti.types.ndarray(),
+                            cache_R_CD: ti.types.ndarray(), cache_R_CA: ti.types.ndarray(), 
+                            cache_R_A: ti.types.ndarray(), cache_translation_A: ti.types.ndarray(),
+                            cache_T_CD: ti.types.ndarray(), cache_T_CA: ti.types.ndarray(),
+                            cache_T_BC: ti.types.ndarray(), cache_T_AB: ti.types.ndarray(),
+                            cache_R_BC: ti.types.ndarray(), cache_R_AB: ti.types.ndarray()):
         for j in range(4):
             for k in range(4):
                 self.T_BA[None][j,k] = cache_trans[j,k]
+                self.T_CD[None][j,k] = cache_T_CD[j,k]
+                self.T_CA[None][j,k] = cache_T_CA[j,k]
+                self.T_BC[None][j,k] = cache_T_BC[j,k]
+                self.T_AB[None][j,k] = cache_T_AB[j,k]
         for j in range(3):
             for k in range(3):
                 self.R_BA[None][j,k] = cache_rot[j,k]
+                self.R_CD[None][j,k] = cache_R_CD[j,k]
+                self.R_CA[None][j,k] = cache_R_CA[j,k]
+                self.R_A[None][j,k] = cache_R_A[j,k]
+                self.R_BC[None][j,k] = cache_R_BC[j,k]
+                self.R_AB[None][j,k] = cache_R_AB[j,k]
+            self.translation_A[None][j] = cache_translation_A[j]
         for p in range(self.num_vertices):
             for i in ti.static(range(3)):
                 self.vertices_deformed_A[f, p][i] = cache_pos[p,i]
-                self.vertex_velocities[f, p][i] = cache_vel[p,i]
                 self.vertices_undeformed_A[f, p][i] = cache_virtual_pos[p, i]
-        for p in range(self.num_markers):
-            for i in ti.static(range(2)):
-                self.deformed_markers[p][i] = cache_predict_markers[p,i]
 
     @ti.kernel
-    def add_step_to_cache(self, f: ti.i32, cache_pos: ti.types.ndarray(), cache_vel: ti.types.ndarray(), cache_trans: ti.types.ndarray(), cache_virtual_pos: ti.types.ndarray(), cache_rot: ti.types.ndarray(), cache_predict_markers: ti.types.ndarray()):
+    def add_step_to_cache(self, f: ti.i32, cache_pos: ti.types.ndarray(), 
+                         cache_trans: ti.types.ndarray(), cache_virtual_pos: ti.types.ndarray(), 
+                         cache_rot: ti.types.ndarray(),
+                         cache_R_CD: ti.types.ndarray(), cache_R_CA: ti.types.ndarray(), 
+                         cache_R_A: ti.types.ndarray(), cache_translation_A: ti.types.ndarray(),
+                         cache_T_CD: ti.types.ndarray(), cache_T_CA: ti.types.ndarray(),
+                         cache_T_BC: ti.types.ndarray(), cache_T_AB: ti.types.ndarray(),
+                         cache_R_BC: ti.types.ndarray(), cache_R_AB: ti.types.ndarray()):
         for j in range(4):
             for k in range(4):
                 cache_trans[j,k] = self.T_BA[None][j,k]
+                cache_T_CD[j,k] = self.T_CD[None][j,k]
+                cache_T_CA[j,k] = self.T_CA[None][j,k]
+                cache_T_BC[j,k] = self.T_BC[None][j,k]
+                cache_T_AB[j,k] = self.T_AB[None][j,k]
         for j in range(3):
             for k in range(3):
                 cache_rot[j,k] = self.R_BA[None][j,k]
+                cache_R_CD[j,k] = self.R_CD[None][j,k]
+                cache_R_CA[j,k] = self.R_CA[None][j,k]
+                cache_R_A[j,k] = self.R_A[None][j,k]
+                cache_R_BC[j,k] = self.R_BC[None][j,k]
+                cache_R_AB[j,k] = self.R_AB[None][j,k]
+            cache_translation_A[j] = self.translation_A[None][j]
         for p in range(self.num_vertices):
             for i in ti.static(range(3)):
                 cache_pos[p,i] = self.vertices_deformed_A[f, p][i]
-                cache_vel[p,i] = self.vertex_velocities[f, p][i]
                 cache_virtual_pos[p, i] = self.vertices_undeformed_A[f, p][i]
-        for p in range(self.num_markers):
-            for i in ti.static(range(2)):
-                cache_predict_markers[p,i] = self.deformed_markers[p][i]
 
     def memory_to_cache(self, t):
         cur_step_name = f'{t:06d}'
         device = 'cpu'
         self.simulation_cache[cur_step_name] = dict()
 
+        # Original fields
         self.simulation_cache[cur_step_name]['pos'] = torch.zeros((self.num_vertices, 3), dtype=TC_TYPE, device=device)
-        self.simulation_cache[cur_step_name]['vel'] = torch.zeros((self.num_vertices, 3), dtype=TC_TYPE, device=device)
         self.simulation_cache[cur_step_name]['trans_h'] = torch.zeros((4,4), dtype=TC_TYPE, device=device)
         self.simulation_cache[cur_step_name]['rot_h'] = torch.zeros((3,3), dtype=TC_TYPE, device=device)
         self.simulation_cache[cur_step_name]['virtual_pos'] = torch.zeros((self.num_vertices, 3), dtype=TC_TYPE, device=device)
-        self.simulation_cache[cur_step_name]['predict_markers'] = torch.zeros((self.num_markers, 2), dtype=TC_TYPE, device=device)
-        self.add_step_to_cache(0, self.simulation_cache[cur_step_name]['pos'], self.simulation_cache[cur_step_name]['vel'], self.simulation_cache[cur_step_name]['trans_h'], self.simulation_cache[cur_step_name]['virtual_pos'], self.simulation_cache[cur_step_name]['rot_h'], self.simulation_cache[cur_step_name]['predict_markers'])
+
+        # Additional fields
+        self.simulation_cache[cur_step_name]['R_CD'] = torch.zeros((3,3), dtype=TC_TYPE, device=device)
+        self.simulation_cache[cur_step_name]['R_CA'] = torch.zeros((3,3), dtype=TC_TYPE, device=device)
+        self.simulation_cache[cur_step_name]['R_A'] = torch.zeros((3,3), dtype=TC_TYPE, device=device)
+        self.simulation_cache[cur_step_name]['translation_A'] = torch.zeros(3, dtype=TC_TYPE, device=device)
+        self.simulation_cache[cur_step_name]['T_CD'] = torch.zeros((4,4), dtype=TC_TYPE, device=device)
+        self.simulation_cache[cur_step_name]['T_CA'] = torch.zeros((4,4), dtype=TC_TYPE, device=device)
+        self.simulation_cache[cur_step_name]['T_BC'] = torch.zeros((4,4), dtype=TC_TYPE, device=device)
+        self.simulation_cache[cur_step_name]['T_AB'] = torch.zeros((4,4), dtype=TC_TYPE, device=device)
+        self.simulation_cache[cur_step_name]['R_BC'] = torch.zeros((3,3), dtype=TC_TYPE, device=device)
+        self.simulation_cache[cur_step_name]['R_AB'] = torch.zeros((3,3), dtype=TC_TYPE, device=device)
+
+        self.add_step_to_cache(0, 
+            self.simulation_cache[cur_step_name]['pos'],
+            self.simulation_cache[cur_step_name]['trans_h'],
+            self.simulation_cache[cur_step_name]['virtual_pos'],
+            self.simulation_cache[cur_step_name]['rot_h'],
+            self.simulation_cache[cur_step_name]['R_CD'],
+            self.simulation_cache[cur_step_name]['R_CA'],
+            self.simulation_cache[cur_step_name]['R_A'],
+            self.simulation_cache[cur_step_name]['translation_A'],
+            self.simulation_cache[cur_step_name]['T_CD'],
+            self.simulation_cache[cur_step_name]['T_CA'],
+            self.simulation_cache[cur_step_name]['T_BC'],
+            self.simulation_cache[cur_step_name]['T_AB'],
+            self.simulation_cache[cur_step_name]['R_BC'],
+            self.simulation_cache[cur_step_name]['R_AB']
+        )
         self.copy_frame(SYSTEM_PARAMS.contact.num_sub_frames-1, 0)
 
     def memory_from_cache(self, t):
         cur_step_name = f'{t:06d}'
-        # self.copy_frame(0, SYSTEM_PARAMS.contact.num_sub_frames-1)
-
-        self.load_step_from_cache(0, self.simulation_cache[cur_step_name]['pos'], self.simulation_cache[cur_step_name]['vel'], self.simulation_cache[cur_step_name]['trans_h'], self.simulation_cache[cur_step_name]['virtual_pos'], self.simulation_cache[cur_step_name]['rot_h'], self.simulation_cache[cur_step_name]['predict_markers'])
+        self.load_step_from_cache(0,
+            self.simulation_cache[cur_step_name]['pos'],
+            self.simulation_cache[cur_step_name]['trans_h'],
+            self.simulation_cache[cur_step_name]['virtual_pos'],
+            self.simulation_cache[cur_step_name]['rot_h'],
+            self.simulation_cache[cur_step_name]['R_CD'],
+            self.simulation_cache[cur_step_name]['R_CA'],
+            self.simulation_cache[cur_step_name]['R_A'],
+            self.simulation_cache[cur_step_name]['translation_A'],
+            self.simulation_cache[cur_step_name]['T_CD'],
+            self.simulation_cache[cur_step_name]['T_CA'],
+            self.simulation_cache[cur_step_name]['T_BC'],
+            self.simulation_cache[cur_step_name]['T_AB'],
+            self.simulation_cache[cur_step_name]['R_BC'],
+            self.simulation_cache[cur_step_name]['R_AB']
+        )
 
     def get_keypoint_indices(self, f: ti.i32):
         # Convert positions to numpy array
