@@ -70,7 +70,7 @@ class ViTacTip:
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.vitactip.rayleigh_damping_beta  # typical values range from 0.001 to 0.01
 
         # Add hourglass control parameters
-        self.hourglass_enabled = ti.field(dtype=ti.i32, shape=(), needs_grad=True)
+        self.hourglass_enabled = ti.field(dtype=ti.i32, shape=(), needs_grad=False)
         self.hourglass_coefficient = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         self.hourglass_modulus_scale = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         
@@ -86,7 +86,7 @@ class ViTacTip:
         
         # Unpack mesh data
         self.dome_surface_node_tags_npy = mesh_data['dome_surface_node_tags']
-        self.dome_surface_node_tags = ti.field(dtype=int, shape=(self.dome_surface_node_tags_npy.shape[0],), needs_grad=True)
+        self.dome_surface_node_tags = ti.field(dtype=int, shape=(self.dome_surface_node_tags_npy.shape[0],), needs_grad=False)
         self.dome_surface_node_tags.from_numpy(self.dome_surface_node_tags_npy)
         self.surface_node_tags_npy = mesh_data['surface_node_tags']
         all_tetrahedra = mesh_data['all_tetrahedra']
@@ -149,7 +149,7 @@ class ViTacTip:
         self.element_materials_npy = element_materials
         self.vertex_masses_npy = vertex_masses
         
-        self.is_fixed_layer = ti.field(int, len(self.node_coordinates), needs_grad=True)
+        self.is_fixed_layer = ti.field(int, len(self.node_coordinates), needs_grad=False)
         is_fixed_layer_data = self.node_labels[:,-1].astype(np.int32)
         self.is_fixed_layer.from_numpy(is_fixed_layer_data)
         
@@ -157,23 +157,23 @@ class ViTacTip:
         self.num_tetrahedra = len(self.tetrahedra_npy)
         self.num_contact_surface_triangles = len(self.outer_surface_triangles)
 
-        self.element_materials = ti.field(dtype=ti.i32, shape=(self.num_tetrahedra,), needs_grad=True)
-        self.vertex_mass = ti.field(dtype=ti.f32, shape=(self.num_vertices,), needs_grad=True)
+        self.element_materials = ti.field(dtype=ti.i32, shape=(self.num_tetrahedra,), needs_grad=False)
+        self.vertex_mass = ti.field(dtype=ti.f32, shape=(self.num_vertices,), needs_grad=False)
         self.element_materials.from_numpy(self.element_materials_npy)
         self.vertex_mass.from_numpy(self.vertex_masses_npy)
 
         self.vertex_positions_local_initial = ti.Vector.field(3, float, self.num_vertices, needs_grad=True)
         self.vertex_positions_local_initial.from_numpy(self.node_coordinates.astype(np.float32))
 
-        self.tetrahedra = ti.Vector.field(4, int, self.num_tetrahedra, needs_grad=True)
+        self.tetrahedra = ti.Vector.field(4, int, self.num_tetrahedra, needs_grad=False)
         self.tetrahedra.from_numpy(self.tetrahedra_npy.astype(np.int32))
-        self.contact_surface = ti.Vector.field(3, int, self.num_contact_surface_triangles, needs_grad=True) # surface triangle mesh
+        self.contact_surface = ti.Vector.field(3, int, self.num_contact_surface_triangles, needs_grad=False) # surface triangle mesh
         self.contact_surface.from_numpy(self.outer_surface_triangles.astype(np.int32))
 
         self.projection_2d_dome_surface_nodes_deformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=True)
         self.projection_2d_dome_surface_nodes_undeformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=True)
 
-        self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=True)
+        self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=False)
         self.projection_2d_clock_arms = ti.Vector.field(2, float, (2,), needs_grad=True)
 
     @ti.kernel
@@ -239,7 +239,7 @@ class ViTacTip:
 
         self.marker_interpolation_weights = ti.Vector.field(self.marker_interpolation_knn_k, float, self.num_markers, needs_grad=True)
         self.marker_interpolation_weights.from_numpy(marker_interpolation_weights.astype(np.float32))
-        self.marker_interpolation_indices = ti.Vector.field(self.marker_interpolation_knn_k, int, self.num_markers, needs_grad=True)
+        self.marker_interpolation_indices = ti.Vector.field(self.marker_interpolation_knn_k, int, self.num_markers, needs_grad=False)
         self.marker_interpolation_indices.from_numpy(marker_interpolation_indices.astype(np.int32))
 
     def set_up_physical_state(self):

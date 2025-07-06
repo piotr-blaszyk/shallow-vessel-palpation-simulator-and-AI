@@ -48,7 +48,7 @@ class Contact:
                 SYSTEM_PARAMS.phantom.n_grid_y,
                 SYSTEM_PARAMS.phantom.n_grid_z,
             ), 
-            needs_grad=True
+            needs_grad=False
         )
 
     def set_up_system_params(self):
@@ -64,7 +64,7 @@ class Contact:
     def set_up_snapshot(self):        # Allocate snapshot fields (SYSTEM_PARAMS.contact.num_opt_steps, num_markers, 2)
         self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=True)
         self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=True)
-        self.ground_truth_labels = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_opt_steps,), needs_grad=True)
+        self.ground_truth_labels = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_opt_steps,), needs_grad=False)
 
     def set_up_pid(self):
 # Error accumulation for integral term
@@ -73,20 +73,20 @@ class Contact:
         self.prev_pos_error = ti.Vector.field(3, dtype=float, shape=(), needs_grad=True)
 
         # Add fields to track current target and control state
-        self.current_target_idx = ti.field(dtype=int, shape=(), needs_grad=True)
+        self.current_target_idx = ti.field(dtype=int, shape=(), needs_grad=False)
         self.current_target_idx[None] = 0
         self.ori_error_magnitude_degrees = ti.field(dtype=float, shape=(), needs_grad=True)
         
         # Add fields for dwell time control
-        self.dwell_frames = ti.field(dtype=int, shape=(), needs_grad=True)
+        self.dwell_frames = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dwell_frames[None] = SYSTEM_PARAMS.contact.dwell_frames # Number of frames to stay at each target
-        self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=True)
+        self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dwell_counter[None] = 0
-        self.is_dwelling = ti.field(dtype=int, shape=(), needs_grad=True)
+        self.is_dwelling = ti.field(dtype=int, shape=(), needs_grad=False)
         self.is_dwelling[None] = 0
-        self.last_target_reached = ti.field(dtype=int, shape=(), needs_grad=True)
+        self.last_target_reached = ti.field(dtype=int, shape=(), needs_grad=False)
         self.last_target_reached[None] = 0
-        self.frames_since_last_target_reached = ti.field(dtype=int, shape=(), needs_grad=True)
+        self.frames_since_last_target_reached = ti.field(dtype=int, shape=(), needs_grad=False)
         self.frames_since_last_target_reached[None] = 0
 
     def set_up_initial_positions_and_trajectory_first_init_only(self):
@@ -101,7 +101,7 @@ class Contact:
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=True)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=True)
         self.trajectory = ti.Vector.field(7, dtype=float, shape=3, needs_grad=True)
-        self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=True)
+        self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
         self.tumour_present[None] = 0
     
     def set_up_keypoints(self):

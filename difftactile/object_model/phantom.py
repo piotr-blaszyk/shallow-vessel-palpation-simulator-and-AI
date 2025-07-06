@@ -47,9 +47,9 @@ class Phantom:
         self.actual_total_num_particles = len(obj_loader.particles)
         self.particles = ti.Vector.field(3, dtype=float, shape=(self.actual_total_num_particles,), needs_grad=True)
         self.particles.from_numpy((obj_loader.particles).astype(np.float32))
-        self.titles = ti.field(dtype=int, shape=self.actual_total_num_particles, needs_grad=True)
+        self.titles = ti.field(dtype=int, shape=self.actual_total_num_particles, needs_grad=False)
         
-        self.is_fixed = ti.field(dtype=int, shape=(self.actual_total_num_particles,), needs_grad=True)
+        self.is_fixed = ti.field(dtype=int, shape=(self.actual_total_num_particles,), needs_grad=False)
         particles_np = self.particles.to_numpy()
         z_coords = particles_np[:, 2]
         z_min, z_max = np.min(z_coords), np.max(z_coords)
@@ -110,17 +110,17 @@ class Phantom:
         # grid_node_external_force: force vectors in N
         self.grid_node_external_impulse = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=True)
         # grid_occupy: occupancy flags (dimensionless)
-        self.grid_occupy = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=True)
+        self.grid_occupy = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
         # total_surface_external_force: total surface force vector in N
         self.total_surface_external_force = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=True)
         # von_mises: von Mises stress in Pa
         self.particle_von_mises_stress = ti.field(dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=True)
 
-        self.keypoint_idx = ti.field(dtype=int, shape=(), needs_grad=True)
+        self.keypoint_idx = ti.field(dtype=int, shape=(), needs_grad=False)
         self.keypoint_idx[None] = -1
     
     def set_up_domain_randomisation(self):
-        self.group_cardinality = ti.field(dtype=int, shape=(2,), needs_grad=True)
+        self.group_cardinality = ti.field(dtype=int, shape=(2,), needs_grad=False)
 
         self.cylinder_cx = ti.field(dtype=float, shape=(), needs_grad=True)
         self.cylinder_cy = ti.field(dtype=float, shape=(), needs_grad=True)
