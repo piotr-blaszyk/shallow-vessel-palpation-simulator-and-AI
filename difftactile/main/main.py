@@ -574,7 +574,6 @@ class Contact:
             self.clock_arm_points[i] = point / self.window_size[None]
 
     def visualisation_draw_tactile_readout(self):
-        self.vitactip.extract_markers(0)
         self.visualisation_prepare_tactile_readout_data()
 
         self.vitactip.extract_clock_arm_2d_projections(0)
@@ -693,7 +692,10 @@ class Contact:
         self.canvas.scene(self.scene)
         self.window.show()
 
-    def forward_pass_common_part(self):
+    def forward_pass_common_part(self, ts):
+        self.pid_controller_1()
+        self.pid_controller_2(ts)
+        self.pid_controller_3()
         self.vitactip.set_pose_control_1()
         self.vitactip.set_pose_control_2()
         self.vitactip.set_pose_control_3()
@@ -758,11 +760,9 @@ def main():
 
         print('forward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames):
-            contact_model.pid_controller_1()
-            contact_model.pid_controller_2(ts)
-            contact_model.pid_controller_3()
-            contact_model.forward_pass_common_part()
+            contact_model.forward_pass_common_part(ts)
             contact_model.memory_to_cache(ts)
+            contact_model.vitactip.extract_markers(SYSTEM_PARAMS.contact.num_sub_frames-1)
             contact_model.visualisation_update_gui(ts)
 
             if ts % 100 == 0:
@@ -772,10 +772,11 @@ def main():
         print('backward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames-1, -1, -1):
             contact_model.memory_from_cache(ts)
-            contact_model.forward_pass_common_part()
+            contact_model.forward_pass_common_part(ts)
             contact_model.vitactip.extract_markers(SYSTEM_PARAMS.contact.num_sub_frames-1)
             contact_model.compute_marker_loss_1(ts)
             contact_model.compute_marker_loss_2(ts)
+            contact_model.visualisation_update_gui(ts)
 
             contact_model.clear_all_grad()
             

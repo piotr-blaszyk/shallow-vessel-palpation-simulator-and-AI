@@ -807,7 +807,8 @@ class ViTacTip:
             if is_fixed_layer:
                 updated_velocity = self.vertex_control_velocities[vertex_idx]
             self.vertex_velocities[frame+1, vertex_idx] = updated_velocity
-            self.vertices_deformed_A[frame+1, vertex_idx] += self.vertices_deformed_A[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * updated_velocity
+            self.vertices_deformed_A[frame+1, vertex_idx] += self.vertices_deformed_A[frame, vertex_idx]
+            self.vertices_deformed_A[frame+1, vertex_idx] += SYSTEM_PARAMS.contact.dt * updated_velocity
             # update virtual pos
             self.vertices_undeformed_A[frame+1, vertex_idx] = self.vertices_undeformed_A[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * self.vertex_control_velocities[vertex_idx]
 
@@ -964,12 +965,6 @@ class ViTacTip:
 
     @ti.kernel
     def clear_step_grad(self, f:ti.i32):
-        """
-        Clear gradients of step-specific fields up to frame f.
-        
-        Args:
-            f: frame index up to which to clear gradients (dimensionless)
-        """
         self.total_surface_force.grad.fill(0.0)
         self.contact_forces_on_vertices.grad.fill(0.0)
         for p in range(self.num_vertices):
