@@ -125,16 +125,16 @@ class Contact:
         x, y, z = self.vitactip_tip_pose[:3]
         quat = self.vitactip_tip_pose[3:]
         og_r = R.from_quat(quat)
-        offset_1 = R.from_euler(seq='xyz', angles=[45, 0, 0], degrees=True)
-        offset_2 = R.from_euler(seq='xyz', angles=[-45, 0, 0], degrees=True)
+        offset_1 = R.from_euler(seq='xyz', angles=[30, 30, 0], degrees=True)
+        offset_2 = R.from_euler(seq='xyz', angles=[-30, -30, 0], degrees=True)
         tilt_1 = og_r * offset_1
         tilt_2 = og_r * offset_2
         tilt_1.as_quat()
         press_depth = SYSTEM_PARAMS.geometry.gap + 0.006
         self.trajectory_npy = np.array([
             [x, y, z, *og_r.as_quat()],
-            [x, y, z, *tilt_1.as_quat()],
-            [x, y, z, *tilt_2.as_quat()],
+            [x, y, z-press_depth, *og_r.as_quat()],
+            [x, y+0.020, z-press_depth, *og_r.as_quat()],
         ], dtype=float)
         assert self.trajectory.shape[0] == self.trajectory_npy.shape[0], f"Set self.trajectory length to {self.trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(self.trajectory_npy)
@@ -218,17 +218,18 @@ class Contact:
     def compute_marker_loss_1(self, f: ti.i32):
         for i in range(self.vitactip.num_markers):
             sim_marker = self.vitactip.deformed_markers[i]
-            exp_marker = self.target_marker_positions[f, i]
+            exp_marker = self.target_marker_positions[i]
 
             dx = exp_marker[0] - sim_marker[0]
             dy = exp_marker[1] - sim_marker[1]
             squared_error = dx * dx + dy * dy
-            self.squared_error_sum[f] += squared_error
+            self.squared_error_sum[None] += squared_error
 
     @ti.kernel
     def compute_marker_loss_2(self, f: ti.i32):
-        rmse = ti.sqrt(self.squared_error_sum[f] / self.vitactip.num_markers)
+        rmse = ti.sqrt(self.squared_error_sum[None] / self.vitactip.num_markers)
         self.loss[None] += rmse
+        self.squared_error_sum.fill(0.0)
 
     @ti.func
     def calculate_contact_force(self, signed_distance, surface_normal, relative_velocity):
