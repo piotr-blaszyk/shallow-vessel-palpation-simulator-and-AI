@@ -443,14 +443,6 @@ class Phantom:
             self.particle_velocity[target, p] = self.particle_velocity[source, p]
             self.affine_velocity_field[target, p] = self.affine_velocity_field[source, p]
             self.deformation_gradient[target, p] = self.deformation_gradient[source, p]
-    
-    @ti.kernel
-    def copy_grad(self, source: ti.i32, target: ti.i32):
-        for p in range(self.actual_total_num_particles):
-            self.particle_position.grad[target, p] = self.particle_position.grad[source, p]
-            self.particle_velocity.grad[target, p] = self.particle_velocity.grad[source, p]
-            self.affine_velocity_field.grad[target, p] = self.affine_velocity_field.grad[source, p]
-            self.deformation_gradient.grad[target, p] = self.deformation_gradient.grad[source, p]
 
     @ti.kernel
     def load_step_from_cache(self, f: ti.i32, cache_x_0: ti.types.ndarray(), cache_v_0: ti.types.ndarray(), cache_C_0: ti.types.ndarray(), cache_F_0: ti.types.ndarray()):
@@ -570,3 +562,14 @@ class Phantom:
         coordinates = positions[keypoint_indices]
         
         return coordinates
+
+###############################################################################
+
+    @ti.kernel
+    def copy_grad_unused(self, source: ti.i32, target: ti.i32):
+        return
+        for p in range(self.actual_total_num_particles):
+            self.particle_position.grad[target, p] = self.particle_position.grad[source, p]
+            self.particle_velocity.grad[target, p] = self.particle_velocity.grad[source, p]
+            self.affine_velocity_field.grad[target, p] = self.affine_velocity_field.grad[source, p]
+            self.deformation_gradient.grad[target, p] = self.deformation_gradient.grad[source, p]

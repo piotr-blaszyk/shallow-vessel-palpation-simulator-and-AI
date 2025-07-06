@@ -363,7 +363,7 @@ class ViTacTip:
             undeformed_pos_local_initial_ti = ti.Vector([undeformed_pos_local_initial[0], undeformed_pos_local_initial[1], undeformed_pos_local_initial[2]])
             camera_space_deformed_2d = self.fisheye_model.project_3d_2d(deformed_pos_local_initial_ti)
             camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(undeformed_pos_local_initial_ti)
-            self.projection_2d_dome_surface_nodes_deformed[i] = camera_space_deformed_2d
+            self.projection_2d_dome_surface_nodes_deformed[i] += camera_space_deformed_2d
             self.projection_2d_dome_surface_nodes_undeformed[i] = camera_space_undeformed_2d
 
         for i in range(self.num_markers):
@@ -635,7 +635,9 @@ class ViTacTip:
     def reset(self):
         self.contact_forces_on_vertices.fill(0.0)
         self.total_surface_force.fill(0.0)
+
         self.deformed_markers.fill(0.0)
+        self.projection_2d_dome_surface_nodes_deformed.fill(0.0)
         for i in range(1, self.vertices_deformed_A.shape[0]):
             for j in range(self.vertices_deformed_A.shape[1]):
                 self.vertices_deformed_A[i, j] = ti.Vector([0.0, 0.0, 0.0])
@@ -930,20 +932,6 @@ class ViTacTip:
         return coordinates
 
     @ti.kernel
-    def copy_grad(self, source: ti.i32, target: ti.i32):
-        """
-        Copy gradient information from source frame to target frame.
-        
-        Args:
-            source: source frame index (dimensionless)
-            target: target frame index (dimensionless)
-        """
-        for p in range(self.num_vertices):
-            self.vertices_deformed_A.grad[target, p] = self.vertices_deformed_A.grad[source, p]
-            self.vertex_velocities.grad[target, p] = self.vertex_velocities.grad[source, p]
-            self.vertices_undeformed_A.grad[target, p] = self.vertices_undeformed_A.grad[source, p]
-
-    @ti.kernel
     def clear_loss_grad(self):
         """
         Clear gradients of all loss-related fields.
@@ -992,3 +980,11 @@ class ViTacTip:
         trans_h[0:3, 0:3] = mat_R
         trans_h[0:3, 3] = trans_v
         return trans_h, mat_R
+
+    @ti.kernel
+    def copy_grad_unused(self, source: ti.i32, target: ti.i32):
+        return
+        for p in range(self.num_vertices):
+            self.vertices_deformed_A.grad[target, p] = self.vertices_deformed_A.grad[source, p]
+            self.vertex_velocities.grad[target, p] = self.vertex_velocities.grad[source, p]
+            self.vertices_undeformed_A.grad[target, p] = self.vertices_undeformed_A.grad[source, p]
