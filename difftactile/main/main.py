@@ -210,7 +210,7 @@ class Contact:
         self.phantom.clear_step_grad(SYSTEM_PARAMS.contact.num_sub_frames)
 
     def reset(self):
-        self.vitactip.reset_contact()
+        self.vitactip.reset()
         self.phantom.reset()
         self.contact_idx.fill(-1)
         self.squared_error_sum.fill(0.0)
@@ -717,9 +717,9 @@ class Contact:
         print(f'loss: {self.loss.grad[None]}')
         print(f'squared_error_sum: {self.squared_error_sum.grad[None]}')
         print(f'deformed_markers: {self.vitactip.deformed_markers.grad[0]}')
-        print(f'vertices_deformed_A: {self.vitactip.vertices_deformed_A.grad[0, 0]}')
-        print(f'vertex_velocities: {self.vitactip.vertex_velocities.grad[0, 0]}')
-        print(f'contact_forces_on_vertices: {self.vitactip.contact_forces_on_vertices.grad[0, 0]}')
+        print(f'vertices_deformed_A: {self.vitactip.vertices_deformed_A.grad[SYSTEM_PARAMS.contact.num_sub_frames//2, 0]}')
+        print(f'vertex_velocities: {self.vitactip.vertex_velocities.grad[SYSTEM_PARAMS.contact.num_sub_frames-1, 0]}')
+        print(f'contact_forces_on_vertices: {self.vitactip.contact_forces_on_vertices.grad[SYSTEM_PARAMS.contact.num_sub_frames-1, 0]}')
         print(f'mu: {self.vitactip.mu.grad[0]}')
         print(f'lam: {self.vitactip.lam.grad[0]}')
         print(f'youngs_modulus: {self.vitactip.youngs_modulus.grad[0]}')

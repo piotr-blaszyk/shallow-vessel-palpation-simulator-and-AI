@@ -374,7 +374,7 @@ class ViTacTip:
             for neighbor_idx in range(self.marker_interpolation_knn_k):
                 interpolated_deformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_dome_surface_nodes_deformed[nearest_surface_indices[neighbor_idx]]
                 interpolated_undeformed_pos_2d += interpolation_weights[neighbor_idx] * self.projection_2d_dome_surface_nodes_undeformed[nearest_surface_indices[neighbor_idx]]
-            self.deformed_markers[i] = interpolated_deformed_pos_2d
+            self.deformed_markers[i] += interpolated_deformed_pos_2d
             self.undeformed_markers[i] = interpolated_undeformed_pos_2d
 
     @ti.kernel
@@ -632,13 +632,13 @@ class ViTacTip:
         return signed_distance, surface_normal, relative_velocity, is_contact
 
     @ti.kernel
-    def reset_contact(self):
-        """
-        Reset all contact-related force fields to zero.
-        Clears external forces and surface forces.
-        """
+    def reset(self):
         self.contact_forces_on_vertices.fill(0.0)
         self.total_surface_force.fill(0.0)
+        self.deformed_markers.fill(0.0)
+        for i in range(1, self.vertices_deformed_A.shape[0]):
+            for j in range(self.vertices_deformed_A.shape[1]):
+                self.vertices_deformed_A[i, j] = ti.Vector([0.0, 0.0, 0.0])
 
     @ti.func
     def update_contact_force(self, triangle_index, contact_force, frame):
@@ -807,7 +807,7 @@ class ViTacTip:
             if is_fixed_layer:
                 updated_velocity = self.vertex_control_velocities[vertex_idx]
             self.vertex_velocities[frame+1, vertex_idx] = updated_velocity
-            self.vertices_deformed_A[frame+1, vertex_idx] = self.vertices_deformed_A[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * updated_velocity
+            self.vertices_deformed_A[frame+1, vertex_idx] += self.vertices_deformed_A[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * updated_velocity
             # update virtual pos
             self.vertices_undeformed_A[frame+1, vertex_idx] = self.vertices_undeformed_A[frame, vertex_idx] + SYSTEM_PARAMS.contact.dt * self.vertex_control_velocities[vertex_idx]
 
@@ -869,7 +869,7 @@ class ViTacTip:
 
     def memory_from_cache(self, t):
         cur_step_name = f'{t:06d}'
-        self.copy_frame(0, SYSTEM_PARAMS.contact.num_sub_frames-1)
+        # self.copy_frame(0, SYSTEM_PARAMS.contact.num_sub_frames-1)
 
         self.load_step_from_cache(0, self.simulation_cache[cur_step_name]['pos'], self.simulation_cache[cur_step_name]['vel'], self.simulation_cache[cur_step_name]['trans_h'], self.simulation_cache[cur_step_name]['virtual_pos'], self.simulation_cache[cur_step_name]['rot_h'], self.simulation_cache[cur_step_name]['predict_markers'])
 
