@@ -257,7 +257,7 @@ class ViTacTip:
         self.element_potential_energy = ti.field(float, self.num_tetrahedra, needs_grad=False)  # potential energy of each face (Neo-Hookean)
 
         # contact_forces_on_vertices: external contact forces applied to vertices in N
-        self.contact_forces_on_vertices = ti.Vector.field(3, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False) # contact force between FEM node to the closest particle
+        self.contact_forces_on_vertices = ti.Vector.field(3, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=True) # contact force between FEM node to the closest particle
         # surface_force_resultant: total surface force vector in N
         self.total_surface_force = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=False) # surface aggreated 3-axis forces
 
