@@ -45,110 +45,105 @@
     - self.R_BC
     - self.R_BA
     - self.R_AB
-- phantom.compute_trial_deformation_gradient
-  - in:
-    - self.deformation_gradient
-    - self.affine_velocity_field
-  - out:
-    - self.trial_deformation_gradient
-- phantom.svd_of_trial_deformation_gradient
-  - in:
-    - self.trial_deformation_gradient
-  - out:
-    - self.U_svd
-    - self.S_svd
-    - self.V_svd
-- phantom.p2g (Particle to Grid)
-  - in:
-    - self.particle_position
-    - self.particle_velocity
-    - self.affine_velocity_field
-    - self.trial_deformation_gradient
-    - self.U_svd
-    - self.V_svd
-    - self.S_svd
-    - self.mu
-    - self.lam
-  - out:
-    - self.grid_node_momentum_in
-    - self.grid_node_mass
-    - self.deformation_gradient
-    - self.particle_von_mises_stress
-- vitactip.update_internal_forces
-  - in:
-    - self.vertices_deformed_A
-    - self.vertex_velocities
-    - self.deformation_gradient_inverse
-    - self.mu
-    - self.lam
-  - out:
-    - self.element_potential_energy
-- phantom.check_grid_occupy
-  - in:
-    - self.grid_node_mass
-  - out:
-    - self.grid_occupy
-- main.check_collision
-  - in:
-    - self.phantom.grid_occupy
-  - out:
-    - self.contact_idx
-- vitactip.find_closest
-  - in:
-    - self.vertices_deformed_A
-    - self.contact_surface
-- main.collision
-  - in:
-    - self.phantom.grid_node_momentum_in
-    - self.phantom.grid_node_mass
-    - self.phantom.grid_occupy
-- vitactip.find_sdf
-  - in:
-    - self.vertices_deformed_A
-    - self.vertex_velocities
-    - self.sensor_outward_normal
-- main.calculate_contact_force
-  - in:
-    - self.normal_stiffness
-    - self.normal_damping
-    - self.tangential_stiffness
-    - self.coulomb_friction_coeff
-- phantom.update_contact_impulse
-  - out:
-    - self.grid_node_external_impulse
-- vitactip.update_contact_force
-  - out:
-    - self.contact_forces_on_vertices
-- phantom.grid_op
-  - in:
-    - self.grid_node_mass
-    - self.grid_node_momentum_in
-    - self.grid_node_external_impulse
-    - self.rayleigh_damping_alpha
-    - self.rayleigh_damping_beta
-  - out:
-    - self.grid_node_velocity_out
-- phantom.g2p (Grid to Particle)
-  - in:
-    - self.particle_position
-    - self.grid_node_velocity_out
-  - out:
-    - self.particle_velocity
-    - self.affine_velocity_field
-    - self.particle_position
-- vitactip.update_external_forces
-  - in:
-    - self.vertex_velocities
-    - self.contact_forces_on_vertices
-    - self.vertex_mass
-    - self.is_fixed_layer
-    - self.vertex_control_velocities
-    - self.vertices_deformed_A
-    - self.vertices_undeformed_A
-  - out:
-    - self.vertex_velocities
-    - self.vertices_deformed_A
-    - self.vertices_undeformed_A
+- for loop
+  - phantom.compute_trial_deformation_gradient
+    - in:
+      - self.deformation_gradient
+      - self.affine_velocity_field
+    - out:
+      - self.trial_deformation_gradient
+  - phantom.svd_of_trial_deformation_gradient
+    - in:
+      - self.trial_deformation_gradient
+    - out:
+      - self.U_svd
+      - self.S_svd
+      - self.V_svd
+  - phantom.p2g (Particle to Grid)
+    - in:
+      - self.particle_position
+      - self.particle_velocity
+      - self.affine_velocity_field
+      - self.trial_deformation_gradient
+      - self.U_svd
+      - self.V_svd
+      - self.S_svd
+      - self.mu
+      - self.lam
+    - out:
+      - self.grid_node_momentum_in
+      - self.grid_node_mass
+      - self.deformation_gradient
+      - self.particle_von_mises_stress
+  - vitactip.update_internal_forces
+    - in:
+      - self.vertices_deformed_A
+      - self.vertex_velocities
+      - self.deformation_gradient_inverse
+      - self.mu
+      - self.lam
+      - self.tetrahedra
+      - self.element_materials
+      - self.vertex_mass
+    - out:
+      - self.vertex_velocities
+  - phantom.check_grid_occupy
+    - in:
+      - self.grid_node_mass
+    - out:
+      - self.grid_occupy
+  - main.check_collision
+    - in:
+      - self.phantom.grid_occupy
+      - self.vertices_deformed_A
+      - self.contact_surface
+    - out:
+      - self.contact_idx
+  - main.collision
+    - in:
+      - self.phantom.grid_node_momentum_in
+      - self.phantom.grid_node_mass
+      - self.phantom.grid_occupy
+      - self.vertices_deformed_A
+      - self.vertex_velocities
+      - self.sensor_outward_normal
+      - self.normal_stiffness
+      - self.normal_damping
+      - self.tangential_stiffness
+      - self.coulomb_friction_coeff
+    - out:
+      - self.grid_node_external_impulse
+      - self.contact_forces_on_vertices
+  - phantom.grid_op
+    - in:
+      - self.grid_node_mass
+      - self.grid_node_momentum_in
+      - self.grid_node_external_impulse
+      - self.rayleigh_damping_alpha
+      - self.rayleigh_damping_beta
+    - out:
+      - self.grid_node_velocity_out
+  - phantom.g2p (Grid to Particle)
+    - in:
+      - self.particle_position
+      - self.grid_node_velocity_out
+    - out:
+      - self.particle_velocity
+      - self.affine_velocity_field
+      - self.particle_position
+  - vitactip.update_external_forces
+    - in:
+      - self.vertex_velocities
+      - self.contact_forces_on_vertices
+      - self.vertex_mass
+      - self.is_fixed_layer
+      - self.vertex_control_velocities
+      - self.vertices_deformed_A
+      - self.vertices_undeformed_A
+    - out:
+      - self.vertex_velocities
+      - self.vertices_deformed_A
+      - self.vertices_undeformed_A
 - vitactip.extract_markers
   - in:
     - self.vertices_deformed_A
