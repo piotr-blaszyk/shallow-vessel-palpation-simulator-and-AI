@@ -27,6 +27,15 @@ class Contact:
         self.set_up_snapshot()
         self.set_up_loss_computation()
         self.visualisation_initialise()
+        self.load_system_identification_data()
+    
+    def load_system_identification_data(self):
+        with open(SYSTEM_PARAMS.files.markers_paired, "rb") as f:
+            markers_array = pickle.load(f)
+        
+        num_frames, num_markers, _ = markers_array.shape
+        self.marker_positions = ti.Vector.field(2, dtype=ti.f32, shape=(num_frames, num_markers), needs_grad=False)
+        self.marker_positions.from_numpy(markers_array)
 
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
@@ -69,19 +78,15 @@ class Contact:
         self.ground_truth_labels = ti.field(dtype=int, shape=(SYSTEM_PARAMS.contact.num_opt_steps,), needs_grad=False)
 
     def set_up_pid(self):
-# Error accumulation for integral term
         self.pos_error_sum = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
-        # Previous error for derivative term
         self.prev_pos_error = ti.Vector.field(3, dtype=float, shape=(), needs_grad=False)
 
-        # Add fields to track current target and control state
         self.current_target_idx = ti.field(dtype=int, shape=(), needs_grad=False)
         self.current_target_idx[None] = 0
         self.ori_error_magnitude_degrees = ti.field(dtype=float, shape=(), needs_grad=False)
         
-        # Add fields for dwell time control
         self.dwell_frames = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.dwell_frames[None] = SYSTEM_PARAMS.contact.dwell_frames # Number of frames to stay at each target
+        self.dwell_frames[None] = SYSTEM_PARAMS.contact.dwell_frames
         self.dwell_counter = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dwell_counter[None] = 0
         self.is_dwelling = ti.field(dtype=int, shape=(), needs_grad=False)
