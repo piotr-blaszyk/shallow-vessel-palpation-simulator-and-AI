@@ -52,7 +52,7 @@ class Contact:
         )
 
     def set_up_system_params(self):
-        self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=True)
         self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=False)
         self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=False)
         self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=False)
@@ -729,7 +729,7 @@ class Contact:
         self.print_gradients_single('mu', self.vitactip.mu)
         self.print_gradients_single('lam', self.vitactip.lam)
         self.print_gradients_single('youngs_modulus', self.vitactip.youngs_modulus)
-        # print(f'normal_stiffness: {self.normal_stiffness.grad[None]}')
+        self.print_gradients_single('normal_stiffness', self.normal_stiffness)
         # print(f'normal_damping: {self.normal_damping.grad[None]}')
         # print(f'tangential_stiffness: {self.tangential_stiffness.grad[None]}')
         # print(f'coulomb_friction_coeff: {self.coulomb_friction_coeff.grad[None]}')
