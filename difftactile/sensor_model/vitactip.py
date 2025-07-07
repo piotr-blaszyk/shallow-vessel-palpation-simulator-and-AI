@@ -22,39 +22,41 @@ NP_TYPE = np.float32
 class ViTacTip:
     def __init__(self):
         self.fisheye_model = FisheyeModel()
-        self.set_up_system_params()
+        self.set_up_system_params_1()
+        self.set_up_system_params_2()
         self.load_mesh()
         self.initialise_camera_model()
         self.set_up_physical_state()
     
-    def set_up_system_params(self):
-        # Material parameters for all materials
+    def set_up_system_params_1(self):
         self.mass_density = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
-        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
         self.poissons_ratio = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
         self.mu = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
         self.lam = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
 
         if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
-            self.mass_density[0] = SYSTEM_PARAMS.vitactip.single_material.density
-            self.youngs_modulus[0] = SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
-            self.poissons_ratio[0] = SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
+            self.mass_density[0] += SYSTEM_PARAMS.vitactip.single_material.density
+            self.youngs_modulus[0] += SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
+            self.poissons_ratio[0] += SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
 
-            self.mass_density[1] = SYSTEM_PARAMS.vitactip.single_material.density
-            self.youngs_modulus[1] = SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
-            self.poissons_ratio[1] = SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
+            self.mass_density[1] += SYSTEM_PARAMS.vitactip.single_material.density
+            self.youngs_modulus[1] += SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
+            self.poissons_ratio[1] += SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
         else:
             # Initialize material parameters
             # Shell (Vytaflex 60) - material index 0
-            self.mass_density[0] = SYSTEM_PARAMS.vitactip.shell.density
-            self.youngs_modulus[0] = SYSTEM_PARAMS.vitactip.shell.youngs_modulus
-            self.poissons_ratio[0] = SYSTEM_PARAMS.vitactip.shell.poissons_ratio
+            self.mass_density[0] += SYSTEM_PARAMS.vitactip.shell.density
+            self.youngs_modulus[0] += SYSTEM_PARAMS.vitactip.shell.youngs_modulus
+            self.poissons_ratio[0] += SYSTEM_PARAMS.vitactip.shell.poissons_ratio
             
             # Gel (RTV27905) - material index 1
-            self.mass_density[1] = SYSTEM_PARAMS.vitactip.gel.density
-            self.youngs_modulus[1] = SYSTEM_PARAMS.vitactip.gel.youngs_modulus
-            self.poissons_ratio[1] = SYSTEM_PARAMS.vitactip.gel.poissons_ratio
-        
+            self.mass_density[1] += SYSTEM_PARAMS.vitactip.gel.density
+            self.youngs_modulus[1] += SYSTEM_PARAMS.vitactip.gel.youngs_modulus
+            self.poissons_ratio[1] += SYSTEM_PARAMS.vitactip.gel.poissons_ratio
+
+    @ti.kernel
+    def set_up_system_params_2(self):
         # Compute Lamé parameters for all materials
         for i in range(SYSTEM_PARAMS.vitactip.maximum_number_of_materials):
             self.mu[i] += self.youngs_modulus[i] / 2 / (1 + self.poissons_ratio[i])
@@ -613,6 +615,8 @@ class ViTacTip:
 
     @ti.func
     def reset(self):
+        self.mu.fill(0.0)
+        self.lam.fill(0.0)
         self.contact_forces_on_vertices.fill(0.0)
         self.total_surface_force.fill(0.0)
 
@@ -983,11 +987,12 @@ class ViTacTip:
         """
         Clear gradients of all loss-related fields.
         """
+        pass
         # self.youngs_modulus.grad.fill(0.0)
         # self.mu.grad.fill(0.0)
         # self.lam.grad.fill(0.0)
 
-        self.deformed_markers.grad.fill(0.0)
+        # self.deformed_markers.grad.fill(0.0)
         # self.translation_A.grad[None].fill(0.0)
         # self.R_BA.grad[None].fill(0.0)
         # self.R_BC.grad[None].fill(0.0)

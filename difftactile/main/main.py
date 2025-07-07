@@ -706,12 +706,14 @@ class Contact:
         self.vitactip.set_control_vel(0)
         self.vitactip.set_vel(0)
         self.reset()
+        self.vitactip.set_up_system_params_2()
         for ss in range(SYSTEM_PARAMS.contact.num_sub_frames-1):
             self.update(ss)
 
     def backward_pass_common_part(self):
         for ss in range(SYSTEM_PARAMS.contact.num_sub_frames-2, -1, -1):
             self.update_grad(ss)
+        self.vitactip.set_up_system_params_2.grad()
         self.vitactip.set_vel.grad(0)
         self.vitactip.set_control_vel.grad(0)
     
@@ -726,7 +728,7 @@ class Contact:
         self.print_gradients_single('contact_forces_on_vertices', self.vitactip.contact_forces_on_vertices)
         self.print_gradients_single('mu', self.vitactip.mu)
         self.print_gradients_single('lam', self.vitactip.lam)
-        # print(f'youngs_modulus: {self.vitactip.youngs_modulus.grad[0]}')
+        self.print_gradients_single('youngs_modulus', self.vitactip.youngs_modulus)
         # print(f'normal_stiffness: {self.normal_stiffness.grad[None]}')
         # print(f'normal_damping: {self.normal_damping.grad[None]}')
         # print(f'tangential_stiffness: {self.tangential_stiffness.grad[None]}')
