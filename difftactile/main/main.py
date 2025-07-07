@@ -184,8 +184,6 @@ class Contact:
 
     @ti.kernel
     def clamp_grid(self, f: ti.i32):
-        for i, j, k in ti.ndrange(SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z):
-            self.phantom.grid_node_mass.grad[f, i, j, k] = ti.math.clamp(self.phantom.grid_node_mass.grad[f, i, j, k], -1000.0, 1000.0)
         for i in range(self.vitactip.num_vertices):
             self.vitactip.vertices_deformed_A.grad[f, i] = ti.math.clamp(
                 self.vitactip.vertices_deformed_A.grad[f, i], -1000.0, 1000.0
@@ -193,6 +191,9 @@ class Contact:
             self.vitactip.vertex_velocities.grad[f, i] = ti.math.clamp(
                 self.vitactip.vertex_velocities.grad[f, i], -1000.0, 1000.0
             )
+        return
+        for i, j, k in ti.ndrange(SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z):
+            self.phantom.grid_node_mass.grad[f, i, j, k] = ti.math.clamp(self.phantom.grid_node_mass.grad[f, i, j, k], -1000.0, 1000.0)
     
     @ti.kernel
     def reset_loss(self):
