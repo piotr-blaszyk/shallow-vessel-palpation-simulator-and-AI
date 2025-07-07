@@ -756,6 +756,11 @@ class Contact:
         print(f'{name} (val) min: {val_npy.min()}')
         print(f'{name} (val) max: {val_npy.max()}')
         print()
+    
+    @ti.kernel
+    def update_params(self):
+        for i in range(self.vitactip.youngs_modulus.shape[0]):
+            self.vitactip.youngs_modulus[i] -= SYSTEM_PARAMS.learning_rates.vitactip.youngs_modulus * self.vitactip.youngs_modulus.grad[i]
 
 def main():
     if RUN_ON_LAB_MACHINE:
@@ -819,6 +824,8 @@ def main():
             passes = SYSTEM_PARAMS.contact.num_frames-1 - ts + 1
             if passes % SYSTEM_PARAMS.meta.mini_batch_size == 0:
                 contact_model.print_gradients(ts)
+                contact_model.update_params()
+                # contact_model.print_gradients_single('vitactip.youngs_modulus', contact_model.vitactip.youngs_modulus)
                 contact_model.clear_grad()
 
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps-1} done")

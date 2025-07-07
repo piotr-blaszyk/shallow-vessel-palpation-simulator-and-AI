@@ -99,6 +99,11 @@
         "enable_pid_controller": 1,
         "mini_batch_size": 10
     },
+    "learning_rates": {
+        "vitactip": {
+            "youngs_modulus": 4.3
+        }
+    },
     "visualise_mesh": {
         "frame_number": 200
     },
