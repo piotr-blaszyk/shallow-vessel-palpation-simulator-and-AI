@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-from fisheye_model import *
 import tkinter as tk
 from PIL import Image, ImageTk
 from scipy.optimize import linear_sum_assignment
@@ -9,10 +8,11 @@ from scipy.spatial.distance import cdist
 import json
 import pickle
 
+from difftactile.sensor_model.fisheye_model import *
 from difftactile.main.constants import *
 
 class MarkerTracker:
-    def __init__(self, video_path, output_path=None):
+    def __init__(self, video_path, output_path):
         """
         Initialize the marker tracker with input video path and optional output path.
         
@@ -22,7 +22,7 @@ class MarkerTracker:
         """
         self.fisheye_model = FisheyeModel()
         self.video_path = video_path
-        self.output_path = None
+        self.output_path = output_path
         self.frame_markers = []  # List to store markers for each frame
         self.frame_mappings = []  # List to store mappings between consecutive frames
         self.base_frame_mappings = []  # List to store mappings to frame 0
@@ -35,18 +35,17 @@ class MarkerTracker:
             criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)
         )
         
-    def extract_frames(self, calculate_markers=True):
+    def extract_frames(self):
         """
         Extract frames from video at 1.0 second intervals.
         
         Args:
             calculate_markers (bool): If True, calculate markers from frames. If False, load from json file.
         """
-        json_path = SYSTEM_PARAMS.files.marker_tracker_markers
         
         cap = cv2.VideoCapture(str(self.video_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_interval = int(fps * 1.0)  # Number of frames to skip for 1.0s interval
+        frame_interval = int(fps * SYSTEM_PARAMS.marker_tracker.seconds_per_frame)  # Number of frames to skip for 1.0s interval
         
         frame_count = 0
         frame_idx = 0  # Keep track of processed frame index
@@ -70,27 +69,7 @@ class MarkerTracker:
             frame_count += 1
             
         cap.release()
-        
-        if not calculate_markers:
-            if json_path.exists():
-                with open(json_path, 'r') as f:
-                    markers_list = json.load(f)
-                    # Convert the loaded list back to numpy arrays
-                    self.frame_markers = [np.array(markers) for markers in markers_list]
-                                
-                    print(f"Loaded markers from {json_path}")
-                return
-            else:
-                print(f"Warning: {json_path} not found")
-        
-        if True:
-            # Convert numpy arrays to lists for JSON serialization
-            markers_list = [markers.tolist() if markers.size > 0 else [] for markers in self.frame_markers]
-            # Save markers to json file
-            with open(json_path, 'w') as f:
-                json.dump(markers_list, f)
-                print(f"Saved markers to {json_path}")
-    
+
     def match_consecutive_frames(self):
         """Match markers between consecutive frames using the Hungarian algorithm (linear_sum_assignment), minimizing sum of squared distances."""
         for i in range(len(self.frame_markers) - 1):
@@ -146,7 +125,7 @@ class MarkerTracker:
                     
             self.base_frame_mappings.append(mapping)
         
-    def create_visualization(self, show_adjacent=False):
+    def create_visualization(self, mode):
         """Create visualization video with marker tracking.
         Args:
             show_adjacent (bool): If True, visualize adjacent frames (n-1 and n). If False, visualize base frame and frame n.
@@ -156,7 +135,7 @@ class MarkerTracker:
         out = cv2.VideoWriter(str(self.output_path), fourcc, 2.0, 
                             (first_frame.shape[1], first_frame.shape[0]))
         
-        if show_adjacent:
+        if mode == 'show-adjacent':
             for frame_idx in range(len(self.frames)):
                 frame = self.frames[frame_idx].copy()
 
@@ -182,7 +161,7 @@ class MarkerTracker:
                 else:
                     # For the first frame, just write the frame with its markers
                     out.write(frame)
-        else:
+        elif mode == 'show-base':
             # Load the paired markers data
             with open(SYSTEM_PARAMS.files.markers_paired, 'rb') as f:
                 markers_array = pickle.load(f)
@@ -218,6 +197,21 @@ class MarkerTracker:
                         cv2.arrowedLine(blended, start_point, end_point, (0, 0, 255), 2)
                 
                 out.write(blended)
+        elif mode == 'unpaired-markers':
+            # Simply visualize markers for each frame without any tracking
+            for frame_idx in range(len(self.frames)):
+                frame = self.frames[frame_idx].copy()
+                
+                # Draw current frame markers in green with indices
+                for marker_idx, marker in enumerate(self.frame_markers[frame_idx]):
+                    if len(marker) > 0:  # Check if marker exists
+                        point = tuple(map(int, marker))
+                        cv2.circle(frame, point, 5, (0, 255, 0), -1)
+                        # cv2.putText(frame, str(marker_idx), 
+                        #           (point[0] + 10, point[1]), 
+                        #           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                
+                out.write(frame)
         
         out.release()
         
@@ -259,17 +253,11 @@ class MarkerTracker:
 
     def process_video(self):
         """Process the video file through all steps."""
-        print("Extracting frames...")
         self.extract_frames()
-        print("Matching consecutive frames...")
-        self.match_consecutive_frames()
-        print("Computing base frame mappings using Lucas-Kanade optical flow...")
-        self.compute_base_frame_mappings()
-        print("Saving markers to file")
-        self.save_paired_markers_to_file()
-        print("Creating visualization...")
-        self.create_visualization()
-        print("Processing complete!")
+        # self.match_consecutive_frames()
+        # self.compute_base_frame_mappings()
+        # self.save_paired_markers_to_file()
+        self.create_visualization(mode='unpaired-markers')
 
 class VideoPlayer:
     def __init__(self, video_path):
@@ -278,9 +266,6 @@ class VideoPlayer:
         self.cap = cv2.VideoCapture(str(video_path))
         self.current_frame = 0
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
-        # Store clicked points
-        self.manual_annotations = {}  # frame_idx -> list of [x, y] coordinates
         
         # Create GUI
         self.root = tk.Tk()
@@ -298,9 +283,6 @@ class VideoPlayer:
         self.root.bind('<Left>', self.prev_frame)
         self.root.bind('<Right>', self.next_frame)
         self.root.bind('<Escape>', self.quit)
-        
-        # Bind mouse click event
-        self.canvas.bind('<Button-1>', self.on_click)
         
         # Show first frame
         self.show_frame()
@@ -340,22 +322,12 @@ class VideoPlayer:
         """Close the video player."""
         self.root.quit()
     
-    def on_click(self, event):
-        """Handle mouse click event."""
-        x, y = event.x, event.y
-        print(f"Frame: {self.current_frame}, Clicked coordinates: ({x}, {y})")
-        
-        # Store the clicked coordinates
-        if self.current_frame not in self.manual_annotations:
-            self.manual_annotations[self.current_frame] = []
-        self.manual_annotations[self.current_frame].append([x, y])
-    
     def run(self):
         """Start the video player."""
         self.root.mainloop()
         self.cap.release()
 
-def process_and_view_video(input_path, output_path=None):
+def process_and_view_video(input_path, output_path):
     """
     Process a video file and launch the interactive viewer.
     
@@ -371,8 +343,7 @@ def process_and_view_video(input_path, output_path=None):
     player = VideoPlayer(tracker.output_path)
     player.run()
 
-
-if __name__ == '__main__':
+def main():
     process_and_view_video(SYSTEM_PARAMS.files.system_id_video, SYSTEM_PARAMS.files.system_id_output_video)
 
     player = VideoPlayer(SYSTEM_PARAMS.files.system_id_output_video)

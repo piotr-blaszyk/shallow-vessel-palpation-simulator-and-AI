@@ -120,6 +120,9 @@
         "shell_inner_r": 35.33333333333333,
         "shell_outer_r": 36.33333333333333
     },
+    "marker_tracker": {
+        "seconds_per_frame": 0.1
+    },
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",
         "biomimetic_tip_points": "difftactile/output/biomimetic-tip-points.pkl",
@@ -157,8 +160,6 @@
         "fisheye_model_project_points_to_pix_cv2": "difftactile/output/fisheye_model.project_points_to_pix_cv2.png",
         "output_dir": "difftactile/output/",
         "init_with_circle": "difftactile/output/init_with_circle.png",
-        "marker_tracker_markers": "difftactile/output/marker_tracker/markers.json",
-        "marker_tracker_manual_annotations": "difftactile/output/marker_tracker/manual-annotations.json",
         "tactile_sensor_all_nodes": "difftactile/output/tactile_sensor.all_nodes.pkl",
         "system_params_computed": "difftactile/system_params/system-params-computed.json",
         "vitactip_interp_idx_flat": "difftactile/output/vitactip.interp_idx_flat.pkl",
