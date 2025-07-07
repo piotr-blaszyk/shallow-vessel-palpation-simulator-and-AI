@@ -141,7 +141,7 @@ class MarkerTracker:
             
             self.base_frame_mappings.append(mapping)
 
-    def create_visualization(self, mode):
+    def create_visualization(self, mode, base_from_file):
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
         first_frame = self.frames[0]
         out = cv2.VideoWriter(
@@ -150,14 +150,12 @@ class MarkerTracker:
             2.0,
             (first_frame.shape[1], first_frame.shape[0]),
         )
-
         def draw_markers(frame, markers, color):
             for marker in markers:
                 if len(marker) > 0:
                     point = tuple(map(int, marker))
                     cv2.circle(frame, point, 5, color, -1)
             return frame
-
         def draw_arrows(frame, start_markers, end_markers, mapping):
             for i, map_entry in enumerate(mapping):
                 if not np.isnan(map_entry[0]):
@@ -167,10 +165,8 @@ class MarkerTracker:
                         end_point = tuple(map(int, end_markers[i]))
                         cv2.arrowedLine(frame, start_point, end_point, (0, 0, 255), 2)
             return frame
-
         for frame_idx in range(len(self.frames)):
             frame = self.frames[frame_idx].copy()
-            
             if mode == "show-adjacent":
                 frame = draw_markers(frame, self.frame_markers[frame_idx], (0, 255, 0))
                 if frame_idx > 0:
@@ -186,43 +182,63 @@ class MarkerTracker:
                     out.write(blended)
                 else:
                     out.write(frame)
-
             elif mode == "show-base":
-                base_frame = self.frames[0].copy()
-                base_frame = draw_markers(base_frame, self.frame_markers[0], (255, 0, 0))
-                frame = draw_markers(frame, self.frame_markers[frame_idx], (0, 255, 0))
-                blended = cv2.addWeighted(frame, 0.7, base_frame, 0.3, 0)
-                if frame_idx > 0 and frame_idx - 1 < len(self.base_frame_mappings):
-                    blended = draw_arrows(
-                        blended,
-                        self.frame_markers[0],
-                        self.frame_markers[frame_idx],
-                        self.base_frame_mappings[frame_idx - 1]
-                    )
+                if base_from_file:
+                    with open(SYSTEM_PARAMS.files.markers_paired, "rb") as f:
+                        markers_array = pickle.load(f)
+                    base_frame = self.frames[0].copy()
+                    base_frame = draw_markers(base_frame, markers_array[0], (255, 0, 0))
+                    frame = draw_markers(frame, markers_array[frame_idx], (0, 255, 0))
+                    blended = cv2.addWeighted(frame, 0.7, base_frame, 0.3, 0)
+                    if frame_idx > 0:
+                        dummy_mapping = [(i, None) for i in range(len(markers_array[0]))]
+                        blended = draw_arrows(blended, markers_array[0], markers_array[frame_idx], dummy_mapping)
+                else:
+                    base_frame = self.frames[0].copy()
+                    base_frame = draw_markers(base_frame, self.frame_markers[0], (255, 0, 0))
+                    frame = draw_markers(frame, self.frame_markers[frame_idx], (0, 255, 0))
+                    blended = cv2.addWeighted(frame, 0.7, base_frame, 0.3, 0)
+                    if frame_idx > 0 and frame_idx - 1 < len(self.base_frame_mappings):
+                        blended = draw_arrows(
+                            blended,
+                            self.frame_markers[0],
+                            self.frame_markers[frame_idx],
+                            self.base_frame_mappings[frame_idx - 1]
+                        )
                 out.write(blended)
-
             elif mode == "unpaired-markers":
                 frame = draw_markers(frame, self.frame_markers[frame_idx], (0, 255, 0))
                 out.write(frame)
-
         out.release()
 
     def save_paired_markers_to_file(self):
+        base_markers = self.frame_markers[0]
+        valid_base_indices = set()
+        
+        if len(self.base_frame_mappings) > 0:
+            last_mapping = self.base_frame_mappings[-1]
+            for map_entry in last_mapping:
+                if not np.isnan(map_entry[0]):
+                    valid_base_indices.add(int(map_entry[0]))
+        
+        num_valid_markers = len(valid_base_indices)
         num_frames = len(self.frame_markers)
-        num_markers = len(self.frame_markers[0])
-        markers_array = np.zeros((num_frames, num_markers, 2), dtype=np.float32)
-        markers_array[0] = self.frame_markers[0]
+        markers_array = np.zeros((num_frames, num_valid_markers, 2), dtype=np.float32)
+        
+        for idx, base_idx in enumerate(sorted(valid_base_indices)):
+            markers_array[0][idx] = base_markers[base_idx]
+        
         for frame_idx in range(1, num_frames):
             current_frame_markers = self.frame_markers[frame_idx]
             base_mapping = self.base_frame_mappings[frame_idx - 1]
-            reordered_markers = np.zeros((num_markers, 2), dtype=np.float32)
+            
             for current_idx, map_entry in enumerate(base_mapping):
                 if not np.isnan(map_entry[0]):
-                    base_frame_idx = int(map_entry[0])
-                    reordered_markers[base_frame_idx] = current_frame_markers[
-                        current_idx
-                    ]
-            markers_array[frame_idx] = reordered_markers
+                    base_idx = int(map_entry[0])
+                    if base_idx in valid_base_indices:
+                        array_idx = sorted(valid_base_indices).index(base_idx)
+                        markers_array[frame_idx][array_idx] = current_frame_markers[current_idx]
+        
         with open(SYSTEM_PARAMS.files.markers_paired, "wb") as f:
             pickle.dump(markers_array, f)
 
@@ -231,7 +247,7 @@ class MarkerTracker:
         self.match_consecutive_frames()
         self.compute_base_frame_mappings()
         self.save_paired_markers_to_file()
-        self.create_visualization(mode="show-base")
+        self.create_visualization(mode="show-base", base_from_file=True)
 
 
 class VideoPlayer:
