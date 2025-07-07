@@ -192,24 +192,22 @@ class Contact:
         #     )
     
     @ti.kernel
-    def clear_loss_grad(self):
-        # self.normal_stiffness.grad[None] = 0.0
-        # self.normal_damping.grad[None] = 0.0
-        # self.tangential_stiffness.grad[None] = 0.0
-        # self.coulomb_friction_coeff.grad[None] = 0.0
+    def reset_loss(self):
+        self.loss.fill(0.0)
+        self.loss.grad.fill(1.0)
 
-        self.loss[None] = 0.0
-        self.loss.grad[None] = 1.0
-    
-    def clear_traj_grad(self):
-        self.vitactip.clear_loss_grad()
-        self.phantom.clear_loss_grad_disabled()
-        self.clear_loss_grad()
+    @ti.kernel
+    def clear_grad_helper(self):
+        self.squared_error_sum.grad.fill(0.0)
+        self.normal_stiffness.grad.fill(0.0)
+        self.normal_damping.grad.fill(0.0)
+        self.tangential_stiffness.grad.fill(0.0)
+        self.coulomb_friction_coeff.grad.fill(0.0)
 
-    def clear_all_grad(self):
-        self.clear_traj_grad()
-        self.vitactip.clear_step_grad(SYSTEM_PARAMS.contact.num_sub_frames)
-        self.phantom.clear_step_grad_disabled(SYSTEM_PARAMS.contact.num_sub_frames)
+    def clear_grad(self):
+        self.clear_grad_helper()
+        self.vitactip.clear_grad()
+        self.phantom.clear_grad()
     
     @ti.kernel
     def reset(self):
@@ -766,7 +764,6 @@ def main():
         contact_model.set_up_initial_positions_and_trajectory()
         contact_model.reset_pid_controller()
         contact_model.visualisation_reset_3d_scene()
-        contact_model.clear_all_grad()
         
         if opts == 0:
             contact_model.vitactip.test_mapping_from_global_space_to_camera_space()
@@ -797,14 +794,15 @@ def main():
 
         print('backward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames-1, -1, -1):
+            contact_model.reset_loss()
+            contact_model.clear_grad()
+
             contact_model.memory_from_cache(ts)
             contact_model.forward_pass_common_part(ts)
             contact_model.vitactip.extract_markers(SYSTEM_PARAMS.contact.num_sub_frames-1)
             contact_model.compute_marker_loss_1(ts)
             contact_model.compute_marker_loss_2(ts)
             contact_model.visualisation_update_gui(ts)
-
-            contact_model.clear_all_grad()
             
             contact_model.compute_marker_loss_2.grad(ts)
             contact_model.compute_marker_loss_1.grad(ts)
