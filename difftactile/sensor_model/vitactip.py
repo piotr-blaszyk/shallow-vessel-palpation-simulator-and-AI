@@ -228,7 +228,7 @@ class ViTacTip:
 
         self.deformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=True)
         self.undeformed_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
-        self.initial_markers = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
+        self.initial_markers_unused = ti.Vector.field(2, float, self.num_markers, needs_grad=False)
         self.initial_undeformed_vertices_after_applying_transformation_matrix = ti.Vector.field(3, float, self.num_markers, needs_grad=False)
 
         self.marker_interpolation_weights = ti.Vector.field(self.marker_interpolation_knn_k, float, self.num_markers, needs_grad=False)
@@ -373,9 +373,9 @@ class ViTacTip:
             self.undeformed_markers[i] = interpolated_undeformed_pos_2d
 
     @ti.kernel
-    def copy_markers_to_initial_markers_for_drift_correction(self):
+    def copy_markers_to_initial_markers_for_drift_correction_unused(self):
         for marker_idx in range(self.num_markers):
-            self.initial_markers[marker_idx] = self.undeformed_markers[marker_idx]
+            self.initial_markers_unused[marker_idx] = self.undeformed_markers[marker_idx]
     
     def get_keypoint_idxs(self):
         # Convert the field to numpy array for easier max operations
@@ -392,7 +392,7 @@ class ViTacTip:
         surface_node_visualization = initial_camera_image.copy()
         with open(SYSTEM_PARAMS.files.initial_vertex_positions_undeformed, 'wb') as f:
             pickle.dump(self.vertices_B.to_numpy()[0], f)
-        for projected_point in self.initial_markers.to_numpy():
+        for projected_point in self.undeformed_markers.to_numpy():
             point_center = (int(round(projected_point[0])), int(round(projected_point[1])))
             cv2.circle(surface_node_visualization, point_center, radius=3, color=(0, 255, 0), thickness=2)
         cv2.imwrite(SYSTEM_PARAMS.files.vitactip_photo_default_state_predicted_markers, surface_node_visualization)

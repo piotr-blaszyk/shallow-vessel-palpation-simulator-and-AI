@@ -6,6 +6,8 @@ import json
 import cv2
 import sys
 import math
+from scipy.spatial.distance import cdist
+from scipy.optimize import linear_sum_assignment
 
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
@@ -29,6 +31,29 @@ class Contact:
         self.visualisation_initialise()
         self.load_system_identification_data()
     
+    def compute_mapping_between_experimental_and_sim_markers(self):
+        # Get initial positions from both experimental and sim data
+        exp_markers = self.marker_positions.to_numpy()[0]  # First frame of experimental data
+        sim_markers = self.vitactip.undeformed_markers.to_numpy()
+        
+        # Compute cost matrix using squared euclidean distance
+        cost_matrix = cdist(exp_markers, sim_markers, metric="sqeuclidean")
+        
+        # Use Hungarian algorithm to find optimal assignment
+        exp_indices, sim_indices = linear_sum_assignment(cost_matrix)
+        
+        # Create Taichi field to store the mapping
+        num_exp_markers = len(exp_markers)
+        self.experimental_markers_to_sim_markers = ti.field(dtype=ti.i32, shape=(num_exp_markers,), needs_grad=False)
+        
+        # Convert mapping to numpy array first
+        mapping = np.full(num_exp_markers, -1, dtype=np.int32)  # Initialize with -1 for unmatched markers
+        for exp_idx, sim_idx in zip(exp_indices, sim_indices):
+            mapping[exp_idx] = sim_idx
+            
+        # Copy mapping to Taichi field
+        self.experimental_markers_to_sim_markers.from_numpy(mapping)
+
     def load_system_identification_data(self):
         with open(SYSTEM_PARAMS.files.markers_paired, "rb") as f:
             markers_array = pickle.load(f)
@@ -786,7 +811,7 @@ def main():
         if opts == 0:
             contact_model.vitactip.test_mapping_from_global_space_to_camera_space()
             contact_model.vitactip.extract_markers(0)
-            contact_model.vitactip.copy_markers_to_initial_markers_for_drift_correction()
+            contact_model.compute_mapping_between_experimental_and_sim_markers()
             contact_model.vitactip.save_predicted_markers_to_image()
             contact_model.vitactip.get_keypoint_idxs()
             initial_markers = contact_model.vitactip.deformed_markers.to_numpy()
