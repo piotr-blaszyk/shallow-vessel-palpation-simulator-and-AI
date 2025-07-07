@@ -72,7 +72,7 @@ class MarkerTracker:
 
             if distances:
                 percentile_dist = np.percentile(distances, 90)
-                dist_threshold = percentile_dist * 2
+                dist_threshold = percentile_dist * 10
                 for r, c, dist in zip(row_ind, col_ind, distances):
                     if dist <= dist_threshold:
                         if reverse_mapping:
@@ -84,20 +84,48 @@ class MarkerTracker:
 
     def compute_base_frame_mappings(self):
         base_markers = self.frame_markers[0]
+        last_frame_mapping = np.full((len(self.frame_markers[-1]), 2), np.nan)
+        
+        for marker_idx in range(len(self.frame_markers[-1])):
+            current_marker_idx = marker_idx
+            valid_chain = True
+            current_frame = len(self.frame_markers) - 1
+            
+            while current_frame > 0:
+                prev_frame = current_frame - 1
+                prev_frame_mapping = self.frame_mappings[prev_frame]
+                if current_marker_idx >= len(prev_frame_mapping) or np.isnan(prev_frame_mapping[current_marker_idx][0]):
+                    valid_chain = False
+                    break
+                prev_frame_marker_idx = int(prev_frame_mapping[current_marker_idx][0])
+                if prev_frame_marker_idx >= len(self.frame_markers[prev_frame]):
+                    valid_chain = False
+                    break
+                current_marker_idx = prev_frame_marker_idx
+                current_frame = prev_frame
+                
+            if valid_chain and current_marker_idx < len(base_markers):
+                dist = np.linalg.norm(self.frame_markers[-1][marker_idx] - base_markers[current_marker_idx])
+                last_frame_mapping[marker_idx] = [current_marker_idx, dist]
+
+        valid_base_indices = set()
+        for map_entry in last_frame_mapping:
+            if not np.isnan(map_entry[0]):
+                valid_base_indices.add(int(map_entry[0]))
+
         for frame_idx in range(1, len(self.frame_markers)):
-            my_dists = []
             current_frame_markers = self.frame_markers[frame_idx]
             mapping = np.full((len(current_frame_markers), 2), np.nan)
+            
             for marker_idx in range(len(current_frame_markers)):
                 current_marker_idx = marker_idx
                 valid_chain = True
                 current_frame = frame_idx
+                
                 while current_frame > 0:
                     prev_frame = current_frame - 1
                     prev_frame_mapping = self.frame_mappings[prev_frame]
-                    if current_marker_idx >= len(prev_frame_mapping) or np.isnan(
-                        prev_frame_mapping[current_marker_idx][0]
-                    ):
+                    if current_marker_idx >= len(prev_frame_mapping) or np.isnan(prev_frame_mapping[current_marker_idx][0]):
                         valid_chain = False
                         break
                     prev_frame_marker_idx = int(prev_frame_mapping[current_marker_idx][0])
@@ -106,15 +134,11 @@ class MarkerTracker:
                         break
                     current_marker_idx = prev_frame_marker_idx
                     current_frame = prev_frame
-                if valid_chain and current_marker_idx < len(base_markers):
-                    dist = np.linalg.norm(
-                        current_frame_markers[marker_idx]
-                        - base_markers[current_marker_idx]
-                    )
+                
+                if valid_chain and current_marker_idx < len(base_markers) and current_marker_idx in valid_base_indices:
+                    dist = np.linalg.norm(current_frame_markers[marker_idx] - base_markers[current_marker_idx])
                     mapping[marker_idx] = [current_marker_idx, dist]
-                    my_dists.append(dist)
-            if frame_idx == 28:
-                foo = 7
+            
             self.base_frame_mappings.append(mapping)
 
     def create_visualization(self, mode):
@@ -206,6 +230,7 @@ class MarkerTracker:
         self.extract_frames()
         self.match_consecutive_frames()
         self.compute_base_frame_mappings()
+        self.save_paired_markers_to_file()
         self.create_visualization(mode="show-base")
 
 
