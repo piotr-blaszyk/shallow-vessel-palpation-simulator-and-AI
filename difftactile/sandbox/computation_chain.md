@@ -85,6 +85,10 @@
       - self.tetrahedra
       - self.element_materials
       - self.vertex_mass
+      - self.rayleigh_damping_alpha
+      - self.rayleigh_damping_beta
+      - self.hourglass_coefficient
+      - self.hourglass_modulus_scale
     - out:
       - self.vertex_velocities
   - phantom.check_grid_occupy
