@@ -86,7 +86,7 @@ class MarkerTracker:
                 mapping = np.full((len(next_markers), 2), np.nan)
                 self.frame_mappings.append(mapping)
                 continue
-
+            
             # Determine which frame has fewer markers
             if len(next_markers) <= len(current_markers):
                 # Next frame has fewer or equal markers - match from next to current
@@ -103,8 +103,8 @@ class MarkerTracker:
                     distances.append(dist)
                 
                 if distances:
-                    percentile_dist = np.percentile(distances, 80)
-                    dist_threshold = percentile_dist * 4
+                    percentile_dist = np.percentile(distances, 90)
+                    dist_threshold = percentile_dist * 2
                     
                     # Fill mapping with assignments that meet the distance threshold
                     for r, c, dist in zip(row_ind, col_ind, distances):
@@ -125,8 +125,8 @@ class MarkerTracker:
                     distances.append(dist)
                 
                 if distances:
-                    percentile_dist = np.percentile(distances, 80)
-                    dist_threshold = percentile_dist * 4
+                    percentile_dist = np.percentile(distances, 90)
+                    dist_threshold = percentile_dist * 2
                     
                     # Create reverse mapping: for each marker in next frame, find if it was matched
                     # and to which marker in current frame, only if distance is below threshold
@@ -141,25 +141,42 @@ class MarkerTracker:
         base_markers = self.frame_markers[0]
         
         for frame_idx in range(1, len(self.frame_markers)):
+            current_frame_markers = self.frame_markers[frame_idx]
             # Initialize mapping with NaN
-            mapping = np.full((len(self.frame_markers[frame_idx]), 2), np.nan)
+            mapping = np.full((len(current_frame_markers), 2), np.nan)
             
             # Track each marker through the chain of mappings
-            for marker_idx in range(len(self.frame_markers[frame_idx])):
+            for marker_idx in range(len(current_frame_markers)):
                 current_marker_idx = marker_idx
                 valid_chain = True
+                current_frame = frame_idx
                 
                 # Follow the chain of mappings back to frame 0
-                for prev_frame_idx in range(frame_idx - 1, -1, -1):
-                    if np.isnan(self.frame_mappings[prev_frame_idx][current_marker_idx][0]):
+                while current_frame > 0:
+                    prev_frame = current_frame - 1
+                    prev_frame_mapping = self.frame_mappings[prev_frame]
+                    
+                    # Check if current marker index is valid for the previous frame's mapping
+                    if (current_marker_idx >= len(prev_frame_mapping) or 
+                        np.isnan(prev_frame_mapping[current_marker_idx][0])):
                         valid_chain = False
                         break
-                    current_marker_idx = int(self.frame_mappings[prev_frame_idx][current_marker_idx][0])
+                    
+                    # Get the mapped index in the previous frame
+                    prev_frame_idx = int(prev_frame_mapping[current_marker_idx][0])
+                    
+                    # Check if the mapped index is valid for the previous frame's markers
+                    if prev_frame_idx >= len(self.frame_markers[prev_frame]):
+                        valid_chain = False
+                        break
+                        
+                    current_marker_idx = prev_frame_idx
+                    current_frame = prev_frame
                 
-                if valid_chain:
-                    mapping[marker_idx] = [current_marker_idx, 
-                                         np.linalg.norm(self.frame_markers[frame_idx][marker_idx] - 
-                                                      base_markers[current_marker_idx])]
+                if valid_chain and current_marker_idx < len(base_markers):
+                    # Compute distance between current marker and its match in base frame
+                    dist = np.linalg.norm(current_frame_markers[marker_idx] - base_markers[current_marker_idx])
+                    mapping[marker_idx] = [current_marker_idx, dist]
                     
             self.base_frame_mappings.append(mapping)
         
@@ -212,17 +229,18 @@ class MarkerTracker:
                 for marker_idx, marker in enumerate(markers_array[0]):
                     point = tuple(map(int, marker))
                     cv2.circle(base_frame, point, 5, (255, 0, 0), -1)
-                    cv2.putText(base_frame, str(marker_idx), 
-                              (point[0] + 10, point[1]), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+                    # cv2.putText(base_frame, str(marker_idx), 
+                    #           (point[0] + 10, point[1]), 
+                    #           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
                 
                 # Draw current frame markers in green with indices
                 for marker_idx, marker in enumerate(markers_array[frame_idx]):
                     point = tuple(map(int, marker))
-                    cv2.circle(frame, point, 5, (0, 255, 0), -1)
-                    cv2.putText(frame, str(marker_idx), 
-                              (point[0] + 10, point[1]), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                    if point[0] > 10 and point[1] > 10:
+                        cv2.circle(frame, point, 5, (0, 255, 0), -1)
+                    # cv2.putText(frame, str(marker_idx), 
+                    #           (point[0] + 10, point[1]), 
+                    #           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
                 
                 # Create blended image
                 blended = cv2.addWeighted(frame, 0.7, base_frame, 0.3, 0)
@@ -232,7 +250,8 @@ class MarkerTracker:
                     for marker_idx in range(len(markers_array[0])):
                         start_point = tuple(map(int, markers_array[0][marker_idx]))
                         end_point = tuple(map(int, markers_array[frame_idx][marker_idx]))
-                        cv2.arrowedLine(blended, start_point, end_point, (0, 0, 255), 2)
+                        if end_point[0] > 10 and end_point[1] > 10:
+                            cv2.arrowedLine(blended, start_point, end_point, (0, 0, 255), 2)
                 
                 out.write(blended)
         elif mode == 'unpaired-markers':
@@ -293,9 +312,9 @@ class MarkerTracker:
         """Process the video file through all steps."""
         self.extract_frames()
         self.match_consecutive_frames()
-        # self.compute_base_frame_mappings()
+        self.compute_base_frame_mappings()
         # self.save_paired_markers_to_file()
-        self.create_visualization(mode='show-adjacent')
+        self.create_visualization(mode='show-base')
 
 class VideoPlayer:
     def __init__(self, video_path):
