@@ -96,7 +96,7 @@
     "meta": {
         "target_courant_number": 0.5,
         "enable_tactile_map": 1,
-        "enable_pid_controller": 1,
+        "enable_pid_controller": 0,
         "mini_batch_size": 10
     },
     "learning_rates": {
@@ -137,7 +137,7 @@
         "preprocessing_params": "difftactile/output/saved_models/preprocessing_params.pkl",
         "vascular_tumour_press_results": "difftactile/output/vascular-tumour-press-experimental-results.pkl",
         "init_principal_point": "difftactile/output/init-principal-point.png",
-        "system_id_video": "difftactile/manual_or_experimental_data/system-id-screws-3-reps.mkv",
+        "system_id_video": "difftactile/manual_or_experimental_data/system-id-screws-1-rep.mkv",
         "processed_video": "difftactile/output/processed_video.mkv",
         "system_id_output_video": "difftactile/output/marker_tracker/marker-tracker.mkv",
         "fisheye_params": "difftactile/output/fisheye_params.npz",

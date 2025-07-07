@@ -43,14 +43,6 @@ class MarkerTracker:
             calculate_markers (bool): If True, calculate markers from frames. If False, load from json file.
         """
         json_path = SYSTEM_PARAMS.files.marker_tracker_markers
-        manual_annotations_path = SYSTEM_PARAMS.files.marker_tracker_manual_annotations
-        
-        # Load manual annotations if they exist
-        manual_annotations = {}
-        if manual_annotations_path.exists():
-            with open(manual_annotations_path, 'r') as f:
-                manual_annotations = json.load(f)
-                print(f"Loaded manual annotations from {manual_annotations_path}")
         
         cap = cv2.VideoCapture(str(self.video_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -98,18 +90,6 @@ class MarkerTracker:
             with open(json_path, 'w') as f:
                 json.dump(markers_list, f)
                 print(f"Saved markers to {json_path}")
-
-        # Add manual annotations to loaded markers
-        for frame_idx in manual_annotations:
-            idx = int(frame_idx)
-            if idx < len(self.frame_markers):
-                manual_points = np.array(manual_annotations[frame_idx])
-                if len(self.frame_markers[idx]) > 0:
-                    self.frame_markers[idx] = np.vstack((self.frame_markers[idx], manual_points))
-                else:
-                    self.frame_markers[idx] = manual_points
-        
-        print(f"Added manual annotations")
     
     def match_consecutive_frames(self):
         """Match markers between consecutive frames using the Hungarian algorithm (linear_sum_assignment), minimizing sum of squared distances."""
@@ -318,8 +298,6 @@ class VideoPlayer:
         self.root.bind('<Left>', self.prev_frame)
         self.root.bind('<Right>', self.next_frame)
         self.root.bind('<Escape>', self.quit)
-        if False:
-            self.root.bind('y', self.save_annotations)  # Add binding for 'y' key
         
         # Bind mouse click event
         self.canvas.bind('<Button-1>', self.on_click)
@@ -371,36 +349,6 @@ class VideoPlayer:
         if self.current_frame not in self.manual_annotations:
             self.manual_annotations[self.current_frame] = []
         self.manual_annotations[self.current_frame].append([x, y])
-    
-    def save_annotations(self, event):
-        """Save manual annotations to a JSON file, merging with existing annotations if present."""
-        # Convert frame indices from int to str for JSON serialization
-        annotations_dict = {str(k): v for k, v in self.manual_annotations.items()}
-        
-        json_path = SYSTEM_PARAMS.files.marker_tracker_manual_annotations
-        
-        # Load existing annotations if they exist
-        existing_annotations = {}
-        if json_path.exists():
-            with open(json_path, 'r') as f:
-                existing_annotations = json.load(f)
-                print(f"Loaded existing annotations from {json_path}")
-        
-        # Merge existing annotations with new ones
-        # For each frame in new annotations, append the new points to existing points or create new entry
-        for frame_idx, points in annotations_dict.items():
-            if frame_idx in existing_annotations:
-                existing_annotations[frame_idx].extend(points)
-            else:
-                existing_annotations[frame_idx] = points
-        
-        # Save merged annotations back to file
-        with open(json_path, 'w') as f:
-            json.dump(existing_annotations, f)
-        print(f"Saved merged annotations to {json_path}")
-        
-        # Clear current annotations after saving
-        self.manual_annotations = {}
     
     def run(self):
         """Start the video player."""
