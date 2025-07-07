@@ -707,12 +707,14 @@ class Contact:
         self.vitactip.set_vel(0)
         self.reset()
         self.vitactip.set_up_system_params_2()
+        self.phantom.set_stiffness()
         for ss in range(SYSTEM_PARAMS.contact.num_sub_frames-1):
             self.update(ss)
 
     def backward_pass_common_part(self):
         for ss in range(SYSTEM_PARAMS.contact.num_sub_frames-2, -1, -1):
             self.update_grad(ss)
+        self.phantom.set_stiffness.grad()
         self.vitactip.set_up_system_params_2.grad()
         self.vitactip.set_vel.grad(0)
         self.vitactip.set_control_vel.grad(0)
@@ -729,11 +731,15 @@ class Contact:
         self.print_gradients_single('vitactip.mu', self.vitactip.mu)
         self.print_gradients_single('vitactip.lam', self.vitactip.lam)
         self.print_gradients_single('vitactip.youngs_modulus', self.vitactip.youngs_modulus)
+        self.print_gradients_single('vitactip.poissons_ratio', self.vitactip.poissons_ratio)
         self.print_gradients_single('normal_stiffness', self.normal_stiffness)
         self.print_gradients_single('normal_damping', self.normal_damping)
         self.print_gradients_single('tangential_stiffness', self.tangential_stiffness)
         self.print_gradients_single('coulomb_friction_coeff', self.coulomb_friction_coeff)
         self.print_gradients_single('phantom.mu', self.phantom.mu)
+        self.print_gradients_single('phantom.lam', self.phantom.lam)
+        self.print_gradients_single('phantom.youngs_modulus', self.phantom.youngs_modulus)
+        self.print_gradients_single('phantom.poissons_ratio', self.phantom.poissons_ratio)
         print()
     
     def print_gradients_single(self, name, ti_var):

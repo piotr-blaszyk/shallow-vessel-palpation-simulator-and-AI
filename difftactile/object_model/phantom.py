@@ -34,10 +34,15 @@ class Phantom:
 
         self.inverse_mpm_grid_cube_size =  1 / SYSTEM_PARAMS.phantom.mpm_grid_cube_size
         
-        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.lam = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
+        self.lam = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
         self.mu = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
+
+        self.youngs_modulus[0] += SYSTEM_PARAMS.phantom.silicone.youngs_modulus
+        self.poissons_ratio[0] += SYSTEM_PARAMS.phantom.silicone.poissons_ratio
+        self.youngs_modulus[1] += SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus
+        self.poissons_ratio[1] += SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio
 
         self.set_stiffness()
 
@@ -61,15 +66,11 @@ class Phantom:
         self.healthy_tissue_particle_mass = self.initial_particle_volume * SYSTEM_PARAMS.phantom.silicone.density
         self.total_healthy_tissue_mass = SYSTEM_PARAMS_COMPUTED.phantom_volume * SYSTEM_PARAMS.phantom.silicone.density
 
+    @ti.kernel
     def set_stiffness(self):
-        self.youngs_modulus[0] = SYSTEM_PARAMS.phantom.silicone.youngs_modulus
-        self.poissons_ratio[0] = SYSTEM_PARAMS.phantom.silicone.poissons_ratio
-        self.youngs_modulus[1] = SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus
-        self.poissons_ratio[1] = SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio
-
         for item in range(2):
             self.mu[item] += self.youngs_modulus[item] / 2 / (1 + self.poissons_ratio[item])
-            self.lam[item] = self.youngs_modulus[item] * self.poissons_ratio[item] / (1 + self.poissons_ratio[item]) / (1 - 2 * self.poissons_ratio[item])
+            self.lam[item] += self.youngs_modulus[item] * self.poissons_ratio[item] / (1 + self.poissons_ratio[item]) / (1 - 2 * self.poissons_ratio[item])
 
     def set_up_physical_state(self):
         # initial_position: position vector in m
@@ -205,6 +206,8 @@ class Phantom:
 
     @ti.func
     def reset(self):
+        self.mu.fill(0.0)
+        self.lam.fill(0.0)
         self.grid_node_momentum_in.fill(0.0)
         self.grid_node_velocity_out.fill(0.0)
         self.grid_node_mass.fill(0.0)
