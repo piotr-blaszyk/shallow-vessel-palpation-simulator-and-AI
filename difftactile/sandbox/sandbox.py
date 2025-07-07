@@ -1,26 +1,12 @@
-import taichi as ti
-ti.init()
-
-N = 16
-
-x = ti.field(dtype=ti.f32, shape=N, needs_grad=True)
-y = ti.field(dtype=ti.f32, shape=N, needs_grad=False)
-loss = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
-
-@ti.kernel
-def func():
-    for i in x:
-       y[i] += x[i] ** 2
-       loss[None] += y[i] ** 2
-
-for i in range(N):
-    x[i] = i
-
-# Set the `grad` of the output variables to `1` before calling `func.grad()`.
-loss.grad[None] = 1
-
-func()
-func.grad()
-print(x.grad.to_numpy())
-# for i in range(N):
-#     assert x.grad[i] == i * 2 + 1
+import numpy as np
+cost = np.array([
+    [4, 1, 3], 
+    [2, 0, 5], 
+    [3, 2, 2], 
+    [1, 2, 3]
+])
+from scipy.optimize import linear_sum_assignment
+row_ind, col_ind = linear_sum_assignment(cost)
+print(f'row_ind: {row_ind}')
+print(f'col_ind: {col_ind}')
+print(cost[row_ind, col_ind].sum())
