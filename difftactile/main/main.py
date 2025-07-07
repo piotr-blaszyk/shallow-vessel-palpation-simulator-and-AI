@@ -726,13 +726,14 @@ class Contact:
         self.print_gradients_single('vertices_deformed_A', self.vitactip.vertices_deformed_A)
         self.print_gradients_single('vertex_velocities', self.vitactip.vertex_velocities)
         self.print_gradients_single('contact_forces_on_vertices', self.vitactip.contact_forces_on_vertices)
-        self.print_gradients_single('mu', self.vitactip.mu)
-        self.print_gradients_single('lam', self.vitactip.lam)
-        self.print_gradients_single('youngs_modulus', self.vitactip.youngs_modulus)
+        self.print_gradients_single('vitactip.mu', self.vitactip.mu)
+        self.print_gradients_single('vitactip.lam', self.vitactip.lam)
+        self.print_gradients_single('vitactip.youngs_modulus', self.vitactip.youngs_modulus)
         self.print_gradients_single('normal_stiffness', self.normal_stiffness)
         self.print_gradients_single('normal_damping', self.normal_damping)
         self.print_gradients_single('tangential_stiffness', self.tangential_stiffness)
         self.print_gradients_single('coulomb_friction_coeff', self.coulomb_friction_coeff)
+        self.print_gradients_single('phantom.mu', self.phantom.mu)
         print()
     
     def print_gradients_single(self, name, ti_var):

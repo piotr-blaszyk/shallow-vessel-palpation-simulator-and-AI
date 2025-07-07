@@ -34,10 +34,10 @@ class Phantom:
 
         self.inverse_mpm_grid_cube_size =  1 / SYSTEM_PARAMS.phantom.mpm_grid_cube_size
         
-        self.youngs_modulus_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.poissons_ratio_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.lamda_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
-        self.mu_0 = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.lam = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.mu = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
 
         self.set_stiffness()
 
@@ -62,14 +62,14 @@ class Phantom:
         self.total_healthy_tissue_mass = SYSTEM_PARAMS_COMPUTED.phantom_volume * SYSTEM_PARAMS.phantom.silicone.density
 
     def set_stiffness(self):
-        self.youngs_modulus_0[0] = SYSTEM_PARAMS.phantom.silicone.youngs_modulus
-        self.poissons_ratio_0[0] = SYSTEM_PARAMS.phantom.silicone.poissons_ratio
-        self.youngs_modulus_0[1] = SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus
-        self.poissons_ratio_0[1] = SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio
+        self.youngs_modulus[0] = SYSTEM_PARAMS.phantom.silicone.youngs_modulus
+        self.poissons_ratio[0] = SYSTEM_PARAMS.phantom.silicone.poissons_ratio
+        self.youngs_modulus[1] = SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus
+        self.poissons_ratio[1] = SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio
 
         for item in range(2):
-            self.mu_0[item] = self.youngs_modulus_0[item] / 2 / (1 + self.poissons_ratio_0[item])
-            self.lamda_0[item] = self.youngs_modulus_0[item] * self.poissons_ratio_0[item] / (1 + self.poissons_ratio_0[item]) / (1 - 2 * self.poissons_ratio_0[item])
+            self.mu[item] += self.youngs_modulus[item] / 2 / (1 + self.poissons_ratio[item])
+            self.lam[item] = self.youngs_modulus[item] * self.poissons_ratio[item] / (1 + self.poissons_ratio[item]) / (1 - 2 * self.poissons_ratio[item])
 
     def set_up_physical_state(self):
         # initial_position: position vector in m
@@ -276,9 +276,9 @@ class Phantom:
         """
         for particle_id in range(self.actual_total_num_particles):
             # shear_modulus: shear modulus in Pa
-            shear_modulus = self.mu_0[self.titles[particle_id]]
+            shear_modulus = self.mu[self.titles[particle_id]]
             # bulk_modulus: bulk modulus in Pa
-            bulk_modulus = self.lamda_0[self.titles[particle_id]]
+            bulk_modulus = self.lam[self.titles[particle_id]]
             # grid_base_index: grid cell indices (dimensionless)
             grid_base_index = (self.particle_position[frame, particle_id] * self.inverse_mpm_grid_cube_size - 0.5).cast(int)
             # particle_grid_diff: fractional position within grid cell (dimensionless)
