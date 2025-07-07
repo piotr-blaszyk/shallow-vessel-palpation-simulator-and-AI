@@ -249,7 +249,7 @@ class ViTacTip:
         # vertex_positions_deformed: current deformed vertex positions in m
         self.vertices_deformed_A = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=True)
         # vertex_velocities: vertex velocities in m/s
-        self.vertex_velocities = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
+        self.vertex_velocities = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=True)
 
         # deformation_gradient_inverse: inverse of deformation gradient matrix (dimensionless)
         self.deformation_gradient_inverse = ti.Matrix.field(3, 3, float, self.num_tetrahedra, needs_grad=False)
@@ -429,7 +429,7 @@ class ViTacTip:
     @ti.kernel
     def set_vel(self, f:ti.i32):
         for p in range(self.num_vertices):
-            self.vertex_velocities[f, p] = self.vertex_control_velocities[p]
+            self.vertex_velocities[f, p] += self.vertex_control_velocities[p]
 
     @ti.kernel
     def set_pose_control_1(self):
@@ -640,6 +640,7 @@ class ViTacTip:
         for i in range(1, self.vertices_deformed_A.shape[0]):
             for j in range(self.vertices_deformed_A.shape[1]):
                 self.vertices_deformed_A[i, j] = ti.Vector([0.0, 0.0, 0.0])
+                self.vertex_velocities[i, j] = ti.Vector([0.0, 0.0, 0.0])
 
     @ti.func
     def update_contact_force(self, triangle_index, contact_force, frame):
