@@ -203,13 +203,13 @@ class Contact:
     
     def clear_traj_grad(self):
         self.vitactip.clear_loss_grad()
-        self.phantom.clear_loss_grad()
+        self.phantom.clear_loss_grad_disabled()
         self.clear_loss_grad()
 
     def clear_all_grad(self):
         self.clear_traj_grad()
         self.vitactip.clear_step_grad(SYSTEM_PARAMS.contact.num_sub_frames)
-        self.phantom.clear_step_grad(SYSTEM_PARAMS.contact.num_sub_frames)
+        self.phantom.clear_step_grad_disabled(SYSTEM_PARAMS.contact.num_sub_frames)
     
     @ti.kernel
     def reset(self):

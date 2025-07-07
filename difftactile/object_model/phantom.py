@@ -102,7 +102,7 @@ class Phantom:
         self.S_svd = ti.Matrix.field(3, 3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.actual_total_num_particles), needs_grad=False)
 
         # grid_node_momentum_in: momentum vectors in kg⋅m/s
-        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
+        self.grid_node_momentum_in = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=True)
         # grid_node_velocity_out: velocity vectors in m/s
         self.grid_node_velocity_out = ti.Vector.field(3, dtype=float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, SYSTEM_PARAMS.phantom.n_grid_x, SYSTEM_PARAMS.phantom.n_grid_y, SYSTEM_PARAMS.phantom.n_grid_z), needs_grad=False)
         # grid_node_mass: mass values in kg
@@ -486,33 +486,33 @@ class Phantom:
         self.load_step_from_cache(0, self.cache[cur_step_name]['x_0'], self.cache[cur_step_name]['v_0'], self.cache[cur_step_name]['C_0'], self.cache[cur_step_name]['F_0'])
     
     @ti.kernel
-    def clear_loss_grad(self):
-        pass
-        # self.youngs_modulus_0.grad.fill(0.0)
-        # self.poissons_ratio_0.grad.fill(0.0)
-        # self.lamda_0.grad.fill(0.0)
-        # self.mu_0.grad.fill(0.0)
+    def clear_loss_grad_disabled(self):
+        return
+        self.youngs_modulus_0.grad.fill(0.0)
+        self.poissons_ratio_0.grad.fill(0.0)
+        self.lamda_0.grad.fill(0.0)
+        self.mu_0.grad.fill(0.0)
 
     @ti.kernel
-    def clear_step_grad(self, f:ti.i32):
-        pass
-        # self.grid_node_momentum_in.grad.fill(0.0)
-        # self.grid_node_velocity_out.grad.fill(0.0)
-        # self.grid_node_mass.grad.fill(0.0)
-        # self.grid_node_external_impulse.grad.fill(0.0)
-        # self.trial_deformation_gradient.grad.fill(0.0)
-        # self.U_svd.grad.fill(0.0)
-        # self.V_svd.grad.fill(0.0)
-        # self.S_svd.grad.fill(0.0)
-        # for p in range(self.actual_total_num_particles):
-        #     for t in range(f):
-        #         self.particle_position.grad[t,p].fill(0.0)
-        #         self.particle_velocity.grad[t,p].fill(0.0)
-        #         self.affine_velocity_field.grad[t,p].fill(0.0)
-        #         self.deformation_gradient.grad[t,p].fill(0.0)
+    def clear_step_grad_disabled(self, f:ti.i32):
+        return
+        self.grid_node_momentum_in.grad.fill(0.0)
+        self.grid_node_velocity_out.grad.fill(0.0)
+        self.grid_node_mass.grad.fill(0.0)
+        self.grid_node_external_impulse.grad.fill(0.0)
+        self.trial_deformation_gradient.grad.fill(0.0)
+        self.U_svd.grad.fill(0.0)
+        self.V_svd.grad.fill(0.0)
+        self.S_svd.grad.fill(0.0)
+        for p in range(self.actual_total_num_particles):
+            for t in range(f):
+                self.particle_position.grad[t,p].fill(0.0)
+                self.particle_velocity.grad[t,p].fill(0.0)
+                self.affine_velocity_field.grad[t,p].fill(0.0)
+                self.deformation_gradient.grad[t,p].fill(0.0)
 
-        # for t in range(f):
-        #     self.total_surface_external_force.grad[t].fill(0.0) 
+        for t in range(f):
+            self.total_surface_external_force.grad[t].fill(0.0) 
 
     def get_keypoint_index(self) -> int:
         """
