@@ -33,7 +33,7 @@ class ViTacTip:
         self.youngs_modulus = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
         self.poissons_ratio = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
         self.mu = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
-        self.lam = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
+        self.lam = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
 
         if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
             self.mass_density[0] = SYSTEM_PARAMS.vitactip.single_material.density
@@ -58,7 +58,7 @@ class ViTacTip:
         # Compute Lamé parameters for all materials
         for i in range(SYSTEM_PARAMS.vitactip.maximum_number_of_materials):
             self.mu[i] += self.youngs_modulus[i] / 2 / (1 + self.poissons_ratio[i])
-            self.lam[i] = (self.youngs_modulus[i] * self.poissons_ratio[i] / 
+            self.lam[i] += (self.youngs_modulus[i] * self.poissons_ratio[i] / 
                           ((1 + self.poissons_ratio[i]) * (1 - 2 * self.poissons_ratio[i])))
     def load_mesh(self):
         # Load mesh data from gmsh

@@ -725,7 +725,7 @@ class Contact:
         self.print_gradients_single('vertex_velocities', self.vitactip.vertex_velocities)
         self.print_gradients_single('contact_forces_on_vertices', self.vitactip.contact_forces_on_vertices)
         self.print_gradients_single('mu', self.vitactip.mu)
-        # print(f'lam: {self.vitactip.lam.grad[0]}')
+        self.print_gradients_single('lam', self.vitactip.lam)
         # print(f'youngs_modulus: {self.vitactip.youngs_modulus.grad[0]}')
         # print(f'normal_stiffness: {self.normal_stiffness.grad[None]}')
         # print(f'normal_damping: {self.normal_damping.grad[None]}')
