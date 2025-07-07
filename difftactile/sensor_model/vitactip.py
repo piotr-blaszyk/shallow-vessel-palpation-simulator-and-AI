@@ -741,8 +741,11 @@ class ViTacTip:
             tetra_volume = ti.abs(deformation_matrix.determinant()) / 6
             deformation_gradient = deformation_matrix @ self.deformation_gradient_inverse[tetra_idx]
 
-            mu = self.mu[self.element_materials[tetra_idx]]
-            lam = self.lam[self.element_materials[tetra_idx]]
+            # mu = self.mu[self.element_materials[tetra_idx]]
+            # lam = self.lam[self.element_materials[tetra_idx]]
+
+            mu = self.mu[0]
+            lam = self.lam[0]
 
             # Neo-hookean calculations
             jacobian = deformation_gradient.determinant()

@@ -831,6 +831,10 @@ def main():
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps-1} done")
     print("optimisation loop done")
 
-    
+    youngs_modulus_value = contact_model.vitactip.youngs_modulus.to_numpy()[0]
+    results = dict()
+    results['final_youngs_modulus'] = float(youngs_modulus_value)
+    with open(SYSTEM_PARAMS.files.domain_adaptation_results, 'w') as f:
+        json.dump(results, f, indent=4)
 
     print("all done")

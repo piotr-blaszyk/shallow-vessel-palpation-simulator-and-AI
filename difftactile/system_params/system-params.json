@@ -164,6 +164,7 @@
         "vitactip_interp_idx_flat": "difftactile/output/vitactip.interp_idx_flat.pkl",
         "phantom": "difftactile/meshes/cylinder.stl",
         "root_dir": "/home/psb120/Documents/DiffTactile/",
-        "initial_vertex_positions_undeformed": "difftactile/output/initial_vertex_positions_undeformed.pkl"
+        "initial_vertex_positions_undeformed": "difftactile/output/initial_vertex_positions_undeformed.pkl",
+        "domain_adaptation_results": "difftactile/output/domain_adaptation_results.json"
     }
 }
