@@ -170,7 +170,7 @@ class ViTacTip:
         self.contact_surface = ti.Vector.field(3, int, self.num_contact_surface_triangles, needs_grad=False) # surface triangle mesh
         self.contact_surface.from_numpy(self.outer_surface_triangles.astype(np.int32))
 
-        self.projection_2d_dome_surface_nodes_deformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=False)
+        self.projection_2d_dome_surface_nodes_deformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=True)
         self.projection_2d_dome_surface_nodes_undeformed = ti.Vector.field(2, float, self.surface_node_tags_npy.shape[0], needs_grad=False)
 
         self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=False)
@@ -247,7 +247,7 @@ class ViTacTip:
         self.vertices_undeformed_A = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
         self.vertices_B = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
         # vertex_positions_deformed: current deformed vertex positions in m
-        self.vertices_deformed_A = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
+        self.vertices_deformed_A = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=True)
         # vertex_velocities: vertex velocities in m/s
         self.vertex_velocities = ti.Vector.field(3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices), needs_grad=False)
 

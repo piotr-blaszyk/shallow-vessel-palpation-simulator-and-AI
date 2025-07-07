@@ -177,7 +177,7 @@ class Contact:
         self.collision.grad(f)
         self.vitactip.update_internal_forces.grad(f)
         self.phantom.p2g.grad(f)
-        self.phantom.svd_of_trial_deformation_gradient_grad(f)
+        # self.phantom.svd_of_trial_deformation_gradient_grad(f)
         self.phantom.compute_trial_deformation_gradient.grad(f)
 
     @ti.kernel
@@ -719,7 +719,8 @@ class Contact:
         print(f'loss: {self.loss.grad[None]}')
         print(f'squared_error_sum: {self.squared_error_sum.grad[None]}')
         print(f'deformed_markers max: {self.vitactip.deformed_markers.grad.to_numpy().max()}')
-        # print(f'vertices_deformed_A: {self.vitactip.vertices_deformed_A.grad[SYSTEM_PARAMS.contact.num_sub_frames//2, 0]}')
+        print(f'vertices_deformed_A (grad) max: {self.vitactip.vertices_deformed_A.grad.to_numpy().max()}')
+        print(f'vertices_deformed_A (val) max: {self.vitactip.vertices_deformed_A.to_numpy().max()}')
         # print(f'vertex_velocities: {self.vitactip.vertex_velocities.grad[SYSTEM_PARAMS.contact.num_sub_frames-1, 0]}')
         # print(f'contact_forces_on_vertices: {self.vitactip.contact_forces_on_vertices.grad[SYSTEM_PARAMS.contact.num_sub_frames-1, 0]}')
         # print(f'mu: {self.vitactip.mu.grad[0]}')
