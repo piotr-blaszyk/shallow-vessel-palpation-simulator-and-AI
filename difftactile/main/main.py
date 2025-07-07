@@ -829,4 +829,8 @@ def main():
                 contact_model.clear_grad()
 
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps-1} done")
+    print("optimisation loop done")
+
+    
+
     print("all done")
