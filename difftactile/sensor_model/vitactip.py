@@ -32,7 +32,7 @@ class ViTacTip:
         self.mass_density = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
         self.youngs_modulus = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
         self.poissons_ratio = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
-        self.mu = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
+        self.mu = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
         self.lam = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
 
         if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
@@ -57,28 +57,9 @@ class ViTacTip:
         
         # Compute Lamé parameters for all materials
         for i in range(SYSTEM_PARAMS.vitactip.maximum_number_of_materials):
-            self.mu[i] = self.youngs_modulus[i] / 2 / (1 + self.poissons_ratio[i])
+            self.mu[i] += self.youngs_modulus[i] / 2 / (1 + self.poissons_ratio[i])
             self.lam[i] = (self.youngs_modulus[i] * self.poissons_ratio[i] / 
                           ((1 + self.poissons_ratio[i]) * (1 - 2 * self.poissons_ratio[i])))
-            
-        # Add Rayleigh damping coefficients
-        self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)  # mass damping coefficient
-        self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)   # stiffness damping coefficient
-        
-        # Set default values (these should be tuned based on your specific needs)
-        self.rayleigh_damping_alpha[None] = SYSTEM_PARAMS.vitactip.rayleigh_damping_alpha  # typical values range from 0 to 0.1
-        self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.vitactip.rayleigh_damping_beta  # typical values range from 0.001 to 0.01
-
-        # Add hourglass control parameters
-        self.hourglass_enabled = ti.field(dtype=ti.i32, shape=(), needs_grad=False)
-        self.hourglass_coefficient = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.hourglass_modulus_scale = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        
-        # Set hourglass control parameters from config
-        self.hourglass_enabled[None] = SYSTEM_PARAMS.vitactip.hourglass_control.enabled
-        self.hourglass_coefficient[None] = SYSTEM_PARAMS.vitactip.hourglass_control.coefficient
-        self.hourglass_modulus_scale[None] = SYSTEM_PARAMS.vitactip.hourglass_control.modulus_scale
-
     def load_mesh(self):
         # Load mesh data from gmsh
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
@@ -706,7 +687,7 @@ class ViTacTip:
         hg3 = strain_rate3 - avg_strain_rate
         
         # Compute hourglass stiffness (based on material properties)
-        hg_stiffness = self.hourglass_coefficient[None] * self.hourglass_modulus_scale[None] * (mu + lam)
+        hg_stiffness = SYSTEM_PARAMS.vitactip.hourglass_control.coefficient * SYSTEM_PARAMS.vitactip.hourglass_control.modulus_scale * (mu + lam)
         
         # Compute hourglass forces
         hg_force_matrix = -hg_stiffness * tetra_volume * ti.Matrix.cols([
@@ -767,12 +748,12 @@ class ViTacTip:
             relative_vel3 = vertex3_vel - vertex4_vel
             
             # Combine mass and stiffness damping
-            damping_force_matrix = -self.rayleigh_damping_alpha[None] * ti.Matrix.cols([relative_vel1, relative_vel2, relative_vel3])
-            damping_force_matrix -= self.rayleigh_damping_beta[None] * elastic_force_matrix
+            damping_force_matrix = -SYSTEM_PARAMS.vitactip.rayleigh_damping_alpha * ti.Matrix.cols([relative_vel1, relative_vel2, relative_vel3])
+            damping_force_matrix += -SYSTEM_PARAMS.vitactip.rayleigh_damping_beta * elastic_force_matrix
             
             # Calculate hourglass control forces if enabled
             force_matrix = elastic_force_matrix + damping_force_matrix
-            if self.hourglass_enabled[None] == 1:
+            if SYSTEM_PARAMS.vitactip.hourglass_control.enabled == 1:
                 hourglass_force_matrix = self.compute_hourglass_forces(
                     vertex1_pos, vertex2_pos, vertex3_pos, vertex4_pos,
                     vertex1_vel, vertex2_vel, vertex3_vel, vertex4_vel,
@@ -808,7 +789,7 @@ class ViTacTip:
             is_fixed_layer = self.is_fixed_layer[vertex_idx] == 1
             if is_fixed_layer:
                 updated_velocity = self.vertex_control_velocities[vertex_idx]
-            self.vertex_velocities[frame+1, vertex_idx] = updated_velocity
+            self.vertex_velocities[frame+1, vertex_idx] += updated_velocity
             self.vertices_deformed_A[frame+1, vertex_idx] += self.vertices_deformed_A[frame, vertex_idx]
             self.vertices_deformed_A[frame+1, vertex_idx] += SYSTEM_PARAMS.contact.dt * updated_velocity
             # update virtual pos

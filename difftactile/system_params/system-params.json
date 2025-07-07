@@ -27,7 +27,8 @@
             "enabled": 1,
             "coefficient": 0.1,
             "modulus_scale": 0.05
-        }
+        },
+        "enable_Rayleigh_damping_and_hourglass_constraint": 0
     },
     "phantom": {
         "eps": 1e-8,
