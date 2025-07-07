@@ -121,7 +121,8 @@
         "shell_outer_r": 36.33333333333333
     },
     "marker_tracker": {
-        "seconds_per_frame": 0.1
+        "seconds_per_frame": 0.1,
+        "consecutive_frame_distance_threshold": 10
     },
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",

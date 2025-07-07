@@ -71,7 +71,12 @@ class MarkerTracker:
         cap.release()
 
     def match_consecutive_frames(self):
-        """Match markers between consecutive frames using the Hungarian algorithm (linear_sum_assignment), minimizing sum of squared distances."""
+        """
+        Match markers between consecutive frames using the Hungarian algorithm (linear_sum_assignment),
+        minimizing sum of squared distances. When frames have different numbers of markers, match from
+        the frame with fewer markers to an optimal subset of markers in the frame with more markers.
+        Filters out matches with distances > 2 * 90th_percentile_distance to remove likely erroneous matches.
+        """
         for i in range(len(self.frame_markers) - 1):
             current_markers = self.frame_markers[i]
             next_markers = self.frame_markers[i + 1]
@@ -82,19 +87,52 @@ class MarkerTracker:
                 self.frame_mappings.append(mapping)
                 continue
 
-            # Compute cost matrix (squared Euclidean distances)
-            cost_matrix = cdist(next_markers, current_markers, metric='sqeuclidean')
-
-            # Hungarian algorithm for optimal assignment (minimize sum of squared distances)
-            row_ind, col_ind = linear_sum_assignment(cost_matrix)
-
-            # Initialize mapping matrix with NaN
-            mapping = np.full((len(next_markers), 2), np.nan)
-
-            # Fill mapping with assignments, store original (unsquared) distance
-            for r, c in zip(row_ind, col_ind):
-                dist = np.linalg.norm(next_markers[r] - current_markers[c])
-                mapping[r] = [c, dist]
+            # Determine which frame has fewer markers
+            if len(next_markers) <= len(current_markers):
+                # Next frame has fewer or equal markers - match from next to current
+                cost_matrix = cdist(next_markers, current_markers, metric='sqeuclidean')
+                row_ind, col_ind = linear_sum_assignment(cost_matrix)
+                
+                # Initialize mapping matrix with NaN
+                mapping = np.full((len(next_markers), 2), np.nan)
+                
+                # Calculate distances for valid matches
+                distances = []
+                for r, c in zip(row_ind, col_ind):
+                    dist = np.linalg.norm(next_markers[r] - current_markers[c])
+                    distances.append(dist)
+                
+                if distances:
+                    percentile_dist = np.percentile(distances, 80)
+                    dist_threshold = percentile_dist * 4
+                    
+                    # Fill mapping with assignments that meet the distance threshold
+                    for r, c, dist in zip(row_ind, col_ind, distances):
+                        if dist <= dist_threshold:
+                            mapping[r] = [c, dist]
+            else:
+                # Current frame has fewer markers - match from current to next
+                cost_matrix = cdist(current_markers, next_markers, metric='sqeuclidean')
+                row_ind, col_ind = linear_sum_assignment(cost_matrix)
+                
+                # Initialize mapping matrix with NaN
+                mapping = np.full((len(next_markers), 2), np.nan)
+                
+                # Calculate distances for valid matches
+                distances = []
+                for r, c in zip(row_ind, col_ind):
+                    dist = np.linalg.norm(current_markers[r] - next_markers[c])
+                    distances.append(dist)
+                
+                if distances:
+                    percentile_dist = np.percentile(distances, 80)
+                    dist_threshold = percentile_dist * 4
+                    
+                    # Create reverse mapping: for each marker in next frame, find if it was matched
+                    # and to which marker in current frame, only if distance is below threshold
+                    for r, c, dist in zip(row_ind, col_ind, distances):
+                        if dist <= dist_threshold:
+                            mapping[c] = [r, dist]  # Note: c is next frame index, r is current frame index
 
             self.frame_mappings.append(mapping)
 
@@ -254,10 +292,10 @@ class MarkerTracker:
     def process_video(self):
         """Process the video file through all steps."""
         self.extract_frames()
-        # self.match_consecutive_frames()
+        self.match_consecutive_frames()
         # self.compute_base_frame_mappings()
         # self.save_paired_markers_to_file()
-        self.create_visualization(mode='unpaired-markers')
+        self.create_visualization(mode='show-adjacent')
 
 class VideoPlayer:
     def __init__(self, video_path):
