@@ -61,6 +61,8 @@ class Contact:
         self.tangential_stiffness[None] = SYSTEM_PARAMS.contact.tangential_stiffness
         self.coulomb_friction_coeff[None] = SYSTEM_PARAMS.contact.coulomb_friction_coeff
 
+        self.gradients_printed = False
+
     def set_up_snapshot(self):        # Allocate snapshot fields (SYSTEM_PARAMS.contact.num_opt_steps, num_markers, 2)
         self.predict_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
         self.virtual_markers_snapshots = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers), needs_grad=False)
@@ -211,10 +213,10 @@ class Contact:
     
     @ti.kernel
     def reset(self):
+        self.squared_error_sum.fill(0.0)
+        self.contact_idx.fill(-1)
         self.vitactip.reset()
         self.phantom.reset()
-        self.contact_idx.fill(-1)
-        self.squared_error_sum.fill(0.0)
     
     @ti.kernel
     def compute_marker_loss_1(self, f: ti.i32):
@@ -717,28 +719,32 @@ class Contact:
         self.vitactip.set_vel.grad(0)
         self.vitactip.set_control_vel.grad(0)
     
-    def print_gradients(self):
-        print(f'loss: {self.loss.grad[None]}')
-        print(f'squared_error_sum (grad): {self.squared_error_sum.grad[None]}')
-        print(f'squared_error_sum (val): {self.squared_error_sum[None]}')
-        print()
-        self.print_gradients_single('deformed_markers', self.vitactip.deformed_markers)
-        self.print_gradients_single('vertices_deformed_A', self.vitactip.vertices_deformed_A)
-        self.print_gradients_single('vertex_velocities', self.vitactip.vertex_velocities)
-        self.print_gradients_single('contact_forces_on_vertices', self.vitactip.contact_forces_on_vertices)
-        self.print_gradients_single('vitactip.mu', self.vitactip.mu)
-        self.print_gradients_single('vitactip.lam', self.vitactip.lam)
-        self.print_gradients_single('vitactip.youngs_modulus', self.vitactip.youngs_modulus)
-        self.print_gradients_single('vitactip.poissons_ratio', self.vitactip.poissons_ratio)
-        self.print_gradients_single('normal_stiffness', self.normal_stiffness)
-        self.print_gradients_single('normal_damping', self.normal_damping)
-        self.print_gradients_single('tangential_stiffness', self.tangential_stiffness)
-        self.print_gradients_single('coulomb_friction_coeff', self.coulomb_friction_coeff)
-        self.print_gradients_single('phantom.mu', self.phantom.mu)
-        self.print_gradients_single('phantom.lam', self.phantom.lam)
-        self.print_gradients_single('phantom.youngs_modulus', self.phantom.youngs_modulus)
-        self.print_gradients_single('phantom.poissons_ratio', self.phantom.poissons_ratio)
-        print()
+    def print_gradients(self, ts):
+        if not self.gradients_printed:
+            print(f'time step: {ts}')
+            print(f'mini batch size: {SYSTEM_PARAMS.meta.mini_batch_size}')
+            print(f'loss: {self.loss.grad[None]}')
+            print(f'squared_error_sum (grad): {self.squared_error_sum.grad[None]}')
+            print(f'squared_error_sum (val): {self.squared_error_sum[None]}')
+            print()
+            self.print_gradients_single('deformed_markers', self.vitactip.deformed_markers)
+            self.print_gradients_single('vertices_deformed_A', self.vitactip.vertices_deformed_A)
+            self.print_gradients_single('vertex_velocities', self.vitactip.vertex_velocities)
+            self.print_gradients_single('contact_forces_on_vertices', self.vitactip.contact_forces_on_vertices)
+            self.print_gradients_single('vitactip.mu', self.vitactip.mu)
+            self.print_gradients_single('vitactip.lam', self.vitactip.lam)
+            self.print_gradients_single('vitactip.youngs_modulus', self.vitactip.youngs_modulus)
+            self.print_gradients_single('vitactip.poissons_ratio', self.vitactip.poissons_ratio)
+            self.print_gradients_single('normal_stiffness', self.normal_stiffness)
+            self.print_gradients_single('normal_damping', self.normal_damping)
+            self.print_gradients_single('tangential_stiffness', self.tangential_stiffness)
+            self.print_gradients_single('coulomb_friction_coeff', self.coulomb_friction_coeff)
+            self.print_gradients_single('phantom.mu', self.phantom.mu)
+            self.print_gradients_single('phantom.lam', self.phantom.lam)
+            self.print_gradients_single('phantom.youngs_modulus', self.phantom.youngs_modulus)
+            self.print_gradients_single('phantom.poissons_ratio', self.phantom.poissons_ratio)
+            print()
+            self.gradients_printed = True
     
     def print_gradients_single(self, name, ti_var):
         grad_npy = ti_var.grad.to_numpy()
@@ -795,7 +801,6 @@ def main():
         print('backward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames-1, -1, -1):
             contact_model.reset_loss()
-            contact_model.clear_grad()
 
             contact_model.memory_from_cache(ts)
             contact_model.forward_pass_common_part(ts)
@@ -808,7 +813,11 @@ def main():
             contact_model.compute_marker_loss_1.grad(ts)
             contact_model.vitactip.extract_markers.grad(SYSTEM_PARAMS.contact.num_sub_frames-1)
             contact_model.backward_pass_common_part()
-            if ts == SYSTEM_PARAMS.contact.num_frames // 2:
-                contact_model.print_gradients()
+
+            passes = SYSTEM_PARAMS.contact.num_frames-1 - ts + 1
+            if passes % SYSTEM_PARAMS.meta.mini_batch_size == 0:
+                contact_model.print_gradients(ts)
+                contact_model.clear_grad()
+
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps-1} done")
     print("all done")
