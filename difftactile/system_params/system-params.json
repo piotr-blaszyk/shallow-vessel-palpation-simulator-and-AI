@@ -62,14 +62,14 @@
         "normal_damping": 2.34e+00,
         "coulomb_friction_coeff": 0.85,
         "num_sub_frames": 500,
-        "num_frames": 20,
+        "num_frames": 200,
         "num_opt_steps": 1,
-        "pid_max_speed_translation": 1.000,
+        "pid_max_speed_translation": 0.100,
         "pid_orientation_kp": 1.0,
         "pid_kp": 100.0,
         "pid_ki": 0.0,
         "pid_kd": 0.0,
-        "pid_position_tolerance": 0.010,
+        "pid_position_tolerance": 0.001,
         "pid_orientation_tolerance": 1.0,
         "pid_angle_eps": 1e-8,
         "pid_max_rotation_per_second_degrees": 180.0,
@@ -96,7 +96,7 @@
     "meta": {
         "target_courant_number": 0.5,
         "enable_tactile_map": 1,
-        "enable_pid_controller": 0,
+        "enable_pid_controller": 1,
         "mini_batch_size": 10
     },
     "learning_rates": {
