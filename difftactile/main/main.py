@@ -30,12 +30,14 @@ class Contact:
         self.set_up_loss_computation()
         self.visualisation_initialise()
         self.load_system_identification_data()
-        self.keypoint_frames=ti.field(dtype=int,shape=(12,),needs_grad=False)
-        self.video_keypoint_frames=np.array([36,74,125,164,199,243,344,378,421],dtype=np.int32)
-        self.filtered_trajectory_indices=ti.field(dtype=int,shape=(9,),needs_grad=False)
-        self.trajectory_to_video_mapping_indices=ti.field(dtype=int,shape=(12,),needs_grad=False)
-        self.trajectory_to_video_mapping_frames=ti.field(dtype=int,shape=(12,),needs_grad=False)
-        self.trajectory_to_video_mapping_valid=ti.field(dtype=int,shape=(12,),needs_grad=False)
+    
+    @ti.kernel
+    def fp(self):
+        self.fp_bp[None] = 0
+    
+    @ti.kernel
+    def bp(self):
+        self.fp_bp[None] = 1
         
     @ti.kernel
     def filter_and_match_trajectory(self):
@@ -68,9 +70,9 @@ class Contact:
             prev_target-=1
         frame_idx=self.trajectory_to_video_mapping_frames[current_target]
         if prev_target==current_target:
-            for i in range(self.marker_position.shape[0]):
-                self.marker_position[i][0]=self.marker_positions[frame_idx,i][0]
-                self.marker_position[i][1]=self.marker_positions[frame_idx,i][1]
+            for i in range(self.marker_position_exp.shape[0]):
+                self.marker_position_exp[i][0]=self.marker_positions_exp[frame_idx,i][0]
+                self.marker_position_exp[i][1]=self.marker_positions_exp[frame_idx,i][1]
         else:
             start_frame=self.trajectory_to_video_mapping_frames[prev_target]
             end_frame=self.trajectory_to_video_mapping_frames[current_target]
@@ -84,17 +86,17 @@ class Contact:
             interpolated_frame=ti.cast(start_frame+t*frame_diff,ti.i32)
             if t>0 and t<1:
                 subframe_t=t*frame_diff-ti.cast(t*frame_diff,ti.i32)
-                for i in range(self.marker_position.shape[0]):
-                    frame1_x=self.marker_positions[interpolated_frame,i][0]
-                    frame1_y=self.marker_positions[interpolated_frame,i][1]
-                    frame2_x=self.marker_positions[interpolated_frame+1,i][0]
-                    frame2_y=self.marker_positions[interpolated_frame+1,i][1]
-                    self.marker_position[i][0]=frame1_x*(1-subframe_t)+frame2_x*subframe_t
-                    self.marker_position[i][1]=frame1_y*(1-subframe_t)+frame2_y*subframe_t
+                for i in range(self.marker_position_exp.shape[0]):
+                    frame1_x=self.marker_positions_exp[interpolated_frame,i][0]
+                    frame1_y=self.marker_positions_exp[interpolated_frame,i][1]
+                    frame2_x=self.marker_positions_exp[interpolated_frame+1,i][0]
+                    frame2_y=self.marker_positions_exp[interpolated_frame+1,i][1]
+                    self.marker_position_exp[i][0]=frame1_x*(1-subframe_t)+frame2_x*subframe_t
+                    self.marker_position_exp[i][1]=frame1_y*(1-subframe_t)+frame2_y*subframe_t
             else:
-                for i in range(self.marker_position.shape[0]):
-                    self.marker_position[i][0]=self.marker_positions[interpolated_frame,i][0]
-                    self.marker_position[i][1]=self.marker_positions[interpolated_frame,i][1]
+                for i in range(self.marker_position_exp.shape[0]):
+                    self.marker_position_exp[i][0]=self.marker_positions_exp[interpolated_frame,i][0]
+                    self.marker_position_exp[i][1]=self.marker_positions_exp[interpolated_frame,i][1]
 
     def load_system_identification_data(self):
         with open(SYSTEM_PARAMS.files.markers_paired, "rb") as f:
@@ -103,13 +105,13 @@ class Contact:
         num_frames, num_markers, _ = markers_array.shape
         self.marker_positions_unordered = ti.Vector.field(2, dtype=ti.f32, shape=(num_frames, num_markers), needs_grad=False)
         self.marker_positions_unordered.from_numpy(markers_array)
-        self.marker_positions = ti.Vector.field(2, dtype=ti.f32, shape=(num_frames, SYSTEM_PARAMS.vitactip.num_markers), needs_grad=False)
+        self.marker_positions_exp = ti.Vector.field(2, dtype=ti.f32, shape=(num_frames, SYSTEM_PARAMS.vitactip.num_markers), needs_grad=False)
         self.fill_marker_positions()
-        self.marker_position = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.num_markers,), needs_grad=False)
+        self.marker_position_exp = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.num_markers,), needs_grad=False)
 
     @ti.kernel
     def fill_marker_positions(self):
-        self.marker_positions.fill(-1.0)
+        self.marker_positions_exp.fill(-1.0)
 
     def compute_mapping_between_experimental_and_sim_markers(self):
         exp_markers=self.marker_positions_unordered.to_numpy()[0]
@@ -129,8 +131,8 @@ class Contact:
         for f,i in ti.ndrange(self.marker_positions_unordered.shape[0], self.marker_positions_unordered.shape[1]):
             sim_idx = self.experimental_markers_to_sim_markers[i]
             if sim_idx >= 0:
-                self.marker_positions[f,sim_idx][0] = self.marker_positions_unordered[f,i][0]
-                self.marker_positions[f,sim_idx][1] = self.marker_positions_unordered[f,i][1]
+                self.marker_positions_exp[f,sim_idx][0] = self.marker_positions_unordered[f,i][0]
+                self.marker_positions_exp[f,sim_idx][1] = self.marker_positions_unordered[f,i][1]
 
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
@@ -205,6 +207,13 @@ class Contact:
         self.trajectory = ti.Vector.field(7, dtype=float, shape=12, needs_grad=False)
         self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
         self.tumour_present[None] = 0
+
+        self.keypoint_frames=ti.field(dtype=int,shape=(12,),needs_grad=False)
+        self.video_keypoint_frames=np.array([36,74,125,164,199,243,344,378,421],dtype=np.int32)
+        self.filtered_trajectory_indices=ti.field(dtype=int,shape=(9,),needs_grad=False)
+        self.trajectory_to_video_mapping_indices=ti.field(dtype=int,shape=(12,),needs_grad=False)
+        self.trajectory_to_video_mapping_frames=ti.field(dtype=int,shape=(12,),needs_grad=False)
+        self.trajectory_to_video_mapping_valid=ti.field(dtype=int,shape=(12,),needs_grad=False)
     
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate((
@@ -336,7 +345,7 @@ class Contact:
     def compute_marker_loss_1(self, f: ti.i32):
         for i in range(self.vitactip.num_markers):
             sim_marker = self.vitactip.deformed_markers[i]
-            exp_marker = self.marker_position[i]
+            exp_marker = self.marker_position_exp[i]
 
             if exp_marker[0] < 0 or exp_marker[1] < 0:
                 continue
@@ -648,6 +657,8 @@ class Contact:
         self.window_size = ti.Vector.field(2, dtype=float, shape=(), needs_grad=False)
         self.window_size[None] = [640.0, 480.0]
 
+        self.fp_bp = ti.field(dtype=int, shape=(), needs_grad=False)
+
     @ti.kernel
     def visualisation_reset_3d_scene(self):
         self.healthy_tissue_points.fill(0)
@@ -667,57 +678,43 @@ class Contact:
             self.sensor_points[p] = self.vitactip.vertices_deformed_A[f, p]
 
     @ti.kernel
-    def visualisation_prepare_tactile_readout_data(self):
-        # Process marker positions and create arrow vertices
+    def visualisation_prepare_tactile_readout_data_fp(self):
         for i in range(self.vitactip.num_markers):
-            # Get undeformed and deformed positions
             undeformed = self.vitactip.undeformed_markers[i]
             deformed = self.vitactip.deformed_markers[i]
-            
-            # Flip y coordinates
             undeformed[1] = self.window_size[None][1] - undeformed[1]
             deformed[1] = self.window_size[None][1] - deformed[1]
-            
-            # Calculate offset
-            offset = deformed - undeformed
-            
-            # Normalize coordinates by window size
             undeformed = undeformed / self.window_size[None]
-            
-            # Store normalized undeformed position for marker points
+            deformed = deformed / self.window_size[None]
+            offset = deformed - undeformed
             self.marker_points[i] = undeformed
-            
-            # Store arrow vertices (start and end points)
-            self.arrow_line_vertices[i * 2] = undeformed  # Start point
-            self.arrow_line_vertices[i * 2 + 1] = undeformed + (offset / self.window_size[None])  # End point
+            self.arrow_line_vertices[i * 2] = undeformed
+            self.arrow_line_vertices[i * 2 + 1] = undeformed + offset
 
     @ti.kernel
-    def visualisation_prepare_clock_arm_points(self):
-        # Process clock arm positions
-        for i in range(2):
-            point = self.vitactip.projection_2d_clock_arms[i]
-            # Flip y coordinate
-            point[1] = self.window_size[None][1] - point[1]
-            # Normalize coordinates by window size
-            self.clock_arm_points[i] = point / self.window_size[None]
+    def visualisation_prepare_tactile_readout_data_bp(self):
+        for i in range(self.marker_position_exp.shape[0]):
+            exp_marker = self.marker_position_exp[i]
+            if exp_marker[0] < 0 or exp_marker[1] < 0:
+                self.marker_points[i] = ti.Vector([0.0, 0.0])
+            else:
+                point = exp_marker
+                point[1] = self.window_size[None][1] - point[1]
+                self.marker_points[i] = point / self.window_size[None]
 
     def visualisation_draw_tactile_readout(self):
-        self.visualisation_prepare_tactile_readout_data()
-
-        self.vitactip.extract_clock_arm_2d_projections(0)
-        self.visualisation_prepare_clock_arm_points()
-
-        # Set background image each frame
-        self.tactile_canvas.set_image(self.bg_image)
-        self.tactile_canvas.circles(self.marker_points, radius=0.01, color=(1, 0, 0))
-        self.tactile_canvas.lines(self.arrow_line_vertices, color=(0, 1, 0), width=0.01)
-        
-        # Draw clock arm points
-        self.tactile_canvas.circles(
-            self.clock_arm_points, 
-            radius=0.02, 
-            per_vertex_color=self.clock_arm_points_per_vertex_color,
-        )
+        if self.fp_bp[None] == 0:
+            self.visualisation_prepare_tactile_readout_data_fp()
+            self.vitactip.extract_clock_arm_2d_projections(0)
+            self.visualisation_prepare_clock_arm_points()
+            self.tactile_canvas.set_image(self.bg_image)
+            self.tactile_canvas.circles(self.marker_points, radius=0.01, color=(1, 0, 0))
+            self.tactile_canvas.lines(self.arrow_line_vertices, color=(0, 1, 0), width=0.01)
+            self.tactile_canvas.circles(self.clock_arm_points, radius=0.02, per_vertex_color=self.clock_arm_points_per_vertex_color)
+        else:
+            self.visualisation_prepare_tactile_readout_data_bp()
+            self.tactile_canvas.set_image(self.bg_image)
+            self.tactile_canvas.circles(self.marker_points, radius=0.01, color=(1, 0, 0))
         
         self.tactile_window.show()
 
@@ -903,6 +900,8 @@ def main():
             initial_markers = contact_model.vitactip.deformed_markers.to_numpy()
             with open(SYSTEM_PARAMS.files.sim_markers_initial_positions, 'wb') as f:
                 pickle.dump(initial_markers, f)
+        
+        contact_model.fp()
 
         print('forward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames):
@@ -922,6 +921,7 @@ def main():
                 contact_model.save_tactile_sensor_mesh_to_pickle(ts)
 
         contact_model.filter_and_match_trajectory()
+        contact_model.bp()
 
         print('backward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames-1, -1, -1):
