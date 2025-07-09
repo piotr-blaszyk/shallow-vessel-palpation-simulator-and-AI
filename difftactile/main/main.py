@@ -54,7 +54,7 @@ class Contact:
             self.trajectory_to_video_mapping_valid[traj_idx]=1
     
     @ti.kernel
-    def interpolate_experimental_frame(self,sim_timestep:int)->ti.types.vector(2,ti.f32):
+    def interpolate_experimental_frame(self,sim_timestep:ti.i32):
         current_target=self.current_target_idx[None]
         while current_target<self.trajectory_npy.shape[0] and self.trajectory_to_video_mapping_valid[current_target]==0:
             current_target+=1
@@ -66,48 +66,35 @@ class Contact:
         prev_target=current_target
         while prev_target>0 and self.trajectory_to_video_mapping_valid[prev_target]==0:
             prev_target-=1
+        frame_idx=self.trajectory_to_video_mapping_frames[current_target]
         if prev_target==current_target:
-            frame_idx=self.trajectory_to_video_mapping_frames[current_target]
-            return self.marker_positions[frame_idx]
-        start_frame=self.trajectory_to_video_mapping_frames[prev_target]
-        end_frame=self.trajectory_to_video_mapping_frames[current_target]
-        start_sim=self.keypoint_frames[prev_target]
-        end_sim=self.keypoint_frames[current_target]
-        t=0.0
-        if end_sim!=start_sim:
-            t=ti.cast(sim_timestep-start_sim,ti.f32)/(end_sim-start_sim)
-        t=ti.max(0.0,ti.min(1.0,t))
-        frame_diff=end_frame-start_frame
-        interpolated_frame=ti.cast(start_frame+t*frame_diff,ti.i32)
-        if t>0 and t<1:
-            frame1=self.marker_positions[interpolated_frame]
-            frame2=self.marker_positions[interpolated_frame+1]
-            subframe_t=t*frame_diff-ti.cast(t*frame_diff,ti.i32)
-            return frame1*(1-subframe_t)+frame2*subframe_t
-        return self.marker_positions[interpolated_frame]
-
-    def compute_mapping_between_experimental_and_sim_markers(self):
-        # Get initial positions from both experimental and sim data
-        exp_markers = self.marker_positions.to_numpy()[0]  # First frame of experimental data
-        sim_markers = self.vitactip.undeformed_markers.to_numpy()
-        
-        # Compute cost matrix using squared euclidean distance
-        cost_matrix = cdist(exp_markers, sim_markers, metric="sqeuclidean")
-        
-        # Use Hungarian algorithm to find optimal assignment
-        exp_indices, sim_indices = linear_sum_assignment(cost_matrix)
-        
-        # Create Taichi field to store the mapping
-        num_exp_markers = len(exp_markers)
-        self.experimental_markers_to_sim_markers = ti.field(dtype=ti.i32, shape=(num_exp_markers,), needs_grad=False)
-        
-        # Convert mapping to numpy array first
-        mapping = np.full(num_exp_markers, -1, dtype=np.int32)  # Initialize with -1 for unmatched markers
-        for exp_idx, sim_idx in zip(exp_indices, sim_indices):
-            mapping[exp_idx] = sim_idx
-            
-        # Copy mapping to Taichi field
-        self.experimental_markers_to_sim_markers.from_numpy(mapping)
+            for i in range(self.marker_position.shape[0]):
+                self.marker_position[i][0]=self.marker_positions[frame_idx,i][0]
+                self.marker_position[i][1]=self.marker_positions[frame_idx,i][1]
+        else:
+            start_frame=self.trajectory_to_video_mapping_frames[prev_target]
+            end_frame=self.trajectory_to_video_mapping_frames[current_target]
+            start_sim=self.keypoint_frames[prev_target]
+            end_sim=self.keypoint_frames[current_target]
+            t=0.0
+            if end_sim!=start_sim:
+                t=ti.cast(sim_timestep-start_sim,ti.f32)/(end_sim-start_sim)
+            t=ti.max(0.0,ti.min(1.0,t))
+            frame_diff=end_frame-start_frame
+            interpolated_frame=ti.cast(start_frame+t*frame_diff,ti.i32)
+            if t>0 and t<1:
+                subframe_t=t*frame_diff-ti.cast(t*frame_diff,ti.i32)
+                for i in range(self.marker_position.shape[0]):
+                    frame1_x=self.marker_positions[interpolated_frame,i][0]
+                    frame1_y=self.marker_positions[interpolated_frame,i][1]
+                    frame2_x=self.marker_positions[interpolated_frame+1,i][0]
+                    frame2_y=self.marker_positions[interpolated_frame+1,i][1]
+                    self.marker_position[i][0]=frame1_x*(1-subframe_t)+frame2_x*subframe_t
+                    self.marker_position[i][1]=frame1_y*(1-subframe_t)+frame2_y*subframe_t
+            else:
+                for i in range(self.marker_position.shape[0]):
+                    self.marker_position[i][0]=self.marker_positions[interpolated_frame,i][0]
+                    self.marker_position[i][1]=self.marker_positions[interpolated_frame,i][1]
 
     def load_system_identification_data(self):
         with open(SYSTEM_PARAMS.files.markers_paired, "rb") as f:
@@ -116,6 +103,30 @@ class Contact:
         num_frames, num_markers, _ = markers_array.shape
         self.marker_positions = ti.Vector.field(2, dtype=ti.f32, shape=(num_frames, num_markers), needs_grad=False)
         self.marker_positions.from_numpy(markers_array)
+        self.marker_position = ti.Vector.field(2, dtype=ti.f32, shape=(num_markers,), needs_grad=False)
+        self.reordered_marker_positions = ti.Vector.field(2, dtype=ti.f32, shape=(num_frames, num_markers), needs_grad=False)
+
+    @ti.kernel
+    def reorder_experimental_markers(self):
+        for f,i in ti.ndrange(self.marker_positions.shape[0], self.marker_positions.shape[1]):
+            sim_idx = self.experimental_markers_to_sim_markers[i]
+            if sim_idx >= 0:
+                self.reordered_marker_positions[f,sim_idx][0] = self.marker_positions[f,i][0]
+                self.reordered_marker_positions[f,sim_idx][1] = self.marker_positions[f,i][1]
+
+    def compute_mapping_between_experimental_and_sim_markers(self):
+        exp_markers=self.marker_positions.to_numpy()[0]
+        sim_markers=self.vitactip.undeformed_markers.to_numpy()
+        cost_matrix=cdist(exp_markers,sim_markers,metric="sqeuclidean")
+        exp_indices,sim_indices=linear_sum_assignment(cost_matrix)
+        num_exp_markers=len(exp_markers)
+        self.experimental_markers_to_sim_markers=ti.field(dtype=ti.i32,shape=(num_exp_markers,),needs_grad=False)
+        mapping=np.full(num_exp_markers,-1,dtype=np.int32)
+        for exp_idx,sim_idx in zip(exp_indices,sim_indices):
+            mapping[exp_idx]=sim_idx
+        self.experimental_markers_to_sim_markers.from_numpy(mapping)
+        self.reorder_experimental_markers()
+        self.marker_positions.from_numpy(self.reordered_marker_positions.to_numpy())
 
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
@@ -316,12 +327,12 @@ class Contact:
         self.contact_idx.fill(-1)
         self.vitactip.reset()
         self.phantom.reset()
-    
+
     @ti.kernel
     def compute_marker_loss_1(self, f: ti.i32):
         for i in range(self.vitactip.num_markers):
             sim_marker = self.vitactip.deformed_markers[i]
-            exp_marker = self.target_marker_positions[i]
+            exp_marker = self.marker_position[i]
 
             dx = exp_marker[0] - sim_marker[0]
             dy = exp_marker[1] - sim_marker[1]
@@ -903,6 +914,8 @@ def main():
                 contact_model.take_snapshot(opts)
                 contact_model.save_tactile_sensor_mesh_to_pickle(ts)
 
+        contact_model.filter_and_match_trajectory()
+
         print('backward')
         for ts in range(SYSTEM_PARAMS.contact.num_frames-1, -1, -1):
             contact_model.reset_loss()
@@ -910,6 +923,7 @@ def main():
             contact_model.memory_from_cache(ts)
             contact_model.forward_pass_common_part(ts)
             contact_model.vitactip.extract_markers(SYSTEM_PARAMS.contact.num_sub_frames-1)
+            contact_model.interpolate_experimental_frame(ts)
             contact_model.compute_marker_loss_1(ts)
             contact_model.compute_marker_loss_2(ts)
             contact_model.visualisation_update_gui(ts)
