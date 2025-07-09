@@ -623,7 +623,7 @@ class Contact:
         # print('mesh node mapping exported!')
     
     def visualisation_initialise(self):
-        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(15,), needs_grad=False)
+        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(18,), needs_grad=False)
         self.key_points_per_vertex_color = ti.Vector.field(3, dtype=ti.f32, shape=(9,), needs_grad=False)
         self.sensor_points = ti.Vector.field(
             3, dtype=float, shape=(self.vitactip.num_vertices), needs_grad=False
@@ -692,6 +692,13 @@ class Contact:
             self.arrow_line_vertices[i * 2 + 1] = undeformed + offset
 
     @ti.kernel
+    def visualisation_prepare_clock_arm_points(self):
+        for i in range(2):
+            point = self.vitactip.projection_2d_clock_arms[i]
+            point[1] = self.window_size[None][1] - point[1]
+            self.clock_arm_points[i] = point / self.window_size[None]
+
+    @ti.kernel
     def visualisation_prepare_tactile_readout_data_bp(self):
         for i in range(self.marker_position_exp.shape[0]):
             exp_marker = self.marker_position_exp[i]
@@ -703,17 +710,16 @@ class Contact:
                 self.marker_points[i] = point / self.window_size[None]
 
     def visualisation_draw_tactile_readout(self):
+        self.vitactip.extract_clock_arm_2d_projections(0)
+        self.visualisation_prepare_clock_arm_points()
+        self.tactile_canvas.set_image(self.bg_image)
         if self.fp_bp[None] == 0:
             self.visualisation_prepare_tactile_readout_data_fp()
-            self.vitactip.extract_clock_arm_2d_projections(0)
-            self.visualisation_prepare_clock_arm_points()
-            self.tactile_canvas.set_image(self.bg_image)
             self.tactile_canvas.circles(self.marker_points, radius=0.01, color=(1, 0, 0))
             self.tactile_canvas.lines(self.arrow_line_vertices, color=(0, 1, 0), width=0.01)
             self.tactile_canvas.circles(self.clock_arm_points, radius=0.02, per_vertex_color=self.clock_arm_points_per_vertex_color)
         else:
             self.visualisation_prepare_tactile_readout_data_bp()
-            self.tactile_canvas.set_image(self.bg_image)
             self.tactile_canvas.circles(self.marker_points, radius=0.01, color=(1, 0, 0))
         
         self.tactile_window.show()
