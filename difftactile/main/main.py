@@ -132,7 +132,7 @@ class Contact:
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
-        self.trajectory = ti.Vector.field(7, dtype=float, shape=3, needs_grad=False)
+        self.trajectory = ti.Vector.field(7, dtype=float, shape=9, needs_grad=False)
         self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
         self.tumour_present[None] = 0
     
@@ -158,8 +158,8 @@ class Contact:
         x, y, z = self.vitactip_tip_pose[:3]
         quat = self.vitactip_tip_pose[3:]
         og_r = R.from_quat(quat)
-        offset_1 = R.from_euler(seq='xyz', angles=[30, 30, 0], degrees=True)
-        offset_2 = R.from_euler(seq='xyz', angles=[-30, -30, 0], degrees=True)
+        offset_1 = R.from_euler(seq='xyz', angles=[0, -20, 0], degrees=True)
+        offset_2 = R.from_euler(seq='xyz', angles=[0, 0, 20], degrees=True)
         tilt_1 = og_r * offset_1
         tilt_2 = og_r * offset_2
         tilt_1.as_quat()
@@ -167,7 +167,15 @@ class Contact:
         self.trajectory_npy = np.array([
             [x, y, z, *og_r.as_quat()],
             [x, y, z-press_depth, *og_r.as_quat()],
-            [x, y+0.020, z-press_depth, *og_r.as_quat()],
+            [x, y+0.010, z-press_depth, *og_r.as_quat()],
+
+            [x, y, z, *og_r.as_quat()],
+            [x, y, z-press_depth, *og_r.as_quat()],
+            [x, y, z-press_depth, *tilt_1.as_quat()],
+
+            [x, y, z, *og_r.as_quat()],
+            [x, y, z-press_depth, *og_r.as_quat()],
+            [x, y, z-press_depth, *tilt_2.as_quat()],
         ], dtype=float)
         assert self.trajectory.shape[0] == self.trajectory_npy.shape[0], f"Set self.trajectory length to {self.trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(self.trajectory_npy)
@@ -528,7 +536,7 @@ class Contact:
         # print('mesh node mapping exported!')
     
     def visualisation_initialise(self):
-        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(9,), needs_grad=False)
+        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(15,), needs_grad=False)
         self.key_points_per_vertex_color = ti.Vector.field(3, dtype=ti.f32, shape=(9,), needs_grad=False)
         self.sensor_points = ti.Vector.field(
             3, dtype=float, shape=(self.vitactip.num_vertices), needs_grad=False
