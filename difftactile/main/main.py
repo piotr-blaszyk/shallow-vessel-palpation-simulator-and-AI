@@ -101,21 +101,18 @@ class Contact:
             markers_array = pickle.load(f)
         
         num_frames, num_markers, _ = markers_array.shape
-        self.marker_positions = ti.Vector.field(2, dtype=ti.f32, shape=(num_frames, num_markers), needs_grad=False)
-        self.marker_positions.from_numpy(markers_array)
-        self.marker_position = ti.Vector.field(2, dtype=ti.f32, shape=(num_markers,), needs_grad=False)
-        self.reordered_marker_positions = ti.Vector.field(2, dtype=ti.f32, shape=(num_frames, num_markers), needs_grad=False)
+        self.marker_positions_unordered = ti.Vector.field(2, dtype=ti.f32, shape=(num_frames, num_markers), needs_grad=False)
+        self.marker_positions_unordered.from_numpy(markers_array)
+        self.marker_positions = ti.Vector.field(2, dtype=ti.f32, shape=(num_frames, SYSTEM_PARAMS.vitactip.num_markers), needs_grad=False)
+        self.fill_marker_positions()
+        self.marker_position = ti.Vector.field(2, dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.num_markers,), needs_grad=False)
 
     @ti.kernel
-    def reorder_experimental_markers(self):
-        for f,i in ti.ndrange(self.marker_positions.shape[0], self.marker_positions.shape[1]):
-            sim_idx = self.experimental_markers_to_sim_markers[i]
-            if sim_idx >= 0:
-                self.reordered_marker_positions[f,sim_idx][0] = self.marker_positions[f,i][0]
-                self.reordered_marker_positions[f,sim_idx][1] = self.marker_positions[f,i][1]
+    def fill_marker_positions(self):
+        self.marker_positions.fill(-1.0)
 
     def compute_mapping_between_experimental_and_sim_markers(self):
-        exp_markers=self.marker_positions.to_numpy()[0]
+        exp_markers=self.marker_positions_unordered.to_numpy()[0]
         sim_markers=self.vitactip.undeformed_markers.to_numpy()
         cost_matrix=cdist(exp_markers,sim_markers,metric="sqeuclidean")
         exp_indices,sim_indices=linear_sum_assignment(cost_matrix)
@@ -126,7 +123,14 @@ class Contact:
             mapping[exp_idx]=sim_idx
         self.experimental_markers_to_sim_markers.from_numpy(mapping)
         self.reorder_experimental_markers()
-        self.marker_positions.from_numpy(self.reordered_marker_positions.to_numpy())
+    
+    @ti.kernel
+    def reorder_experimental_markers(self):
+        for f,i in ti.ndrange(self.marker_positions_unordered.shape[0], self.marker_positions_unordered.shape[1]):
+            sim_idx = self.experimental_markers_to_sim_markers[i]
+            if sim_idx >= 0:
+                self.marker_positions[f,sim_idx][0] = self.marker_positions_unordered[f,i][0]
+                self.marker_positions[f,sim_idx][1] = self.marker_positions_unordered[f,i][1]
 
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
@@ -333,6 +337,9 @@ class Contact:
         for i in range(self.vitactip.num_markers):
             sim_marker = self.vitactip.deformed_markers[i]
             exp_marker = self.marker_position[i]
+
+            if exp_marker[0] < 0 or exp_marker[1] < 0:
+                continue
 
             dx = exp_marker[0] - sim_marker[0]
             dy = exp_marker[1] - sim_marker[1]
