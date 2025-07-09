@@ -30,7 +30,62 @@ class Contact:
         self.set_up_loss_computation()
         self.visualisation_initialise()
         self.load_system_identification_data()
+        self.keypoint_frames=ti.field(dtype=int,shape=(12,),needs_grad=False)
+        self.video_keypoint_frames=np.array([36,74,125,164,199,243,344,378,421],dtype=np.int32)
+        self.filtered_trajectory_indices=ti.field(dtype=int,shape=(9,),needs_grad=False)
+        self.trajectory_to_video_mapping_indices=ti.field(dtype=int,shape=(12,),needs_grad=False)
+        self.trajectory_to_video_mapping_frames=ti.field(dtype=int,shape=(12,),needs_grad=False)
+        self.trajectory_to_video_mapping_valid=ti.field(dtype=int,shape=(12,),needs_grad=False)
+        
+    @ti.kernel
+    def filter_and_match_trajectory(self):
+        count=0
+        for i in range(self.trajectory_npy.shape[0]):
+            if i%4!=0:
+                if count<9:
+                    self.filtered_trajectory_indices[count]=i
+                    count+=1
+        for i in range(12):
+            self.trajectory_to_video_mapping_valid[i]=0
+        for i in range(9):
+            traj_idx=self.filtered_trajectory_indices[i]
+            self.trajectory_to_video_mapping_indices[traj_idx]=traj_idx
+            self.trajectory_to_video_mapping_frames[traj_idx]=self.video_keypoint_frames[i]
+            self.trajectory_to_video_mapping_valid[traj_idx]=1
     
+    @ti.kernel
+    def interpolate_experimental_frame(self,sim_timestep:int)->ti.types.vector(2,ti.f32):
+        current_target=self.current_target_idx[None]
+        while current_target<self.trajectory_npy.shape[0] and self.trajectory_to_video_mapping_valid[current_target]==0:
+            current_target+=1
+        if current_target>=self.trajectory_npy.shape[0]:
+            for i in range(self.trajectory_npy.shape[0]-1,-1,-1):
+                if self.trajectory_to_video_mapping_valid[i]==1:
+                    current_target=i
+                    break
+        prev_target=current_target
+        while prev_target>0 and self.trajectory_to_video_mapping_valid[prev_target]==0:
+            prev_target-=1
+        if prev_target==current_target:
+            frame_idx=self.trajectory_to_video_mapping_frames[current_target]
+            return self.marker_positions[frame_idx]
+        start_frame=self.trajectory_to_video_mapping_frames[prev_target]
+        end_frame=self.trajectory_to_video_mapping_frames[current_target]
+        start_sim=self.keypoint_frames[prev_target]
+        end_sim=self.keypoint_frames[current_target]
+        t=0.0
+        if end_sim!=start_sim:
+            t=ti.cast(sim_timestep-start_sim,ti.f32)/(end_sim-start_sim)
+        t=ti.max(0.0,ti.min(1.0,t))
+        frame_diff=end_frame-start_frame
+        interpolated_frame=ti.cast(start_frame+t*frame_diff,ti.i32)
+        if t>0 and t<1:
+            frame1=self.marker_positions[interpolated_frame]
+            frame2=self.marker_positions[interpolated_frame+1]
+            subframe_t=t*frame_diff-ti.cast(t*frame_diff,ti.i32)
+            return frame1*(1-subframe_t)+frame2*subframe_t
+        return self.marker_positions[interpolated_frame]
+
     def compute_mapping_between_experimental_and_sim_markers(self):
         # Get initial positions from both experimental and sim data
         exp_markers = self.marker_positions.to_numpy()[0]  # First frame of experimental data
@@ -132,7 +187,7 @@ class Contact:
 
         self.tactile_sensor_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
         self.phantom_initial_position = ti.Vector.field(3, dtype=ti.f32, shape=1, needs_grad=False)
-        self.trajectory = ti.Vector.field(7, dtype=float, shape=9, needs_grad=False)
+        self.trajectory = ti.Vector.field(7, dtype=float, shape=12, needs_grad=False)
         self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
         self.tumour_present[None] = 0
     
@@ -163,19 +218,23 @@ class Contact:
         tilt_1 = og_r * offset_1
         tilt_2 = og_r * offset_2
         tilt_1.as_quat()
-        press_depth = SYSTEM_PARAMS.geometry.gap + 0.006
+        press_depth_1 = SYSTEM_PARAMS.geometry.gap
+        press_depth_2 = SYSTEM_PARAMS.geometry.gap + 0.006
         self.trajectory_npy = np.array([
             [x, y, z, *og_r.as_quat()],
-            [x, y, z-press_depth, *og_r.as_quat()],
-            [x, y+0.010, z-press_depth, *og_r.as_quat()],
+            [x, y, z-press_depth_1, *og_r.as_quat()],
+            [x, y, z-press_depth_2, *og_r.as_quat()],
+            [x, y+0.010, z-press_depth_2, *og_r.as_quat()],
 
             [x, y, z, *og_r.as_quat()],
-            [x, y, z-press_depth, *og_r.as_quat()],
-            [x, y, z-press_depth, *tilt_1.as_quat()],
+            [x, y, z-press_depth_1, *og_r.as_quat()],
+            [x, y, z-press_depth_2, *og_r.as_quat()],
+            [x, y, z-press_depth_2, *tilt_1.as_quat()],
 
             [x, y, z, *og_r.as_quat()],
-            [x, y, z-press_depth, *og_r.as_quat()],
-            [x, y, z-press_depth, *tilt_2.as_quat()],
+            [x, y, z-press_depth_1, *og_r.as_quat()],
+            [x, y, z-press_depth_2, *og_r.as_quat()],
+            [x, y, z-press_depth_2, *tilt_2.as_quat()],
         ], dtype=float)
         assert self.trajectory.shape[0] == self.trajectory_npy.shape[0], f"Set self.trajectory length to {self.trajectory_npy.shape[0]} match trajectory_npy"
         self.trajectory.from_numpy(self.trajectory_npy)
@@ -444,6 +503,7 @@ class Contact:
             self.ori_error_magnitude_degrees[None] < SYSTEM_PARAMS.contact.pid_orientation_tolerance):
             self.is_dwelling[None] = 1
             self.dwell_counter[None] = 0
+            self.keypoint_frames[self.current_target_idx[None]] = ts
             print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
 
         target_reached_no_control = False
