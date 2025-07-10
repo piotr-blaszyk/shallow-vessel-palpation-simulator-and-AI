@@ -55,7 +55,6 @@ class Contact:
             self.trajectory_to_video_mapping_frames[traj_idx]=self.video_keypoint_frames[i]
             self.trajectory_to_video_mapping_valid[traj_idx]=1
     
-    @ti.kernel
     def interpolate_experimental_frame(self,sim_timestep:ti.i32):
         current_target=self.current_target_idx[None]
         while current_target<self.trajectory_npy.shape[0] and self.trajectory_to_video_mapping_valid[current_target]==0:
@@ -701,13 +700,6 @@ class Contact:
             self.arrow_line_vertices[i * 2 + 1] = undeformed + offset
 
     @ti.kernel
-    def visualisation_prepare_clock_arm_points(self):
-        for i in range(2):
-            point = self.vitactip.projection_2d_clock_arms[i]
-            point[1] = self.window_size[None][1] - point[1]
-            self.clock_arm_points[i] = point / self.window_size[None]
-
-    @ti.kernel
     def visualisation_prepare_tactile_readout_data_bp(self):
         for i in range(self.marker_position_exp.shape[0]):
             exp_marker = self.marker_position_exp[i]
@@ -717,6 +709,13 @@ class Contact:
                 point = exp_marker
                 point[1] = self.window_size[None][1] - point[1]
                 self.marker_points[i] = point / self.window_size[None]
+    
+    @ti.kernel
+    def visualisation_prepare_clock_arm_points(self):
+        for i in range(2):
+            point = self.vitactip.projection_2d_clock_arms[i]
+            point[1] = self.window_size[None][1] - point[1]
+            self.clock_arm_points[i] = point / self.window_size[None]
 
     def visualisation_draw_tactile_readout(self):
         self.vitactip.extract_clock_arm_2d_projections(0)

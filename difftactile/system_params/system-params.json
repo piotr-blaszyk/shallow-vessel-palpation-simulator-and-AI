@@ -63,7 +63,7 @@
         "normal_damping": 2.34e+00,
         "coulomb_friction_coeff": 0.85,
         "num_sub_frames": 500,
-        "num_frames": 100,
+        "num_frames": 300,
         "num_opt_steps": 1,
         "pid_max_speed_translation": 0.100,
         "pid_orientation_kp": 1.0,
