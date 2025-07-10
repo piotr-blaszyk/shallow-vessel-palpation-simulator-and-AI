@@ -189,7 +189,7 @@ class Contact:
         tilt_2 = og_r * offset_2
         tilt_1.as_quat()
         press_depth_1 = SYSTEM_PARAMS.geometry.gap
-        press_depth_2 = SYSTEM_PARAMS.geometry.gap + 0.006
+        press_depth_2 = SYSTEM_PARAMS.geometry.gap + 0.010
         self.trajectory_npy = np.array([
             [x, y, z, *og_r.as_quat()],
             [x, y, z-press_depth_1, *og_r.as_quat()],

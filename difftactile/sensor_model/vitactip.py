@@ -40,39 +40,21 @@ class ViTacTip:
         self.hourglass_coefficient[None] = SYSTEM_PARAMS.vitactip.hourglass_control.coefficient
         self.hourglass_modulus_scale[None] = SYSTEM_PARAMS.vitactip.hourglass_control.modulus_scale
 
-        self.mass_density = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=False)
-        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
-        self.mu = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
-        self.lam = ti.field(dtype=ti.f32, shape=(SYSTEM_PARAMS.vitactip.maximum_number_of_materials,), needs_grad=True)
+        self.mass_density = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
+        self.mu = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
+        self.lam = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
 
-        if SYSTEM_PARAMS.vitactip.number_of_materials == 1:
-            self.mass_density[0] += SYSTEM_PARAMS.vitactip.single_material.density
-            self.youngs_modulus[0] += SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
-            self.poissons_ratio[0] += SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
-
-            self.mass_density[1] += SYSTEM_PARAMS.vitactip.single_material.density
-            self.youngs_modulus[1] += SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
-            self.poissons_ratio[1] += SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
-        else:
-            # Initialize material parameters
-            # Shell (Vytaflex 60) - material index 0
-            self.mass_density[0] += SYSTEM_PARAMS.vitactip.shell.density
-            self.youngs_modulus[0] += SYSTEM_PARAMS.vitactip.shell.youngs_modulus
-            self.poissons_ratio[0] += SYSTEM_PARAMS.vitactip.shell.poissons_ratio
-            
-            # Gel (RTV27905) - material index 1
-            self.mass_density[1] += SYSTEM_PARAMS.vitactip.gel.density
-            self.youngs_modulus[1] += SYSTEM_PARAMS.vitactip.gel.youngs_modulus
-            self.poissons_ratio[1] += SYSTEM_PARAMS.vitactip.gel.poissons_ratio
+        self.mass_density[None] += SYSTEM_PARAMS.vitactip.single_material.density
+        self.youngs_modulus[None] += SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
+        self.poissons_ratio[None] += SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
 
     @ti.kernel
     def set_up_system_params_2(self):
-        # Compute Lamé parameters for all materials
-        for i in range(SYSTEM_PARAMS.vitactip.maximum_number_of_materials):
-            self.mu[i] += self.youngs_modulus[i] / 2 / (1 + self.poissons_ratio[i])
-            self.lam[i] += (self.youngs_modulus[i] * self.poissons_ratio[i] / 
-                          ((1 + self.poissons_ratio[i]) * (1 - 2 * self.poissons_ratio[i])))
+        self.mu[None] += self.youngs_modulus[None] / 2 / (1 + self.poissons_ratio[None])
+        self.lam[None] += (self.youngs_modulus[None] * self.poissons_ratio[None] / 
+                        ((1 + self.poissons_ratio[None]) * (1 - 2 * self.poissons_ratio[None])))
             
     def load_mesh(self):
         # Load mesh data from gmsh
@@ -125,7 +107,7 @@ class ViTacTip:
                 element_materials[i] = group_to_idx['shell']  # shell material
             
             # Determine density based on material
-            material_density = self.mass_density[element_materials[i]]
+            material_density = self.mass_density[None]
             element_mass = volume * material_density
             
             # Distribute element mass to vertices
@@ -743,11 +725,8 @@ class ViTacTip:
             tetra_volume = ti.abs(deformation_matrix.determinant()) / 6
             deformation_gradient = deformation_matrix @ self.deformation_gradient_inverse[tetra_idx]
 
-            # mu = self.mu[self.element_materials[tetra_idx]]
-            # lam = self.lam[self.element_materials[tetra_idx]]
-
-            mu = self.mu[0]
-            lam = self.lam[0]
+            mu = self.mu[None]
+            lam = self.lam[None]
 
             # Neo-hookean calculations
             jacobian = deformation_gradient.determinant()
