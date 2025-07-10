@@ -19,6 +19,7 @@ RUN_ON_LAB_MACHINE = True
 class Contact:
     def __init__(self):
         self.set_up_system_params()
+        self.load_system_identification_data()
         self.vitactip = ViTacTip()
         self.phantom = Phantom()
         self.set_up_initial_positions_and_trajectory_first_init_only()
@@ -29,7 +30,6 @@ class Contact:
         self.set_up_snapshot()
         self.set_up_loss_computation()
         self.visualisation_initialise()
-        self.load_system_identification_data()
     
     @ti.kernel
     def fp(self):
@@ -55,7 +55,7 @@ class Contact:
             exp_keypoint = self.exp_keypoints[start_ix] + (self.exp_keypoints[end_ix] - self.exp_keypoints[start_ix]) * (ts - self.sim_keypoints[start_ix]) / (self.sim_keypoints[end_ix] - self.sim_keypoints[start_ix])
             for i in range(self.marker_position_exp.shape[0]):
                 for j in range(2):
-                    self.marker_position_exp[i][j] = self.marker_positions_exp[math.floor(exp_keypoint)][j] + (exp_keypoint - math.floor(exp_keypoint)) * (self.marker_positions_exp[math.ceil(exp_keypoint)][j] - self.marker_positions_exp[math.floor(exp_keypoint)][j])
+                    self.marker_position_exp[i][j] = self.marker_positions_exp[ti.floor(exp_keypoint, dtype=ti.i32), i][j] + (exp_keypoint - ti.floor(exp_keypoint)) * (self.marker_positions_exp[ti.ceil(exp_keypoint, dtype=ti.i32), i][j] - self.marker_positions_exp[ti.floor(exp_keypoint, dtype=ti.i32), i][j])
 
     def load_system_identification_data(self):
         with open(SYSTEM_PARAMS.files.markers_paired, "rb") as f:
