@@ -38,7 +38,7 @@ class Contact:
     @ti.kernel
     def bp(self):
         self.fp_bp[None] = 1
-        
+
     @ti.kernel
     def filter_and_match_trajectory(self):
         count=0
@@ -61,10 +61,13 @@ class Contact:
         while current_target<self.trajectory_npy.shape[0] and self.trajectory_to_video_mapping_valid[current_target]==0:
             current_target+=1
         if current_target>=self.trajectory_npy.shape[0]:
-            for i in range(self.trajectory_npy.shape[0]-1,-1,-1):
-                if self.trajectory_to_video_mapping_valid[i]==1:
-                    current_target=i
-                    break
+            # Instead of a reverse loop, we'll use a forward loop and check from the end
+            found = 0
+            for i in range(self.trajectory_npy.shape[0]):
+                idx = self.trajectory_npy.shape[0] - 1 - i  # Calculate the reverse index
+                if self.trajectory_to_video_mapping_valid[idx]==1 and found==0:
+                    current_target=idx
+                    found=1
         prev_target=current_target
         while prev_target>0 and self.trajectory_to_video_mapping_valid[prev_target]==0:
             prev_target-=1
@@ -192,6 +195,8 @@ class Contact:
         self.last_target_reached[None] = 0
         self.frames_since_last_target_reached = ti.field(dtype=int, shape=(), needs_grad=False)
         self.frames_since_last_target_reached[None] = 0
+        self.mesh_needs_to_be_saved = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.mesh_needs_to_be_saved[None] = 0
 
     def set_up_initial_positions_and_trajectory_first_init_only(self):
         self.phantom_closest_vertex = SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex
@@ -209,7 +214,9 @@ class Contact:
         self.tumour_present[None] = 0
 
         self.keypoint_frames=ti.field(dtype=int,shape=(12,),needs_grad=False)
-        self.video_keypoint_frames=np.array([36,74,125,164,199,243,344,378,421],dtype=np.int32)
+        self.video_keypoint_frames_np=np.array([36,74,125,164,199,243,344,378,421],dtype=np.int32)
+        self.video_keypoint_frames=ti.field(dtype=int,shape=(self.video_keypoint_frames_np.shape[0],),needs_grad=False)
+        self.video_keypoint_frames.from_numpy(self.video_keypoint_frames_np)
         self.filtered_trajectory_indices=ti.field(dtype=int,shape=(9,),needs_grad=False)
         self.trajectory_to_video_mapping_indices=ti.field(dtype=int,shape=(12,),needs_grad=False)
         self.trajectory_to_video_mapping_frames=ti.field(dtype=int,shape=(12,),needs_grad=False)
@@ -346,14 +353,14 @@ class Contact:
         for i in range(self.vitactip.num_markers):
             sim_marker = self.vitactip.deformed_markers[i]
             exp_marker = self.marker_position_exp[i]
-
-            if exp_marker[0] < 0 or exp_marker[1] < 0:
-                continue
-
+            
+            # Replace conditional with multiplicative mask
+            valid_marker = ti.cast(exp_marker[0] >= 0 and exp_marker[1] >= 0, ti.f32)
+            
             dx = exp_marker[0] - sim_marker[0]
             dy = exp_marker[1] - sim_marker[1]
             squared_error = dx * dx + dy * dy
-            self.squared_error_sum[None] += squared_error
+            self.squared_error_sum[None] += squared_error * valid_marker
 
     @ti.kernel
     def compute_marker_loss_2(self, f: ti.i32):
@@ -531,6 +538,7 @@ class Contact:
             self.is_dwelling[None] = 1
             self.dwell_counter[None] = 0
             self.keypoint_frames[self.current_target_idx[None]] = ts
+            self.mesh_needs_to_be_saved[None] = 1
             print(f'target {self.current_target_idx[None]} ({target}) reached at time step {ts}!')
 
         target_reached_no_control = False
@@ -569,7 +577,7 @@ class Contact:
     def pid_controller_3(self):
         self.vitactip.R_A.from_numpy(R.from_quat(self.vitactip.R_A_quat.to_numpy()).as_matrix())
 
-    def take_snapshot(self, opts):
+    def take_2d_markers_snapshot(self, opts):
         self.take_snapshot_1(opts)
         self.take_snapshot_2(opts)
 
@@ -610,11 +618,12 @@ class Contact:
         save_markers_with_empty_rows(virtual_np, SYSTEM_PARAMS.files.virtual_markers_snapshots)
         np.savetxt(SYSTEM_PARAMS.files.ground_truth_labels, labels_np, delimiter=',', fmt='%d')
 
-    def save_tactile_sensor_mesh_to_pickle(self, ts):
-        particles = self.vitactip.vertices_deformed_A.to_numpy()[0]
-        with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(ts), 'wb') as f:
-            pickle.dump(particles, f)
-        # print(f'mesh exported at ts: {ts}!')
+    def maybe_save_tactile_sensor_mesh_to_pickle(self, ts):
+        if self.mesh_needs_to_be_saved[None] == 1:
+            particles = self.vitactip.vertices_deformed_A.to_numpy()[0]
+            with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(ts), 'wb') as f:
+                pickle.dump(particles, f)
+            self.mesh_needs_to_be_saved[None] = 0
     
     def save_tactile_sensor_mesh_node_mapping_to_pickle(self):
         f2v = self.vitactip.tetrahedra.to_numpy()
@@ -922,9 +931,9 @@ def main():
             contact_model.vitactip.extract_markers(SYSTEM_PARAMS.contact.num_sub_frames-1)
             contact_model.visualisation_update_gui(ts)
 
+            contact_model.maybe_save_tactile_sensor_mesh_to_pickle(ts)
             if ts % 100 == 0:
-                contact_model.take_snapshot(opts)
-                contact_model.save_tactile_sensor_mesh_to_pickle(ts)
+                contact_model.take_2d_markers_snapshot(opts)
 
         contact_model.filter_and_match_trajectory()
         contact_model.bp()

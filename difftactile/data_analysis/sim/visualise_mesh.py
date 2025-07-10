@@ -6,12 +6,21 @@ from difftactile.main.constants import *
 
 class VisualiseMesh:
     def __init__(self):
-        self.load_undeformed_mesh_in_gmsh_coordinate_system()
-
-    def load_undeformed_mesh_in_gmsh_coordinate_system(self):
+        self.load_tetrahedra()
+        self.load_deformed_points()
+    
+    def load_tetrahedra(self):
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
             self.mesh_data = pickle.load(f)
+        self.tetrahedra = self.mesh_data['all_tetrahedra']
+
+    def load_default_undeformed_points(self):
         with open(SYSTEM_PARAMS.files.initial_vertex_positions_undeformed, 'rb') as f:
+            self.point_coordinates = pickle.load(f)
+        print(f'number of nan vertices: {np.sum(np.isnan(self.point_coordinates))}')
+    
+    def load_deformed_points(self):
+        with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(37), 'rb') as f:
             self.point_coordinates = pickle.load(f)
         print(f'number of nan vertices: {np.sum(np.isnan(self.point_coordinates))}')
     
@@ -63,6 +72,6 @@ class VisualiseMesh:
 
 if __name__ == '__main__':
     visualise_mesh = VisualiseMesh()
-    visualise_mesh.use_dome_surface_points()
-    visualise_mesh.visualise_point_cloud()
+    # visualise_mesh.use_dome_surface_points()
+    visualise_mesh.visualise_mesh()
     
