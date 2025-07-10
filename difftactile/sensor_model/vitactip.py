@@ -73,6 +73,7 @@ class ViTacTip:
             self.mu[i] += self.youngs_modulus[i] / 2 / (1 + self.poissons_ratio[i])
             self.lam[i] += (self.youngs_modulus[i] * self.poissons_ratio[i] / 
                           ((1 + self.poissons_ratio[i]) * (1 - 2 * self.poissons_ratio[i])))
+            
     def load_mesh(self):
         # Load mesh data from gmsh
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
@@ -146,6 +147,9 @@ class ViTacTip:
         self.is_fixed_layer = ti.field(int, len(self.node_coordinates), needs_grad=False)
         is_fixed_layer_data = self.node_labels[:,-1].astype(np.int32)
         self.is_fixed_layer.from_numpy(is_fixed_layer_data)
+
+        with open(SYSTEM_PARAMS.files.is_fixed_layer, 'wb') as f:
+            pickle.dump(is_fixed_layer_data, f)
         
         self.num_vertices = len(self.node_coordinates)
         self.num_tetrahedra = len(self.tetrahedra_npy)
@@ -291,9 +295,7 @@ class ViTacTip:
         self.T_A = ti.Matrix.field(4, 4, ti.f32, shape = (), needs_grad=False)
         # vertex_control_velocities: prescribed control velocities for vertices in m/s
         self.vertex_control_velocities = ti.Vector.field(3, float, shape = (self.num_vertices), needs_grad=False)
-        # signed_distance_function: signed distance to surface in m
         self.signed_distance_function = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        # simulation_cache: cache for gradient computation (dimensionless)
         self.simulation_cache = dict() # for grad backward
 
         # translation_vector: translation vector in m
@@ -784,7 +786,7 @@ class ViTacTip:
             for k in ti.static(range(3)):
                 vertex_force = ti.Vector([force_matrix[j,k] for j in range(3)])
                 self.vertex_velocities[frame,vertex_indices[k]] += SYSTEM_PARAMS.contact.dt * vertex_force / self.vertex_mass[vertex_indices[k]]
-                self.vertex_velocities[frame,vertex_indices[3]] += -1*SYSTEM_PARAMS.contact.dt * vertex_force / self.vertex_mass[vertex_indices[3]]
+                self.vertex_velocities[frame,vertex_indices[3]] += -SYSTEM_PARAMS.contact.dt * vertex_force / self.vertex_mass[vertex_indices[3]]
 
 
     @ti.kernel

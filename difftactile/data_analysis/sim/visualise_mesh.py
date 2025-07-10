@@ -8,6 +8,8 @@ class VisualiseMesh:
     def __init__(self):
         self.load_tetrahedra()
         self.load_deformed_points()
+        self.load_is_fixed_layer()
+        # self.apply_is_fixed_layer()
     
     def load_tetrahedra(self):
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
@@ -20,9 +22,17 @@ class VisualiseMesh:
         print(f'number of nan vertices: {np.sum(np.isnan(self.point_coordinates))}')
     
     def load_deformed_points(self):
-        with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(37), 'rb') as f:
+        with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(178), 'rb') as f:
             self.point_coordinates = pickle.load(f)
         print(f'number of nan vertices: {np.sum(np.isnan(self.point_coordinates))}')
+    
+    def load_is_fixed_layer(self):
+        with open(SYSTEM_PARAMS.files.is_fixed_layer, 'rb') as f:
+            self.is_fixed_layer = pickle.load(f)
+    
+    def apply_is_fixed_layer(self):
+        # Filter point coordinates to keep only those where is_fixed_layer is True
+        self.point_coordinates = self.point_coordinates[self.is_fixed_layer == 1]
     
     def use_dome_surface_points(self):
         # self.point_coordinates = self.point_coordinates[self.mesh_data['dome_surface_node_tags']]

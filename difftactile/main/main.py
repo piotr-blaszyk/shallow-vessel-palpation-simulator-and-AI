@@ -658,7 +658,7 @@ class Contact:
         self.vitactip.extract_clock_arm_2d_projections(0)
         self.visualisation_prepare_clock_arm_points()
         self.tactile_canvas.set_image(self.bg_image)
-        if self.fp_bp[None] == 0:
+        if self.fp_bp[None] == 0 or SYSTEM_PARAMS.visualisation.visualise_exp_markers_during_bp == 0:
             self.visualisation_prepare_tactile_readout_data_fp()
             self.tactile_canvas.circles(self.sim_marker_points, radius=0.01, color=(1, 0, 0))
             self.tactile_canvas.lines(self.arrow_line_vertices, color=(0, 1, 0), width=0.01)
@@ -742,12 +742,12 @@ class Contact:
         self.scene.particles(
             self.healthy_tissue_points,
             color=(0.0, 0.0, 1.0),
-            radius=6e-4,
+            radius=6e-5,
         )
         self.scene.particles(
             self.tumour_points,
             color=(1.0, 1.0, 0.0),
-            radius=6e-4,
+            radius=6e-5,
         )
         self.scene.particles(
             self.sensor_points,
@@ -866,6 +866,9 @@ def main():
             contact_model.memory_to_cache(ts)
             contact_model.vitactip.extract_markers(SYSTEM_PARAMS.contact.num_sub_frames-1)
             contact_model.visualisation_update_gui(ts)
+
+            if ts == 50:
+                foo = 7
 
             contact_model.maybe_save_tactile_sensor_mesh_to_pickle(ts)
             if ts % 100 == 0:
