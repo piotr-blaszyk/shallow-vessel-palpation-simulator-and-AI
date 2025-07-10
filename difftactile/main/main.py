@@ -570,8 +570,9 @@ class Contact:
         # print('mesh node mapping exported!')
     
     def visualisation_initialise(self):
-        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(18,), needs_grad=False)
-        self.key_points_per_vertex_color = ti.Vector.field(3, dtype=ti.f32, shape=(9,), needs_grad=False)
+        self.num_keypoints = 18
+        self.key_points = ti.Vector.field(3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False)
+        self.key_points_per_vertex_color = ti.Vector.field(3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False)
         self.sensor_points = ti.Vector.field(
             3, dtype=float, shape=(self.vitactip.num_vertices), needs_grad=False
         )
@@ -700,7 +701,7 @@ class Contact:
         ], dtype=float)
         self.clock_arm_points_per_vertex_color.from_numpy(clock_arm_points_per_vertex_color_npy)
 
-        key_points_per_vertex_color_npy = np.tile([1., 0., 0.], (9, 1))
+        key_points_per_vertex_color_npy = np.tile([1., 0., 0.], (self.num_keypoints, 1))
         key_points_per_vertex_color_npy[-2:, :] = clock_arm_points_per_vertex_color_npy
         self.key_points_per_vertex_color.from_numpy(key_points_per_vertex_color_npy)
 
