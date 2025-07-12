@@ -52,9 +52,8 @@ class ViTacTip:
 
     @ti.kernel
     def set_up_system_params_2(self):
-        self.mu[None] += self.youngs_modulus[None] / 2 / (1 + self.poissons_ratio[None])
-        self.lam[None] += (self.youngs_modulus[None] * self.poissons_ratio[None] / 
-                        ((1 + self.poissons_ratio[None]) * (1 - 2 * self.poissons_ratio[None])))
+        self.lam[None] += (self.youngs_modulus[None] * self.poissons_ratio[None]) / ((1 + self.poissons_ratio[None]) * (1 - 2 * self.poissons_ratio[None]))
+        self.mu[None] += self.youngs_modulus[None] / (2 * (1 + self.poissons_ratio[None]))
             
     def load_mesh(self):
         # Load mesh data from gmsh
