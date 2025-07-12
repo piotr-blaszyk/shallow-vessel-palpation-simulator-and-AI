@@ -291,6 +291,7 @@ class Contact:
         self.collision.grad(f)
         self.vitactip.update_internal_forces.grad(f)
         self.phantom.p2g.grad(f)
+        # self.phantom.svd_of_trial_deformation_gradient_grad(f)
         self.phantom.compute_trial_deformation_gradient.grad(f)
 
     @ti.kernel
@@ -346,6 +347,8 @@ class Contact:
                 exp_marker = self.marker_position_exp[exp_ix]
                 dx = exp_marker[0] - sim_marker[0]
                 dy = exp_marker[1] - sim_marker[1]
+                dx /= self.window_size[None][0]
+                dy /= self.window_size[None][1]
                 squared_error = dx * dx + dy * dy
                 self.squared_error_sum[None] += squared_error
 
@@ -998,6 +1001,7 @@ def main():
         contact_model.bp()
         print("backward")
         for ts in range(SYSTEM_PARAMS.contact.num_frames - 1, -1, -1):
+            print(f'ts: {ts}')
             contact_model.reset_loss()
             contact_model.memory_from_cache(ts)
             contact_model.forward_pass_common_part(ts)
@@ -1023,7 +1027,7 @@ def main():
             f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
         )
     print("optimisation loop done")
-    youngs_modulus_value = contact_model.vitactip.youngs_modulus.to_numpy()[0]
+    youngs_modulus_value = contact_model.vitactip.youngs_modulus[None]
     results = dict()
     results["final_youngs_modulus"] = float(youngs_modulus_value)
     with open(SYSTEM_PARAMS.files.domain_adaptation_results, "w") as f:

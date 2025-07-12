@@ -313,11 +313,8 @@ class ViTacTip:
             shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices),
             needs_grad=True,
         )
-        self.deformation_gradient_inverse = ti.Matrix.field(
+        self.initial_deformation_gradient_inverse = ti.Matrix.field(
             3, 3, float, self.num_tetrahedra, needs_grad=False
-        )
-        self.element_potential_energy = ti.field(
-            float, self.num_tetrahedra, needs_grad=False
         )
         self.contact_forces_on_vertices = ti.Vector.field(
             3,
@@ -542,7 +539,8 @@ class ViTacTip:
     @ti.kernel
     def set_vel(self, f: ti.i32):
         for p in range(self.num_vertices):
-            self.vertex_velocities[f, p] += self.vertex_control_velocities[p]
+            if self.is_fixed_layer[p] == 1:
+                self.vertex_velocities[f, p] = self.vertex_control_velocities[p]
 
     @ti.kernel
     def set_pose_control_1(self):
@@ -665,7 +663,7 @@ class ViTacTip:
                 self.vertices_deformed_A[0, id],
             )
             deformation_gradient = ti.Matrix.cols([a - d, b - d, c - d])
-            self.deformation_gradient_inverse[i] = deformation_gradient.inverse()
+            self.initial_deformation_gradient_inverse[i] = deformation_gradient.inverse()
 
     @ti.func
     def find_closest(self, grid_p, f):
@@ -835,7 +833,7 @@ class ViTacTip:
             )
             tetra_volume = ti.abs(deformation_matrix.determinant()) / 6
             deformation_gradient = (
-                deformation_matrix @ self.deformation_gradient_inverse[tetra_idx]
+                deformation_matrix @ self.initial_deformation_gradient_inverse[tetra_idx]
             )
             mu = self.mu[None]
             lam = self.lam[None]
@@ -855,7 +853,7 @@ class ViTacTip:
             elastic_force_matrix = (
                 -tetra_volume
                 * stress_tensor
-                @ self.deformation_gradient_inverse[tetra_idx].transpose()
+                @ self.initial_deformation_gradient_inverse[tetra_idx].transpose()
             )
             relative_vel1 = vertex1_vel - vertex4_vel
             relative_vel2 = vertex2_vel - vertex4_vel
@@ -927,8 +925,10 @@ class ViTacTip:
     def copy_frame(self, source: ti.i32, target: ti.i32):
         for p in range(self.num_vertices):
             self.vertices_deformed_A[target, p] = self.vertices_deformed_A[source, p]
-            self.vertex_velocities[target, p] = self.vertex_velocities[source, p]
             self.vertices_undeformed_A[target, p] = self.vertices_undeformed_A[
+                source, p
+            ]
+            self.vertex_velocities[target, p] = self.vertex_velocities[
                 source, p
             ]
 
@@ -936,9 +936,9 @@ class ViTacTip:
     def load_step_from_cache(
         self,
         f: ti.i32,
-        cache_pos: ti.types.ndarray(),
-        cache_trans: ti.types.ndarray(),
-        cache_virtual_pos: ti.types.ndarray(),
+        cache_vertices_deformed_A: ti.types.ndarray(),
+        cache_T_BA: ti.types.ndarray(),
+        cache_vertices_undeformed_A: ti.types.ndarray(),
         cache_rot: ti.types.ndarray(),
         cache_R_CD: ti.types.ndarray(),
         cache_R_CA: ti.types.ndarray(),
@@ -950,14 +950,17 @@ class ViTacTip:
         cache_T_AB: ti.types.ndarray(),
         cache_R_BC: ti.types.ndarray(),
         cache_R_AB: ti.types.ndarray(),
+        cache_T_A: ti.types.ndarray(),
+        cache_vertex_velocities: ti.types.ndarray(),
     ):
         for j in range(4):
             for k in range(4):
-                self.T_BA[None][j, k] = cache_trans[j, k]
+                self.T_BA[None][j, k] = cache_T_BA[j, k]
                 self.T_CD[None][j, k] = cache_T_CD[j, k]
                 self.T_CA[None][j, k] = cache_T_CA[j, k]
                 self.T_BC[None][j, k] = cache_T_BC[j, k]
                 self.T_AB[None][j, k] = cache_T_AB[j, k]
+                self.T_A[None][j, k] = cache_T_A[j, k]
         for j in range(3):
             for k in range(3):
                 self.R_BA[None][j, k] = cache_rot[j, k]
@@ -969,16 +972,17 @@ class ViTacTip:
             self.translation_A[None][j] = cache_translation_A[j]
         for p in range(self.num_vertices):
             for i in ti.static(range(3)):
-                self.vertices_deformed_A[f, p][i] = cache_pos[p, i]
-                self.vertices_undeformed_A[f, p][i] = cache_virtual_pos[p, i]
+                self.vertices_deformed_A[f, p][i] = cache_vertices_deformed_A[p, i]
+                self.vertices_undeformed_A[f, p][i] = cache_vertices_undeformed_A[p, i]
+                self.vertex_velocities[f, p][i] = cache_vertex_velocities[p, i]
 
     @ti.kernel
     def add_step_to_cache(
         self,
         f: ti.i32,
-        cache_pos: ti.types.ndarray(),
-        cache_trans: ti.types.ndarray(),
-        cache_virtual_pos: ti.types.ndarray(),
+        cache_vertices_deformed_A: ti.types.ndarray(),
+        cache_T_BA: ti.types.ndarray(),
+        cache_vertices_undeformed_A: ti.types.ndarray(),
         cache_rot: ti.types.ndarray(),
         cache_R_CD: ti.types.ndarray(),
         cache_R_CA: ti.types.ndarray(),
@@ -990,14 +994,17 @@ class ViTacTip:
         cache_T_AB: ti.types.ndarray(),
         cache_R_BC: ti.types.ndarray(),
         cache_R_AB: ti.types.ndarray(),
+        cache_T_A: ti.types.ndarray(),
+        cache_vertex_velocities: ti.types.ndarray(),
     ):
         for j in range(4):
             for k in range(4):
-                cache_trans[j, k] = self.T_BA[None][j, k]
+                cache_T_BA[j, k] = self.T_BA[None][j, k]
                 cache_T_CD[j, k] = self.T_CD[None][j, k]
                 cache_T_CA[j, k] = self.T_CA[None][j, k]
                 cache_T_BC[j, k] = self.T_BC[None][j, k]
                 cache_T_AB[j, k] = self.T_AB[None][j, k]
+                cache_T_A[j, k] = self.T_A[None][j, k]
         for j in range(3):
             for k in range(3):
                 cache_rot[j, k] = self.R_BA[None][j, k]
@@ -1009,23 +1016,24 @@ class ViTacTip:
             cache_translation_A[j] = self.translation_A[None][j]
         for p in range(self.num_vertices):
             for i in ti.static(range(3)):
-                cache_pos[p, i] = self.vertices_deformed_A[f, p][i]
-                cache_virtual_pos[p, i] = self.vertices_undeformed_A[f, p][i]
+                cache_vertices_deformed_A[p, i] = self.vertices_deformed_A[f, p][i]
+                cache_vertices_undeformed_A[p, i] = self.vertices_undeformed_A[f, p][i]
+                cache_vertex_velocities[p, i] = self.vertex_velocities[f, p][i]
 
     def memory_to_cache(self, t):
         cur_step_name = f"{t:06d}"
         device = "cpu"
         self.simulation_cache[cur_step_name] = dict()
-        self.simulation_cache[cur_step_name]["pos"] = torch.zeros(
+        self.simulation_cache[cur_step_name]["vertices_deformed_A"] = torch.zeros(
             (self.num_vertices, 3), dtype=TC_TYPE, device=device
         )
-        self.simulation_cache[cur_step_name]["trans_h"] = torch.zeros(
+        self.simulation_cache[cur_step_name]["T_BA"] = torch.zeros(
             (4, 4), dtype=TC_TYPE, device=device
         )
         self.simulation_cache[cur_step_name]["rot_h"] = torch.zeros(
             (3, 3), dtype=TC_TYPE, device=device
         )
-        self.simulation_cache[cur_step_name]["virtual_pos"] = torch.zeros(
+        self.simulation_cache[cur_step_name]["vertices_undeformed_A"] = torch.zeros(
             (self.num_vertices, 3), dtype=TC_TYPE, device=device
         )
         self.simulation_cache[cur_step_name]["R_CD"] = torch.zeros(
@@ -1058,11 +1066,17 @@ class ViTacTip:
         self.simulation_cache[cur_step_name]["R_AB"] = torch.zeros(
             (3, 3), dtype=TC_TYPE, device=device
         )
+        self.simulation_cache[cur_step_name]["T_A"] = torch.zeros(
+            (4, 4), dtype=TC_TYPE, device=device
+        )
+        self.simulation_cache[cur_step_name]["vertex_velocities"] = torch.zeros(
+            (self.num_vertices, 3), dtype=TC_TYPE, device=device
+        )
         self.add_step_to_cache(
             0,
-            self.simulation_cache[cur_step_name]["pos"],
-            self.simulation_cache[cur_step_name]["trans_h"],
-            self.simulation_cache[cur_step_name]["virtual_pos"],
+            self.simulation_cache[cur_step_name]["vertices_deformed_A"],
+            self.simulation_cache[cur_step_name]["T_BA"],
+            self.simulation_cache[cur_step_name]["vertices_undeformed_A"],
             self.simulation_cache[cur_step_name]["rot_h"],
             self.simulation_cache[cur_step_name]["R_CD"],
             self.simulation_cache[cur_step_name]["R_CA"],
@@ -1074,6 +1088,8 @@ class ViTacTip:
             self.simulation_cache[cur_step_name]["T_AB"],
             self.simulation_cache[cur_step_name]["R_BC"],
             self.simulation_cache[cur_step_name]["R_AB"],
+            self.simulation_cache[cur_step_name]["T_A"],
+            self.simulation_cache[cur_step_name]["vertex_velocities"],
         )
         self.copy_frame(SYSTEM_PARAMS.contact.num_sub_frames - 1, 0)
 
@@ -1081,9 +1097,9 @@ class ViTacTip:
         cur_step_name = f"{t:06d}"
         self.load_step_from_cache(
             0,
-            self.simulation_cache[cur_step_name]["pos"],
-            self.simulation_cache[cur_step_name]["trans_h"],
-            self.simulation_cache[cur_step_name]["virtual_pos"],
+            self.simulation_cache[cur_step_name]["vertices_deformed_A"],
+            self.simulation_cache[cur_step_name]["T_BA"],
+            self.simulation_cache[cur_step_name]["vertices_undeformed_A"],
             self.simulation_cache[cur_step_name]["rot_h"],
             self.simulation_cache[cur_step_name]["R_CD"],
             self.simulation_cache[cur_step_name]["R_CA"],
@@ -1095,6 +1111,8 @@ class ViTacTip:
             self.simulation_cache[cur_step_name]["T_AB"],
             self.simulation_cache[cur_step_name]["R_BC"],
             self.simulation_cache[cur_step_name]["R_AB"],
+            self.simulation_cache[cur_step_name]["T_A"],
+            self.simulation_cache[cur_step_name]["vertex_velocities"],
         )
 
     def get_keypoint_indices(self, f: ti.i32):
