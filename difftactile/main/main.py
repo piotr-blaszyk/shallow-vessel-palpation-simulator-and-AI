@@ -945,11 +945,10 @@ class Contact:
 
     @ti.kernel
     def update_params(self):
-        for i in range(self.vitactip.youngs_modulus.shape[0]):
-            self.vitactip.youngs_modulus[i] -= (
-                SYSTEM_PARAMS.learning_rates.vitactip.youngs_modulus
-                * self.vitactip.youngs_modulus.grad[i]
-            )
+        self.vitactip.youngs_modulus[None] -= (
+            SYSTEM_PARAMS.learning_rates.vitactip.youngs_modulus
+            * self.vitactip.youngs_modulus.grad[None]
+        )
 
 
 def main():
@@ -995,11 +994,7 @@ def main():
                 SYSTEM_PARAMS.contact.num_sub_frames - 1
             )
             contact_model.visualisation_update_gui(ts)
-            if ts == 50:
-                foo = 7
             contact_model.maybe_save_tactile_sensor_mesh_to_pickle(ts)
-            if ts % 100 == 0:
-                contact_model.take_2d_markers_snapshot(opts)
         contact_model.bp()
         print("backward")
         for ts in range(SYSTEM_PARAMS.contact.num_frames - 1, -1, -1):
