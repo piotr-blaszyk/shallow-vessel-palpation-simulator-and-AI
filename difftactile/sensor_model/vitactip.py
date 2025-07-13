@@ -794,10 +794,6 @@ class ViTacTip:
             vertex2_pos = self.vertices_deformed_A[frame, vertex2_idx]
             vertex3_pos = self.vertices_deformed_A[frame, vertex3_idx]
             vertex4_pos = self.vertices_deformed_A[frame, vertex4_idx]
-            vertex1_vel = self.vertex_velocities[frame, vertex1_idx]
-            vertex2_vel = self.vertex_velocities[frame, vertex2_idx]
-            vertex3_vel = self.vertex_velocities[frame, vertex3_idx]
-            vertex4_vel = self.vertex_velocities[frame, vertex4_idx]
             deformation_matrix = ti.Matrix.cols(
                 [
                     vertex1_pos - vertex4_pos,
