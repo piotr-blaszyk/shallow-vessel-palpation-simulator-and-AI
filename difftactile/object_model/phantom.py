@@ -350,18 +350,6 @@ class Phantom:
                 [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
             )
 
-    @ti.func
-    def reset(self):
-        self.mu.fill(0.0)
-        self.lam.fill(0.0)
-        self.grid_node_momentum_in.fill(0.0)
-        self.grid_node_velocity_out.fill(0.0)
-        self.grid_node_mass.fill(0.0)
-        self.grid_node_external_impulse.fill(0.0)
-        self.grid_occupy.fill(0.0)
-        self.total_surface_external_force.fill(0.0)
-        self.particle_von_mises_stress.fill(0.0)
-
     @ti.kernel
     def get_external_force(self, f: ti.i32):
         for i, j, k in ti.ndrange(
@@ -669,6 +657,25 @@ class Phantom:
                     + SYSTEM_PARAMS.contact.dt * updated_velocity
                 )
 
+    @ti.func
+    def reset(self):
+        self.mu.fill(0.0)
+        self.lam.fill(0.0)
+        self.grid_node_momentum_in.fill(0.0)
+        self.grid_node_velocity_out.fill(0.0)
+        self.grid_node_mass.fill(0.0)
+        self.grid_node_external_impulse.fill(0.0)
+        self.grid_occupy.fill(0.0)
+        self.total_surface_external_force.fill(0.0)
+        self.particle_von_mises_stress.fill(0.0)
+
+    @ti.kernel
+    def clear_grad(self):
+        self.grid_node_momentum_in.grad.fill(0.0)
+        self.mu.grad.fill(0.0)
+        self.lam.grad.fill(0.0)
+        self.youngs_modulus.grad.fill(0.0)
+
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):
         for p in range(self.actual_total_num_particles):
@@ -748,13 +755,6 @@ class Phantom:
             self.cache[cur_step_name]["F_0"],
         )
 
-    @ti.kernel
-    def clear_grad(self):
-        self.grid_node_momentum_in.grad.fill(0.0)
-        self.mu.grad.fill(0.0)
-        self.lam.grad.fill(0.0)
-        self.youngs_modulus.grad.fill(0.0)
-
     def get_keypoint_index(self) -> int:
         positions = self.particle_position.to_numpy()[0]
         centroid_x = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[0]
@@ -782,20 +782,3 @@ class Phantom:
         positions = self.particle_position.to_numpy()[f]
         coordinates = positions[keypoint_indices]
         return coordinates
-
-    @ti.kernel
-    def copy_grad_unused(self, source: ti.i32, target: ti.i32):
-        return
-        for p in range(self.actual_total_num_particles):
-            self.particle_position.grad[target, p] = self.particle_position.grad[
-                source, p
-            ]
-            self.particle_velocity.grad[target, p] = self.particle_velocity.grad[
-                source, p
-            ]
-            self.affine_velocity_field.grad[target, p] = (
-                self.affine_velocity_field.grad[source, p]
-            )
-            self.deformation_gradient.grad[target, p] = self.deformation_gradient.grad[
-                source, p
-            ]

@@ -741,19 +741,6 @@ class ViTacTip:
         return signed_distance, surface_normal, relative_velocity, is_contact
 
     @ti.func
-    def reset(self):
-        self.mu.fill(0.0)
-        self.lam.fill(0.0)
-        self.contact_forces_on_vertices.fill(0.0)
-        self.total_surface_force.fill(0.0)
-        self.deformed_markers.fill(0.0)
-        self.projection_2d_dome_surface_nodes_deformed.fill(0.0)
-        for i in range(1, self.vertices_deformed_A.shape[0]):
-            for j in range(self.vertices_deformed_A.shape[1]):
-                self.vertices_deformed_A[i, j] = ti.Vector([0.0, 0.0, 0.0])
-                self.vertex_velocities[i, j] = ti.Vector([0.0, 0.0, 0.0])
-
-    @ti.func
     def update_contact_force(self, triangle_index, contact_force, frame):
         vertex1_idx, vertex2_idx, vertex3_idx = self.contact_surface[triangle_index]
         self.contact_forces_on_vertices[frame, vertex1_idx] += 1 / 3 * contact_force
@@ -923,6 +910,29 @@ class ViTacTip:
                 self.vertices_undeformed_A[frame, vertex_idx]
                 + SYSTEM_PARAMS.contact.dt * self.vertex_control_velocities[vertex_idx]
             )
+    
+    @ti.func
+    def reset(self):
+        self.mu.fill(0.0)
+        self.lam.fill(0.0)
+        self.contact_forces_on_vertices.fill(0.0)
+        self.total_surface_force.fill(0.0)
+        self.deformed_markers.fill(0.0)
+        self.projection_2d_dome_surface_nodes_deformed.fill(0.0)
+        for i in range(1, self.vertices_deformed_A.shape[0]):
+            for j in range(self.vertices_deformed_A.shape[1]):
+                self.vertices_deformed_A[i, j] = ti.Vector([0.0, 0.0, 0.0])
+                self.vertex_velocities[i, j] = ti.Vector([0.0, 0.0, 0.0])
+
+    @ti.kernel
+    def clear_grad(self):
+        self.deformed_markers.grad.fill(0.0)
+        self.vertices_deformed_A.grad.fill(0.0)
+        self.vertex_velocities.grad.fill(0.0)
+        self.contact_forces_on_vertices.grad.fill(0.0)
+        self.mu.grad.fill(0.0)
+        self.lam.grad.fill(0.0)
+        self.youngs_modulus.grad.fill(0.0)
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):
@@ -1157,27 +1167,3 @@ class ViTacTip:
         positions = self.vertices_undeformed_A.to_numpy()[f]
         coordinates = positions[keypoint_indices]
         return coordinates
-
-    @ti.kernel
-    def clear_grad(self):
-        self.deformed_markers.grad.fill(0.0)
-        self.vertices_deformed_A.grad.fill(0.0)
-        self.vertex_velocities.grad.fill(0.0)
-        self.contact_forces_on_vertices.grad.fill(0.0)
-        self.mu.grad.fill(0.0)
-        self.lam.grad.fill(0.0)
-        self.youngs_modulus.grad.fill(0.0)
-
-    @ti.kernel
-    def copy_grad_unused(self, source: ti.i32, target: ti.i32):
-        return
-        for p in range(self.num_vertices):
-            self.vertices_deformed_A.grad[target, p] = self.vertices_deformed_A.grad[
-                source, p
-            ]
-            self.vertex_velocities.grad[target, p] = self.vertex_velocities.grad[
-                source, p
-            ]
-            self.vertices_undeformed_A.grad[target, p] = (
-                self.vertices_undeformed_A.grad[source, p]
-            )
