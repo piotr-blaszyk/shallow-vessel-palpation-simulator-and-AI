@@ -19,7 +19,6 @@
         "keypoint_search_z_threshold": 0.001,
         "number_of_biomimetic_tips": 0,
         "number_of_materials": 1,
-        "maximum_number_of_materials": 2,
         "fixed_layer_distance_from_bottom": 0.020,
         "rayleigh_damping_alpha": 0.1,
         "rayleigh_damping_beta": 0.01,
@@ -63,7 +62,7 @@
         "normal_damping": 2.34e+00,
         "coulomb_friction_coeff": 0.85,
         "num_sub_frames": 500,
-        "num_frames": 60,
+        "num_frames": 100,
         "num_opt_steps": 1,
         "pid_max_speed_translation": 0.200,
         "pid_orientation_kp": 1.0,
@@ -73,7 +72,7 @@
         "pid_position_tolerance": 0.001,
         "pid_orientation_tolerance": 1.0,
         "pid_angle_eps": 1e-8,
-        "pid_max_rotation_per_second_degrees": 180.0,
+        "pid_max_rotation_per_second_degrees": 720.0,
         "dwell_frames": 0,
         "norm_eps": 1e-11,
         "tangential_velocity_detection_threshold": 1e-6
@@ -101,11 +100,48 @@
         "mini_batch_size": 10
     },
     "visualisation": {
-        "visualise_exp_markers_during_bp": 0
+        "visualise_exp_markers_during_bp": 1
     },
-    "learning_rates": {
+    "optimisation_update_steps": {
         "vitactip": {
-            "youngs_modulus": 1.0
+            "youngs_modulus": 0.1
+        },
+        "phantom": {
+            "youngs_modulus": 0.1
+        },
+        "contact": {
+            "coulomb_friction_coeff": 0.1,
+            "normal_stiffness": 0.1,
+            "tangential_stiffness": 0.1,
+            "normal_damping": 0.1
+        }
+    },
+    "optimisation_min_values": {
+        "vitactip": {
+            "youngs_modulus": 0.01
+        },
+        "phantom": {
+            "youngs_modulus": 0.01
+        },
+        "contact": {
+            "coulomb_friction_coeff": 0.01,
+            "normal_stiffness": 0.01,
+            "tangential_stiffness": 0.01,
+            "normal_damping": 0.01
+        }
+    },
+    "optimisation_max_values": {
+        "vitactip": {
+            "youngs_modulus": 9.0e6
+        },
+        "phantom": {
+            "youngs_modulus": 1.0e5
+        },
+        "contact": {
+            "coulomb_friction_coeff": 1.10,
+            "normal_stiffness": 5.0e6,
+            "tangential_stiffness": 3.5e6,
+            "normal_damping": 2.0e3
         }
     },
     "visualise_mesh": {

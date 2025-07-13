@@ -669,7 +669,10 @@ class Contact:
             shape=(self.phantom.actual_total_num_particles,),
             needs_grad=False,
         )
-        self.sim_marker_points = ti.Vector.field(
+        self.sim_markers_undeformed = ti.Vector.field(
+            2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
+        )
+        self.sim_markers_deformed = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
         self.sim_marker_offsets = ti.Vector.field(
@@ -722,7 +725,8 @@ class Contact:
             undeformed = undeformed / self.window_size[None]
             deformed = deformed / self.window_size[None]
             offset = deformed - undeformed
-            self.sim_marker_points[i] = undeformed
+            self.sim_markers_undeformed[i] = undeformed
+            self.sim_markers_deformed[i] = deformed
             self.arrow_line_vertices[i * 2] = undeformed
             self.arrow_line_vertices[i * 2 + 1] = undeformed + offset
 
@@ -744,17 +748,17 @@ class Contact:
         self.vitactip.extract_clock_arm_2d_projections(SYSTEM_PARAMS.contact.num_sub_frames - 1)
         self.visualisation_prepare_clock_arm_points()
         self.tactile_canvas.set_image(self.bg_image)
+        self.visualisation_prepare_tactile_readout_data_fp()
         if (
             self.fp_bp[None] == 0
             or SYSTEM_PARAMS.visualisation.visualise_exp_markers_during_bp == 0
         ):
-            self.visualisation_prepare_tactile_readout_data_fp()
             self.tactile_canvas.circles(
-                self.sim_marker_points, radius=0.01, color=(1, 0, 0)
+                self.sim_markers_undeformed, radius=0.01, color=(1, 0, 0)
             )
-            # self.tactile_canvas.lines(
-            #     self.arrow_line_vertices, color=(0, 1, 0), width=0.01
-            # )
+            self.tactile_canvas.lines(
+                self.arrow_line_vertices, color=(0, 1, 0), width=0.01
+            )
             self.tactile_canvas.circles(
                 self.clock_arm_points,
                 radius=0.02,
@@ -762,6 +766,9 @@ class Contact:
             )
         else:
             self.visualisation_prepare_tactile_readout_data_bp()
+            self.tactile_canvas.circles(
+                self.sim_markers_deformed, radius=0.01, color=(0, 1, 0)
+            )
             self.tactile_canvas.circles(
                 self.exp_marker_points, radius=0.01, color=(1, 0, 0)
             )
@@ -915,9 +922,6 @@ class Contact:
             self.print_gradients_single(
                 "vitactip.youngs_modulus", self.vitactip.youngs_modulus
             )
-            self.print_gradients_single(
-                "vitactip.poissons_ratio", self.vitactip.poissons_ratio
-            )
             self.print_gradients_single("normal_stiffness", self.normal_stiffness)
             self.print_gradients_single("normal_damping", self.normal_damping)
             self.print_gradients_single(
@@ -931,9 +935,6 @@ class Contact:
             self.print_gradients_single(
                 "phantom.youngs_modulus", self.phantom.youngs_modulus
             )
-            self.print_gradients_single(
-                "phantom.poissons_ratio", self.phantom.poissons_ratio
-            )
             print()
             self.gradients_printed = True
 
@@ -946,12 +947,95 @@ class Contact:
         print(f"{name} (val) max: {val_npy.max()}")
         print()
 
-    @ti.kernel
-    def update_params(self):
-        self.vitactip.youngs_modulus[None] += - (
-            SYSTEM_PARAMS.learning_rates.vitactip.youngs_modulus
-            * self.vitactip.youngs_modulus.grad[None]
+    def update_params(self, ts):
+        print(f'ts: {ts}')
+        print(f'loss: {self.loss[None]}')
+        self.update_param_none(
+            self.vitactip.youngs_modulus, 
+            ['vitactip', 'youngs_modulus']
         )
+        for i in range(2):
+            self.update_param_indexed(
+                self.phantom.youngs_modulus,
+                ['phantom', 'youngs_modulus'],
+                i
+            )
+        self.update_param_none(
+            self.coulomb_friction_coeff,
+            ['contact', 'coulomb_friction_coeff']
+        )
+        self.update_param_none(
+            self.normal_stiffness,
+            ['contact', 'normal_stiffness']
+        )
+        self.update_param_none(
+            self.tangential_stiffness,
+            ['contact', 'tangential_stiffness']
+        )
+        self.update_param_none(
+            self.normal_damping,
+            ['contact', 'normal_damping']
+        )
+        print()
+    
+    def update_param_none(self, ti_var, keys):
+        update_step = SYSTEM_PARAMS.optimisation_update_steps
+        min_val = SYSTEM_PARAMS.optimisation_min_values
+        max_val = SYSTEM_PARAMS.optimisation_max_values
+        for i in range(len(keys)):
+            update_step = update_step[keys[i]]
+            min_val = min_val[keys[i]]
+            max_val = max_val[keys[i]]
+
+        update = - (
+            np.sign(ti_var.grad[None])
+            * update_step
+            * ti_var[None]
+        )
+        new_val = ti_var[None] + update
+        if new_val >= min_val and new_val <= max_val:
+            ti_var[None] += update
+        
+        param_name = '.'.join(keys)
+        print(f'{param_name}: {ti_var[None]}')
+
+    def update_param_indexed(self, ti_var, keys, idx):
+        update_step = SYSTEM_PARAMS.optimisation_update_steps
+        min_val = SYSTEM_PARAMS.optimisation_min_values
+        max_val = SYSTEM_PARAMS.optimisation_max_values
+        for i in range(len(keys)):
+            update_step = update_step[keys[i]]
+            min_val = min_val[keys[i]]
+            max_val = max_val[keys[i]]
+
+        update = - (
+            np.sign(ti_var.grad[idx])
+            * update_step
+            * ti_var[idx]
+        )
+        new_val = ti_var[idx] + update
+        if new_val >= min_val and new_val <= max_val:
+            ti_var[idx] += update
+        
+        param_name = '.'.join([*keys, str(idx)])
+        print(f'{param_name}: {ti_var[i]}')
+    
+    def save_final_params(self):
+        results = dict()
+        results["vitactip"] = {
+            "youngs_modulus": float(self.vitactip.youngs_modulus[None])
+        }
+        results["phantom"] = {
+            "youngs_modulus": [float(self.phantom.youngs_modulus[i]) for i in range(2)]
+        }
+        results["contact"] = {
+            "coulomb_friction_coeff": float(self.coulomb_friction_coeff[None]),
+            "normal_stiffness": float(self.normal_stiffness[None]),
+            "tangential_stiffness": float(self.tangential_stiffness[None]),
+            "normal_damping": float(self.normal_damping[None])
+        }
+        with open(SYSTEM_PARAMS.files.domain_adaptation_results, "w") as f:
+            json.dump(results, f, indent=4)
 
 
 def main():
@@ -1001,7 +1085,6 @@ def main():
         contact_model.bp()
         print("backward")
         for ts in range(SYSTEM_PARAMS.contact.num_frames - 1, -1, -1):
-            print(f'ts: {ts}')
             contact_model.reset_loss()
             contact_model.memory_from_cache(ts)
             contact_model.forward_pass_common_part(ts)
@@ -1020,16 +1103,11 @@ def main():
             contact_model.backward_pass_common_part()
             passes = SYSTEM_PARAMS.contact.num_frames - 1 - ts + 1
             if passes % SYSTEM_PARAMS.meta.mini_batch_size == 0:
-                contact_model.print_gradients(ts)
-                contact_model.update_params()
+                contact_model.update_params(ts)
                 contact_model.clear_grad()
         print(
             f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
         )
     print("optimisation loop done")
-    youngs_modulus_value = contact_model.vitactip.youngs_modulus[None]
-    results = dict()
-    results["final_youngs_modulus"] = float(youngs_modulus_value)
-    with open(SYSTEM_PARAMS.files.domain_adaptation_results, "w") as f:
-        json.dump(results, f, indent=4)
+    contact_model.save_final_params()
     print("all done")

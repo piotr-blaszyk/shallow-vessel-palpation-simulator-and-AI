@@ -41,7 +41,7 @@ class ViTacTip:
         )
         self.mass_density = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.mu = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         self.lam = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         self.mass_density[None] += SYSTEM_PARAMS.vitactip.single_material.density
@@ -173,7 +173,7 @@ class ViTacTip:
             output_projections[i, 1] = proj[1]
 
     def initialise_camera_model(self):
-        self.marker_interpolation_knn_k = 1
+        self.marker_interpolation_knn_k = 5
         initial_camera_image = cv2.imread(
             SYSTEM_PARAMS.files.vitactip_photo_default_state
         )
@@ -1167,7 +1167,6 @@ class ViTacTip:
         self.mu.grad.fill(0.0)
         self.lam.grad.fill(0.0)
         self.youngs_modulus.grad.fill(0.0)
-        self.poissons_ratio.grad.fill(0.0)
 
     @ti.kernel
     def copy_grad_unused(self, source: ti.i32, target: ti.i32):

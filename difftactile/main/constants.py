@@ -23,6 +23,12 @@ class ConstantsFromJson:
             else:
                 setattr(self, key, value)
     
+    def __getitem__(self, key: str) -> Any:
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key)
+    
     def __repr__(self) -> str:
         """Return a string representation of the object's attributes."""
         attrs = [f"{key}={repr(value)}" for key, value in self.__dict__.items()]

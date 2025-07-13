@@ -26,7 +26,7 @@ class Phantom:
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_beta
         self.inverse_mpm_grid_cube_size = 1 / SYSTEM_PARAMS.phantom.mpm_grid_cube_size
         self.youngs_modulus = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
         self.lam = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
         self.mu = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
         self.youngs_modulus[0] += SYSTEM_PARAMS.phantom.silicone.youngs_modulus
@@ -753,6 +753,7 @@ class Phantom:
         self.grid_node_momentum_in.grad.fill(0.0)
         self.mu.grad.fill(0.0)
         self.lam.grad.fill(0.0)
+        self.youngs_modulus.grad.fill(0.0)
 
     def get_keypoint_index(self) -> int:
         positions = self.particle_position.to_numpy()[0]
