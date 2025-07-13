@@ -523,7 +523,6 @@ class Phantom:
                     self.grid_node_mass[frame, grid_x, grid_y, grid_z]
                     + SYSTEM_PARAMS.phantom.eps
                 )
-                grid_mass = self.grid_node_mass[frame, grid_x, grid_y, grid_z]
                 grid_velocity = ti.Vector([0.0, 0.0, 0.0])
                 grid_velocity += (
                     inverse_mass
@@ -535,19 +534,6 @@ class Phantom:
                 )
                 grid_velocity += self.dt[None] * ti.Vector(
                     SYSTEM_PARAMS.phantom.gravity
-                )
-                elastic_force = (
-                    self.grid_node_momentum_in[frame, grid_x, grid_y, grid_z]
-                    / self.dt[None]
-                )
-                mass_damping = (
-                    -self.rayleigh_damping_alpha[None] * grid_mass * grid_velocity
-                )
-                stiffness_damping = -self.rayleigh_damping_beta[None] * elastic_force
-                grid_velocity += (
-                    inverse_mass
-                    * (mass_damping + stiffness_damping)
-                    * self.dt[None]
                 )
                 if grid_x < SYSTEM_PARAMS.phantom.bound and grid_velocity[0] < 0:
                     grid_velocity[0] = 0

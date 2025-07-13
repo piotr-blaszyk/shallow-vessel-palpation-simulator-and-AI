@@ -824,36 +824,11 @@ class ViTacTip:
                 mu * (1 - 1 / (first_invariant + 1)) * deformation_gradient
                 + lam * (jacobian - alpha) * jacobian_derivative
             )
-            elastic_force_matrix = (
+            force_matrix = (
                 -tetra_volume
                 * stress_tensor
                 @ self.initial_deformation_gradient_inverse[tetra_idx].transpose()
             )
-            relative_vel1 = vertex1_vel - vertex4_vel
-            relative_vel2 = vertex2_vel - vertex4_vel
-            relative_vel3 = vertex3_vel - vertex4_vel
-            damping_force_matrix = -self.rayleigh_damping_alpha[None] * ti.Matrix.cols(
-                [relative_vel1, relative_vel2, relative_vel3]
-            )
-            damping_force_matrix += (
-                -self.rayleigh_damping_beta[None] * elastic_force_matrix
-            )
-            force_matrix = elastic_force_matrix + damping_force_matrix
-            if SYSTEM_PARAMS.vitactip.hourglass_control.enabled == 1:
-                hourglass_force_matrix = self.compute_hourglass_forces(
-                    vertex1_pos,
-                    vertex2_pos,
-                    vertex3_pos,
-                    vertex4_pos,
-                    vertex1_vel,
-                    vertex2_vel,
-                    vertex3_vel,
-                    vertex4_vel,
-                    tetra_volume,
-                    mu,
-                    lam,
-                )
-                force_matrix += hourglass_force_matrix
             vertex_indices = ti.Vector(
                 [vertex1_idx, vertex2_idx, vertex3_idx, vertex4_idx]
             )
