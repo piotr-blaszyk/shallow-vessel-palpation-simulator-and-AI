@@ -137,10 +137,10 @@ class ViTacTip:
         )
         self.element_materials.from_numpy(self.element_materials_npy)
         self.vertex_mass.from_numpy(self.vertex_masses_npy)
-        self.vertex_positions_local_initial = ti.Vector.field(
+        self.vertices_B = ti.Vector.field(
             3, float, self.num_vertices, needs_grad=False
         )
-        self.vertex_positions_local_initial.from_numpy(
+        self.vertices_B.from_numpy(
             self.node_coordinates.astype(np.float32)
         )
         self.tetrahedra = ti.Vector.field(4, int, self.num_tetrahedra, needs_grad=False)
@@ -173,7 +173,7 @@ class ViTacTip:
             output_projections[i, 1] = proj[1]
 
     def initialise_camera_model(self):
-        self.marker_interpolation_knn_k = 5
+        self.marker_interpolation_knn_k = 1
         initial_camera_image = cv2.imread(
             SYSTEM_PARAMS.files.vitactip_photo_default_state
         )
@@ -295,7 +295,7 @@ class ViTacTip:
             shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices),
             needs_grad=False,
         )
-        self.vertices_B = ti.Vector.field(
+        self.vertices_B_testing = ti.Vector.field(
             3,
             float,
             shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices),
@@ -361,73 +361,73 @@ class ViTacTip:
         initial_transformation_matrix[0, 3] = pose[0]
         initial_transformation_matrix[1, 3] = pose[1]
         initial_transformation_matrix[2, 3] = pose[2]
-        self.R_BC[None] = np.eye(3)
-        self.R_CA[None] = initial_rotation_matrix
+        self.R_BC.from_numpy(np.eye(3))
+        self.R_CA.from_numpy(initial_rotation_matrix)
         self.R_BA[None] = self.R_CA[None] @ self.R_BC[None]
         self.R_AB[None] = self.R_BA[None].transpose()
-        self.T_BC[None] = np.eye(4)
-        self.T_CA[None] = initial_transformation_matrix
+        self.T_BC.from_numpy(np.eye(4))
+        self.T_CA.from_numpy(initial_transformation_matrix)
         self.T_BA[None] = self.T_CA[None] @ self.T_BC[None]
         self.T_AB[None] = self.T_BA[None].inverse()
-        self.T_CD[None] = np.eye(4)
+        self.T_CD.from_numpy(np.eye(4))
         self.sensor_outward_normal[None] = self.R_BA[None] @ ti.Vector([0.0, 0.0, 1.0])
         self.set_up_pose_helper()
 
     @ti.kernel
     def extract_markers(self, frame_idx: ti.i32):
         for i in range(self.dome_surface_node_tags.shape[0]):
-            surface_node_idx = self.dome_surface_node_tags[i]
-            deformed_pos_global = self.vertices_deformed_A[frame_idx, surface_node_idx]
-            undeformed_pos_global = self.vertices_undeformed_A[
-                frame_idx, surface_node_idx
+            node_ix = self.dome_surface_node_tags[i]
+            deformed_A = self.vertices_deformed_A[frame_idx, node_ix]
+            undeformed_A = self.vertices_undeformed_A[
+                frame_idx, node_ix
             ]
-            homogeneous_deformed_pos_global = ti.Vector(
+            homogeneous_deformed_A = ti.Vector(
                 [
-                    deformed_pos_global[0],
-                    deformed_pos_global[1],
-                    deformed_pos_global[2],
+                    deformed_A[0],
+                    deformed_A[1],
+                    deformed_A[2],
                     1.0,
                 ]
             )
-            homogeneous_udeformed_pos_global = ti.Vector(
+            homogeneous_undeformed_A = ti.Vector(
                 [
-                    undeformed_pos_global[0],
-                    undeformed_pos_global[1],
-                    undeformed_pos_global[2],
+                    undeformed_A[0],
+                    undeformed_A[1],
+                    undeformed_A[2],
                     1.0,
                 ]
             )
-            deformed_pos_local_initial = (
-                self.T_AB[None] @ homogeneous_deformed_pos_global
+            homogeneous_deformed_B = (
+                self.T_AB[None] @ homogeneous_deformed_A
             )
-            undeformed_pos_local_initial = (
-                self.T_AB[None] @ homogeneous_udeformed_pos_global
+            homogeneous_undeformed_B = (
+                self.T_AB[None] @ homogeneous_undeformed_A
             )
-            deformed_pos_local_initial_ti = ti.Vector(
+            inhomogeneous_deformed_B = ti.Vector(
                 [
-                    deformed_pos_local_initial[0],
-                    deformed_pos_local_initial[1],
-                    deformed_pos_local_initial[2],
+                    homogeneous_deformed_B[0],
+                    homogeneous_deformed_B[1],
+                    homogeneous_deformed_B[2],
                 ]
             )
-            undeformed_pos_local_initial_ti = ti.Vector(
+            inhomogeneous_undeformed_B = ti.Vector(
                 [
-                    undeformed_pos_local_initial[0],
-                    undeformed_pos_local_initial[1],
-                    undeformed_pos_local_initial[2],
+                    homogeneous_undeformed_B[0],
+                    homogeneous_undeformed_B[1],
+                    homogeneous_undeformed_B[2],
                 ]
             )
-            camera_space_deformed_2d = self.fisheye_model.project_3d_2d(
-                deformed_pos_local_initial_ti
+            projections_2d_deformed = self.fisheye_model.project_3d_2d(
+                inhomogeneous_deformed_B
             )
-            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(
-                undeformed_pos_local_initial_ti
+            projections_2d_undeformed = self.fisheye_model.project_3d_2d(
+                inhomogeneous_undeformed_B
             )
             self.projection_2d_dome_surface_nodes_deformed[i] += (
-                camera_space_deformed_2d
+                projections_2d_deformed
             )
             self.projection_2d_dome_surface_nodes_undeformed[i] = (
-                camera_space_undeformed_2d
+                projections_2d_undeformed
             )
         for i in range(self.num_markers):
             nearest_surface_indices = self.marker_interpolation_indices[i]
@@ -470,7 +470,7 @@ class ViTacTip:
         )
         surface_node_visualization = initial_camera_image.copy()
         with open(SYSTEM_PARAMS.files.initial_vertex_positions_undeformed, "wb") as f:
-            pickle.dump(self.vertices_B.to_numpy()[0], f)
+            pickle.dump(self.vertices_B_testing.to_numpy()[0], f)
         for projected_point in self.undeformed_markers.to_numpy():
             point_center = (
                 int(round(projected_point[0])),
@@ -508,33 +508,33 @@ class ViTacTip:
                     transformed_initial_pos[2],
                 ]
             )
-            self.vertices_B[0, i] = camera_space_initial_pos
+            self.vertices_B_testing[0, i] = camera_space_initial_pos
 
     @ti.kernel
     def extract_clock_arm_2d_projections(self, frame_idx: ti.i32):
         for i in range(self.clock_arms_node_idxs.shape[0]):
             node_idx = self.clock_arms_node_idxs[i]
-            undeformed_vertex_pos = self.vertices_undeformed_A[frame_idx, node_idx]
-            homogeneous_undeformed_pos = ti.Vector(
+            vertex = self.vertices_undeformed_A[frame_idx, node_idx]
+            homogeneous_A = ti.Vector(
                 [
-                    undeformed_vertex_pos[0],
-                    undeformed_vertex_pos[1],
-                    undeformed_vertex_pos[2],
+                    vertex[0],
+                    vertex[1],
+                    vertex[2],
                     1.0,
                 ]
             )
-            transformed_undeformed_pos = self.T_AB[None] @ homogeneous_undeformed_pos
-            camera_space_undeformed_pos = ti.Vector(
+            homogeneous_B = self.T_AB[None] @ homogeneous_A
+            inhomogeneous_B = ti.Vector(
                 [
-                    transformed_undeformed_pos[0],
-                    transformed_undeformed_pos[1],
-                    transformed_undeformed_pos[2],
+                    homogeneous_B[0],
+                    homogeneous_B[1],
+                    homogeneous_B[2],
                 ]
             )
-            camera_space_undeformed_2d = self.fisheye_model.project_3d_2d(
-                camera_space_undeformed_pos
+            projections_2d = self.fisheye_model.project_3d_2d(
+                inhomogeneous_B
             )
-            self.projection_2d_clock_arms[i] = camera_space_undeformed_2d
+            self.projection_2d_clock_arms[i] = projections_2d
 
     @ti.kernel
     def set_vel(self, f: ti.i32):
@@ -568,9 +568,12 @@ class ViTacTip:
         self.T_BC[None] = self.T_CD[None] @ self.T_BC[None]
         self.T_BA[None] = self.T_CA[None] @ self.T_BC[None]
         self.T_AB[None] = self.T_BA[None].inverse()
+
         self.R_BC[None] = self.R_CD[None] @ self.R_BC[None]
         self.R_BA[None] = self.R_CA[None] @ self.R_BC[None]
         self.R_AB[None] = self.R_BA[None].transpose()
+
+        self.sensor_outward_normal[None] = self.R_A[None] @ self.sensor_outward_normal[None]
 
     @ti.kernel
     def set_pose_control_2_bp_unused(self):
@@ -637,20 +640,20 @@ class ViTacTip:
     @ti.kernel
     def set_up_pose_helper(self):
         for idx in range(self.num_vertices):
-            vertex_position_local_initial = self.vertex_positions_local_initial[idx]
-            vertex_position_global = self.T_CA[None] @ ti.Vector(
+            vertices_B = self.vertices_B[idx]
+            vertices_A = self.T_BA[None] @ ti.Vector(
                 [
-                    vertex_position_local_initial[0],
-                    vertex_position_local_initial[1],
-                    vertex_position_local_initial[2],
+                    vertices_B[0],
+                    vertices_B[1],
+                    vertices_B[2],
                     1.0,
                 ]
             )
             self.vertices_deformed_A[0, idx] = ti.Vector(
                 [
-                    vertex_position_global[0],
-                    vertex_position_global[1],
-                    vertex_position_global[2],
+                    vertices_A[0],
+                    vertices_A[1],
+                    vertices_A[2],
                 ]
             )
             self.vertices_undeformed_A[0, idx] = self.vertices_deformed_A[0, idx]
@@ -952,6 +955,7 @@ class ViTacTip:
         cache_R_AB: ti.types.ndarray(),
         cache_T_A: ti.types.ndarray(),
         cache_vertex_velocities: ti.types.ndarray(),
+        cache_sensor_outward_normal: ti.types.ndarray(),
     ):
         for j in range(4):
             for k in range(4):
@@ -970,6 +974,7 @@ class ViTacTip:
                 self.R_BC[None][j, k] = cache_R_BC[j, k]
                 self.R_AB[None][j, k] = cache_R_AB[j, k]
             self.translation_A[None][j] = cache_translation_A[j]
+            self.sensor_outward_normal[None][j] = cache_sensor_outward_normal[j]
         for p in range(self.num_vertices):
             for i in ti.static(range(3)):
                 self.vertices_deformed_A[f, p][i] = cache_vertices_deformed_A[p, i]
@@ -996,6 +1001,7 @@ class ViTacTip:
         cache_R_AB: ti.types.ndarray(),
         cache_T_A: ti.types.ndarray(),
         cache_vertex_velocities: ti.types.ndarray(),
+        cache_sensor_outward_normal: ti.types.ndarray(),
     ):
         for j in range(4):
             for k in range(4):
@@ -1014,6 +1020,7 @@ class ViTacTip:
                 cache_R_BC[j, k] = self.R_BC[None][j, k]
                 cache_R_AB[j, k] = self.R_AB[None][j, k]
             cache_translation_A[j] = self.translation_A[None][j]
+            cache_sensor_outward_normal[j] = self.sensor_outward_normal[None][j]
         for p in range(self.num_vertices):
             for i in ti.static(range(3)):
                 cache_vertices_deformed_A[p, i] = self.vertices_deformed_A[f, p][i]
@@ -1072,6 +1079,9 @@ class ViTacTip:
         self.simulation_cache[cur_step_name]["vertex_velocities"] = torch.zeros(
             (self.num_vertices, 3), dtype=TC_TYPE, device=device
         )
+        self.simulation_cache[cur_step_name]["sensor_outward_normal"] = torch.zeros(
+            3, dtype=TC_TYPE, device=device
+        )
         self.add_step_to_cache(
             0,
             self.simulation_cache[cur_step_name]["vertices_deformed_A"],
@@ -1090,6 +1100,7 @@ class ViTacTip:
             self.simulation_cache[cur_step_name]["R_AB"],
             self.simulation_cache[cur_step_name]["T_A"],
             self.simulation_cache[cur_step_name]["vertex_velocities"],
+            self.simulation_cache[cur_step_name]["sensor_outward_normal"],
         )
         self.copy_frame(SYSTEM_PARAMS.contact.num_sub_frames - 1, 0)
 
@@ -1113,6 +1124,7 @@ class ViTacTip:
             self.simulation_cache[cur_step_name]["R_AB"],
             self.simulation_cache[cur_step_name]["T_A"],
             self.simulation_cache[cur_step_name]["vertex_velocities"],
+            self.simulation_cache[cur_step_name]["sensor_outward_normal"],
         )
 
     def get_keypoint_indices(self, f: ti.i32):

@@ -741,7 +741,7 @@ class Contact:
             self.clock_arm_points[i] = point / self.window_size[None]
 
     def visualisation_draw_tactile_readout(self):
-        self.vitactip.extract_clock_arm_2d_projections(0)
+        self.vitactip.extract_clock_arm_2d_projections(SYSTEM_PARAMS.contact.num_sub_frames - 1)
         self.visualisation_prepare_clock_arm_points()
         self.tactile_canvas.set_image(self.bg_image)
         if (
@@ -752,9 +752,9 @@ class Contact:
             self.tactile_canvas.circles(
                 self.sim_marker_points, radius=0.01, color=(1, 0, 0)
             )
-            self.tactile_canvas.lines(
-                self.arrow_line_vertices, color=(0, 1, 0), width=0.01
-            )
+            # self.tactile_canvas.lines(
+            #     self.arrow_line_vertices, color=(0, 1, 0), width=0.01
+            # )
             self.tactile_canvas.circles(
                 self.clock_arm_points,
                 radius=0.02,
