@@ -948,7 +948,7 @@ class Contact:
 
     @ti.kernel
     def update_params(self):
-        self.vitactip.youngs_modulus[None] -= (
+        self.vitactip.youngs_modulus[None] += - (
             SYSTEM_PARAMS.learning_rates.vitactip.youngs_modulus
             * self.vitactip.youngs_modulus.grad[None]
         )

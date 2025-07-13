@@ -1154,6 +1154,8 @@ class ViTacTip:
         self.contact_forces_on_vertices.grad.fill(0.0)
         self.mu.grad.fill(0.0)
         self.lam.grad.fill(0.0)
+        self.youngs_modulus.grad.fill(0.0)
+        self.poissons_ratio.grad.fill(0.0)
 
     @ti.kernel
     def copy_grad_unused(self, source: ti.i32, target: ti.i32):
