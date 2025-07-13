@@ -20,6 +20,8 @@ class Phantom:
         self.cache = dict()
 
     def set_up_system_params(self):
+        self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.dt[None] = SYSTEM_PARAMS.contact.dt
         self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.rayleigh_damping_alpha[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_alpha
@@ -358,13 +360,13 @@ class Phantom:
             SYSTEM_PARAMS.phantom.n_grid_z,
         ):
             self.total_surface_external_force[f] += (
-                self.grid_node_external_impulse[f, i, j, k] / SYSTEM_PARAMS.contact.dt
+                self.grid_node_external_impulse[f, i, j, k] / self.dt[None]
             )
 
     @ti.func
     def update_contact_impulse(self, external_force, f, i, j, k):
         self.grid_node_external_impulse[f, i, j, k] += (
-            external_force * SYSTEM_PARAMS.contact.dt
+            external_force * self.dt[None]
         )
 
     @ti.kernel
@@ -372,7 +374,7 @@ class Phantom:
         for p in range(self.actual_total_num_particles):
             self.trial_deformation_gradient[f, p] = (
                 ti.Matrix.diag(dim=3, val=1)
-                + SYSTEM_PARAMS.contact.dt * self.affine_velocity_field[f, p]
+                + self.dt[None] * self.affine_velocity_field[f, p]
             ) @ self.deformation_gradient[f, p]
 
     @ti.kernel
@@ -492,7 +494,7 @@ class Phantom:
             )
             self.particle_von_mises_stress[frame, particle_id] = von_mises
             force_term = cauchy_stress * self.initial_particle_volume
-            impulse_term = force_term * -SYSTEM_PARAMS.contact.dt
+            impulse_term = force_term * -self.dt[None]
             impulse_term_scaled_quadratic_B_spline = (
                 4 * self.inverse_mpm_grid_cube_size**2 * impulse_term
             )
@@ -558,12 +560,12 @@ class Phantom:
                     inverse_mass
                     * self.grid_node_external_impulse[frame, grid_x, grid_y, grid_z]
                 )
-                grid_velocity += SYSTEM_PARAMS.contact.dt * ti.Vector(
+                grid_velocity += self.dt[None] * ti.Vector(
                     SYSTEM_PARAMS.phantom.gravity
                 )
                 elastic_force = (
                     self.grid_node_momentum_in[frame, grid_x, grid_y, grid_z]
-                    / SYSTEM_PARAMS.contact.dt
+                    / self.dt[None]
                 )
                 mass_damping = (
                     -self.rayleigh_damping_alpha[None] * grid_mass * grid_velocity
@@ -572,7 +574,7 @@ class Phantom:
                 grid_velocity += (
                     inverse_mass
                     * (mass_damping + stiffness_damping)
-                    * SYSTEM_PARAMS.contact.dt
+                    * self.dt[None]
                 )
                 if grid_x < SYSTEM_PARAMS.phantom.bound and grid_velocity[0] < 0:
                     grid_velocity[0] = 0
@@ -654,7 +656,7 @@ class Phantom:
                 self.affine_velocity_field[frame + 1, particle_id] = updated_affine
                 self.particle_position[frame + 1, particle_id] = (
                     self.particle_position[frame, particle_id]
-                    + SYSTEM_PARAMS.contact.dt * updated_velocity
+                    + self.dt[None] * updated_velocity
                 )
 
     @ti.func

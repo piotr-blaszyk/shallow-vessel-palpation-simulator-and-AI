@@ -8,6 +8,7 @@ from scipy.optimize import linear_sum_assignment
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
 from difftactile.main.constants import *
+from difftactile.main.cfl_and_contact_params_estimation import *
 from scipy.spatial.transform import Rotation as R
 
 RUN_ON_LAB_MACHINE = True
@@ -119,6 +120,8 @@ class Contact:
         )
 
     def set_up_system_params(self):
+        self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.dt[None] = SYSTEM_PARAMS.contact.dt
         self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=True)
         self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=True)
         self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=True)
@@ -491,7 +494,7 @@ class Contact:
             current_angle_radians % (2 * np.pi), 2 * np.pi
         ):
             current_axis = np.array([1.0, 0.0, 0.0])
-        time_duration = SYSTEM_PARAMS.contact.dt * (
+        time_duration = self.dt[None] * (
             SYSTEM_PARAMS.contact.num_sub_frames - 1
         )
         rotation_per_second = (
@@ -796,8 +799,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y, z+1.0)
-        self.camera.up(0, 1, 0)
+        self.camera.position(x, y-1.0, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(8)
         self.tactile_window = ti.ui.Window("tactile readout", (640, 480))
@@ -1042,6 +1045,16 @@ class Contact:
         }
         with open(SYSTEM_PARAMS.files.domain_adaptation_results, "w") as f:
             json.dump(results, f, indent=4)
+    
+    def set_dt(self):
+        dt = calculate_cfl_timestep(
+            phantom_youngs_modulus=self.phantom.youngs_modulus[None],
+            vitactip_youngs_modulus=self.vitactip.youngs_modulus[None],
+            verbose=False,
+        )
+        self.dt[None] = dt
+        self.phantom.dt[None] = dt
+        self.vitactip.dt[None] = dt
 
 
 def main():
@@ -1072,6 +1085,7 @@ def main():
             initial_markers = contact_model.vitactip.deformed_markers.to_numpy()
             with open(SYSTEM_PARAMS.files.sim_markers_initial_positions, "wb") as f:
                 pickle.dump(initial_markers, f)
+        contact_model.set_dt()
         contact_model.fp()
         print("forward")
         for ts in range(SYSTEM_PARAMS.contact.num_frames):

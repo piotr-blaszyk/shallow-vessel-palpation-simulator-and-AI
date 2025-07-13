@@ -23,6 +23,8 @@ class ViTacTip:
         self.set_up_physical_state()
 
     def set_up_system_params_1(self):
+        self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.dt[None] = SYSTEM_PARAMS.contact.dt
         self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.rayleigh_damping_alpha[None] = (
@@ -550,7 +552,7 @@ class ViTacTip:
         )
         self.translation_CD[None] = (
             self.translation_CD[None]
-            * SYSTEM_PARAMS.contact.dt
+            * self.dt[None]
             * (SYSTEM_PARAMS.contact.num_sub_frames - 1)
         )
         self.T_CD[None] = ti.Matrix.identity(float, 4)
@@ -576,24 +578,6 @@ class ViTacTip:
         self.sensor_outward_normal[None] = self.R_A[None] @ self.sensor_outward_normal[None]
 
     @ti.kernel
-    def set_pose_control_2_bp_unused(self):
-        return
-        rot_v = (
-            self.R_CD[None]
-            * SYSTEM_PARAMS.contact.dt
-            * (SYSTEM_PARAMS.contact.num_sub_frames - 1)
-        )
-        trans_v = (
-            self.translation_CD[None]
-            * SYSTEM_PARAMS.contact.dt
-            * (SYSTEM_PARAMS.contact.num_sub_frames - 1)
-        )
-        trans_mat, rot_mat = self.eul2mat_unused(rot_v, trans_v)
-        self.T_CD[None] = self.T_AB[None] @ trans_mat @ (self.T_AB[None].inverse())
-        self.T_AB[None] = self.T_BA[None].inverse()
-        self.R_AB[None] = self.R_BA[None].inverse()
-
-    @ti.kernel
     def set_control_vel(self, f: ti.i32):
         for i in range(self.num_vertices):
             current_vertex_positions_undeformed = self.vertices_undeformed_A[f, i]
@@ -608,15 +592,15 @@ class ViTacTip:
             self.vertex_control_velocities[i][0] = (
                 target_vertex_positions_undeformed[0]
                 - current_vertex_positions_undeformed[0]
-            ) / (SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames - 1))
+            ) / (self.dt[None] * (SYSTEM_PARAMS.contact.num_sub_frames - 1))
             self.vertex_control_velocities[i][1] = (
                 target_vertex_positions_undeformed[1]
                 - current_vertex_positions_undeformed[1]
-            ) / (SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames - 1))
+            ) / (self.dt[None] * (SYSTEM_PARAMS.contact.num_sub_frames - 1))
             self.vertex_control_velocities[i][2] = (
                 target_vertex_positions_undeformed[2]
                 - current_vertex_positions_undeformed[2]
-            ) / (SYSTEM_PARAMS.contact.dt * (SYSTEM_PARAMS.contact.num_sub_frames - 1))
+            ) / (self.dt[None] * (SYSTEM_PARAMS.contact.num_sub_frames - 1))
 
     @ti.kernel
     def get_external_force(self, f: ti.i32):
@@ -876,12 +860,12 @@ class ViTacTip:
             for k in ti.static(range(3)):
                 vertex_force = ti.Vector([force_matrix[j, k] for j in range(3)])
                 self.vertex_velocities[frame, vertex_indices[k]] += (
-                    SYSTEM_PARAMS.contact.dt
+                    self.dt[None]
                     * vertex_force
                     / self.vertex_mass[vertex_indices[k]]
                 )
                 self.vertex_velocities[frame, vertex_indices[3]] += (
-                    -SYSTEM_PARAMS.contact.dt
+                    -self.dt[None]
                     * vertex_force
                     / self.vertex_mass[vertex_indices[3]]
                 )
@@ -892,7 +876,7 @@ class ViTacTip:
             updated_velocity = ti.Vector([0.0, 0.0, 0.0])
             updated_velocity += self.vertex_velocities[frame, vertex_idx]
             updated_velocity += (
-                SYSTEM_PARAMS.contact.dt
+                self.dt[None]
                 * self.contact_forces_on_vertices[frame, vertex_idx]
                 / self.vertex_mass[vertex_idx]
             )
@@ -904,11 +888,11 @@ class ViTacTip:
                 frame, vertex_idx
             ]
             self.vertices_deformed_A[frame + 1, vertex_idx] += (
-                SYSTEM_PARAMS.contact.dt * updated_velocity
+                self.dt[None] * updated_velocity
             )
             self.vertices_undeformed_A[frame + 1, vertex_idx] = (
                 self.vertices_undeformed_A[frame, vertex_idx]
-                + SYSTEM_PARAMS.contact.dt * self.vertex_control_velocities[vertex_idx]
+                + self.dt[None] * self.vertex_control_velocities[vertex_idx]
             )
     
     @ti.func
