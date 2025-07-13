@@ -184,7 +184,27 @@ class MeshGenerator:
             raise Exception("number of materials must be 1 or 2")
         if SYSTEM_PARAMS.gmsh_mm.refine_mesh == 1:
             z_poi = z_bottom + 18
-            f1 = f"max(1.0, min(4.0, 2.5 - (z-{z_poi}) * 3.0 / (2.0 * 2.0)))"
+            r2 = radius_of_curvature_outer
+            r1 = r2 - 2
+            r3 = radius_of_curvature_outer + 1
+            f1 = f"""
+            min(
+                max(
+                    2.0, 
+                    min(
+                        4.0, 
+                        2.5 - (z-{z_poi}) * 3.0 / (2.0 * 2.0)
+                    )
+                ),
+                max(
+                    1.0, 
+                    min(
+                        4.0, 
+                        1.0 - ({r2}-sqrt(x^2+y^2+z^2)) * 1.0 / 2.0
+                    )
+                )
+            )
+            """
             gmsh.model.mesh.field.add("MathEval", 1)
             gmsh.model.mesh.field.setString(1, "F", f1)
             gmsh.model.mesh.field.setAsBackgroundMesh(1)
