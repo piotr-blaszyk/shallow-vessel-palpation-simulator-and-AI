@@ -62,9 +62,9 @@
         "normal_damping": 2.34e+00,
         "coulomb_friction_coeff": 0.85,
         "num_sub_frames": 500,
-        "num_frames": 100,
-        "num_opt_steps": 1,
-        "pid_max_speed_translation": 0.200,
+        "num_frames": 400,
+        "num_opt_steps": 10,
+        "pid_max_speed_translation": 0.050,
         "pid_orientation_kp": 1.0,
         "pid_kp": 100.0,
         "pid_ki": 0.0,
@@ -72,7 +72,7 @@
         "pid_position_tolerance": 0.001,
         "pid_orientation_tolerance": 1.0,
         "pid_angle_eps": 1e-8,
-        "pid_max_rotation_per_second_degrees": 720.0,
+        "pid_max_rotation_per_second_degrees": 180.0,
         "dwell_frames": 0,
         "norm_eps": 1e-11,
         "tangential_velocity_detection_threshold": 1e-6
@@ -104,16 +104,16 @@
     },
     "optimisation_update_steps": {
         "vitactip": {
-            "youngs_modulus": 0.1
+            "youngs_modulus": 1.0e3
         },
         "phantom": {
-            "youngs_modulus": 0.1
+            "youngs_modulus": 1.0e3
         },
         "contact": {
-            "coulomb_friction_coeff": 0.1,
-            "normal_stiffness": 0.1,
-            "tangential_stiffness": 0.1,
-            "normal_damping": 0.1
+            "coulomb_friction_coeff": 0.05,
+            "normal_stiffness": 100.0,
+            "tangential_stiffness": 100,
+            "normal_damping": 1.0
         }
     },
     "optimisation_min_values": {

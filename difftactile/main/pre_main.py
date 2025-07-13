@@ -17,6 +17,60 @@ def arr_str(xs):
         res.append(']')
         return ''.join(res)
 
+def compute_learning_rate(gradient: float, desired_update: float) -> float:
+    return abs(desired_update / gradient)
+
+def compute_and_print_learning_rates():
+    gradients = {
+        'vitactip': {
+            'youngs_modulus': -82542.71875
+        },
+        'phantom': {
+            'youngs_modulus': 3301670.0
+        },
+        'contact': {
+            'coulomb_friction_coeff': -64842936.0,
+            'normal_stiffness': 2104832.0,
+            'tangential_stiffness': 2780.597412109375,
+            'normal_damping': 268956.09375
+        }
+    }
+    learning_rates = {}
+    learning_rates['vitactip'] = {
+        'youngs_modulus': compute_learning_rate(
+            gradients['vitactip']['youngs_modulus'],
+            SYSTEM_PARAMS.optimisation_update_steps.vitactip.youngs_modulus
+        )
+    }
+    learning_rates['phantom'] = {
+        'youngs_modulus': compute_learning_rate(
+            gradients['phantom']['youngs_modulus'],
+            SYSTEM_PARAMS.optimisation_update_steps.phantom.youngs_modulus
+        )
+    }
+    learning_rates['contact'] = {
+        'coulomb_friction_coeff': compute_learning_rate(
+            gradients['contact']['coulomb_friction_coeff'],
+            SYSTEM_PARAMS.optimisation_update_steps.contact.coulomb_friction_coeff
+        ),
+        'normal_stiffness': compute_learning_rate(
+            gradients['contact']['normal_stiffness'],
+            SYSTEM_PARAMS.optimisation_update_steps.contact.normal_stiffness
+        ),
+        'tangential_stiffness': compute_learning_rate(
+            gradients['contact']['tangential_stiffness'],
+            SYSTEM_PARAMS.optimisation_update_steps.contact.tangential_stiffness
+        ),
+        'normal_damping': compute_learning_rate(
+            gradients['contact']['normal_damping'],
+            SYSTEM_PARAMS.optimisation_update_steps.contact.normal_damping
+        )
+    }
+    res = {
+        'learning_rates': learning_rates
+    }
+    return res
+
 def main():
     with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
         mesh_data = pickle.load(f)
@@ -113,9 +167,12 @@ def main():
         "contact_surface_area": contact_surface_area,
     }
 
+    learning_rates_dict = compute_and_print_learning_rates()
+    res = system_params_computed | learning_rates_dict
+
     # Save coordinates to JSON file
     with open(SYSTEM_PARAMS.files.system_params_computed, 'w') as f:
-        json.dump(system_params_computed, f, indent=2)
+        json.dump(res, f, indent=2)
 
     print('difftactile coordinates')
     print(f'phantom_closest_vertex: {arr_str(phantom_closest_vertex)}')

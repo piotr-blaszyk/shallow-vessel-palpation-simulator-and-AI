@@ -38,5 +38,19 @@
     "shell": Infinity,
     "gel": Infinity
   },
-  "contact_surface_area": 0.005026548245743669
+  "contact_surface_area": 0.005026548245743669,
+  "learning_rates": {
+    "vitactip": {
+      "youngs_modulus": 0.012114938969101983
+    },
+    "phantom": {
+      "youngs_modulus": 0.0003028770288974973
+    },
+    "contact": {
+      "coulomb_friction_coeff": 7.710940170876902e-10,
+      "normal_stiffness": 4.7509729992702505e-05,
+      "tangential_stiffness": 0.03596349459454452,
+      "normal_damping": 3.718078984778533e-06
+    }
+  }
 }

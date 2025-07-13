@@ -94,6 +94,7 @@ class Contact:
 
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
+        self.total_loss = ti.field(float, (), needs_grad=False)
         self.target_marker_positions = ti.Vector.field(
             2, dtype=ti.f32, shape=(self.vitactip.num_markers,), needs_grad=False
         )
@@ -225,8 +226,8 @@ class Contact:
         x, y, z = self.vitactip_tip_pose[:3]
         quat = self.vitactip_tip_pose[3:]
         og_r = R.from_quat(quat)
-        offset_1 = R.from_euler(seq="xyz", angles=[0, -20, 0], degrees=True)
-        offset_2 = R.from_euler(seq="xyz", angles=[0, 0, 20], degrees=True)
+        offset_1 = R.from_euler(seq="xyz", angles=[20, 0, 0], degrees=True)
+        offset_2 = R.from_euler(seq="xyz", angles=[0, 0, -20], degrees=True)
         tilt_1 = og_r * offset_1
         tilt_2 = og_r * offset_2
         tilt_1.as_quat()
@@ -237,7 +238,7 @@ class Contact:
                 [x, y, z, *og_r.as_quat()],
                 [x, y, z - press_depth_1, *og_r.as_quat()],
                 [x, y, z - press_depth_2, *og_r.as_quat()],
-                [x, y + 0.010, z - press_depth_2, *og_r.as_quat()],
+                [x - 0.010, y, z - press_depth_2, *og_r.as_quat()],
                 [x, y, z, *og_r.as_quat()],
                 [x, y, z - press_depth_1, *og_r.as_quat()],
                 [x, y, z - press_depth_2, *og_r.as_quat()],
@@ -315,6 +316,7 @@ class Contact:
 
     @ti.kernel
     def reset_loss(self):
+        self.total_loss[None] += self.loss[None]
         self.loss.fill(0.0)
         self.loss.grad.fill(1.0)
 
@@ -675,6 +677,9 @@ class Contact:
         self.sim_markers_deformed = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
+        self.sim_markers_deformed_filtered = ti.Vector.field(
+            2, dtype=float, shape=(self.marker_position_exp.shape[0],), needs_grad=False
+        )
         self.sim_marker_offsets = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
@@ -730,6 +735,10 @@ class Contact:
             self.arrow_line_vertices[i * 2] = undeformed
             self.arrow_line_vertices[i * 2 + 1] = undeformed + offset
 
+            exp_ix = self.sim_to_exp_markers[i]
+            if exp_ix != -1:
+                self.sim_markers_deformed_filtered[exp_ix] = deformed
+
     @ti.kernel
     def visualisation_prepare_tactile_readout_data_bp(self):
         for i in range(self.marker_position_exp.shape[0]):
@@ -754,11 +763,12 @@ class Contact:
             or SYSTEM_PARAMS.visualisation.visualise_exp_markers_during_bp == 0
         ):
             self.tactile_canvas.circles(
-                self.sim_markers_undeformed, radius=0.01, color=(1, 0, 0)
+                self.sim_markers_deformed, radius=0.01, color=(1, 0, 0)
             )
-            self.tactile_canvas.lines(
-                self.arrow_line_vertices, color=(0, 1, 0), width=0.01
-            )
+            if False:
+                self.tactile_canvas.lines(
+                    self.arrow_line_vertices, color=(0, 1, 0), width=0.01
+                )
             self.tactile_canvas.circles(
                 self.clock_arm_points,
                 radius=0.02,
@@ -767,7 +777,7 @@ class Contact:
         else:
             self.visualisation_prepare_tactile_readout_data_bp()
             self.tactile_canvas.circles(
-                self.sim_markers_deformed, radius=0.01, color=(0, 1, 0)
+                self.sim_markers_deformed_filtered, radius=0.01, color=(0, 1, 0)
             )
             self.tactile_canvas.circles(
                 self.exp_marker_points, radius=0.01, color=(1, 0, 0)
@@ -786,8 +796,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x - 1.0, y, z)
-        self.camera.up(0, 0, 1)
+        self.camera.position(x, y, z+1.0)
+        self.camera.up(0, 1, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(8)
         self.tactile_window = ti.ui.Window("tactile readout", (640, 480))
@@ -894,8 +904,6 @@ class Contact:
             self.update_grad(ss)
         self.phantom.set_stiffness.grad()
         self.vitactip.set_up_system_params_2.grad()
-        self.vitactip.set_vel.grad(0)
-        self.vitactip.set_control_vel.grad(0)
 
     def print_gradients(self, ts):
         if not self.gradients_printed:
@@ -979,46 +987,44 @@ class Contact:
         print()
     
     def update_param_none(self, ti_var, keys):
-        update_step = SYSTEM_PARAMS.optimisation_update_steps
         min_val = SYSTEM_PARAMS.optimisation_min_values
         max_val = SYSTEM_PARAMS.optimisation_max_values
+        learning_rate = SYSTEM_PARAMS_COMPUTED.learning_rates
         for i in range(len(keys)):
-            update_step = update_step[keys[i]]
             min_val = min_val[keys[i]]
             max_val = max_val[keys[i]]
+            learning_rate = learning_rate[keys[i]]
 
         update = - (
-            np.sign(ti_var.grad[None])
-            * update_step
-            * ti_var[None]
+            ti_var.grad[None]
+            * learning_rate
         )
-        new_val = ti_var[None] + update
-        if new_val >= min_val and new_val <= max_val:
-            ti_var[None] += update
+        ti_var[None] += update
+        ti_var[None] = ti.min(max_val, ti.max(min_val, ti_var[None]))
         
         param_name = '.'.join(keys)
         print(f'{param_name}: {ti_var[None]}')
+        print(f'{param_name}.update: {update}')
 
     def update_param_indexed(self, ti_var, keys, idx):
-        update_step = SYSTEM_PARAMS.optimisation_update_steps
         min_val = SYSTEM_PARAMS.optimisation_min_values
         max_val = SYSTEM_PARAMS.optimisation_max_values
+        learning_rate = SYSTEM_PARAMS_COMPUTED.learning_rates
         for i in range(len(keys)):
-            update_step = update_step[keys[i]]
             min_val = min_val[keys[i]]
             max_val = max_val[keys[i]]
+            learning_rate = learning_rate[keys[i]]
 
         update = - (
-            np.sign(ti_var.grad[idx])
-            * update_step
-            * ti_var[idx]
+            ti_var.grad[idx]
+            * learning_rate
         )
-        new_val = ti_var[idx] + update
-        if new_val >= min_val and new_val <= max_val:
-            ti_var[idx] += update
+        ti_var[idx] += update
+        ti_var[idx] = ti.min(max_val, ti.max(min_val, ti_var[idx]))
         
-        param_name = '.'.join([*keys, str(idx)])
-        print(f'{param_name}: {ti_var[i]}')
+        param_name = '.'.join(keys)
+        print(f'{param_name}[{idx}]: {ti_var[idx]}')
+        print(f'{param_name}.update: {update}')
     
     def save_final_params(self):
         results = dict()
@@ -1083,6 +1089,8 @@ def main():
             contact_model.visualisation_update_gui(ts)
             contact_model.maybe_save_tactile_sensor_mesh_to_pickle(ts)
         contact_model.bp()
+        contact_model.total_loss.fill(0.0)
+        contact_model.clear_grad()
         print("backward")
         for ts in range(SYSTEM_PARAMS.contact.num_frames - 1, -1, -1):
             contact_model.reset_loss()
@@ -1102,11 +1110,12 @@ def main():
             )
             contact_model.backward_pass_common_part()
             passes = SYSTEM_PARAMS.contact.num_frames - 1 - ts + 1
-            if passes % SYSTEM_PARAMS.meta.mini_batch_size == 0:
+            if passes % (SYSTEM_PARAMS.contact.num_frames // 3) == 0:
+                print(f'passes: {passes}')
                 contact_model.update_params(ts)
                 contact_model.clear_grad()
         print(
-            f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
+            f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done; loss: {contact_model.total_loss[None]}"
         )
     print("optimisation loop done")
     contact_model.save_final_params()
