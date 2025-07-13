@@ -1,1 +1,6 @@
-Fill out the compute_and_print_learning_rates method. Hard-code the values from system-id-optimisation.md into local variables. I'm implementing a gradient descent algorithm. I recorded the accumulated gradients on my optimisation parameters over a single batch (100 time steps). I want to compute the learning rate for each optimisation parameter such that the accumulated gradient over the 100 time steps transaltes to a parameter update of magnitude given by SYSTEM_PARAMS.optimisation_update_steps. Return the results as a dictionary that follows the same structure as SYSTEM_PARAMS.optimisation_update_steps.
+I'm using the DiffTactile fully differentiable physics simulator to simulate a soft optical tactile sensor (ViTacTip) that collides with a silicone phantom that mimics human tissue. I model the sensor and the phantom as using a single material each. The simulator uses MLS-MPM, the neo-hookean elastic model and Corotated Linear Elastic model for the phantom, and FEM for the sensor. The code uses SI units throughout.
+
+I have an issue. When I set the Young's modulus of the sensor and of the phantom to have equal values, the sensor doesn't deform during a downward press into the phantom. In order for the sensor to deform, I need to set its Young's modulus value to be 1 order of magnitude less than the Young's modulus value of the phantom. In reality, the sensor is stiffer than the phantom and both the sensor and the phantom deform during the collision.
+
+Please review my physics code and try to identify any potential culprits.
+

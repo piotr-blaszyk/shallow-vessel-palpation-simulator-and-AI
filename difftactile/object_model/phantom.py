@@ -234,14 +234,6 @@ class Phantom:
         self.total_surface_external_force = ti.Vector.field(
             3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=False
         )
-        self.particle_von_mises_stress = ti.field(
-            dtype=float,
-            shape=(
-                SYSTEM_PARAMS.contact.num_sub_frames,
-                self.actual_total_num_particles,
-            ),
-            needs_grad=False,
-        )
         self.keypoint_idx = ti.field(dtype=int, shape=(), needs_grad=False)
         self.keypoint_idx[None] = -1
 
@@ -474,25 +466,6 @@ class Phantom:
             ].transpose() + ti.Matrix.identity(
                 float, 3
             ) * bulk_modulus * volume_ratio * (volume_ratio - 1)
-            pressure = (
-                cauchy_stress[0, 0] + cauchy_stress[1, 1] + cauchy_stress[2, 2]
-            ) / 3.0
-            deviatoric_stress = cauchy_stress - pressure * ti.Matrix.identity(float, 3)
-            von_mises = ti.sqrt(
-                1.5
-                * (
-                    deviatoric_stress[0, 0] * deviatoric_stress[0, 0]
-                    + deviatoric_stress[1, 1] * deviatoric_stress[1, 1]
-                    + deviatoric_stress[2, 2] * deviatoric_stress[2, 2]
-                    + 2
-                    * (
-                        deviatoric_stress[0, 1] * deviatoric_stress[0, 1]
-                        + deviatoric_stress[1, 2] * deviatoric_stress[1, 2]
-                        + deviatoric_stress[0, 2] * deviatoric_stress[0, 2]
-                    )
-                )
-            )
-            self.particle_von_mises_stress[frame, particle_id] = von_mises
             force_term = cauchy_stress * self.initial_particle_volume
             impulse_term = force_term * -self.dt[None]
             impulse_term_scaled_quadratic_B_spline = (
@@ -669,7 +642,6 @@ class Phantom:
         self.grid_node_external_impulse.fill(0.0)
         self.grid_occupy.fill(0.0)
         self.total_surface_external_force.fill(0.0)
-        self.particle_von_mises_stress.fill(0.0)
 
     @ti.kernel
     def clear_grad(self):

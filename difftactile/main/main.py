@@ -664,16 +664,6 @@ class Contact:
             shape=(self.phantom.actual_total_num_particles,),
             needs_grad=False,
         )
-        self.healthy_tissue_points_von_mises_stress = ti.field(
-            dtype=float,
-            shape=(self.phantom.actual_total_num_particles,),
-            needs_grad=False,
-        )
-        self.tumour_points_von_mises_stress = ti.field(
-            dtype=float,
-            shape=(self.phantom.actual_total_num_particles,),
-            needs_grad=False,
-        )
         self.sim_markers_undeformed = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
@@ -712,14 +702,8 @@ class Contact:
         for p in range(self.phantom.actual_total_num_particles):
             if self.phantom.titles[p] == 0:
                 self.healthy_tissue_points[p] = self.phantom.particle_position[f, p]
-                self.healthy_tissue_points_von_mises_stress[p] = (
-                    self.phantom.particle_von_mises_stress[0, p]
-                )
             elif self.phantom.titles[p] == 1:
                 self.tumour_points[p] = self.phantom.particle_position[f, p]
-                self.tumour_points_von_mises_stress[p] = (
-                    self.phantom.particle_von_mises_stress[0, p]
-                )
         for p in range(self.vitactip.num_vertices):
             self.sensor_points[p] = self.vitactip.vertices_deformed_A[f, p]
 
