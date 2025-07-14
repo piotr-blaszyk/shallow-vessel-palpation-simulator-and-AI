@@ -183,11 +183,11 @@ class MeshGenerator:
         else:
             raise Exception("number of materials must be 1 or 2")
         if SYSTEM_PARAMS.gmsh_mm.refine_mesh == 1:
-            rigid_stem_wall_heigh = 18
-            z_poi = z_bottom + rigid_stem_wall_heigh - 3.0
+            rigid_stem_wall_heigh = 180
+            z_poi = z_bottom + rigid_stem_wall_heigh - 30
             r2 = radius_of_curvature_outer
-            r1 = r2 - 2
-            r3 = radius_of_curvature_outer + 1
+            r1 = r2 - 20
+            r3 = radius_of_curvature_outer + 10
             f1 = f"""
             max(
                 2.0, 
@@ -249,12 +249,12 @@ class MeshGenerator:
             node = self.node_coordinates[i]
             x, y, z = node
             if z > z_cap_base:
-                if np.linalg.norm(node) > radius_of_curvature_outer - 0.1:
+                if np.linalg.norm(node) > radius_of_curvature_outer - 1.0:
                     surface_node_tags.append(tag)
                     surface_coords.append(node)
             else:
                 xy = np.array([x, y])
-                if np.linalg.norm(xy) > stem_wall_radius_outer - 0.1:
+                if np.linalg.norm(xy) > stem_wall_radius_outer - 1.0:
                     surface_node_tags.append(tag)
                     surface_coords.append(node)
         surface_node_tags = np.array(surface_node_tags)

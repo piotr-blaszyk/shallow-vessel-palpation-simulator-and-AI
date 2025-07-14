@@ -895,7 +895,6 @@ class Contact:
     def print_gradients(self, ts):
         if not self.gradients_printed:
             print(f"time step: {ts}")
-            print(f"mini batch size: {SYSTEM_PARAMS.meta.mini_batch_size}")
             print(f"loss: {self.loss.grad[None]}")
             print(f"squared_error_sum (grad): {self.squared_error_sum.grad[None]}")
             print(f"squared_error_sum (val): {self.squared_error_sum[None]}")

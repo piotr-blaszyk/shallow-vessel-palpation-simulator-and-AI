@@ -15,18 +15,18 @@
             "youngs_modulus": 2.5e4,
             "poissons_ratio": 0.499
         },
-        "collision_search_distance": 1.0,
-        "keypoint_search_z_threshold": 0.001,
+        "collision_search_distance": 10.0,
+        "keypoint_search_z_threshold": 0.01,
         "number_of_biomimetic_tips": 0,
         "number_of_materials": 1,
-        "fixed_layer_distance_from_bottom": 0.020,
+        "fixed_layer_distance_from_bottom": 0.20,
         "rayleigh_damping_alpha": 0.1,
         "rayleigh_damping_beta": 0.01,
         "num_markers": 127
     },
     "phantom": {
         "eps": 1e-8,
-        "mpm_grid_cube_size": 0.0015,
+        "mpm_grid_cube_size": 0.015,
         "bound": 3,
         "n_grid_x": 64,
         "n_grid_y": 64,
@@ -45,7 +45,7 @@
         },
         "fixed_points_z_ratio": 0.25,
         "fix_bottom_points": 0,
-        "keypoint_search_xy_threshold": 0.010,
+        "keypoint_search_xy_threshold": 0.10,
         "rayleigh_damping_alpha": 0.1,
         "rayleigh_damping_beta": 0.01
     },
@@ -58,12 +58,12 @@
         "num_sub_frames": 500,
         "num_frames": 500,
         "num_opt_steps": 10,
-        "pid_max_speed_translation": 0.500,
+        "pid_max_speed_translation": 5.000,
         "pid_orientation_kp": 1.0,
         "pid_kp": 100.0,
         "pid_ki": 0.0,
         "pid_kd": 0.0,
-        "pid_position_tolerance": 0.001,
+        "pid_position_tolerance": 0.010,
         "pid_orientation_tolerance": 1.0,
         "pid_angle_eps": 1e-8,
         "pid_max_rotation_per_second_degrees": 1000.0,
@@ -73,25 +73,24 @@
     },
     "gmsh_mm": {
         "characteristic_length_factor": 1.0,
-        "stem_wall_radius_outer": 20,
-        "stem_wall_radius_inner": 19,
-        "cap_height": 6.0,
-        "stem_height": 30.0,
+        "stem_wall_radius_outer": 200,
+        "stem_wall_radius_inner": 190,
+        "cap_height": 60.0,
+        "stem_height": 300.0,
         "refine_mesh": 1
     },
     "geometry": {
-        "gap": 0.002,
+        "gap": 0.020,
         "phantom_orientation": [0, 0, 0],
         "sensor_orientation": [0.0, 1.0, 0.0, 0.0],
-        "phantom_h": 0.020,
-        "phantom_r": 0.020,
-        "distance_from_camera_lens_to_outer_shell_surface": 0.020
+        "phantom_h": 0.20,
+        "phantom_r": 0.20,
+        "distance_from_camera_lens_to_outer_shell_surface": 0.20
     },
     "meta": {
         "target_courant_number": 0.05,
         "enable_tactile_map": 1,
-        "enable_pid_controller": 1,
-        "mini_batch_size": 10
+        "enable_pid_controller": 1
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1
@@ -151,8 +150,8 @@
         "circle_centre_x": 345.0,
         "circle_centre_y": 260.0,
         "circle_radius": 170.0,
-        "shell_inner_r": 35.33333333333333,
-        "shell_outer_r": 36.33333333333333
+        "shell_inner_r": 353.3333333333333,
+        "shell_outer_r": 363.3333333333333
     },
     "marker_tracker": {
         "seconds_per_frame": 0.1,
