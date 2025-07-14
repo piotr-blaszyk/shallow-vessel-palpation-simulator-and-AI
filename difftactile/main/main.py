@@ -786,7 +786,7 @@ class Contact:
         self.camera.position(x, y-1.0, z)
         self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
-        self.camera.fov(8)
+        self.camera.fov(6)
         self.tactile_window = ti.ui.Window("tactile readout", (640, 480))
         self.tactile_canvas = self.tactile_window.get_canvas()
         self.bg_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
@@ -851,17 +851,17 @@ class Contact:
         self.scene.particles(
             self.healthy_tissue_points,
             color=(0.0, 0.0, 1.0),
-            radius=6e-4,
+            radius=3e-4,
         )
         self.scene.particles(
             self.tumour_points,
             color=(1.0, 1.0, 0.0),
-            radius=6e-4,
+            radius=3e-4,
         )
         self.scene.particles(
             self.sensor_points,
             color=(0.0, 1.0, 0.0),
-            radius=6e-4,
+            radius=3e-4,
         )
         assert self.keypoint_coords.shape[0] == self.key_points.shape[0], (
             f"Set self.key_points to shape ({self.keypoint_coords.shape[0]},)"
@@ -872,7 +872,7 @@ class Contact:
                 self.key_points,
                 color=(1.0, 0.0, 0.0),
                 per_vertex_color=self.key_points_per_vertex_color,
-                radius=9e-4,
+                radius=6e-4,
             )
         self.canvas.scene(self.scene)
         self.window.show()

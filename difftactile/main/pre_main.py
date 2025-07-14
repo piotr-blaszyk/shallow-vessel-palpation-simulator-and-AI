@@ -118,7 +118,6 @@ def main():
     phantom_scaled_spans = phantom_normalised_spans * object_scale
 
     phantom_min_max_particle_spacing = phantom_max_dim / (SYSTEM_PARAMS.phantom.num_particles_cube_1d-1)
-    phantom_to_cube_volume_ratio = phantom_volume / (np.max(phantom_scaled_spans) * 2) ** 3
 
     print(f'phantom_normalised_spans: {phantom_normalised_spans}')
     print(f'phantom_scaled_spans: {phantom_scaled_spans}')

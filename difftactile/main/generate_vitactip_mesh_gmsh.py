@@ -183,25 +183,17 @@ class MeshGenerator:
         else:
             raise Exception("number of materials must be 1 or 2")
         if SYSTEM_PARAMS.gmsh_mm.refine_mesh == 1:
-            z_poi = z_bottom + 18
+            rigid_stem_wall_heigh = 18
+            z_poi = z_bottom + rigid_stem_wall_heigh - 3.0
             r2 = radius_of_curvature_outer
             r1 = r2 - 2
             r3 = radius_of_curvature_outer + 1
             f1 = f"""
-            min(
-                max(
-                    2.0, 
-                    min(
-                        6.0, 
-                        4.0 - (z-{z_poi}) * 2.0 / 2.0
-                    )
-                ),
-                max(
-                    1.0, 
-                    min(
-                        6.0, 
-                        1.0 + ({r2}-sqrt(x^2+y^2+z^2)) * 1.0 / 3.0
-                    )
+            max(
+                2.0, 
+                min(
+                    6.0, 
+                    4.0 - (z-{z_poi}) * 2.0 / 2.0
                 )
             )
             """
