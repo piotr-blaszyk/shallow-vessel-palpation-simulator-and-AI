@@ -1,188 +1,176 @@
 {
     "vitactip": {
         "shell": {
-            "density": 1.100e+03,
-            "youngs_modulus": 7.500e+06,
-            "poissons_ratio": 4.950e-01
+            "density": 1.1e3,
+            "youngs_modulus": 7.5e6,
+            "poissons_ratio": 0.495
         },
         "gel": {
-            "density": 1.100e+03,
-            "youngs_modulus": 5.000e+03,
-            "poissons_ratio": 4.990e-01
+            "density": 1.1e3,
+            "youngs_modulus": 5.0e3,
+            "poissons_ratio": 0.499
         },
         "single_material": {
-            "density": 1.100e+03,
-            "youngs_modulus": 2.500e+04,
-            "poissons_ratio": 4.990e-01
+            "density": 1.1e3,
+            "youngs_modulus": 2.5e4,
+            "poissons_ratio": 0.499
         },
-        "collision_search_distance": 1.000e+01,
-        "keypoint_search_z_threshold": 1.000e-02,
+        "collision_search_distance": 10.0,
+        "keypoint_search_z_threshold": 0.01,
         "number_of_biomimetic_tips": 0,
         "number_of_materials": 1,
-        "fixed_layer_distance_from_bottom": 2.000e-01,
-        "rayleigh_damping_alpha": 1.000e-01,
-        "rayleigh_damping_beta": 1.000e-02,
+        "fixed_layer_distance_from_bottom": 0.20,
+        "rayleigh_damping_alpha": 0.1,
+        "rayleigh_damping_beta": 0.01,
         "num_markers": 127
     },
     "phantom": {
-        "mass_eps": 1.000e-08,
-        "mpm_grid_cube_size": 1.500e-02,
+        "mass_eps": 1e-8,
+        "mpm_grid_cube_size": 0.015,
         "bound": 3,
         "n_grid_x": 64,
         "n_grid_y": 64,
         "n_grid_z": 32,
         "num_particles_cube_1d": 32,
-        "gravity": [
-            0.0,
-            0.0,
-            -9.81
-        ],
+        "gravity": [0.0, 0.0, -9.81],
         "silicone": {
-            "density": 1.070e+03,
-            "youngs_modulus": 2.500e+04,
-            "poissons_ratio": 4.990e-01
+            "density": 1.07e3,
+            "youngs_modulus": 2.5e4,
+            "poissons_ratio": 0.499
         },
         "hard_plastic": {
-            "density": 1.180e+03,
-            "youngs_modulus": 2.500e+09,
-            "poissons_ratio": 3.800e-01
+            "density": 1.18e3,
+            "youngs_modulus": 2.5e9,
+            "poissons_ratio": 0.38
         },
-        "fixed_points_z_ratio": 2.500e-01,
+        "fixed_points_z_ratio": 0.25,
         "fix_bottom_points": 0,
-        "keypoint_search_xy_threshold": 1.000e-01,
-        "rayleigh_damping_alpha": 1.000e-01,
-        "rayleigh_damping_beta": 1.000e-02
+        "keypoint_search_xy_threshold": 0.10,
+        "rayleigh_damping_alpha": 0.1,
+        "rayleigh_damping_beta": 0.01
     },
     "contact": {
         "dt": 1.270e-06,
-        "normal_stiffness": 1.260e+02,
-        "tangential_stiffness": 8.800e+01,
-        "normal_damping": 1.680e+00,
-        "coulomb_friction_coeff": 8.500e-01,
+        "normal_stiffness": 1.26e+02,
+        "tangential_stiffness": 8.80e+01,
+        "normal_damping": 1.68e+00,
+        "coulomb_friction_coeff": 0.85,
         "num_sub_frames": 500,
         "num_frames": 500,
         "num_opt_steps": 10,
-        "pid_max_speed_translation": 5.000e+00,
-        "pid_orientation_kp": 1.000e+00,
-        "pid_kp": 1.000e+02,
-        "pid_ki": 0.000e+00,
-        "pid_kd": 0.000e+00,
-        "pid_position_tolerance": 1.000e-02,
-        "pid_orientation_tolerance": 1.000e+00,
-        "pid_angle_eps": 1.000e-08,
-        "pid_max_rotation_per_second_degrees": 1.000e+03,
+        "pid_max_speed_translation": 5.000,
+        "pid_orientation_kp": 1.0,
+        "pid_kp": 100.0,
+        "pid_ki": 0.0,
+        "pid_kd": 0.0,
+        "pid_position_tolerance": 0.010,
+        "pid_orientation_tolerance": 1.0,
+        "pid_angle_eps": 1e-8,
+        "pid_max_rotation_per_second_degrees": 1000.0,
         "dwell_frames": 0,
-        "norm_eps": 1.000e-11,
-        "tangential_velocity_detection_threshold": 1.000e-05
+        "norm_eps": 1e-11,
+        "tangential_velocity_detection_threshold": 1e-6
     },
     "trajectory": {
-        "press_depth": 6.000e-02,
-        "slide_distance": 1.000e-01
+        "press_depth": 0.06,
+        "slide_distance": 0.10
     },
     "gmsh_mm": {
-        "characteristic_length_factor": 1.000e+01,
-        "stem_wall_radius_outer": 2.000e+02,
-        "stem_wall_radius_inner": 1.900e+02,
-        "cap_height": 6.000e+01,
-        "stem_height": 3.000e+01,
+        "characteristic_length_factor": 10.0,
+        "stem_wall_radius_outer": 200,
+        "stem_wall_radius_inner": 190,
+        "cap_height": 60.0,
+        "stem_height": 300.0,
         "refine_mesh": 1,
-        "shell_thickness": 1.000e+01,
-        "rigid_stem_wall_height": 1.800e+02,
-        "refinement_offset": 3.000e+01,
-        "dist_eps": 1.000e+00
+        "shell_thickness": 1.0,
+        "rigid_stem_wall_height": 180.0,
+        "refinement_offset": 30.0,
+        "dist_eps": 1.0
     },
     "geometry": {
-        "gap": 2.000e-02,
-        "phantom_orientation": [
-            0,
-            0,
-            0
-        ],
-        "sensor_orientation": [
-            0.0,
-            1.0,
-            0.0,
-            0.0
-        ],
-        "phantom_h": 2.000e-01,
-        "phantom_r": 2.000e-01,
-        "distance_from_camera_lens_to_outer_shell_surface": 2.000e-01
+        "gap": 0.020,
+        "phantom_orientation": [0, 0, 0],
+        "sensor_orientation": [0.0, 1.0, 0.0, 0.0],
+        "phantom_h": 0.20,
+        "phantom_r": 0.20,
+        "distance_from_camera_lens_to_outer_shell_surface": 0.20
     },
     "meta": {
-        "target_courant_number": 1.000e-01,
+        "target_courant_number": 0.1,
         "enable_tactile_map": 1,
         "enable_pid_controller": 1,
-        "distance_scaling_factor": 1.000e+01
+        "distance_scaling_factor": 10.0
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1
     },
     "optimisation_update_steps": {
         "vitactip": {
-            "youngs_modulus": 1.000e+03
+            "youngs_modulus": 1.0e3
         },
         "phantom": {
-            "youngs_modulus": 1.000e+03
+            "youngs_modulus": 1.0e3
         },
         "contact": {
-            "coulomb_friction_coeff": 5.000e-02,
-            "normal_stiffness": 1.000e+02,
+            "coulomb_friction_coeff": 0.05,
+            "normal_stiffness": 100.0,
             "tangential_stiffness": 100,
-            "normal_damping": 1.000e+00
+            "normal_damping": 1.0
         }
     },
     "optimisation_min_values": {
         "vitactip": {
-            "youngs_modulus": 1.000e-02
+            "youngs_modulus": 0.01
         },
         "phantom": {
-            "youngs_modulus": 1.000e-02
+            "youngs_modulus": 0.01
         },
         "contact": {
-            "coulomb_friction_coeff": 1.000e-02,
-            "normal_stiffness": 1.000e-02,
-            "tangential_stiffness": 1.000e-02,
-            "normal_damping": 1.000e-02
+            "coulomb_friction_coeff": 0.01,
+            "normal_stiffness": 0.01,
+            "tangential_stiffness": 0.01,
+            "normal_damping": 0.01
         }
     },
     "optimisation_max_values": {
         "vitactip": {
-            "youngs_modulus": 9.000e+06
+            "youngs_modulus": 9.0e6
         },
         "phantom": {
-            "youngs_modulus": 1.000e+05
+            "youngs_modulus": 1.0e5
         },
         "contact": {
-            "coulomb_friction_coeff": 1.100e+00,
-            "normal_stiffness": 5.000e+06,
-            "tangential_stiffness": 3.500e+06,
-            "normal_damping": 2.000e+03
+            "coulomb_friction_coeff": 1.10,
+            "normal_stiffness": 5.0e6,
+            "tangential_stiffness": 3.5e6,
+            "normal_damping": 2.0e3
         }
     },
     "visualise_mesh": {
         "frame_number": 200
     },
     "fisheye_model": {
-        "focal_length_x": 1.850e+02,
-        "focal_length_y": 1.850e+02,
-        "principal_point_x": 3.590e+02,
-        "principal_point_y": 2.640e+02,
-        "target_image_width": 6.400e+02,
-        "target_image_height": 4.800e+02,
-        "circle_centre_x": 3.450e+02,
-        "circle_centre_y": 2.600e+02,
-        "circle_radius": 1.700e+02,
-        "shell_inner_r": 3.533e+02,
-        "shell_outer_r": 3.633e+02
+        "focal_length_x": 185.0,
+        "focal_length_y": 185.0,
+        "principal_point_x": 359.0,
+        "principal_point_y": 264.0,
+        "target_image_width": 640.0,
+        "target_image_height": 480.0,
+        "circle_centre_x": 345.0,
+        "circle_centre_y": 260.0,
+        "circle_radius": 170.0,
+        "shell_inner_r": 353.3333333333333,
+        "shell_outer_r": 363.3333333333333
     },
     "marker_tracker": {
-        "seconds_per_frame": 1.000e-01,
+        "seconds_per_frame": 0.1,
         "consecutive_frame_distance_threshold": 10
     },
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",
         "biomimetic_tip_points": "difftactile/output/biomimetic-tip-points.pkl",
         "gmsh_mesh": "difftactile/output/gmsh-mesh.pkl",
+
         "fisheye_model_image_dir": "difftactile/manual_or_experimental_data/downward-press-vascular-phantom",
         "vitactip_photo_default_state": "difftactile/manual_or_experimental_data/vitactip_photo_default_state.png",
         "vitactip_photo_default_state_detected_markers": "difftactile/output/vitactip_photo_default_state_detected_markers.png",
