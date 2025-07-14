@@ -50,13 +50,13 @@
         "rayleigh_damping_beta": 0.01
     },
     "contact": {
-        "dt": 1.0e-05,
+        "dt": 1.270e-06,
         "normal_stiffness": 1.26e+02,
         "tangential_stiffness": 8.80e+01,
         "normal_damping": 1.68e+00,
         "coulomb_friction_coeff": 0.85,
-        "num_sub_frames": 500,
-        "num_frames": 5000,
+        "num_sub_frames": 50,
+        "num_frames": 600,
         "num_opt_steps": 10,
         "pid_max_speed_translation": 0.010,
         "pid_orientation_kp": 1.0,
@@ -72,7 +72,7 @@
         "tangential_velocity_detection_threshold": 1e-6
     },
     "gmsh_mm": {
-        "characteristic_length_factor": 5.0,
+        "characteristic_length_factor": 1.5,
         "stem_wall_radius_outer": 20,
         "stem_wall_radius_inner": 19,
         "cap_height": 6.0,
@@ -88,7 +88,7 @@
         "distance_from_camera_lens_to_outer_shell_surface": 0.020
     },
     "meta": {
-        "target_courant_number": 0.1,
+        "target_courant_number": 0.01,
         "enable_tactile_map": 1,
         "enable_pid_controller": 1,
         "mini_batch_size": 10

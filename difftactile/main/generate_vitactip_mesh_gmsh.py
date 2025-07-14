@@ -325,7 +325,7 @@ class MeshGenerator:
             "min_particle_spacing": min_particle_spacing,
             "max_particle_spacing": max_particle_spacing,
         }
-        print(f"number of vertices generated: {self.node_coordinates.shape[0]}")
+        print(f"self.node_coordinates.shape[0]: {self.node_coordinates.shape[0]}")
         os.makedirs("output", exist_ok=True)
         with open(SYSTEM_PARAMS.files.gmsh_mesh, "wb") as f:
             pickle.dump(mesh_data, f)
