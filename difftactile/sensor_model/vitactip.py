@@ -31,16 +31,6 @@ class ViTacTip:
             SYSTEM_PARAMS.vitactip.rayleigh_damping_alpha
         )
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.vitactip.rayleigh_damping_beta
-        self.hourglass_coefficient = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.hourglass_modulus_scale = ti.field(
-            dtype=ti.f32, shape=(), needs_grad=False
-        )
-        self.hourglass_coefficient[None] = (
-            SYSTEM_PARAMS.vitactip.hourglass_control.coefficient
-        )
-        self.hourglass_modulus_scale[None] = (
-            SYSTEM_PARAMS.vitactip.hourglass_control.modulus_scale
-        )
         self.mass_density = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         self.poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
@@ -731,59 +721,6 @@ class ViTacTip:
         self.contact_forces_on_vertices[frame, vertex2_idx] += 1 / 3 * contact_force
         self.contact_forces_on_vertices[frame, vertex3_idx] += 1 / 3 * contact_force
 
-    @ti.func
-    def compute_hourglass_forces(
-        self,
-        vertex1_pos,
-        vertex2_pos,
-        vertex3_pos,
-        vertex4_pos,
-        vertex1_vel,
-        vertex2_vel,
-        vertex3_vel,
-        vertex4_vel,
-        tetra_volume,
-        mu,
-        lam,
-    ):
-        center_pos = (vertex1_pos + vertex2_pos + vertex3_pos + vertex4_pos) / 4.0
-        center_vel = (vertex1_vel + vertex2_vel + vertex3_vel + vertex4_vel) / 4.0
-        rel_pos1 = vertex1_pos - center_pos
-        rel_pos2 = vertex2_pos - center_pos
-        rel_pos3 = vertex3_pos - center_pos
-        rel_pos4 = vertex4_pos - center_pos
-        rel_vel1 = vertex1_vel - center_vel
-        rel_vel2 = vertex2_vel - center_vel
-        rel_vel3 = vertex3_vel - center_vel
-        rel_vel4 = vertex4_vel - center_vel
-        strain_rate1 = rel_vel1.outer_product(rel_pos1)
-        strain_rate2 = rel_vel2.outer_product(rel_pos2)
-        strain_rate3 = rel_vel3.outer_product(rel_pos3)
-        strain_rate4 = rel_vel4.outer_product(rel_pos4)
-        avg_strain_rate = (
-            strain_rate1 + strain_rate2 + strain_rate3 + strain_rate4
-        ) / 4.0
-        hg1 = strain_rate1 - avg_strain_rate
-        hg2 = strain_rate2 - avg_strain_rate
-        hg3 = strain_rate3 - avg_strain_rate
-        hg_stiffness = (
-            self.hourglass_coefficient[None]
-            * self.hourglass_modulus_scale[None]
-            * (mu + lam)
-        )
-        hg_force_matrix = (
-            -hg_stiffness
-            * tetra_volume
-            * ti.Matrix.cols(
-                [
-                    hg1.transpose() @ rel_pos1,
-                    hg2.transpose() @ rel_pos2,
-                    hg3.transpose() @ rel_pos3,
-                ]
-            )
-        )
-        return hg_force_matrix
-
     @ti.kernel
     def update_internal_forces(self, frame: ti.i32):
         for tetra_idx in range(self.num_tetrahedra):
@@ -794,6 +731,10 @@ class ViTacTip:
             vertex2_pos = self.vertices_deformed_A[frame, vertex2_idx]
             vertex3_pos = self.vertices_deformed_A[frame, vertex3_idx]
             vertex4_pos = self.vertices_deformed_A[frame, vertex4_idx]
+            vertex1_vel = self.vertex_velocities[frame, vertex1_idx]
+            vertex2_vel = self.vertex_velocities[frame, vertex2_idx]
+            vertex3_vel = self.vertex_velocities[frame, vertex3_idx]
+            vertex4_vel = self.vertex_velocities[frame, vertex4_idx]
             deformation_matrix = ti.Matrix.cols(
                 [
                     vertex1_pos - vertex4_pos,
@@ -827,12 +768,21 @@ class ViTacTip:
                 mu * (1 - 1 / (first_invariant + 1)) * deformation_gradient
                 + lam * (jacobian - alpha) * jacobian_derivative
             )
-
-            force_matrix = (
+            elastic_force_matrix = (
                 -tetra_volume
                 * stress_tensor
                 @ self.initial_deformation_gradient_inverse[tetra_idx].transpose()
             )
+            relative_vel1 = vertex1_vel - vertex4_vel
+            relative_vel2 = vertex2_vel - vertex4_vel
+            relative_vel3 = vertex3_vel - vertex4_vel
+            damping_force_matrix = -self.rayleigh_damping_alpha[None] * ti.Matrix.cols(
+                [relative_vel1, relative_vel2, relative_vel3]
+            )
+            damping_force_matrix += (
+                -self.rayleigh_damping_beta[None] * elastic_force_matrix
+            )
+            force_matrix = elastic_force_matrix + damping_force_matrix
             vertex_indices = ti.Vector(
                 [vertex1_idx, vertex2_idx, vertex3_idx, vertex4_idx]
             )

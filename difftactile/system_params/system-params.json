@@ -22,12 +22,6 @@
         "fixed_layer_distance_from_bottom": 0.020,
         "rayleigh_damping_alpha": 0.1,
         "rayleigh_damping_beta": 0.01,
-        "hourglass_control": {
-            "enabled": 1,
-            "coefficient": 0.1,
-            "modulus_scale": 0.05
-        },
-        "enable_Rayleigh_damping_and_hourglass_constraint": 0,
         "num_markers": 127
     },
     "phantom": {
