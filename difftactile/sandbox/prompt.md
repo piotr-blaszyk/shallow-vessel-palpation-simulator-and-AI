@@ -4,3 +4,5 @@ I have an issue. When I set the Young's modulus of the sensor and of the phantom
 
 Please review my physics code and try to identify any potential culprits.
 
+
+I'm using the DiffTactile fully differentiable physics simulator (based on Taichi) to simulate a soft optical tactile sensor (ViTacTip) that collides with a silicone phantom that mimics human tissue. I model the sensor and the phantom as using a single material each. The simulator uses FEM for the sensor and MLS-MPM for the phantom. The original DiffTactile code scales all distances present in the simulation by x10. In other words, it models each of the phantom and the sensor as being x10 larger than in real life. This allows to hack the Courant-Friedrichs-Lewy maximum time step duration formula and speed up the simulation at the cost of smaller deformations. Is such distance-scaling common in physics simulations aimed at generating large amounts of training data for an ML model?

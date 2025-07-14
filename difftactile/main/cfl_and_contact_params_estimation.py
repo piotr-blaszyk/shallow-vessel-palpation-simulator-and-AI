@@ -46,7 +46,7 @@ def calculate_cfl_timestep(
     if verbose:
         print(f"\nrequired dt: {dt:0.3e}")
         print(f"num_frames_per_second: {num_frames_per_second:0.0f}")
-    dt = min(dt, 1.0e-5)
+    dt = min(dt, 5.0e-5)
     return dt
 
 

@@ -72,7 +72,7 @@
         "tangential_velocity_detection_threshold": 1e-6
     },
     "gmsh_mm": {
-        "characteristic_length_factor": 1.0,
+        "characteristic_length_factor": 10.0,
         "stem_wall_radius_outer": 200,
         "stem_wall_radius_inner": 190,
         "cap_height": 60.0,
@@ -88,7 +88,7 @@
         "distance_from_camera_lens_to_outer_shell_surface": 0.20
     },
     "meta": {
-        "target_courant_number": 0.05,
+        "target_courant_number": 0.1,
         "enable_tactile_map": 1,
         "enable_pid_controller": 1
     },

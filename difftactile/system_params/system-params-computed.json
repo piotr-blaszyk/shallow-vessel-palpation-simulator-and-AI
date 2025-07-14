@@ -1,44 +1,44 @@
 {
   "phantom_closest_vertex": [
-    0.024,
-    0.024,
-    0.0045000000000000005
+    0.24,
+    0.24,
+    0.045
   ],
   "phantom_centroid_pose": [
-    0.044,
-    0.044,
-    0.0145,
+    0.44,
+    0.44,
+    0.14500000000000002,
     0,
     0,
     0
   ],
   "vitactip_tip_position": [
-    0.044,
-    0.044,
-    0.026500000000000003
+    0.44,
+    0.44,
+    0.265
   ],
   "vitactip_tip_pose": [
-    0.044,
-    0.044,
-    0.026500000000000003,
+    0.44,
+    0.44,
+    0.265,
     0.0,
     1.0,
     0.0,
     0.0
   ],
-  "phantom_volume": 2.5132741228718347e-05,
-  "min_coord": 0.0045000000000000005,
-  "max_coord_x": 0.0915,
-  "max_coord_y": 0.0915,
-  "max_coord_z": 0.043500000000000004,
-  "object_scale": 0.04,
-  "phantom_min_max_particle_spacing": 0.0012903225806451613,
+  "phantom_volume": 0.02513274122871835,
+  "min_coord": 0.045,
+  "max_coord_x": 0.9149999999999999,
+  "max_coord_y": 0.9149999999999999,
+  "max_coord_z": 0.435,
+  "object_scale": 0.4,
+  "phantom_min_max_particle_spacing": 0.012903225806451613,
   "vitactip_min_particle_spacing": {
-    "all": 0.0012847925616739783,
+    "all": 0.012916115628772805,
     "shell": Infinity,
     "gel": Infinity
   },
-  "contact_surface_area": 0.0012566370614359172,
+  "contact_surface_area": 0.12566370614359174,
   "learning_rates": {
     "vitactip": {
       "youngs_modulus": 0.012114938969101983

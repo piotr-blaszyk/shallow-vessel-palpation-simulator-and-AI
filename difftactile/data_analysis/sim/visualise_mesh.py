@@ -22,7 +22,7 @@ class VisualiseMesh:
         print(f'number of nan vertices: {np.sum(np.isnan(self.point_coordinates))}')
     
     def load_deformed_points(self):
-        with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(0), 'rb') as f:
+        with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(43), 'rb') as f:
             self.point_coordinates = pickle.load(f)
         print(f'number of nan vertices: {np.sum(np.isnan(self.point_coordinates))}')
     
