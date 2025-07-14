@@ -79,7 +79,7 @@ class MeshGenerator:
         radius_of_curvature_outer = self.dome_radius_of_curvature(
             stem_wall_radius_outer, cap_height
         )
-        radius_of_curvature_inner = radius_of_curvature_outer - 1
+        radius_of_curvature_inner = radius_of_curvature_outer - SYSTEM_PARAMS.gmsh_mm.shell_thickness
         z_cap_base = radius_of_curvature_outer - cap_height
         z_bottom = z_cap_base - stem_height
         self.geometry_data = {
@@ -151,7 +151,7 @@ class MeshGenerator:
                 point_with_largest_magnitude = node_coordinates[max_magnitude_index]
                 largest_magnitude = magnitudes[max_magnitude_index]
                 magnitudes.sort()
-                if largest_magnitude > radius_of_curvature_outer + 1:
+                if largest_magnitude > radius_of_curvature_outer + SYSTEM_PARAMS.gmsh_mm.dist_eps:
                     gmsh.model.occ.remove(dimTags=[(dim, tag)], recursive=True)
                     continue
                 new_fragments.append((dim, tag))
@@ -183,11 +183,8 @@ class MeshGenerator:
         else:
             raise Exception("number of materials must be 1 or 2")
         if SYSTEM_PARAMS.gmsh_mm.refine_mesh == 1:
-            rigid_stem_wall_heigh = 180
-            z_poi = z_bottom + rigid_stem_wall_heigh - 30
-            r2 = radius_of_curvature_outer
-            r1 = r2 - 20
-            r3 = radius_of_curvature_outer + 10
+            z_poi = z_bottom + SYSTEM_PARAMS.gmsh_mm.rigid_stem_wall_height - SYSTEM_PARAMS.gmsh_mm.refinement_offset
+            r = radius_of_curvature_outer
             f1 = f"""
             max(
                 2.0, 
@@ -249,12 +246,12 @@ class MeshGenerator:
             node = self.node_coordinates[i]
             x, y, z = node
             if z > z_cap_base:
-                if np.linalg.norm(node) > radius_of_curvature_outer - 1.0:
+                if np.linalg.norm(node) > radius_of_curvature_outer - SYSTEM_PARAMS.gmsh_mm.dist_eps:
                     surface_node_tags.append(tag)
                     surface_coords.append(node)
             else:
                 xy = np.array([x, y])
-                if np.linalg.norm(xy) > stem_wall_radius_outer - 1.0:
+                if np.linalg.norm(xy) > stem_wall_radius_outer - SYSTEM_PARAMS.gmsh_mm.dist_eps:
                     surface_node_tags.append(tag)
                     surface_coords.append(node)
         surface_node_tags = np.array(surface_node_tags)

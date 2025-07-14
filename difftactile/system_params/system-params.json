@@ -71,13 +71,21 @@
         "norm_eps": 1e-11,
         "tangential_velocity_detection_threshold": 1e-6
     },
+    "trajectory": {
+        "press_depth": 0.06,
+        "slide_distance": 0.10
+    },
     "gmsh_mm": {
         "characteristic_length_factor": 10.0,
         "stem_wall_radius_outer": 200,
         "stem_wall_radius_inner": 190,
         "cap_height": 60.0,
         "stem_height": 300.0,
-        "refine_mesh": 1
+        "refine_mesh": 1,
+        "shell_thickness": 1.0,
+        "rigid_stem_wall_height": 180.0,
+        "refinement_offset": 30.0,
+        "dist_eps": 1.0
     },
     "geometry": {
         "gap": 0.020,
@@ -90,7 +98,8 @@
     "meta": {
         "target_courant_number": 0.1,
         "enable_tactile_map": 1,
-        "enable_pid_controller": 1
+        "enable_pid_controller": 1,
+        "distance_scaling_factor": 10.0
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1
