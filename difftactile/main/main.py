@@ -443,7 +443,7 @@ class Contact:
                     frame, i, j, k
                 ] / (
                     self.phantom.grid_node_mass[frame, i, j, k]
-                    + SYSTEM_PARAMS.phantom.eps
+                    + SYSTEM_PARAMS.phantom.mass_eps
                 )
                 closest_sensor_vertex_idx = self.contact_idx[frame, i, j, k]
                 if closest_sensor_vertex_idx[0] != -1:

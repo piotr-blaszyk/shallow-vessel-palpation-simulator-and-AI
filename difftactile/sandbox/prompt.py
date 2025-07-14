@@ -150,7 +150,7 @@ def check_grid_occupy(self, f: ti.i32):
         SYSTEM_PARAMS.phantom.n_grid_y,
         SYSTEM_PARAMS.phantom.n_grid_z,
     ):
-        if self.grid_node_mass[f, i, j, k] > SYSTEM_PARAMS.phantom.eps:
+        if self.grid_node_mass[f, i, j, k] > SYSTEM_PARAMS.phantom.mass_eps:
             self.grid_occupy[f, i, j, k] = 1
 
 
@@ -191,7 +191,7 @@ def collision(self, frame: ti.i32):
                 ]
             )
             grid_node_velocity = self.phantom.grid_node_momentum_in[frame, i, j, k] / (
-                self.phantom.grid_node_mass[frame, i, j, k] + SYSTEM_PARAMS.phantom.eps
+                self.phantom.grid_node_mass[frame, i, j, k] + SYSTEM_PARAMS.phantom.mass_eps
             )
             closest_sensor_vertex_idx = self.contact_idx[frame, i, j, k]
             if closest_sensor_vertex_idx[0] != -1:
@@ -230,7 +230,7 @@ def grid_op(self, frame: ti.i32):
         if self.grid_occupy[frame, grid_x, grid_y, grid_z] == 1:
             inverse_mass = 1 / (
                 self.grid_node_mass[frame, grid_x, grid_y, grid_z]
-                + SYSTEM_PARAMS.phantom.eps
+                + SYSTEM_PARAMS.phantom.mass_eps
             )
             grid_velocity = ti.Vector([0.0, 0.0, 0.0])
             grid_velocity += (

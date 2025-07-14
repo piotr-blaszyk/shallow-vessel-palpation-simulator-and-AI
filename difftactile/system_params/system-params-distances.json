@@ -1,0 +1,40 @@
+{
+    "vitactip": {
+        "collision_search_distance": 1.0,
+        "keypoint_search_z_threshold": 0.001,
+        "fixed_layer_distance_from_bottom": 0.020
+    },
+    "phantom": {
+        "mpm_grid_cube_size": 0.0015,
+        "keypoint_search_xy_threshold": 0.010
+    },
+    "contact": {
+        "pid_max_speed_translation": 0.500,
+        "pid_position_tolerance": 0.001,
+        "tangential_velocity_detection_threshold": 1e-6
+    },
+    "trajectory": {
+        "press_depth": 0.006,
+        "slide_distance": 0.010
+    },
+    "gmsh_mm": {
+        "stem_wall_radius_outer": 20,
+        "stem_wall_radius_inner": 19,
+        "cap_height": 6,
+        "stem_height": 3,
+        "shell_thickness": 1,
+        "rigid_stem_wall_height": 18,
+        "refinement_offset": 3,
+        "dist_eps": 0.1
+    },
+    "geometry": {
+        "gap": 0.002,
+        "phantom_h": 0.020,
+        "phantom_r": 0.020,
+        "distance_from_camera_lens_to_outer_shell_surface": 0.020
+    },
+    "fisheye_model": {
+        "shell_inner_r": 35.33333333333333,
+        "shell_outer_r": 36.33333333333333
+    }
+}

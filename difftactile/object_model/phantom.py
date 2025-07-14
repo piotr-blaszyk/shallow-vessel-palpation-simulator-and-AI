@@ -508,7 +508,7 @@ class Phantom:
             SYSTEM_PARAMS.phantom.n_grid_y,
             SYSTEM_PARAMS.phantom.n_grid_z,
         ):
-            if self.grid_node_mass[f, i, j, k] > SYSTEM_PARAMS.phantom.eps:
+            if self.grid_node_mass[f, i, j, k] > SYSTEM_PARAMS.phantom.mass_eps:
                 self.grid_occupy[f, i, j, k] = 1
 
     @ti.kernel
@@ -521,7 +521,7 @@ class Phantom:
             if self.grid_occupy[frame, grid_x, grid_y, grid_z] == 1:
                 inverse_mass = 1 / (
                     self.grid_node_mass[frame, grid_x, grid_y, grid_z]
-                    + SYSTEM_PARAMS.phantom.eps
+                    + SYSTEM_PARAMS.phantom.mass_eps
                 )
                 grid_mass = self.grid_node_mass[frame, grid_x, grid_y, grid_z]
                 grid_velocity = ti.Vector([0.0, 0.0, 0.0])
