@@ -32,7 +32,7 @@
     },
     "phantom": {
         "eps": 1e-8,
-        "mpm_grid_cube_size": 0.002,
+        "mpm_grid_cube_size": 0.004,
         "bound": 3,
         "n_grid_x": 64,
         "n_grid_y": 64,
@@ -86,7 +86,7 @@
         "refine_mesh": 1
     },
     "geometry": {
-        "gap": 0.001,
+        "gap": 0.004,
         "phantom_orientation": [0, 0, 0],
         "sensor_orientation": [0.0, 1.0, 0.0, 0.0],
         "phantom_h": 0.022,
@@ -94,7 +94,7 @@
         "distance_from_camera_lens_to_outer_shell_surface": 0.020
     },
     "meta": {
-        "target_courant_number": 0.5,
+        "target_courant_number": 0.1,
         "enable_tactile_map": 1,
         "enable_pid_controller": 1,
         "mini_batch_size": 10

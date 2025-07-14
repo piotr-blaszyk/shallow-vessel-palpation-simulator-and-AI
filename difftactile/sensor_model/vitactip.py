@@ -805,6 +805,13 @@ class ViTacTip:
             deformation_gradient = (
                 deformation_matrix @ self.initial_deformation_gradient_inverse[tetra_idx]
             )
+
+            # F_T = deformation_gradient.inverse().transpose()
+            # J = deformation_gradient.determinant()
+            # J = ti.max(0.2, deformation_gradient.determinant())
+            # log_J_i = ti.log(J)
+            # stress_tensor = self.mu[None] * (deformation_gradient -  F_T) + self.lam[None] * log_J_i * F_T
+
             mu = self.mu[None]
             lam = self.lam[None]
             jacobian = deformation_gradient.determinant()
@@ -820,6 +827,7 @@ class ViTacTip:
                 mu * (1 - 1 / (first_invariant + 1)) * deformation_gradient
                 + lam * (jacobian - alpha) * jacobian_derivative
             )
+
             force_matrix = (
                 -tetra_volume
                 * stress_tensor

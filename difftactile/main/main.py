@@ -1032,13 +1032,14 @@ class Contact:
     
     def set_dt(self):
         dt = calculate_cfl_timestep(
-            phantom_youngs_modulus=self.phantom.youngs_modulus[None],
+            phantom_youngs_modulus=self.phantom.youngs_modulus[0],
             vitactip_youngs_modulus=self.vitactip.youngs_modulus[None],
             verbose=False,
         )
         self.dt[None] = dt
         self.phantom.dt[None] = dt
         self.vitactip.dt[None] = dt
+        print(f'dt={dt:0.3e} s')
 
 
 def main():
