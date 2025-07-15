@@ -17,7 +17,7 @@ class ScientificNotationEncoder(json.JSONEncoder):
 
 def main():
     source = "difftactile/system_params/system-params-distances.json"
-    target_raw = "difftactile/system_params/system-params-raw.json"
+    target_raw = "difftactile/system_params/system-params.json"
     target_computed = "difftactile/system_params/system-params.json"
     with open(source, 'r') as f:
         source_data = json.load(f)
