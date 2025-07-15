@@ -15,18 +15,18 @@
             "youngs_modulus": 2.500e+04,
             "poissons_ratio": 4.990e-01
         },
-        "collision_search_distance": 1.000e+01,
-        "keypoint_search_z_threshold": 1.000e-02,
+        "collision_search_distance": 1.000e+00,
+        "keypoint_search_z_threshold": 1.000e-03,
         "number_of_biomimetic_tips": 0,
         "number_of_materials": 1,
-        "fixed_layer_distance_from_bottom": 2.000e-01,
+        "fixed_layer_distance_from_bottom": 2.000e-02,
         "rayleigh_damping_alpha": 1.000e-01,
         "rayleigh_damping_beta": 1.000e-02,
         "num_markers": 127
     },
     "phantom": {
         "mass_eps": 1.000e-08,
-        "mpm_grid_cube_size": 1.500e-02,
+        "mpm_grid_cube_size": 1.500e-03,
         "bound": 3,
         "n_grid_x": 64,
         "n_grid_y": 64,
@@ -49,7 +49,7 @@
         },
         "fixed_points_z_ratio": 2.500e-01,
         "fix_bottom_points": 0,
-        "keypoint_search_xy_threshold": 1.000e-01,
+        "keypoint_search_xy_threshold": 1.000e-02,
         "rayleigh_damping_alpha": 1.000e-01,
         "rayleigh_damping_beta": 1.000e-02
     },
@@ -62,37 +62,37 @@
         "num_sub_frames": 500,
         "num_frames": 500,
         "num_opt_steps": 10,
-        "pid_max_speed_translation": 5.000e+00,
+        "pid_max_speed_translation": 5.000e-01,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,
         "pid_ki": 0.000e+00,
         "pid_kd": 0.000e+00,
-        "pid_position_tolerance": 1.000e-02,
+        "pid_position_tolerance": 1.000e-03,
         "pid_orientation_tolerance": 1.000e+00,
         "pid_angle_eps": 1.000e-08,
         "pid_max_rotation_per_second_degrees": 1.000e+03,
         "dwell_frames": 0,
         "norm_eps": 1.000e-11,
-        "tangential_velocity_detection_threshold": 1.000e-05
+        "tangential_velocity_detection_threshold": 1.000e-06
     },
     "trajectory": {
-        "press_depth": 6.000e-02,
-        "slide_distance": 1.000e-01
+        "press_depth": 6.000e-03,
+        "slide_distance": 1.000e-02
     },
     "gmsh_mm": {
         "characteristic_length_factor": 1.000e+01,
-        "stem_wall_radius_outer": 2.000e+02,
-        "stem_wall_radius_inner": 1.900e+02,
-        "cap_height": 6.000e+01,
-        "stem_height": 3.000e+01,
+        "stem_wall_radius_outer": 2.000e+01,
+        "stem_wall_radius_inner": 1.900e+01,
+        "cap_height": 6.000e+00,
+        "stem_height": 3.000e+00,
         "refine_mesh": 1,
-        "shell_thickness": 1.000e+01,
-        "rigid_stem_wall_height": 1.800e+02,
-        "refinement_offset": 3.000e+01,
-        "dist_eps": 1.000e+00
+        "shell_thickness": 1.000e+00,
+        "rigid_stem_wall_height": 1.800e+01,
+        "refinement_offset": 3.000e+00,
+        "dist_eps": 1.000e-01
     },
     "geometry": {
-        "gap": 2.000e-02,
+        "gap": 2.000e-03,
         "phantom_orientation": [
             0,
             0,
@@ -104,15 +104,15 @@
             0.0,
             0.0
         ],
-        "phantom_h": 2.000e-01,
-        "phantom_r": 2.000e-01,
-        "distance_from_camera_lens_to_outer_shell_surface": 2.000e-01
+        "phantom_h": 2.000e-02,
+        "phantom_r": 2.000e-02,
+        "distance_from_camera_lens_to_outer_shell_surface": 2.000e-02
     },
     "meta": {
         "target_courant_number": 1.000e-01,
         "enable_tactile_map": 1,
         "enable_pid_controller": 1,
-        "distance_scaling_factor": 1.000e+01
+        "distance_scaling_factor": 1.000e+00
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1
@@ -172,8 +172,8 @@
         "circle_centre_x": 3.450e+02,
         "circle_centre_y": 2.600e+02,
         "circle_radius": 1.700e+02,
-        "shell_inner_r": 3.533e+02,
-        "shell_outer_r": 3.633e+02
+        "shell_inner_r": 3.533e+01,
+        "shell_outer_r": 3.633e+01
     },
     "marker_tracker": {
         "seconds_per_frame": 1.000e-01,
@@ -218,7 +218,7 @@
         "tactile_sensor_all_nodes": "difftactile/output/tactile_sensor.all_nodes.pkl",
         "system_params_computed": "difftactile/system_params/system-params-computed.json",
         "vitactip_interp_idx_flat": "difftactile/output/vitactip.interp_idx_flat.pkl",
-        "phantom": "difftactile/meshes/cylinder.stl",
+        "phantom": "difftactile/meshes/vascular-phantom-fragment.stl",
         "root_dir": "/home/psb120/Documents/DiffTactile/",
         "initial_vertex_positions_undeformed": "difftactile/output/initial_vertex_positions_undeformed.pkl",
         "domain_adaptation_results": "difftactile/output/domain_adaptation_results.json",

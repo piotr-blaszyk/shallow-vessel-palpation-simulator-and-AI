@@ -1,12 +1,17 @@
-import numpy as np
-cost = np.array([
-    [4, 1, 3], 
-    [2, 0, 5], 
-    [3, 2, 2], 
-    [1, 2, 3]
-])
-from scipy.optimize import linear_sum_assignment
-row_ind, col_ind = linear_sum_assignment(cost)
-print(f'row_ind: {row_ind}')
-print(f'col_ind: {col_ind}')
-print(cost[row_ind, col_ind].sum())
+import taichi as ti
+ti.init()
+
+x = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
+y = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
+
+@ti.kernel
+def func():
+    y[None] += x[None] ** 2
+
+x[None] = 3.0
+
+y.grad[None] = 1
+
+func()
+func.grad()
+
