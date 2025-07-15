@@ -5,7 +5,7 @@
         "fixed_layer_distance_from_bottom": 0.020
     },
     "phantom": {
-        "mpm_grid_cube_size": 0.0015,
+        "mpm_grid_cube_size": 0.0025,
         "keypoint_search_xy_threshold": 0.010
     },
     "contact": {
@@ -18,10 +18,11 @@
         "slide_distance": 0.010
     },
     "gmsh_mm": {
+        "characteristic_length_factor": 1.0,
         "stem_wall_radius_outer": 20,
         "stem_wall_radius_inner": 19,
         "cap_height": 6,
-        "stem_height": 3,
+        "stem_height": 30,
         "shell_thickness": 1,
         "rigid_stem_wall_height": 18,
         "refinement_offset": 3,
@@ -29,8 +30,9 @@
     },
     "geometry": {
         "gap": 0.002,
-        "phantom_h": 0.020,
-        "phantom_r": 0.020,
+        "phantom_z_length": 0.022,
+        "phantom_x_length": 0.080,
+        "phantom_y_length": 0.040,
         "distance_from_camera_lens_to_outer_shell_surface": 0.020,
         "sensor_offset": 0.010,
         "vein": {
@@ -38,6 +40,11 @@
             "r": 0.002,
             "h": 0.040
         }
+    },
+    "visualisation": {
+        "camera_offset": 1.0,
+        "particle_size_normal": 3e-4,
+        "particle_size_keypoint": 6e-4
     },
     "fisheye_model": {
         "shell_inner_r": 35.33333333333333,

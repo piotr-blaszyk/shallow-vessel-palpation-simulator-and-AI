@@ -23,6 +23,7 @@ class Contact:
         self.phantom = Phantom()
         self.set_up_initial_positions_and_trajectory_first_init_only()
         self.set_up_trajectories_and_phantom_states()
+        self.set_up_initial_positions_state_and_trajectory()
         self.set_up_keypoints()
         self.set_up_collision_detection()
         self.set_up_pid()
@@ -120,6 +121,7 @@ class Contact:
         )
 
     def set_up_system_params(self):
+        self.trajectory_ix = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
         self.dt[None] = SYSTEM_PARAMS.contact.dt
         self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=True)
@@ -305,9 +307,10 @@ class Contact:
                 'r': None
             }
         ]
-        assert(self.trajectories_np.shape[0] == self.state_dicts.shape[0])
+        assert(self.trajectories_np.shape[0] == len(self.state_dicts))
 
-    def set_up_initial_positions_state_and_trajectory(self, trajectory_ix):
+    def set_up_initial_positions_state_and_trajectory(self):
+        trajectory_ix = self.trajectory_ix[None]
         ix = self.vitactip.get_keypoint_indices_numpy_point_a()
         camera_lens_to_sensor_tip = self.vitactip.node_coordinates[ix, 2]
         self.tumour_present[None] = False
@@ -707,7 +710,7 @@ class Contact:
             pickle.dump(f2v, f)
 
     def visualisation_initialise(self):
-        self.num_keypoints = 18
+        self.num_keypoints = 10
         self.key_points = ti.Vector.field(
             3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False
         )
@@ -848,7 +851,7 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y-10.0, z)
+        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
         self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
@@ -901,7 +904,7 @@ class Contact:
         vitactip_bottom = self.vitactip.get_keypoint_coordinates(
             0, self.keypoint_indices[0].reshape((1,))
         )
-        trajectory_keypoints = self.trajectory_npy[:, :3].copy()
+        trajectory_keypoints = self.trajectory.to_numpy()[:, :3]
         vitactip_clock_arms = self.vitactip.get_keypoint_coordinates(
             f=0, keypoint_indices=self.vitactip.clock_arms_node_idxs.to_numpy()
         )
@@ -916,17 +919,17 @@ class Contact:
         self.scene.particles(
             self.healthy_tissue_points,
             color=(0.0, 0.0, 1.0),
-            radius=3e-3,
+            radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
         self.scene.particles(
             self.tumour_points,
             color=(1.0, 1.0, 0.0),
-            radius=3e-3,
+            radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
         self.scene.particles(
             self.sensor_points,
             color=(0.0, 1.0, 0.0),
-            radius=3e-3,
+            radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
         assert self.keypoint_coords.shape[0] == self.key_points.shape[0], (
             f"Set self.key_points to shape ({self.keypoint_coords.shape[0]},)"
@@ -937,7 +940,7 @@ class Contact:
                 self.key_points,
                 color=(1.0, 0.0, 0.0),
                 per_vertex_color=self.key_points_per_vertex_color,
-                radius=6e-3,
+                radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
             )
         self.canvas.scene(self.scene)
         self.window.show()
@@ -1133,9 +1136,8 @@ def main():
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
         for i in range(contact_model.trajectories_np.shape[0]):
-            contact_model.set_up_initial_positions_state_and_trajectory(
-                trajectory_ix=i
-            )
+            contact_model.trajectory_ix[None] = i
+            contact_model.set_up_initial_positions_state_and_trajectory()
             contact_model.reset_pid_controller()
             contact_model.visualisation_reset_3d_scene()
             if opts == 0 and i == 0:
@@ -1165,27 +1167,27 @@ def main():
             contact_model.total_loss.fill(0.0)
             contact_model.clear_grad()
             print("backward")
+            if False:
+                for ts in range(total_ts - 1, -1, -1):
+                    contact_model.reset_loss()
+                    contact_model.memory_from_cache(ts)
+                    contact_model.forward_pass_common_part(ts)
+                    contact_model.vitactip.extract_markers(
+                        SYSTEM_PARAMS.contact.num_sub_frames - 1
+                    )
+                    contact_model.interpolate_experimental_frame(ts)
+                    contact_model.compute_marker_loss_1(ts)
+                    contact_model.compute_marker_loss_2(ts)
+                    contact_model.visualisation_update_gui(ts)
+                    contact_model.compute_marker_loss_2.grad(ts)
+                    contact_model.compute_marker_loss_1.grad(ts)
+                    contact_model.vitactip.extract_markers.grad(
+                        SYSTEM_PARAMS.contact.num_sub_frames - 1
+                    )
+                    contact_model.backward_pass_common_part()
 
-            for ts in range(total_ts - 1, -1, -1):
-                contact_model.reset_loss()
-                contact_model.memory_from_cache(ts)
-                contact_model.forward_pass_common_part(ts)
-                contact_model.vitactip.extract_markers(
-                    SYSTEM_PARAMS.contact.num_sub_frames - 1
-                )
-                contact_model.interpolate_experimental_frame(ts)
-                contact_model.compute_marker_loss_1(ts)
-                contact_model.compute_marker_loss_2(ts)
-                contact_model.visualisation_update_gui(ts)
-                contact_model.compute_marker_loss_2.grad(ts)
-                contact_model.compute_marker_loss_1.grad(ts)
-                contact_model.vitactip.extract_markers.grad(
-                    SYSTEM_PARAMS.contact.num_sub_frames - 1
-                )
-                contact_model.backward_pass_common_part()
-
-            contact_model.update_params(ts)
-            contact_model.clear_grad()
+                contact_model.update_params(ts)
+                contact_model.clear_grad()
         print(
             f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done; loss: {contact_model.total_loss[None]}"
         )

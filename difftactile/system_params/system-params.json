@@ -26,10 +26,10 @@
     },
     "phantom": {
         "mass_eps": 1.000e-08,
-        "mpm_grid_cube_size": 1.500e-03,
+        "mpm_grid_cube_size": 2.500e-03,
         "bound": 3,
         "n_grid_x": 64,
-        "n_grid_y": 64,
+        "n_grid_y": 32,
         "n_grid_z": 32,
         "num_particles_cube_1d": 32,
         "gravity": [
@@ -80,11 +80,11 @@
         "slide_distance": 1.000e-02
     },
     "gmsh_mm": {
-        "characteristic_length_factor": 1.000e+01,
+        "characteristic_length_factor": 1.000e+00,
         "stem_wall_radius_outer": 2.000e+01,
         "stem_wall_radius_inner": 1.900e+01,
         "cap_height": 6.000e+00,
-        "stem_height": 3.000e+00,
+        "stem_height": 3.000e+01,
         "refine_mesh": 1,
         "shell_thickness": 1.000e+00,
         "rigid_stem_wall_height": 1.800e+01,
@@ -104,13 +104,17 @@
             0.0,
             0.0
         ],
-        "phantom_h": 2.000e-02,
-        "phantom_r": 2.000e-02,
+        "phantom_z_length": 2.200e-02,
         "distance_from_camera_lens_to_outer_shell_surface": 2.000e-02,
         "sensor_offset": 1.000e-02,
         "vein": {
-            "theta": 0
-        }
+            "theta": 0,
+            "cz_offset": 8.000e-03,
+            "r": 2.000e-03,
+            "h": 4.000e-02
+        },
+        "phantom_x_length": 8.000e-02,
+        "phantom_y_length": 4.000e-02
     },
     "meta": {
         "target_courant_number": 1.000e-01,
@@ -119,7 +123,10 @@
         "distance_scaling_factor": 1.000e+00
     },
     "visualisation": {
-        "visualise_exp_markers_during_bp": 1
+        "visualise_exp_markers_during_bp": 1,
+        "camera_offset": 1.000e+00,
+        "particle_size_normal": 3.000e-04,
+        "particle_size_keypoint": 6.000e-04
     },
     "optimisation_update_steps": {
         "vitactip": {

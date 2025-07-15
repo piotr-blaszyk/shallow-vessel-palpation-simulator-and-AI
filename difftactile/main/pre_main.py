@@ -88,15 +88,22 @@ def main():
     print(f'max_coord_y: {max_coord_y}')
     print(f'max_coord_z: {max_coord_z}')
 
-    phantom_closest_vertex = np.array([SYSTEM_PARAMS.phantom.mpm_grid_cube_size*16, SYSTEM_PARAMS.phantom.mpm_grid_cube_size*16, SYSTEM_PARAMS.phantom.mpm_grid_cube_size*3], dtype=float)
+    phantom_closest_vertex = np.array([
+        SYSTEM_PARAMS.phantom.mpm_grid_cube_size*int(SYSTEM_PARAMS.phantom.n_grid_x * 1/4), 
+        SYSTEM_PARAMS.phantom.mpm_grid_cube_size*int(SYSTEM_PARAMS.phantom.n_grid_y * 1/4), 
+        SYSTEM_PARAMS.phantom.mpm_grid_cube_size*3
+    ], dtype=float)
 
     dist_from_floor = phantom_closest_vertex[2] - min_coord
 
-    phantom_d = SYSTEM_PARAMS.geometry.phantom_r * 2
-    phantom_dimensions = np.array([phantom_d, phantom_d, SYSTEM_PARAMS.geometry.phantom_h], dtype=float)
-    phantom_volume = math.pi * SYSTEM_PARAMS.geometry.phantom_r ** 2 * SYSTEM_PARAMS.geometry.phantom_h
+    phantom_dimensions = np.array([
+        SYSTEM_PARAMS.geometry.phantom_x_length, 
+        SYSTEM_PARAMS.geometry.phantom_y_length, 
+        SYSTEM_PARAMS.geometry.phantom_z_length
+    ], dtype=float)
+    phantom_volume = phantom_dimensions[0] * phantom_dimensions[1] * phantom_dimensions[2]
 
-    contact_surface_area = math.pi * SYSTEM_PARAMS.geometry.phantom_r ** 2
+    contact_surface_area = math.pi * (SYSTEM_PARAMS.gmsh_mm.stem_wall_radius_outer / 1_000) ** 2
 
     phantom_furthest_vertex = phantom_closest_vertex + phantom_dimensions
 

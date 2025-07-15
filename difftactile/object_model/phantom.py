@@ -249,7 +249,7 @@ class Phantom:
     def set_state_from_outside(
         self, pos, ori, vel, state_dict
     ):
-        if tumour_present:
+        if state_dict['tumour_present']:
             self.titles.fill(-1)
             self.group_cardinality.fill(0)
             self.set_up_tumour_inclusion(state_dict)
@@ -259,10 +259,9 @@ class Phantom:
             self.group_cardinality[1] = 0
             self.titles.fill(0)
         print(
-            f"tumour_present: {tumour_present}, healthy: {self.group_cardinality[0]}, tumour: {self.group_cardinality[1]}"
+            f"tumour_present: {state_dict['tumour_present']}, healthy: {self.group_cardinality[0]}, tumour: {self.group_cardinality[1]}"
         )
         tumour_particles_absent = self.group_cardinality[1] == 0
-        tumour_present = not tumour_particles_absent
         self.set_pose_and_velocity(pos, ori, vel)
         self.initialise_point_cloud()
 
