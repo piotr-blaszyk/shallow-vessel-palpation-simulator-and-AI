@@ -26,12 +26,12 @@
     },
     "phantom": {
         "mass_eps": 1.000e-08,
-        "mpm_grid_cube_size": 2.500e-03,
+        "mpm_grid_cube_size": 4.000e-03,
         "bound": 3,
         "n_grid_x": 64,
         "n_grid_y": 32,
         "n_grid_z": 32,
-        "num_particles_cube_1d": 32,
+        "num_particles_cube_1d": 64,
         "gravity": [
             0.0,
             0.0,
@@ -92,7 +92,7 @@
         "dist_eps": 1.000e-01
     },
     "geometry": {
-        "gap": 2.000e-03,
+        "gap": 1.000e-02,
         "phantom_orientation": [
             0,
             0,
@@ -117,7 +117,7 @@
         "phantom_y_length": 4.000e-02
     },
     "meta": {
-        "target_courant_number": 1.000e-01,
+        "target_courant_number": 5.000e-02,
         "enable_tactile_map": 1,
         "enable_pid_controller": 1,
         "distance_scaling_factor": 1.000e+00
