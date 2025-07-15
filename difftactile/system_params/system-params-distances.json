@@ -5,7 +5,7 @@
         "fixed_layer_distance_from_bottom": 0.020
     },
     "phantom": {
-        "mpm_grid_cube_size": 0.004,
+        "mpm_grid_cube_size": 0.0025,
         "keypoint_search_xy_threshold": 0.010
     },
     "contact": {
@@ -15,7 +15,7 @@
     },
     "trajectory": {
         "press_depth": 0.006,
-        "slide_distance": 0.010
+        "slide_distance": 0.025
     },
     "gmsh_mm": {
         "characteristic_length_factor": 1.0,
@@ -34,11 +34,11 @@
         "phantom_x_length": 0.080,
         "phantom_y_length": 0.040,
         "distance_from_camera_lens_to_outer_shell_surface": 0.020,
-        "sensor_offset": 0.010,
+        "sensor_offset": 0.020,
         "vein": {
             "cz_offset": 0.008,
             "r": 0.002,
-            "h": 0.040
+            "h": 1.000
         }
     },
     "visualisation": {

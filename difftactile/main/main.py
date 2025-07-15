@@ -191,8 +191,8 @@ class Contact:
             3, dtype=ti.f32, shape=1, needs_grad=False
         )
         self.trajectory = ti.Vector.field(7, dtype=float, shape=4, needs_grad=False)
-        self.tumour_present = ti.field(dtype=int, shape=(), needs_grad=False)
-        self.tumour_present[None] = 0
+        self.tumour_present_ground_truth_label = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.tumour_present_ground_truth_label[None] = 0
         self.sim_keypoints_np = -np.ones((4,))
         self.sim_keypoints = ti.field(
             dtype=int, shape=(self.sim_keypoints_np.shape[0],), needs_grad=False
@@ -219,7 +219,7 @@ class Contact:
         x, y, z = self.vitactip_tip_pose[:3]
         quat = self.vitactip_tip_pose[3:]
         og_r = R.from_quat(quat)
-        offset_1 = R.from_euler(seq="xyz", angles=[20, 0, 0], degrees=True)
+        offset_1 = R.from_euler(seq="xyz", angles=[0, 20, 0], degrees=True)
         offset_2 = R.from_euler(seq="xyz", angles=[0, 0, -20], degrees=True)
         tilt_1 = og_r * offset_1
         tilt_2 = og_r * offset_2
@@ -227,12 +227,19 @@ class Contact:
         press_depth_1 = SYSTEM_PARAMS.geometry.gap
         press_depth_2 = SYSTEM_PARAMS.geometry.gap + SYSTEM_PARAMS.trajectory.press_depth
         slide_dist = SYSTEM_PARAMS.trajectory.slide_distance
+        self.trajectory_names = [
+            'vein, slide',
+            'no vein, press',
+            'no vein, slide',
+            'no vein, twist-y',
+            'no vein, twist-z',
+        ]
         self.trajectories_np = np.array([
             [
                 [x, y, z, *og_r.as_quat()],
                 [x, y, z - press_depth_1, *og_r.as_quat()],
                 [x, y, z - press_depth_2, *og_r.as_quat()],
-                [x - slide_dist, y, z - press_depth_2, *og_r.as_quat()],
+                [x + slide_dist, y, z - press_depth_2, *og_r.as_quat()],
             ],
             [
                 [x, y, z, *og_r.as_quat()],
@@ -244,7 +251,7 @@ class Contact:
                 [x, y, z, *og_r.as_quat()],
                 [x, y, z - press_depth_1, *og_r.as_quat()],
                 [x, y, z - press_depth_2, *og_r.as_quat()],
-                [x - slide_dist, y, z - press_depth_2, *og_r.as_quat()],
+                [x + slide_dist, y, z - press_depth_2, *og_r.as_quat()],
             ],
             [
                 [x, y, z, *og_r.as_quat()],
@@ -259,13 +266,12 @@ class Contact:
                 [x, y, z - press_depth_2, *tilt_2.as_quat()],
             ]
         ])
-        cx, cy, cz = self.phantom_centroid_pose[:3]
         self.state_dicts = [
             {
                 'tumour_present': True,
-                'cx': cx,
-                'cy': cy,
-                'cz': cz + SYSTEM_PARAMS.geometry.vein.cz_offset,
+                'cx': 0,
+                'cy': 0,
+                'cz': SYSTEM_PARAMS.geometry.vein.cz_offset,
                 'theta': SYSTEM_PARAMS.geometry.vein.theta,
                 'h': SYSTEM_PARAMS.geometry.vein.h,
                 'r': SYSTEM_PARAMS.geometry.vein.r
@@ -308,12 +314,13 @@ class Contact:
             }
         ]
         assert(self.trajectories_np.shape[0] == len(self.state_dicts))
+        # self.trajectories_np = np.expand_dims(self.trajectories_np[0], axis=0)
 
     def set_up_initial_positions_state_and_trajectory(self):
         trajectory_ix = self.trajectory_ix[None]
         ix = self.vitactip.get_keypoint_indices_numpy_point_a()
         camera_lens_to_sensor_tip = self.vitactip.node_coordinates[ix, 2]
-        self.tumour_present[None] = False
+        self.tumour_present_ground_truth_label[None] = 0
         self.phantom.set_state_from_outside(
             pos=self.phantom_centroid_pose[:3],
             ori=self.phantom_centroid_pose[3:],
@@ -662,7 +669,7 @@ class Contact:
 
     @ti.kernel
     def take_snapshot_2(self, opts: ti.i32):
-        self.ground_truth_labels[opts] = self.tumour_present[None]
+        self.ground_truth_labels[opts] = self.tumour_present_ground_truth_label[None]
 
     def save_marker_data_and_ground_truth_labels_to_file(self):
         predict_np = self.predict_markers_snapshots.to_numpy()
@@ -710,7 +717,7 @@ class Contact:
             pickle.dump(f2v, f)
 
     def visualisation_initialise(self):
-        self.num_keypoints = 10
+        self.num_keypoints = 7
         self.key_points = ti.Vector.field(
             3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False
         )
@@ -851,8 +858,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
-        self.camera.up(0, 0, 1)
+        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
+        self.camera.up(0, 1, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
         self.tactile_window = ti.ui.Window("tactile readout", (640, 480))
@@ -889,18 +896,6 @@ class Contact:
             print(
                 f"phantom contains {nan_count} / {phantom_coords.shape[0]} nan vertices at ts: {ts}"
             )
-        move_to_the_front_offset = np.array([-0.050, 0, 0], dtype=float)
-        z = self.min_coord
-        x0, y0, _ = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[:3]
-        x1, y1, _ = SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex
-        floor = np.array(
-            [
-                [x0, y1, z],
-                [x0, y0, z],
-                [x0, y0 + abs(y0 - y1), z],
-            ]
-        )
-        floor += move_to_the_front_offset
         vitactip_bottom = self.vitactip.get_keypoint_coordinates(
             0, self.keypoint_indices[0].reshape((1,))
         )
@@ -909,7 +904,7 @@ class Contact:
             f=0, keypoint_indices=self.vitactip.clock_arms_node_idxs.to_numpy()
         )
         self.keypoint_coords = np.vstack(
-            (vitactip_bottom, trajectory_keypoints, floor, vitactip_clock_arms)
+            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms)
         )
         self.visualisation_draw_tactile_readout()
         self.scene.set_camera(self.camera)
@@ -919,7 +914,7 @@ class Contact:
         self.scene.particles(
             self.healthy_tissue_points,
             color=(0.0, 0.0, 1.0),
-            radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
+            radius=SYSTEM_PARAMS.visualisation.particle_size_normal/2,
         )
         self.scene.particles(
             self.tumour_points,
@@ -1136,6 +1131,7 @@ def main():
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
         for i in range(contact_model.trajectories_np.shape[0]):
+            print(f'trajectory {i}: {contact_model.trajectory_names[i]}')
             contact_model.trajectory_ix[None] = i
             contact_model.set_up_initial_positions_state_and_trajectory()
             contact_model.reset_pid_controller()
