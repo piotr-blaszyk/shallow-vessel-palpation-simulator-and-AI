@@ -257,15 +257,16 @@ class Contact:
                 [x, y, z - press_depth_2, *tilt_2.as_quat()],
             ]
         ])
+        cx, cy, cz = self.phantom_centroid_pose[:3]
         self.state_dicts = [
             {
                 'tumour_present': True,
-                'cx': 0,
-                'cy': 0,
-                'cz': 0,
-                'theta': 0,
-                'h': 1,
-                'r': 1
+                'cx': cx,
+                'cy': cy,
+                'cz': cz + SYSTEM_PARAMS.geometry.vein.cz_offset,
+                'theta': SYSTEM_PARAMS.geometry.vein.theta,
+                'h': SYSTEM_PARAMS.geometry.vein.h,
+                'r': SYSTEM_PARAMS.geometry.vein.r
             },
             {
                 'tumour_present': False,

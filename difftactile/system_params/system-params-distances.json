@@ -31,7 +31,13 @@
         "gap": 0.002,
         "phantom_h": 0.020,
         "phantom_r": 0.020,
-        "distance_from_camera_lens_to_outer_shell_surface": 0.020
+        "distance_from_camera_lens_to_outer_shell_surface": 0.020,
+        "sensor_offset": 0.010,
+        "vein": {
+            "cz_offset": 0.008,
+            "r": 0.002,
+            "h": 0.040
+        }
     },
     "fisheye_model": {
         "shell_inner_r": 35.33333333333333,
