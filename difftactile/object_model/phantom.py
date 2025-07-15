@@ -247,12 +247,12 @@ class Phantom:
         self.cylinder_r = ti.field(dtype=float, shape=(), needs_grad=False)
 
     def set_state_from_outside(
-        self, pos, ori, vel, cylinder_tuple, stiffness_tuple, tumour_present
+        self, pos, ori, vel, state_dict
     ):
         if tumour_present:
             self.titles.fill(-1)
             self.group_cardinality.fill(0)
-            self.set_up_tumour_inclusion(cylinder_tuple)
+            self.set_up_tumour_inclusion(state_dict)
             self.partition_point_cloud()
         else:
             self.group_cardinality[0] = self.actual_total_num_particles
@@ -266,14 +266,13 @@ class Phantom:
         self.set_pose_and_velocity(pos, ori, vel)
         self.initialise_point_cloud()
 
-    def set_up_tumour_inclusion(self, cylinder_tuple):
-        cx, cy, cz, theta, h, r = cylinder_tuple
-        self.cylinder_cx[None] = cx
-        self.cylinder_cy[None] = cy
-        self.cylinder_cz[None] = cz
-        self.cylinder_theta[None] = np.deg2rad(theta)
-        self.cylinder_h[None] = h
-        self.cylinder_r[None] = r
+    def set_up_tumour_inclusion(self, state_dict):
+        self.cylinder_cx[None] = state_dict['cx']
+        self.cylinder_cy[None] = state_dict['cy']
+        self.cylinder_cz[None] = state_dict['cz']
+        self.cylinder_theta[None] = np.deg2rad(state_dict['theta'])
+        self.cylinder_h[None] = state_dict['h']
+        self.cylinder_r[None] = state_dict['r']
 
     @ti.kernel
     def partition_point_cloud(self):

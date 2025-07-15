@@ -22,7 +22,7 @@ class Contact:
         self.vitactip = ViTacTip()
         self.phantom = Phantom()
         self.set_up_initial_positions_and_trajectory_first_init_only()
-        self.set_up_trajectories()
+        self.set_up_trajectories_and_phantom_states()
         self.set_up_keypoints()
         self.set_up_collision_detection()
         self.set_up_pid()
@@ -213,7 +213,7 @@ class Contact:
             dtype=int,
         )
     
-    def set_up_trajectories(self):
+    def set_up_trajectories_and_phantom_states(self):
         x, y, z = self.vitactip_tip_pose[:3]
         quat = self.vitactip_tip_pose[3:]
         og_r = R.from_quat(quat)
@@ -226,6 +226,12 @@ class Contact:
         press_depth_2 = SYSTEM_PARAMS.geometry.gap + SYSTEM_PARAMS.trajectory.press_depth
         slide_dist = SYSTEM_PARAMS.trajectory.slide_distance
         self.trajectories_np = np.array([
+            [
+                [x, y, z, *og_r.as_quat()],
+                [x, y, z - press_depth_1, *og_r.as_quat()],
+                [x, y, z - press_depth_2, *og_r.as_quat()],
+                [x - slide_dist, y, z - press_depth_2, *og_r.as_quat()],
+            ],
             [
                 [x, y, z, *og_r.as_quat()],
                 [x, y, z - press_depth_1, *og_r.as_quat()],
@@ -251,8 +257,56 @@ class Contact:
                 [x, y, z - press_depth_2, *tilt_2.as_quat()],
             ]
         ])
+        self.state_dicts = [
+            {
+                'tumour_present': True,
+                'cx': 0,
+                'cy': 0,
+                'cz': 0,
+                'theta': 0,
+                'h': 1,
+                'r': 1
+            },
+            {
+                'tumour_present': False,
+                'cx': None,
+                'cy': None,
+                'cz': None,
+                'theta': None,
+                'h': None,
+                'r': None
+            },
+            {
+                'tumour_present': False,
+                'cx': None,
+                'cy': None,
+                'cz': None,
+                'theta': None,
+                'h': None,
+                'r': None
+            },
+            {
+                'tumour_present': False,
+                'cx': None,
+                'cy': None,
+                'cz': None,
+                'theta': None,
+                'h': None,
+                'r': None
+            },
+            {
+                'tumour_present': False,
+                'cx': None,
+                'cy': None,
+                'cz': None,
+                'theta': None,
+                'h': None,
+                'r': None
+            }
+        ]
+        assert(self.trajectories_np.shape[0] == self.state_dicts.shape[0])
 
-    def set_up_initial_positions_and_trajectory(self, trajectory_ix):
+    def set_up_initial_positions_state_and_trajectory(self, trajectory_ix):
         ix = self.vitactip.get_keypoint_indices_numpy_point_a()
         camera_lens_to_sensor_tip = self.vitactip.node_coordinates[ix, 2]
         self.tumour_present[None] = False
@@ -260,17 +314,14 @@ class Contact:
             pos=self.phantom_centroid_pose[:3],
             ori=self.phantom_centroid_pose[3:],
             vel=[0.0, 0.0, 0.0],
-            cylinder_tuple=None,
-            stiffness_tuple=None,
-            tumour_present=False,
+            state_dict=self.state_dicts[trajectory_ix],
         )
         
         self.trajectory.from_numpy(self.trajectories_np[trajectory_ix])
-        assert self.trajectory.shape[0] == self.trajectory_npy.shape[0], (
-            f"Set self.trajectory length to {self.trajectory_npy.shape[0]} match trajectory_npy"
+        assert self.trajectory.shape[0] == self.trajectories_np[trajectory_ix].shape[0], (
+            f"Set self.trajectory length to {self.trajectories_np[trajectory_ix].shape[0]} match trajectories_np"
         )
-        self.trajectory.from_numpy(self.trajectory_npy)
-        sensor_dome_tip_initial_pose = self.trajectory_npy[0].tolist()
+        sensor_dome_tip_initial_pose = self.trajectory.to_numpy()[0].tolist()
         sensor_dome_tip_initial_pose[2] += camera_lens_to_sensor_tip
         sensor_dome_tip_initial_pose = np.array(sensor_dome_tip_initial_pose)
         self.vitactip.set_up_pose(sensor_dome_tip_initial_pose)
@@ -1081,7 +1132,7 @@ def main():
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
         for i in range(contact_model.trajectories_np.shape[0]):
-            contact_model.set_up_initial_positions_and_trajectory(
+            contact_model.set_up_initial_positions_state_and_trajectory(
                 trajectory_ix=i
             )
             contact_model.reset_pid_controller()
@@ -1091,6 +1142,7 @@ def main():
             contact_model.set_dt()
             contact_model.fp()
             print("forward")
+            ts = 0
             while contact_model.last_target_reached[None] != 1:
                 contact_model.pid_controller_1()
                 contact_model.pid_controller_2(ts)
@@ -1105,13 +1157,15 @@ def main():
                 )
                 contact_model.visualisation_update_gui(ts)
                 contact_model.maybe_save_tactile_sensor_mesh_to_pickle(ts)
+                ts += 1
             
+            total_ts = ts
             contact_model.bp()
             contact_model.total_loss.fill(0.0)
             contact_model.clear_grad()
             print("backward")
 
-            for ts in range(SYSTEM_PARAMS.contact.num_frames - 1, -1, -1):
+            for ts in range(total_ts - 1, -1, -1):
                 contact_model.reset_loss()
                 contact_model.memory_from_cache(ts)
                 contact_model.forward_pass_common_part(ts)
@@ -1128,11 +1182,9 @@ def main():
                     SYSTEM_PARAMS.contact.num_sub_frames - 1
                 )
                 contact_model.backward_pass_common_part()
-                passes = SYSTEM_PARAMS.contact.num_frames - 1 - ts + 1
-                if passes % (SYSTEM_PARAMS.contact.num_frames // 3) == 0:
-                    print(f'passes: {passes}')
-                    contact_model.update_params(ts)
-                    contact_model.clear_grad()
+
+            contact_model.update_params(ts)
+            contact_model.clear_grad()
         print(
             f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done; loss: {contact_model.total_loss[None]}"
         )
