@@ -10,10 +10,8 @@ from difftactile.main.constants import *
 
 
 class MarkerTracker:
-    def __init__(self, video_path, output_path):
+    def __init__(self):
         self.fisheye_model = FisheyeModel()
-        self.video_path = video_path
-        self.output_path = output_path
         self.frame_markers = []
         self.frame_mappings = []
         self.base_frame_mappings = []
@@ -25,7 +23,9 @@ class MarkerTracker:
         )
 
     def extract_frames(self):
-        cap = cv2.VideoCapture(str(self.video_path))
+        cap = cv2.VideoCapture(str(
+            SYSTEM_PARAMS.files.traj_in.format(SYSTEM_PARAMS.files.traj_id)
+            ))
         fps = cap.get(cv2.CAP_PROP_FPS)
         frame_interval = int(fps * SYSTEM_PARAMS.marker_tracker.seconds_per_frame)
         frame_count = 0
@@ -145,7 +145,9 @@ class MarkerTracker:
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
         first_frame = self.frames[0]
         out = cv2.VideoWriter(
-            str(self.output_path),
+            str(
+                SYSTEM_PARAMS.files.traj_out.format(SYSTEM_PARAMS.files.traj_id)
+            ),
             fourcc,
             2.0,
             (first_frame.shape[1], first_frame.shape[0]),
@@ -184,7 +186,9 @@ class MarkerTracker:
                     out.write(frame)
             elif mode == "show-base":
                 if base_from_file:
-                    with open(SYSTEM_PARAMS.files.markers_paired, "rb") as f:
+                    with open(
+                        SYSTEM_PARAMS.files.traj_markers.format(SYSTEM_PARAMS.files.traj_id),
+                        "rb") as f:
                         markers_array = pickle.load(f)
                     base_frame = self.frames[0].copy()
                     base_frame = draw_markers(base_frame, markers_array[0], (255, 0, 0))
@@ -239,7 +243,9 @@ class MarkerTracker:
                         array_idx = sorted(valid_base_indices).index(base_idx)
                         markers_array[frame_idx][array_idx] = current_frame_markers[current_idx]
         
-        with open(SYSTEM_PARAMS.files.markers_paired, "wb") as f:
+        with open(
+            SYSTEM_PARAMS.files.traj_markers.format(SYSTEM_PARAMS.files.traj_id), 
+            "wb") as f:
             pickle.dump(markers_array, f)
 
     def process_video(self):
@@ -251,9 +257,10 @@ class MarkerTracker:
 
 
 class VideoPlayer:
-    def __init__(self, video_path):
-        self.video_path = video_path
-        self.cap = cv2.VideoCapture(str(video_path))
+    def __init__(self):
+        self.cap = cv2.VideoCapture(str(
+            SYSTEM_PARAMS.files.traj_out.format(SYSTEM_PARAMS.files.traj_id)
+        ))
         self.current_frame = 0
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.root = tk.Tk()
@@ -299,16 +306,14 @@ class VideoPlayer:
         self.cap.release()
 
 
-def process_and_view_video(input_path, output_path):
-    tracker = MarkerTracker(input_path, output_path)
+def process_and_view_video():
+    tracker = MarkerTracker()
     tracker.process_video()
-    player = VideoPlayer(tracker.output_path)
+    player = VideoPlayer()
     player.run()
 
 
 def main():
-    process_and_view_video(
-        SYSTEM_PARAMS.files.system_id_video, SYSTEM_PARAMS.files.system_id_output_video
-    )
-    player = VideoPlayer(SYSTEM_PARAMS.files.system_id_output_video)
+    process_and_view_video()
+    player = VideoPlayer()
     player.run()

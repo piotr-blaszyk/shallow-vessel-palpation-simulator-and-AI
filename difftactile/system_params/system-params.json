@@ -233,6 +233,11 @@
         "root_dir": "/home/psb120/Documents/DiffTactile/",
         "initial_vertex_positions_undeformed": "difftactile/output/initial_vertex_positions_undeformed.pkl",
         "domain_adaptation_results": "difftactile/output/domain_adaptation_results.json",
-        "is_fixed_layer": "difftactile/output/is_fixed_layer.pkl"
+        "is_fixed_layer": "difftactile/output/is_fixed_layer.pkl",
+
+        "traj_in": "difftactile/manual_or_experimental_data/domain-adaptation-vascular-videos/mkv/traj_{}_trimmed.mkv",
+        "traj_out": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_{}_out.mkv",
+        "traj_markers": "difftactile/output/marker_tracker/domain-adaptation-vascular-markers/traj_{}_out.pkl",
+        "traj_id": 3
     }
 }
