@@ -39,6 +39,25 @@ class Contact:
     def bp(self):
         self.fp_bp[None] = 1
 
+    def load_system_identification_data(self):
+        self.exp_markers = []
+        for i in range(4):
+            with open(SYSTEM_PARAMS.files.traj_markers.format(i), "rb") as f:
+                markers_array = pickle.load(f)
+            self.exp_markers.append(markers_array)
+
+    def set_exp_traj(self, i):
+        pass
+
+    def compute_mapping_between_experimental_and_sim_markers(self):
+        exp_markers = self.exp_markers[self.trajectory_ix[None]]
+        sim_markers = self.vitactip.undeformed_markers.to_numpy()
+        cost_matrix = cdist(sim_markers, exp_markers, metric="sqeuclidean")
+        ixs_1, ixs_2 = linear_sum_assignment(cost_matrix)
+        self.sim_to_exp_markers_np = np.full(len(sim_markers), -1, dtype=np.int32)
+        for ix_1, ix_2 in zip(ixs_1, ixs_2):
+            self.sim_to_exp_markers_np[ix_1] = ix_2
+
     @ti.kernel
     def interpolate_experimental_frame(self, ts: ti.i32):
         start_ix = -1
@@ -47,12 +66,12 @@ class Contact:
                 start_ix = i
         if start_ix != -1:
             end_ix = start_ix + 1
-            if self.exp_keypoints[start_ix] == -1:
+            if self.exp_keypoints_np[start_ix] == -1:
                 start_ix = start_ix - 1
-            elif self.exp_keypoints[start_ix + 1] == -1:
+            elif self.exp_keypoints_np[start_ix + 1] == -1:
                 end_ix = start_ix + 1
-            exp_keypoint = self.exp_keypoints[start_ix] + (
-                self.exp_keypoints[end_ix] - self.exp_keypoints[start_ix]
+            exp_keypoint = self.exp_keypoints_np[start_ix] + (
+                self.exp_keypoints_np[end_ix] - self.exp_keypoints_np[start_ix]
             ) * (ts - self.sim_keypoints[start_ix]) / (
                 self.sim_keypoints[end_ix] - self.sim_keypoints[start_ix]
             )
@@ -69,41 +88,9 @@ class Contact:
                         ][j]
                     )
 
-    def load_system_identification_data(self):
-        with open(SYSTEM_PARAMS.files.markers_paired, "rb") as f:
-            markers_array = pickle.load(f)
-        num_frames, num_markers, _ = markers_array.shape
-        self.marker_positions_exp = ti.Vector.field(
-            2, dtype=ti.f32, shape=(num_frames, num_markers), needs_grad=False
-        )
-        self.marker_positions_exp.from_numpy(markers_array)
-        self.marker_position_exp = ti.Vector.field(
-            2, dtype=ti.f32, shape=(num_markers,), needs_grad=False
-        )
-
-    def compute_mapping_between_experimental_and_sim_markers(self):
-        exp_markers = self.marker_positions_exp.to_numpy()[0]
-        sim_markers = self.vitactip.undeformed_markers.to_numpy()
-        cost_matrix = cdist(sim_markers, exp_markers, metric="sqeuclidean")
-        ixs_1, ixs_2 = linear_sum_assignment(cost_matrix)
-        self.sim_to_exp_markers = ti.field(
-            dtype=ti.i32, shape=(len(sim_markers),), needs_grad=False
-        )
-        mapping = np.full(len(sim_markers), -1, dtype=np.int32)
-        for ix_1, ix_2 in zip(ixs_1, ixs_2):
-            mapping[ix_1] = ix_2
-        self.sim_to_exp_markers.from_numpy(mapping)
-
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
         self.total_loss = ti.field(float, (), needs_grad=False)
-        self.target_marker_positions = ti.Vector.field(
-            2, dtype=ti.f32, shape=(self.vitactip.num_markers,), needs_grad=False
-        )
-        target_marker_positions_npy = np.ones(
-            shape=(self.vitactip.num_markers, 2), dtype=float
-        )
-        self.target_marker_positions.from_numpy(target_marker_positions_npy)
         self.squared_error_sum = ti.field(dtype=float, shape=(), needs_grad=True)
 
     def set_up_collision_detection(self):
@@ -193,18 +180,17 @@ class Contact:
         self.trajectory = ti.Vector.field(7, dtype=float, shape=4, needs_grad=False)
         self.tumour_present_ground_truth_label = ti.field(dtype=int, shape=(), needs_grad=False)
         self.tumour_present_ground_truth_label[None] = 0
-        self.sim_keypoints_np = -np.ones((4,))
+        self.sim_keypoints_np = -np.ones((5,))
         self.sim_keypoints = ti.field(
             dtype=int, shape=(self.sim_keypoints_np.shape[0],), needs_grad=False
         )
         self.sim_keypoints.from_numpy(self.sim_keypoints_np)
-        self.exp_keypoints_np = np.array(
-            [0, 36, 74, 125, -1, 164, 199, 243, -1, 344, 378, 421], dtype=np.int32
-        )
-        self.exp_keypoints = ti.field(
-            dtype=int, shape=(self.exp_keypoints_np.shape[0],), needs_grad=False
-        )
-        self.exp_keypoints.from_numpy(self.exp_keypoints_np)
+        self.exp_keypoints_np = [
+            np.array([-1, 0, 47, 93]),
+            np.array([-1, 0, 23, 230]),
+            np.array([-1, 0, 30, 95]),
+            np.array([-1, 0, 39, 133, 173]),
+        ]
 
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate(
@@ -219,13 +205,15 @@ class Contact:
         x, y, z = self.vitactip_tip_pose[:3]
         quat = self.vitactip_tip_pose[3:]
         og_r = R.from_quat(quat)
-        offset_1 = R.from_euler(seq="xyz", angles=[0, 20, 0], degrees=True)
-        offset_2 = R.from_euler(seq="xyz", angles=[0, 0, -20], degrees=True)
-        tilt_1 = og_r * offset_1
-        tilt_2 = og_r * offset_2
-        tilt_1.as_quat()
-        press_depth_1 = SYSTEM_PARAMS.geometry.gap
-        press_depth_2 = SYSTEM_PARAMS.geometry.gap + SYSTEM_PARAMS.trajectory.press_depth
+        twist_1_offset = R.from_euler(seq="xyz", angles=[0, 30, 0], degrees=True)
+        twist_2_offset = R.from_euler(seq="xyz", angles=[0, 0, -45], degrees=True)
+        twist_1 = og_r * twist_1_offset
+        twist_2 = og_r * twist_2_offset
+        press_depth_surface = SYSTEM_PARAMS.geometry.gap
+        press_depth_0 = press_depth_surface + SYSTEM_PARAMS.trajectory.press_depth_0
+        press_depth_1 = press_depth_surface + SYSTEM_PARAMS.trajectory.press_depth_1
+        press_depth_2 = press_depth_surface + SYSTEM_PARAMS.trajectory.press_depth_2
+        press_depth_3 = press_depth_surface + SYSTEM_PARAMS.trajectory.press_depth_3
         slide_dist = SYSTEM_PARAMS.trajectory.slide_distance
         self.trajectory_names = [
             'vein, slide',
@@ -237,36 +225,46 @@ class Contact:
         self.trajectories_np = np.array([
             [
                 [x, y, z, *og_r.as_quat()],
-                [x, y, z - press_depth_1, *og_r.as_quat()],
-                [x, y, z - press_depth_2, *og_r.as_quat()],
-                [x + slide_dist, y, z - press_depth_2, *og_r.as_quat()],
+                [x, y, z - press_depth_surface, *og_r.as_quat()],
+
+                [x, y, z - press_depth_0, *og_r.as_quat()],
+
+                [x, y, z - press_depth_surface, *og_r.as_quat()],
             ],
             [
                 [x, y, z, *og_r.as_quat()],
+                [x, y, z - press_depth_surface, *og_r.as_quat()],
+
                 [x, y, z - press_depth_1, *og_r.as_quat()],
-                [x, y, z - press_depth_2, *og_r.as_quat()],
-                [x, y, z - press_depth_2, *og_r.as_quat()],
+                [x + slide_dist, y, z - press_depth_1, *og_r.as_quat()],
             ],
             [
                 [x, y, z, *og_r.as_quat()],
-                [x, y, z - press_depth_1, *og_r.as_quat()],
+                [x, y, z - press_depth_surface, *og_r.as_quat()],
+
                 [x, y, z - press_depth_2, *og_r.as_quat()],
-                [x + slide_dist, y, z - press_depth_2, *og_r.as_quat()],
+                [x, y, z - press_depth_2, *twist_1.as_quat()],
             ],
             [
                 [x, y, z, *og_r.as_quat()],
-                [x, y, z - press_depth_1, *og_r.as_quat()],
-                [x, y, z - press_depth_2, *og_r.as_quat()],
-                [x, y, z - press_depth_2, *tilt_1.as_quat()],
-            ],
-            [
-                [x, y, z, *og_r.as_quat()],
-                [x, y, z - press_depth_1, *og_r.as_quat()],
-                [x, y, z - press_depth_2, *og_r.as_quat()],
-                [x, y, z - press_depth_2, *tilt_2.as_quat()],
+                [x, y, z - press_depth_surface, *og_r.as_quat()],
+
+                [x, y, z - press_depth_3, *og_r.as_quat()],
+                [x, y, z - press_depth_3, *twist_2.as_quat()],
+
+                [x, y, z - press_depth_surface, *twist_2.as_quat()],
             ]
         ])
         self.state_dicts = [
+            {
+                'tumour_present': False,
+                'cx': None,
+                'cy': None,
+                'cz': None,
+                'theta': None,
+                'h': None,
+                'r': None
+            },
             {
                 'tumour_present': True,
                 'cx': 0,
@@ -275,24 +273,6 @@ class Contact:
                 'theta': SYSTEM_PARAMS.geometry.vein.theta,
                 'h': SYSTEM_PARAMS.geometry.vein.h,
                 'r': SYSTEM_PARAMS.geometry.vein.r
-            },
-            {
-                'tumour_present': False,
-                'cx': None,
-                'cy': None,
-                'cz': None,
-                'theta': None,
-                'h': None,
-                'r': None
-            },
-            {
-                'tumour_present': False,
-                'cx': None,
-                'cy': None,
-                'cz': None,
-                'theta': None,
-                'h': None,
-                'r': None
             },
             {
                 'tumour_present': False,
@@ -421,7 +401,7 @@ class Contact:
     @ti.kernel
     def compute_marker_loss_1(self, f: ti.i32):
         for i in range(self.vitactip.num_markers):
-            exp_ix = self.sim_to_exp_markers[i]
+            exp_ix = self.sim_to_exp_markers_np[i]
             if exp_ix != -1:
                 sim_marker = self.vitactip.deformed_markers[i]
                 exp_marker = self.marker_position_exp[exp_ix]
@@ -797,7 +777,7 @@ class Contact:
             self.arrow_line_vertices[i * 2] = undeformed
             self.arrow_line_vertices[i * 2 + 1] = undeformed + offset
 
-            exp_ix = self.sim_to_exp_markers[i]
+            exp_ix = self.sim_to_exp_markers_np[i]
             if exp_ix != -1:
                 self.sim_markers_deformed_filtered[exp_ix] = deformed
 
@@ -1138,6 +1118,9 @@ def main():
             contact_model.visualisation_reset_3d_scene()
             if opts == 0 and i == 0:
                 contact_model.get_keypoint_indices_and_validate()
+            contact_model.vitactip.extract_markers(0)
+            contact_model.set_exp_traj(i)
+            contact_model.compute_mapping_between_experimental_and_sim_markers()
             contact_model.set_dt()
             contact_model.fp()
             print("forward")
