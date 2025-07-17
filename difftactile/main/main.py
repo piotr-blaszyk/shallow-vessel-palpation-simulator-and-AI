@@ -18,7 +18,9 @@ RUN_ON_LAB_MACHINE = True
 class Contact:
     def __init__(self):
         self.set_up_system_params()
-        self.load_system_identification_data()
+        self.load_system_identification_data_1()
+        self.load_system_identification_data_2()
+        self.load_system_identification_data_3()
         self.vitactip = ViTacTip()
         self.phantom = Phantom()
         self.set_up_initial_positions_and_trajectory_first_init_only()
@@ -39,18 +41,37 @@ class Contact:
     def bp(self):
         self.fp_bp[None] = 1
 
-    def load_system_identification_data(self):
-        self.exp_markers = []
+    def load_system_identification_data_1(self):
+        self.exp_marker_shapes = np.zeros(shape=(4, 3), dtype=int)
         for i in range(4):
             with open(SYSTEM_PARAMS.files.traj_markers.format(i), "rb") as f:
                 markers_array = pickle.load(f)
-            self.exp_markers.append(markers_array)
+            self.exp_marker_shapes[i] = markers_array.shape
+        
+        max_0, max_1, _ = self.exp_marker_shapes.max(axis=0)
+        self.exp_markers_np = -np.ones(shape=(4, max_0, max_1, 2), dtype=float)
 
-    def set_exp_traj(self, i):
-        pass
+        for i in range(4):
+            with open(SYSTEM_PARAMS.files.traj_markers.format(i), "rb") as f:
+                markers_array = pickle.load(f)
+            x, y, z = markers_array.shape
+            self.exp_markers_np[i, :x, :y, :z] = markers_array
+
+        self.exp_markers = ti.Vector.field(2, dtype=float, shape=(4, max_0, max_1), needs_grad=False)
+        self.marker_positions_exp = ti.Vector.field(2, dtype=float, shape=(max_0, max_1), needs_grad=False)
+        self.marker_position_exp = ti.Vector.field(2, dtype=float, shape=(max_1,), needs_grad=False)
+    
+    @ti.kernel
+    def load_system_identification_data_2(self):
+        self.exp_markers.fill(-1)
+        self.marker_positions_exp.fill(-1)
+        self.marker_position_exp.fill(-1)
+    
+    def load_system_identification_data_3(self):
+        self.exp_markers.from_numpy(self.exp_markers_np)
 
     def compute_mapping_between_experimental_and_sim_markers(self):
-        exp_markers = self.exp_markers[self.trajectory_ix[None]]
+        exp_markers = self.exp_markers.to_numpy()[self.trajectory_ix[None]]
         sim_markers = self.vitactip.undeformed_markers.to_numpy()
         cost_matrix = cdist(sim_markers, exp_markers, metric="sqeuclidean")
         ixs_1, ixs_2 = linear_sum_assignment(cost_matrix)
@@ -65,28 +86,28 @@ class Contact:
             if ts >= self.sim_keypoints[i] and ts < self.sim_keypoints[i + 1]:
                 start_ix = i
         if start_ix != -1:
+            exp_keypoints_cur = self.exp_keypoints_np[self.trajectory_ix[None]]
             end_ix = start_ix + 1
-            if self.exp_keypoints_np[start_ix] == -1:
+            if exp_keypoints_cur[start_ix] == -1:
                 start_ix = start_ix - 1
-            elif self.exp_keypoints_np[start_ix + 1] == -1:
+            elif exp_keypoints_cur[start_ix + 1] == -1:
                 end_ix = start_ix + 1
-            exp_keypoint = self.exp_keypoints_np[start_ix] + (
-                self.exp_keypoints_np[end_ix] - self.exp_keypoints_np[start_ix]
+            exp_keypoint = exp_keypoints_cur[start_ix] + (
+                exp_keypoints_cur[end_ix] - exp_keypoints_cur[start_ix]
             ) * (ts - self.sim_keypoints[start_ix]) / (
                 self.sim_keypoints[end_ix] - self.sim_keypoints[start_ix]
             )
+            exp_markers_cur = self.exp_markers[self.trajectory_ix[None]]
             for i in range(self.marker_position_exp.shape[0]):
                 for j in range(2):
-                    self.marker_position_exp[i][j] = self.marker_positions_exp[
-                        ti.floor(exp_keypoint, dtype=ti.i32), i
-                    ][j] + (exp_keypoint - ti.floor(exp_keypoint)) * (
-                        self.marker_positions_exp[
-                            ti.ceil(exp_keypoint, dtype=ti.i32), i
-                        ][j]
-                        - self.marker_positions_exp[
-                            ti.floor(exp_keypoint, dtype=ti.i32), i
-                        ][j]
-                    )
+                    self.marker_position_exp[i][j] = (
+                        exp_markers_cur[int(np.floor(exp_keypoint)), i, j] 
+                        + (exp_keypoint - int(np.floor(exp_keypoint))) 
+                        * (
+                            exp_markers_cur[int(np.ceil(exp_keypoint)), i, j]
+                            - exp_markers_cur[int(np.floor(exp_keypoint)), i, j]
+                        )
+                        )
 
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
@@ -294,7 +315,6 @@ class Contact:
             }
         ]
         assert(self.trajectories_np.shape[0] == len(self.state_dicts))
-        # self.trajectories_np = np.expand_dims(self.trajectories_np[0], axis=0)
 
     def set_up_initial_positions_state_and_trajectory(self):
         trajectory_ix = self.trajectory_ix[None]
@@ -320,6 +340,12 @@ class Contact:
             sensor_dome_tip_initial_pose[:3]
         )
         self.phantom_initial_position[0] = ti.Vector(self.phantom_centroid_pose[:3])
+    
+    @ti.kernel
+    def reset_exp_sim_traj(self):
+        self.marker_positions_exp.fill(-1)
+        self.marker_position_exp.fill(-1)
+        self.sim_keypoints.fill(-1)
 
     def reset_pid_controller(self):
         self.pos_error_sum.fill(0)
@@ -1116,10 +1142,10 @@ def main():
             contact_model.set_up_initial_positions_state_and_trajectory()
             contact_model.reset_pid_controller()
             contact_model.visualisation_reset_3d_scene()
+            contact_model.reset_exp_sim_traj()
             if opts == 0 and i == 0:
                 contact_model.get_keypoint_indices_and_validate()
             contact_model.vitactip.extract_markers(0)
-            contact_model.set_exp_traj(i)
             contact_model.compute_mapping_between_experimental_and_sim_markers()
             contact_model.set_dt()
             contact_model.fp()
@@ -1146,27 +1172,27 @@ def main():
             contact_model.total_loss.fill(0.0)
             contact_model.clear_grad()
             print("backward")
-            if False:
-                for ts in range(total_ts - 1, -1, -1):
-                    contact_model.reset_loss()
-                    contact_model.memory_from_cache(ts)
-                    contact_model.forward_pass_common_part(ts)
-                    contact_model.vitactip.extract_markers(
-                        SYSTEM_PARAMS.contact.num_sub_frames - 1
-                    )
-                    contact_model.interpolate_experimental_frame(ts)
-                    contact_model.compute_marker_loss_1(ts)
-                    contact_model.compute_marker_loss_2(ts)
-                    contact_model.visualisation_update_gui(ts)
-                    contact_model.compute_marker_loss_2.grad(ts)
-                    contact_model.compute_marker_loss_1.grad(ts)
-                    contact_model.vitactip.extract_markers.grad(
-                        SYSTEM_PARAMS.contact.num_sub_frames - 1
-                    )
-                    contact_model.backward_pass_common_part()
+            for ts in range(total_ts - 1, -1, -1):
+                contact_model.reset_loss()
+                contact_model.memory_from_cache(ts)
+                contact_model.forward_pass_common_part(ts)
+                contact_model.vitactip.extract_markers(
+                    SYSTEM_PARAMS.contact.num_sub_frames - 1
+                )
+                contact_model.interpolate_experimental_frame(ts)
+                contact_model.compute_marker_loss_1(ts)
+                contact_model.compute_marker_loss_2(ts)
+                contact_model.visualisation_update_gui(ts)
+                contact_model.compute_marker_loss_2.grad(ts)
+                contact_model.compute_marker_loss_1.grad(ts)
+                contact_model.vitactip.extract_markers.grad(
+                    SYSTEM_PARAMS.contact.num_sub_frames - 1
+                )
+                contact_model.backward_pass_common_part()
 
+            if False:
                 contact_model.update_params(ts)
-                contact_model.clear_grad()
+            contact_model.clear_grad()
         print(
             f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done; loss: {contact_model.total_loss[None]}"
         )
