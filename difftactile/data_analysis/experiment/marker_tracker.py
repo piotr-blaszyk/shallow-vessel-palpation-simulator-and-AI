@@ -167,8 +167,16 @@ class MarkerTracker:
                         end_point = tuple(map(int, end_markers[i]))
                         cv2.arrowedLine(frame, start_point, end_point, (0, 0, 255), 2)
             return frame
-        for frame_idx in range(len(self.frames)):
+        total_frames = len(self.frames)
+        for frame_idx in range(total_frames):
             frame = self.frames[frame_idx].copy()
+            text = f"frame: {frame_idx}/{total_frames}"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.8
+            font_color = (255, 255, 255)
+            thickness = 2
+            margin = 10
+            cv2.putText(frame, text, (margin, 30), font, font_scale, font_color, thickness, cv2.LINE_AA)
             if mode == "show-adjacent":
                 frame = draw_markers(frame, self.frame_markers[frame_idx], (0, 255, 0))
                 if frame_idx > 0:

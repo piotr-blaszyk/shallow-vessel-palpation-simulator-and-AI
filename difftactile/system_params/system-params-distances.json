@@ -14,8 +14,11 @@
         "tangential_velocity_detection_threshold": 1e-6
     },
     "trajectory": {
-        "press_depth": 0.006,
-        "slide_distance": 0.025
+        "press_depth_0": 0.010,
+        "press_depth_1": 0.004,
+        "press_depth_2": 0.006,
+        "press_depth_3": 0.008,
+        "slide_distance": 0.050
     },
     "gmsh_mm": {
         "characteristic_length_factor": 1.0,
