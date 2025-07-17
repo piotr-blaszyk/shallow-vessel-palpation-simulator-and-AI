@@ -1,9 +1,6 @@
 .DS_Store
 __pycache__/
 difftactile.egg-info
-# lr_box_open_state_True_tactile_True
-# lr_box_open_state_False_tactile_True
-# lr_object_repose_state_False_tactile_False_1
 lr_*/
 *.txt
 *.mkv

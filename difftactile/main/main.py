@@ -858,8 +858,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
-        self.camera.up(0, 1, 0)
+        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
         self.tactile_window = ti.ui.Window("tactile readout", (640, 480))
@@ -935,7 +935,7 @@ class Contact:
                 self.key_points,
                 color=(1.0, 0.0, 0.0),
                 per_vertex_color=self.key_points_per_vertex_color,
-                radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
+                radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint*2,
             )
         self.canvas.scene(self.scene)
         self.window.show()
