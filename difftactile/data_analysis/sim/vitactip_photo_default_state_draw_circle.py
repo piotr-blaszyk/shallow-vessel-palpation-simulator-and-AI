@@ -11,8 +11,8 @@ if img is None:
     raise ValueError(f"Failed to load image from {image_path}")
 
 # Circle parameters
-center = (359, 266)
-radius = 189
+center = (1035, 580)
+radius = 370
 color = (0, 255, 0)  # Green color in BGR
 thickness = 2
 

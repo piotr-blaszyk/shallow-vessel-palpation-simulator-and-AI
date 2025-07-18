@@ -255,6 +255,7 @@ class Contact:
         self.exp_keypoints = ti.Vector.field(
             5, dtype=int, shape=(self.exp_keypoints_np.shape[0],), needs_grad=False
         )
+        self.exp_keypoints.from_numpy(self.exp_keypoints_np)
 
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate(
@@ -857,7 +858,7 @@ class Contact:
         for i in range(self.marker_position_exp.shape[0]):
             point = self.marker_position_exp[i]
             if point[0] > 0 and point[1] > 0:
-                point[1] = self.window_size[None][1] - point[1]
+                # point[1] = self.window_size[None][1] - point[1]
                 self.exp_marker_points[i] = point / self.window_size[None]
             else:
                 self.exp_marker_points[i] =  ti.Vector([-1.0, -1.0], dt=float)
