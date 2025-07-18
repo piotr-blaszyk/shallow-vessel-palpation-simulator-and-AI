@@ -31,7 +31,7 @@
         "n_grid_x": 64,
         "n_grid_y": 32,
         "n_grid_z": 32,
-        "num_particles_cube_1d": 64,
+        "num_particles_cube_1d": 54,
         "gravity": [
             0.0,
             0.0,
@@ -77,10 +77,14 @@
     },
     "trajectory": {
         "press_depth": 6.000e-02,
-        "slide_distance": 2.500e-01
+        "slide_distance": 5.000e-01,
+        "press_depth_0": 1.000e-01,
+        "press_depth_1": 4.000e-02,
+        "press_depth_2": 6.000e-02,
+        "press_depth_3": 8.000e-02
     },
     "gmsh_mm": {
-        "characteristic_length_factor": 1.000e+01,
+        "characteristic_length_factor": 1.250e+01,
         "stem_wall_radius_outer": 2.000e+02,
         "stem_wall_radius_inner": 1.900e+02,
         "cap_height": 6.000e+01,
@@ -104,12 +108,12 @@
             0.0,
             0.0
         ],
-        "phantom_z_length": 2.200e-01,
+        "phantom_z_length": 1.000e-01,
         "distance_from_camera_lens_to_outer_shell_surface": 2.000e-01,
         "sensor_offset": 2.000e-01,
         "vein": {
             "theta": 90,
-            "cz_offset": 8.000e-02,
+            "cz_offset": 2.000e-02,
             "r": 2.000e-02,
             "h": 1.000e+01
         },
@@ -229,7 +233,7 @@
         "tactile_sensor_all_nodes": "difftactile/output/tactile_sensor.all_nodes.pkl",
         "system_params_computed": "difftactile/system_params/system-params-computed.json",
         "vitactip_interp_idx_flat": "difftactile/output/vitactip.interp_idx_flat.pkl",
-        "phantom": "difftactile/meshes/vascular-phantom-fragment.stl",
+        "phantom": "difftactile/meshes/vascular-phantom-fragment-shallow.stl",
         "root_dir": "/home/psb120/Documents/DiffTactile/",
         "initial_vertex_positions_undeformed": "difftactile/output/initial_vertex_positions_undeformed.pkl",
         "domain_adaptation_results": "difftactile/output/domain_adaptation_results.json",
@@ -237,6 +241,6 @@
         "traj_in": "difftactile/manual_or_experimental_data/domain-adaptation-vascular-videos/mkv/traj_{}_trimmed.mkv",
         "traj_out": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_{}_out.mkv",
         "traj_markers": "difftactile/output/marker_tracker/domain-adaptation-vascular-markers/traj_{}_out.pkl",
-        "traj_id": 3
+        "traj_id": 0
     }
 }

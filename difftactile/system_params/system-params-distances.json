@@ -21,7 +21,7 @@
         "slide_distance": 0.050
     },
     "gmsh_mm": {
-        "characteristic_length_factor": 1.0,
+        "characteristic_length_factor": 1.25,
         "stem_wall_radius_outer": 20,
         "stem_wall_radius_inner": 19,
         "cap_height": 6,
@@ -33,13 +33,13 @@
     },
     "geometry": {
         "gap": 0.010,
-        "phantom_z_length": 0.022,
+        "phantom_z_length": 0.010,
         "phantom_x_length": 0.080,
         "phantom_y_length": 0.040,
         "distance_from_camera_lens_to_outer_shell_surface": 0.020,
         "sensor_offset": 0.020,
         "vein": {
-            "cz_offset": 0.008,
+            "cz_offset": 0.002,
             "r": 0.002,
             "h": 1.000
         }

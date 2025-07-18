@@ -3,11 +3,6 @@ import numpy as np
 
 ti.init()
 
-x = ti.field(dtype=int, shape=(4,), needs_grad=False)
-x_np = np.array([1, 2])
+x = ti.Vector.field(4, dtype=int, shape=(2, 3), needs_grad=False)
 
-print(x)
-
-x.from_numpy(x_np)
-
-print(x)
+print(x[0, 0].to_numpy().shape)
