@@ -42,13 +42,18 @@ class Contact:
         self.fp_bp[None] = 1
 
     def load_system_identification_data_1(self):
-        self.exp_marker_shapes = np.zeros(shape=(4, 3), dtype=int)
+        self.exp_marker_shapes_np = np.zeros(shape=(4, 3), dtype=int)
         for i in range(4):
             with open(SYSTEM_PARAMS.files.traj_markers.format(i), "rb") as f:
                 markers_array = pickle.load(f)
-            self.exp_marker_shapes[i] = markers_array.shape
+            self.exp_marker_shapes_np[i] = markers_array.shape
         
-        max_0, max_1, _ = self.exp_marker_shapes.max(axis=0)
+        self.exp_marker_shapes = ti.Vector.field(3, dtype=int, shape=(self.exp_marker_shapes_np.shape[0]))
+        self.exp_marker_shapes.from_numpy(self.exp_marker_shapes_np)
+        max_0, max_1, max_2 = self.exp_marker_shapes_np.max(axis=0)
+        self.exp_markers_max_shapes_np = np.array([max_0, max_1, max_2])
+        self.exp_markers_max_shapes = ti.field(dtype=int, shape=(3,), needs_grad=False)
+        self.exp_markers_max_shapes.from_numpy(self.exp_markers_max_shapes_np)
         self.exp_markers_np = -np.ones(shape=(4, max_0, max_1, 2), dtype=float)
 
         for i in range(4):
@@ -58,56 +63,80 @@ class Contact:
             self.exp_markers_np[i, :x, :y, :z] = markers_array
 
         self.exp_markers = ti.Vector.field(2, dtype=float, shape=(4, max_0, max_1), needs_grad=False)
-        self.marker_positions_exp = ti.Vector.field(2, dtype=float, shape=(max_0, max_1), needs_grad=False)
         self.marker_position_exp = ti.Vector.field(2, dtype=float, shape=(max_1,), needs_grad=False)
+        self.sim_to_exp_markers = ti.field(dtype=int, shape=(max_1,), needs_grad=False)
     
     @ti.kernel
     def load_system_identification_data_2(self):
         self.exp_markers.fill(-1)
-        self.marker_positions_exp.fill(-1)
         self.marker_position_exp.fill(-1)
+        self.sim_to_exp_markers.fill(-1)
     
     def load_system_identification_data_3(self):
         self.exp_markers.from_numpy(self.exp_markers_np)
 
     def compute_mapping_between_experimental_and_sim_markers(self):
-        exp_markers = self.exp_markers.to_numpy()[self.trajectory_ix[None]]
+        x, y, z = self.exp_marker_shapes_np[self.trajectory_ix[None]]
+        exp_markers = self.exp_markers.to_numpy()[self.trajectory_ix[None], :x, :y, :z]
         sim_markers = self.vitactip.undeformed_markers.to_numpy()
         cost_matrix = cdist(sim_markers, exp_markers, metric="sqeuclidean")
         ixs_1, ixs_2 = linear_sum_assignment(cost_matrix)
-        self.sim_to_exp_markers_np = np.full(len(sim_markers), -1, dtype=np.int32)
+        self.sim_to_exp_markers_np = np.full(self.exp_markers_max_shapes[1], -1, dtype=np.int32)
         for ix_1, ix_2 in zip(ixs_1, ixs_2):
             self.sim_to_exp_markers_np[ix_1] = ix_2
+        self.sim_to_exp_markers.from_numpy(self.sim_to_exp_markers_np)
 
     @ti.kernel
     def interpolate_experimental_frame(self, ts: ti.i32):
         start_ix = -1
-        for i in range(self.current_target_idx[None] - 1):
+        # 5 target points
+        # current_target_idx = 4
+        # for i in range(4); i = 0,1,2,3
+        # 0,1
+        # 1,2
+        # 2,3
+        # 3,4
+        for i in range(self.current_target_idx[None]):
             if ts >= self.sim_keypoints[i] and ts < self.sim_keypoints[i + 1]:
                 start_ix = i
-        if start_ix != -1:
-            exp_keypoints_cur = self.exp_keypoints_np[self.trajectory_ix[None]]
-            end_ix = start_ix + 1
-            if exp_keypoints_cur[start_ix] == -1:
-                start_ix = start_ix - 1
-            elif exp_keypoints_cur[start_ix + 1] == -1:
                 end_ix = start_ix + 1
-            exp_keypoint = exp_keypoints_cur[start_ix] + (
-                exp_keypoints_cur[end_ix] - exp_keypoints_cur[start_ix]
-            ) * (ts - self.sim_keypoints[start_ix]) / (
-                self.sim_keypoints[end_ix] - self.sim_keypoints[start_ix]
-            )
-            exp_markers_cur = self.exp_markers[self.trajectory_ix[None]]
-            for i in range(self.marker_position_exp.shape[0]):
+        if start_ix == -1 and ts == self.sim_keypoints[self.current_target_idx[None]]:
+            start_ix = self.current_target_idx[None]
+            end_ix = self.current_target_idx[None]
+        # if sim entry is invalid, it's -1
+        # if exp entry is invalid, it's -1
+        cur_exp_keypoints = self.exp_keypoints[self.trajectory_ix[None]]
+        if (
+            start_ix != -1 
+            and end_ix != -1 
+            and cur_exp_keypoints[start_ix] != -1
+            and cur_exp_keypoints[end_ix] != -1
+        ):
+            exp_keypoint = -1.0
+            if start_ix != end_ix:
+                exp_keypoint = (
+                    cur_exp_keypoints[start_ix] 
+                    + (
+                        cur_exp_keypoints[end_ix]
+                        - cur_exp_keypoints[start_ix]
+                    ) * (
+                        ts - self.sim_keypoints[start_ix]
+                    ) / (
+                        self.sim_keypoints[end_ix] - self.sim_keypoints[start_ix]
+                    )
+                )
+            else:
+                exp_keypoint = start_ix
+            for i in range(self.exp_marker_shapes[self.trajectory_ix[None]][1]):
                 for j in range(2):
                     self.marker_position_exp[i][j] = (
-                        exp_markers_cur[int(np.floor(exp_keypoint)), i, j] 
-                        + (exp_keypoint - int(np.floor(exp_keypoint))) 
+                        self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j] 
+                        + (exp_keypoint - ti.floor(exp_keypoint)) 
                         * (
-                            exp_markers_cur[int(np.ceil(exp_keypoint)), i, j]
-                            - exp_markers_cur[int(np.floor(exp_keypoint)), i, j]
+                            self.exp_markers[self.trajectory_ix[None], ti.ceil(exp_keypoint, dtype=ti.i32), i][j]
+                            - self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
                         )
-                        )
+                    )
 
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
@@ -198,7 +227,6 @@ class Contact:
         self.phantom_initial_position = ti.Vector.field(
             3, dtype=ti.f32, shape=1, needs_grad=False
         )
-        self.trajectory = ti.Vector.field(7, dtype=float, shape=4, needs_grad=False)
         self.tumour_present_ground_truth_label = ti.field(dtype=int, shape=(), needs_grad=False)
         self.tumour_present_ground_truth_label[None] = 0
         self.sim_keypoints_np = -np.ones((5,))
@@ -206,12 +234,15 @@ class Contact:
             dtype=int, shape=(self.sim_keypoints_np.shape[0],), needs_grad=False
         )
         self.sim_keypoints.from_numpy(self.sim_keypoints_np)
-        self.exp_keypoints_np = [
-            np.array([-1, 0, 47, 93]),
-            np.array([-1, 0, 23, 230]),
-            np.array([-1, 0, 30, 95]),
-            np.array([-1, 0, 39, 133, 173]),
-        ]
+        self.exp_keypoints_np = np.array([
+            [-1, -1, 0, 47, 93],
+            [-1, -1, 0, 23, 230],
+            [-1, -1, 0, 30, 95],
+            [-1, 0, 39, 133, 173]
+        ])
+        self.exp_keypoints = ti.Vector.field(
+            5, dtype=int, shape=(self.exp_keypoints_np.shape[0],), needs_grad=False
+        )
 
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate(
@@ -246,6 +277,7 @@ class Contact:
         self.trajectories_np = np.array([
             [
                 [x, y, z, *og_r.as_quat()],
+                [x, y, z, *og_r.as_quat()],
                 [x, y, z - press_depth_surface, *og_r.as_quat()],
 
                 [x, y, z - press_depth_0, *og_r.as_quat()],
@@ -254,12 +286,14 @@ class Contact:
             ],
             [
                 [x, y, z, *og_r.as_quat()],
+                [x, y, z, *og_r.as_quat()],
                 [x, y, z - press_depth_surface, *og_r.as_quat()],
 
                 [x, y, z - press_depth_1, *og_r.as_quat()],
                 [x + slide_dist, y, z - press_depth_1, *og_r.as_quat()],
             ],
             [
+                [x, y, z, *og_r.as_quat()],
                 [x, y, z, *og_r.as_quat()],
                 [x, y, z - press_depth_surface, *og_r.as_quat()],
 
@@ -276,6 +310,8 @@ class Contact:
                 [x, y, z - press_depth_surface, *twist_2.as_quat()],
             ]
         ])
+        self.trajectories = ti.Vector.field(self.trajectories_np.shape[1], dtype=float, shape=(self.trajectories_np.shape[0],), needs_grad=False)
+        self.trajectories.from_numpy(self.trajectories_np)
         self.state_dicts = [
             {
                 'tumour_present': False,
@@ -327,12 +363,7 @@ class Contact:
             vel=[0.0, 0.0, 0.0],
             state_dict=self.state_dicts[trajectory_ix],
         )
-        
-        self.trajectory.from_numpy(self.trajectories_np[trajectory_ix])
-        assert self.trajectory.shape[0] == self.trajectories_np[trajectory_ix].shape[0], (
-            f"Set self.trajectory length to {self.trajectories_np[trajectory_ix].shape[0]} match trajectories_np"
-        )
-        sensor_dome_tip_initial_pose = self.trajectory.to_numpy()[0].tolist()
+        sensor_dome_tip_initial_pose = self.trajectories.to_numpy()[self.trajectory_ix[None], 0].tolist()
         sensor_dome_tip_initial_pose[2] += camera_lens_to_sensor_tip
         sensor_dome_tip_initial_pose = np.array(sensor_dome_tip_initial_pose)
         self.vitactip.set_up_pose(sensor_dome_tip_initial_pose)
@@ -343,9 +374,11 @@ class Contact:
     
     @ti.kernel
     def reset_exp_sim_traj(self):
-        self.marker_positions_exp.fill(-1)
         self.marker_position_exp.fill(-1)
         self.sim_keypoints.fill(-1)
+        self.sim_to_exp_markers.fill(-1)
+        self.exp_marker_points.fill(-1)
+        self.sim_markers_deformed_filtered.fill(-1)
 
     def reset_pid_controller(self):
         self.pos_error_sum.fill(0)
@@ -427,7 +460,7 @@ class Contact:
     @ti.kernel
     def compute_marker_loss_1(self, f: ti.i32):
         for i in range(self.vitactip.num_markers):
-            exp_ix = self.sim_to_exp_markers_np[i]
+            exp_ix = self.sim_to_exp_markers[i]
             if exp_ix != -1:
                 sim_marker = self.vitactip.deformed_markers[i]
                 exp_marker = self.marker_position_exp[exp_ix]
@@ -562,7 +595,7 @@ class Contact:
     def pid_controller_1(self):
         self.vitactip.compute_current_orientation()
         current_ori = R.from_quat(self.vitactip.R_BA_quat.to_numpy())
-        target = self.trajectory.to_numpy()[self.current_target_idx[None]]
+        target = self.trajectories.to_numpy()[self.current_target_idx[None]]
         target_ori = R.from_quat(target[3:])
         ori_error = target_ori * current_ori.inv()
         current_angle_radians = ori_error.magnitude()
@@ -602,7 +635,7 @@ class Contact:
     @ti.kernel
     def pid_controller_2(self, ts: ti.i32):
         current_pos = self.vitactip.vertices_undeformed_A[0, self.keypoint_indices[0]]
-        target = self.trajectory[self.current_target_idx[None]]
+        target = self.trajectories[self.current_target_idx[None]]
         target_pos = ti.Vector([target[0], target[1], target[2]])
         pos_error = target_pos - current_pos
         pos_error_magnitude = pos_error.norm()
@@ -627,7 +660,7 @@ class Contact:
             self.dwell_counter[None] += 1
             if self.dwell_counter[None] >= self.dwell_frames[None]:
                 self.is_dwelling[None] = 0
-                if self.current_target_idx[None] < self.trajectory.shape[0] - 1:
+                if self.current_target_idx[None] < self.trajectories.shape[0] - 1:
                     self.current_target_idx[None] += 1
                     self.pos_error_sum[None] = ti.Vector([0.0, 0.0, 0.0])
                     self.prev_pos_error[None] = ti.Vector([0.0, 0.0, 0.0])
@@ -811,8 +844,9 @@ class Contact:
     def visualisation_prepare_tactile_readout_data_bp(self):
         for i in range(self.marker_position_exp.shape[0]):
             point = self.marker_position_exp[i]
-            point[1] = self.window_size[None][1] - point[1]
-            self.exp_marker_points[i] = point / self.window_size[None]
+            if point[0] > 0 and point[1] > 0:
+                point[1] = self.window_size[None][1] - point[1]
+                self.exp_marker_points[i] = point / self.window_size[None]
 
     @ti.kernel
     def visualisation_prepare_clock_arm_points(self):
@@ -905,7 +939,7 @@ class Contact:
         vitactip_bottom = self.vitactip.get_keypoint_coordinates(
             0, self.keypoint_indices[0].reshape((1,))
         )
-        trajectory_keypoints = self.trajectory.to_numpy()[:, :3]
+        trajectory_keypoints = self.trajectories.to_numpy()[:, :3]
         vitactip_clock_arms = self.vitactip.get_keypoint_coordinates(
             f=0, keypoint_indices=self.vitactip.clock_arms_node_idxs.to_numpy()
         )
@@ -934,6 +968,9 @@ class Contact:
         )
         assert self.keypoint_coords.shape[0] == self.key_points.shape[0], (
             f"Set self.key_points to shape ({self.keypoint_coords.shape[0]},)"
+        )
+        assert self.keypoint_coords.shape[0] == self.key_points_per_vertex_color.shape[0], (
+            f"Set self.key_points_per_vertex_color to shape ({self.keypoint_coords.shape[0]},)"
         )
         if self.keypoint_coords is not None:
             self.key_points.from_numpy(self.keypoint_coords)
