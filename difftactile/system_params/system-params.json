@@ -59,8 +59,7 @@
         "tangential_stiffness": 8.800e+01,
         "normal_damping": 1.680e+00,
         "coulomb_friction_coeff": 8.500e-01,
-        "num_sub_frames": 500,
-        "num_frames": 500,
+        "num_sub_frames": 250,
         "num_opt_steps": 10,
         "pid_max_speed_translation": 5.000e+00,
         "pid_orientation_kp": 1.000e+00,
@@ -130,7 +129,11 @@
         "visualise_exp_markers_during_bp": 1,
         "camera_offset": 1.000e+01,
         "particle_size_normal": 3.000e-03,
-        "particle_size_keypoint": 6.000e-03
+        "particle_size_keypoint": 6.000e-03,
+        "tactile_readout_width": 9.600e+02,
+        "tactile_readout_height": 5.400e+02,
+        "window_3d_width": 9.600e+02,
+        "window_3d_height": 5.400e+02
     },
     "optimisation_update_steps": {
         "vitactip": {
@@ -174,25 +177,21 @@
             "normal_damping": 2.000e+03
         }
     },
-    "visualise_mesh": {
-        "frame_number": 200
-    },
     "fisheye_model": {
-        "focal_length_x": 1.850e+02,
-        "focal_length_y": 1.850e+02,
-        "principal_point_x": 3.590e+02,
-        "principal_point_y": 2.640e+02,
-        "target_image_width": 6.400e+02,
-        "target_image_height": 4.800e+02,
-        "circle_centre_x": 3.450e+02,
-        "circle_centre_y": 2.600e+02,
-        "circle_radius": 1.700e+02,
+        "focal_length_x": 380.0,
+        "focal_length_y": 380.0,
+        "principal_point_x": 1035.0,
+        "principal_point_y": 580.0,
+        "target_image_width": 1920.0,
+        "target_image_height": 1080.0,
+        "circle_centre_x": 1035.0,
+        "circle_centre_y": 580.0,
+        "circle_radius": 370.0,
         "shell_inner_r": 3.533e+02,
         "shell_outer_r": 3.633e+02
     },
     "marker_tracker": {
-        "seconds_per_frame": 1.000e-01,
-        "consecutive_frame_distance_threshold": 10
+        "seconds_per_frame": 1.000e-01
     },
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",

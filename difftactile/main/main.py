@@ -3,13 +3,15 @@ import numpy as np
 import pickle
 import json
 import cv2
+import sys
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
+from scipy.spatial.transform import Rotation as R
+
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
 from difftactile.main.constants import *
 from difftactile.main.cfl_and_contact_params_estimation import *
-from scipy.spatial.transform import Rotation as R
 
 RUN_ON_LAB_MACHINE = True
 
@@ -59,12 +61,6 @@ class Contact:
         for i in range(4):
             with open(SYSTEM_PARAMS.files.traj_markers.format(i), "rb") as f:
                 markers_array = pickle.load(f)
-
-            scale_x = 640 / 1920
-            scale_y = 480 / 1080
-            scaling_factors = np.array([scale_x, scale_y], dtype=float)
-            markers_array = markers_array * scaling_factors
-
             x, y, z = markers_array.shape
             self.exp_markers_np[i, :x, :y, :z] = markers_array
 
@@ -270,8 +266,10 @@ class Contact:
         x, y, z = self.vitactip_tip_pose[:3]
         quat = self.vitactip_tip_pose[3:]
         og_r = R.from_quat(quat)
-        twist_1_offset = R.from_euler(seq="xyz", angles=[0, 30, 0], degrees=True)
+        twist_1_offset = R.from_euler(seq="xyz", angles=[-30, 0, 0], degrees=True)
         twist_2_offset = R.from_euler(seq="xyz", angles=[0, 0, -45], degrees=True)
+        slide_offset = R.from_euler(seq="xyz", angles=[0, 0, 180], degrees=True)
+        slide_r = og_r * slide_offset
         twist_1 = og_r * twist_1_offset
         twist_2 = og_r * twist_2_offset
         press_depth_surface = SYSTEM_PARAMS.geometry.gap
@@ -297,12 +295,12 @@ class Contact:
                 [x, y, z - press_depth_surface, *og_r.as_quat()],
             ],
             [
-                [x, y, z, *og_r.as_quat()],
-                [x, y, z, *og_r.as_quat()],
-                [x, y, z - press_depth_surface, *og_r.as_quat()],
+                [x, y, z, *slide_r.as_quat()],
+                [x, y, z, *slide_r.as_quat()],
+                [x, y, z - press_depth_surface, *slide_r.as_quat()],
 
-                [x, y, z - press_depth_1, *og_r.as_quat()],
-                [x + slide_dist, y, z - press_depth_1, *og_r.as_quat()],
+                [x, y, z - press_depth_1, *slide_r.as_quat()],
+                [x + slide_dist, y, z - press_depth_1, *slide_r.as_quat()],
             ],
             [
                 [x, y, z, *og_r.as_quat()],
@@ -479,8 +477,8 @@ class Contact:
                 exp_marker = self.marker_position_exp[exp_ix]
                 dx = exp_marker[0] - sim_marker[0]
                 dy = exp_marker[1] - sim_marker[1]
-                dx /= self.window_size[None][0]
-                dy /= self.window_size[None][1]
+                dx /= SYSTEM_PARAMS.fisheye_model.target_image_width
+                dy /= SYSTEM_PARAMS.fisheye_model.target_image_height
                 squared_error = dx * dx + dy * dy
                 self.squared_error_sum[None] += squared_error
 
@@ -815,8 +813,11 @@ class Contact:
         self.clock_arm_points_per_vertex_color = ti.Vector.field(
             3, dtype=ti.f32, shape=(2,), needs_grad=False
         )
-        self.window_size = ti.Vector.field(2, dtype=float, shape=(), needs_grad=False)
-        self.window_size[None] = [640.0, 480.0]
+        self.tactile_image_resolution = ti.Vector.field(2, dtype=float, shape=(), needs_grad=False)
+        self.tactile_image_resolution[None] = ti.Vector([
+            SYSTEM_PARAMS.fisheye_model.target_image_width,
+            SYSTEM_PARAMS.fisheye_model.target_image_height
+        ])
         self.fp_bp = ti.field(dtype=int, shape=(), needs_grad=False)
 
     @ti.kernel
@@ -839,10 +840,10 @@ class Contact:
         for i in range(self.vitactip.num_markers):
             undeformed = self.vitactip.undeformed_markers[i]
             deformed = self.vitactip.deformed_markers[i]
-            undeformed[1] = self.window_size[None][1] - undeformed[1]
-            deformed[1] = self.window_size[None][1] - deformed[1]
-            undeformed = undeformed / self.window_size[None]
-            deformed = deformed / self.window_size[None]
+            undeformed[1] = self.tactile_image_resolution[None][1] - undeformed[1]
+            deformed[1] = self.tactile_image_resolution[None][1] - deformed[1]
+            undeformed = undeformed / self.tactile_image_resolution[None]
+            deformed = deformed / self.tactile_image_resolution[None]
             offset = deformed - undeformed
             self.sim_markers_undeformed[i] = undeformed
             self.sim_markers_deformed[i] = deformed
@@ -858,8 +859,8 @@ class Contact:
         for i in range(self.marker_position_exp.shape[0]):
             point = self.marker_position_exp[i]
             if point[0] > 0 and point[1] > 0:
-                # point[1] = self.window_size[None][1] - point[1]
-                self.exp_marker_points[i] = point / self.window_size[None]
+                point[1] = self.tactile_image_resolution[None][1] - point[1]
+                self.exp_marker_points[i] = point / self.tactile_image_resolution[None]
             else:
                 self.exp_marker_points[i] =  ti.Vector([-1.0, -1.0], dt=float)
 
@@ -867,8 +868,8 @@ class Contact:
     def visualisation_prepare_clock_arm_points(self):
         for i in range(2):
             point = self.vitactip.projection_2d_clock_arms[i]
-            point[1] = self.window_size[None][1] - point[1]
-            self.clock_arm_points[i] = point / self.window_size[None]
+            point[1] = self.tactile_image_resolution[None][1] - point[1]
+            self.clock_arm_points[i] = point / self.tactile_image_resolution[None]
 
     def visualisation_draw_tactile_readout(self):
         self.vitactip.extract_clock_arm_2d_projections(SYSTEM_PARAMS.contact.num_sub_frames - 1)
@@ -886,40 +887,40 @@ class Contact:
                 self.tactile_canvas.lines(
                     self.arrow_line_vertices, color=(0, 1, 0), width=0.01
                 )
-            self.tactile_canvas.circles(
-                self.clock_arm_points,
-                radius=0.02,
-                per_vertex_color=self.clock_arm_points_per_vertex_color,
-            )
         else:
             self.visualisation_prepare_tactile_readout_data_bp()
-            if False:
-                self.tactile_canvas.circles(
-                    self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
-                )
+            self.tactile_canvas.circles(
+                self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
+            )
             self.tactile_canvas.circles(
                 self.exp_marker_points, radius=0.01, color=(0, 1, 0)
             )
-            foo = 7
+        self.tactile_canvas.circles(
+            self.clock_arm_points,
+            radius=0.02,
+            per_vertex_color=self.clock_arm_points_per_vertex_color,
+        )
         self.tactile_window.show()
 
     def visualisation_set_up_gui(self):
-        screen_width = 1920
-        screen_height = 1080
-        self.window = ti.ui.Window(
-            "high-level camera", (int(screen_width * 0.5), int(screen_height * 0.5))
-        )
+        self.window = ti.ui.Window("high-level camera", (
+            int(SYSTEM_PARAMS.visualisation.window_3d_width),
+            int(SYSTEM_PARAMS.visualisation.window_3d_height)
+        ))
         self.canvas = self.window.get_canvas()
         self.canvas.set_background_color((0, 0, 0))
         self.scene = ti.ui.Scene()
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
-        self.camera.up(0, 0, 1)
+        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
+        self.camera.up(0, 1, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
-        self.tactile_window = ti.ui.Window("tactile readout", (640, 480))
+        self.tactile_window = ti.ui.Window("tactile readout", (
+            int(SYSTEM_PARAMS.visualisation.tactile_readout_width),
+            int(SYSTEM_PARAMS.visualisation.tactile_readout_height)
+        ))
         self.tactile_canvas = self.tactile_window.get_canvas()
         self.bg_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
         self.bg_image = cv2.cvtColor(self.bg_image, cv2.COLOR_BGR2RGB)
@@ -1188,17 +1189,24 @@ def main():
     contact_model = Contact()
     contact_model.visualisation_set_up_gui()
     contact_model.save_tactile_sensor_mesh_node_mapping_to_pickle()
+
+    contact_model.trajectory_ix[None] = 0
+    contact_model.set_up_initial_positions_state_and_trajectory()
+    contact_model.reset_pid_controller()
+    contact_model.visualisation_reset_3d_scene()
+    contact_model.reset_exp_sim_traj()
+    contact_model.get_keypoint_indices_and_validate()
+
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
-        for i in range(contact_model.trajectories_np.shape[0]):
+        # for i in range(contact_model.trajectories_np.shape[0]):
+        for i in range(1, 2):
             print(f'trajectory {i}: {contact_model.trajectory_names[i]}')
             contact_model.trajectory_ix[None] = i
             contact_model.set_up_initial_positions_state_and_trajectory()
             contact_model.reset_pid_controller()
             contact_model.visualisation_reset_3d_scene()
             contact_model.reset_exp_sim_traj()
-            if opts == 0 and i == 0:
-                contact_model.get_keypoint_indices_and_validate()
             contact_model.vitactip.extract_markers(0)
             contact_model.compute_mapping_between_experimental_and_sim_markers()
             contact_model.set_dt()

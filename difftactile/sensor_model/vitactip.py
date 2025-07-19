@@ -63,7 +63,8 @@ class ViTacTip:
             needs_grad=False,
         )
         self.dome_surface_node_tags.from_numpy(self.dome_surface_node_tags_npy)
-        self.surface_node_tags_npy = mesh_data["surface_node_tags"]
+        if False:
+            self.surface_node_tags_npy = mesh_data["surface_node_tags"]
         all_tetrahedra = mesh_data["all_tetrahedra"]
         node_coordinates = mesh_data["node_coordinates"] / 1_000
         node_labels = mesh_data["node_labels"]
@@ -142,10 +143,10 @@ class ViTacTip:
         )
         self.contact_surface.from_numpy(self.outer_surface_triangles.astype(np.int32))
         self.projection_2d_dome_surface_nodes_deformed = ti.Vector.field(
-            2, float, self.surface_node_tags_npy.shape[0], needs_grad=True
+            2, float, self.dome_surface_node_tags.shape[0], needs_grad=True
         )
         self.projection_2d_dome_surface_nodes_undeformed = ti.Vector.field(
-            2, float, self.surface_node_tags_npy.shape[0], needs_grad=False
+            2, float, self.dome_surface_node_tags.shape[0], needs_grad=False
         )
         self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=False)
         self.projection_2d_clock_arms = ti.Vector.field(
@@ -453,7 +454,7 @@ class ViTacTip:
         points = self.projection_2d_dome_surface_nodes_deformed.to_numpy()
         idx = np.argmax(points[:, 0])
         self.clock_arms_node_idxs[0] = self.dome_surface_node_tags[idx]
-        idx = np.argmax(points[:, 1])
+        idx = np.argmin(points[:, 1])
         self.clock_arms_node_idxs[1] = self.dome_surface_node_tags[idx]
 
     def save_predicted_markers_to_image(self):

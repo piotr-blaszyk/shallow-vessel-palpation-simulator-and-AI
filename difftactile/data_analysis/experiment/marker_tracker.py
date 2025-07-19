@@ -257,12 +257,7 @@ class MarkerTracker:
             pickle.dump(markers_array, f)
             
         if True:
-            scale_x = 640 / 1920
-            scale_y = 480 / 1080
-            scaling_factors = np.array([scale_x, scale_y], dtype=float)
-            markers_array = markers_array * scaling_factors
-
-            visualization = np.zeros((480, 640, 3), dtype=np.uint8)
+            visualization = np.zeros((1080, 1920, 3), dtype=np.uint8)
             for marker_pos in markers_array[0]:
                 x, y = int(marker_pos[0]), int(marker_pos[1])
                 cv2.circle(visualization, (x, y), 5, (0, 0, 255), -1)
