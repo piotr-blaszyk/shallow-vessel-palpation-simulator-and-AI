@@ -2,18 +2,18 @@
     "vitactip": {
         "shell": {
             "density": 1.100e+03,
-            "youngs_modulus": 7.500e+06,
-            "poissons_ratio": 4.950e-01
+            "poissons_ratio": 4.950e-01,
+            "youngs_modulus": 7.500e+06
         },
         "gel": {
             "density": 1.100e+03,
-            "youngs_modulus": 5.000e+03,
-            "poissons_ratio": 4.990e-01
+            "poissons_ratio": 4.990e-01,
+            "youngs_modulus": 5.000e+03
         },
         "single_material": {
             "density": 1.100e+03,
-            "youngs_modulus": 2.500e+04,
-            "poissons_ratio": 4.990e-01
+            "poissons_ratio": 4.990e-01,
+            "youngs_modulus": 5.000e+04
         },
         "collision_search_distance": 1.000e+01,
         "keypoint_search_z_threshold": 1.000e-02,
@@ -39,13 +39,13 @@
         ],
         "silicone": {
             "density": 1.070e+03,
-            "youngs_modulus": 2.500e+04,
-            "poissons_ratio": 4.990e-01
+            "poissons_ratio": 4.990e-01,
+            "youngs_modulus": 2.500e+04
         },
         "hard_plastic": {
             "density": 1.180e+03,
-            "youngs_modulus": 2.500e+09,
-            "poissons_ratio": 3.800e-01
+            "poissons_ratio": 3.800e-01,
+            "youngs_modulus": 2.500e+05
         },
         "fixed_points_z_ratio": 2.500e-01,
         "fix_bottom_points": 0,
@@ -61,7 +61,7 @@
         "coulomb_friction_coeff": 8.500e-01,
         "num_sub_frames": 250,
         "num_opt_steps": 10,
-        "pid_max_speed_translation": 5.000e+00,
+        "pid_max_speed_translation": 1.000e+00,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,
         "pid_ki": 0.000e+00,
@@ -95,7 +95,7 @@
         "dist_eps": 1.000e+00
     },
     "geometry": {
-        "gap": 1.000e-01,
+        "gap": 1.000e-02,
         "phantom_orientation": [
             0,
             0,
@@ -107,23 +107,25 @@
             0.0,
             0.0
         ],
-        "phantom_z_length": 1.000e-01,
+        "phantom_z_length": 2.200e-01,
         "distance_from_camera_lens_to_outer_shell_surface": 2.000e-01,
-        "sensor_offset": 2.000e-01,
+        "sensor_xy_radius": 2.000e-01,
         "vein": {
             "theta": 90,
             "cz_offset": 2.000e-02,
             "r": 2.000e-02,
-            "h": 1.000e+01
+            "h": 1.000e+01,
+            "depth_beneath_surface": 3.000e-02
         },
         "phantom_x_length": 8.000e-01,
         "phantom_y_length": 4.000e-01
     },
     "meta": {
-        "target_courant_number": 5.000e-02,
+        "target_courant_number": 2.000e-01,
         "enable_tactile_map": 1,
         "enable_pid_controller": 1,
-        "distance_scaling_factor": 1.000e+01
+        "distance_scaling_factor": 1.000e+01,
+        "youngs_modulus_scaling_factor": 1.000e+00
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,
@@ -232,7 +234,7 @@
         "tactile_sensor_all_nodes": "difftactile/output/tactile_sensor.all_nodes.pkl",
         "system_params_computed": "difftactile/system_params/system-params-computed.json",
         "vitactip_interp_idx_flat": "difftactile/output/vitactip.interp_idx_flat.pkl",
-        "phantom": "difftactile/meshes/vascular-phantom-fragment-shallow.stl",
+        "phantom": "difftactile/meshes/vascular-phantom-fragment.stl",
         "root_dir": "/home/psb120/Documents/DiffTactile/",
         "initial_vertex_positions_undeformed": "difftactile/output/initial_vertex_positions_undeformed.pkl",
         "domain_adaptation_results": "difftactile/output/domain_adaptation_results.json",

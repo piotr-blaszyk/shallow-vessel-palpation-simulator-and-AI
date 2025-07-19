@@ -9,16 +9,24 @@ def calculate_wave_speed(density, E, nu):
 
 
 def calculate_cfl_timestep(
-        phantom_youngs_modulus,
+        phantom_healthy_youngs_modulus,
+        phantom_tumour_youngs_modulus,
         vitactip_youngs_modulus,
         verbose,
 ):
     materials = [
         {
-            "name": "phantom",
+            "name": "phantom-healthy",
             "density": SYSTEM_PARAMS.phantom.silicone.density,
-            "youngs_modulus": phantom_youngs_modulus,
+            "youngs_modulus": phantom_healthy_youngs_modulus,
             "poissons_ratio": SYSTEM_PARAMS.phantom.silicone.poissons_ratio,
+            "particle_spacing": SYSTEM_PARAMS_COMPUTED.phantom_min_max_particle_spacing,
+        },
+        {
+            "name": "phantom-tumour",
+            "density": SYSTEM_PARAMS.phantom.hard_plastic.density,
+            "youngs_modulus": phantom_tumour_youngs_modulus,
+            "poissons_ratio": SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio,
             "particle_spacing": SYSTEM_PARAMS_COMPUTED.phantom_min_max_particle_spacing,
         },
         {
@@ -138,7 +146,7 @@ def calculate_contact_parameters():
 
 def main():
     calculate_cfl_timestep(
-        phantom_youngs_modulus=SYSTEM_PARAMS.phantom.silicone.youngs_modulus,
+        phantom_healthy_youngs_modulus=SYSTEM_PARAMS.phantom.silicone.youngs_modulus,
         vitactip_youngs_modulus=SYSTEM_PARAMS.vitactip.single_material.youngs_modulus,
         verbose=True,
     )

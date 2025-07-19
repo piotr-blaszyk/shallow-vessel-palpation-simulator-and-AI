@@ -1,0 +1,21 @@
+{
+    "vitactip": {
+        "shell": {
+            "youngs_modulus": 7.500e+06
+        },
+        "gel": {
+            "youngs_modulus": 5.000e+03
+        },
+        "single_material": {
+            "youngs_modulus": 5.000e+04
+        }
+    },
+    "phantom": {
+        "silicone": {
+            "youngs_modulus": 2.500e+04
+        },
+        "hard_plastic": {
+            "youngs_modulus": 2.500e+05
+        }
+    }
+}

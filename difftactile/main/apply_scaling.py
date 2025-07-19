@@ -15,15 +15,17 @@ class ScientificNotationEncoder(json.JSONEncoder):
                 pass
             yield s
 
-def main():
-    source = "difftactile/system_params/system-params-distances.json"
-    target_raw = "difftactile/system_params/system-params.json"
-    target_computed = "difftactile/system_params/system-params.json"
+def go(
+        source,
+        target_raw,
+        target_computed,
+        scaling_string,
+):
     with open(source, 'r') as f:
         source_data = json.load(f)
     with open(target_raw, 'r') as f:
         target_data = json.load(f)
-    scaling_factor = target_data['meta']['distance_scaling_factor']
+    scaling_factor = target_data['meta'][scaling_string]
     def update_distances(source_dict, target_dict):
         for key, value in source_dict.items():
             if isinstance(value, dict):
@@ -36,6 +38,20 @@ def main():
     update_distances(source_data, target_data)
     with open(target_computed, 'w') as f:
         json.dump(target_data, f, indent=4, cls=ScientificNotationEncoder)
+
+def main():
+    go(
+        source="difftactile/system_params/system-params-distances.json",
+        target_raw="difftactile/system_params/system-params.json",
+        target_computed="difftactile/system_params/system-params.json",
+        scaling_string='distance_scaling_factor'
+    )
+    go(
+        source="difftactile/system_params/system-params-youngs-modulus.json",
+        target_raw="difftactile/system_params/system-params.json",
+        target_computed="difftactile/system_params/system-params.json",
+        scaling_string='youngs_modulus_scaling_factor'
+    )
 
 if __name__ == "__main__":
     main()

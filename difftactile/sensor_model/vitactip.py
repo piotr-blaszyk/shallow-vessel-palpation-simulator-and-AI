@@ -377,6 +377,31 @@ class ViTacTip:
         self.sensor_outward_normal[None] = self.R_BA[None] @ ti.Vector([0.0, 0.0, 1.0])
         self.set_up_pose_helper()
 
+    @ti.func
+    def project_A_point_2d(self, inhomogeneous_point_A):
+        homogeneous_point_A = ti.Vector(
+            [
+                inhomogeneous_point_A[0],
+                inhomogeneous_point_A[1],
+                inhomogeneous_point_A[2],
+                1.0,
+            ]
+        )
+        homogeneous_point_E = (
+            self.T_BE[None] @ self.T_AB[None] @ homogeneous_point_A
+        )
+        inhomogeneous_point_E = ti.Vector(
+            [
+                homogeneous_point_E[0],
+                homogeneous_point_E[1],
+                homogeneous_point_E[2],
+            ]
+        )
+        projection_2d = self.fisheye_model.project_3d_2d(
+            inhomogeneous_point_E
+        )
+        return projection_2d
+
     @ti.kernel
     def extract_markers(self, frame_idx: ti.i32):
         for i in range(self.dome_surface_node_tags.shape[0]):
@@ -385,53 +410,11 @@ class ViTacTip:
             undeformed_A = self.vertices_undeformed_A[
                 frame_idx, node_ix
             ]
-            homogeneous_deformed_A = ti.Vector(
-                [
-                    deformed_A[0],
-                    deformed_A[1],
-                    deformed_A[2],
-                    1.0,
-                ]
-            )
-            homogeneous_undeformed_A = ti.Vector(
-                [
-                    undeformed_A[0],
-                    undeformed_A[1],
-                    undeformed_A[2],
-                    1.0,
-                ]
-            )
-            homogeneous_deformed_E = (
-                self.T_BE[None] @ self.T_AB[None] @ homogeneous_deformed_A
-            )
-            homogeneous_undeformed_E = (
-                self.T_BE[None] @ self.T_AB[None] @ homogeneous_undeformed_A
-            )
-            inhomogeneous_deformed_E = ti.Vector(
-                [
-                    homogeneous_deformed_E[0],
-                    homogeneous_deformed_E[1],
-                    homogeneous_deformed_E[2],
-                ]
-            )
-            inhomogeneous_undeformed_E = ti.Vector(
-                [
-                    homogeneous_undeformed_E[0],
-                    homogeneous_undeformed_E[1],
-                    homogeneous_undeformed_E[2],
-                ]
-            )
-            projections_2d_deformed = self.fisheye_model.project_3d_2d(
-                inhomogeneous_deformed_E
-            )
-            projections_2d_undeformed = self.fisheye_model.project_3d_2d(
-                inhomogeneous_undeformed_E
-            )
             self.projection_2d_dome_surface_nodes_deformed[i] += (
-                projections_2d_deformed
+                self.project_A_point_2d(deformed_A)
             )
             self.projection_2d_dome_surface_nodes_undeformed[i] = (
-                projections_2d_undeformed
+                self.project_A_point_2d(undeformed_A)
             )
         for i in range(self.num_markers):
             nearest_surface_indices = self.marker_interpolation_indices[i]
@@ -455,7 +438,15 @@ class ViTacTip:
             self.undeformed_markers[i] = interpolated_undeformed_pos_2d
 
     @ti.kernel
+    def extract_clock_arm_2d_projections(self, frame_idx: ti.i32):
+        for i in range(self.clock_arms_node_idxs.shape[0]):
+            node_idx = self.clock_arms_node_idxs[i]
+            vertex = self.vertices_undeformed_A[frame_idx, node_idx]
+            self.projection_2d_clock_arms[i] = self.project_A_point_2d(vertex)
+
+    @ti.kernel
     def copy_markers_to_initial_markers_for_drift_correction_unused(self):
+        return
         for marker_idx in range(self.num_markers):
             self.initial_markers_unused[marker_idx] = self.undeformed_markers[
                 marker_idx
@@ -513,32 +504,6 @@ class ViTacTip:
                 ]
             )
             self.vertices_B_testing[0, i] = camera_space_initial_pos
-
-    @ti.kernel
-    def extract_clock_arm_2d_projections(self, frame_idx: ti.i32):
-        for i in range(self.clock_arms_node_idxs.shape[0]):
-            node_idx = self.clock_arms_node_idxs[i]
-            vertex = self.vertices_undeformed_A[frame_idx, node_idx]
-            homogeneous_A = ti.Vector(
-                [
-                    vertex[0],
-                    vertex[1],
-                    vertex[2],
-                    1.0,
-                ]
-            )
-            homogeneous_E = self.T_BE[None] @ self.T_AB[None] @ homogeneous_A
-            inhomogeneous_E = ti.Vector(
-                [
-                    homogeneous_E[0],
-                    homogeneous_E[1],
-                    homogeneous_E[2],
-                ]
-            )
-            projections_2d = self.fisheye_model.project_3d_2d(
-                inhomogeneous_E
-            )
-            self.projection_2d_clock_arms[i] = projections_2d
 
     @ti.kernel
     def set_vel(self, f: ti.i32):

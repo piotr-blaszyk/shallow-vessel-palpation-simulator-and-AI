@@ -44,17 +44,17 @@ class Phantom:
         )
         obj_loader.generate_particles()
         self.actual_total_num_particles = len(obj_loader.particles)
-        self.particles = ti.Vector.field(
+        self.particles_B = ti.Vector.field(
             3, dtype=float, shape=(self.actual_total_num_particles,), needs_grad=False
         )
-        self.particles.from_numpy((obj_loader.particles).astype(np.float32))
+        self.particles_B.from_numpy((obj_loader.particles).astype(np.float32))
         self.titles = ti.field(
             dtype=int, shape=self.actual_total_num_particles, needs_grad=False
         )
         self.is_fixed = ti.field(
             dtype=int, shape=(self.actual_total_num_particles,), needs_grad=False
         )
-        particles_np = self.particles.to_numpy()
+        particles_np = self.particles_B.to_numpy()
         z_coords = particles_np[:, 2]
         z_min, z_max = np.min(z_coords), np.max(z_coords)
         z_threshold = z_min + SYSTEM_PARAMS.phantom.fixed_points_z_ratio * (
@@ -97,10 +97,10 @@ class Phantom:
             3, dtype=ti.f32, shape=(), needs_grad=False
         )
         self.rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape=(), needs_grad=False)
-        self.transformation_matrix = ti.Matrix.field(
+        self.T_BA = ti.Matrix.field(
             4, 4, ti.f32, shape=(), needs_grad=False
         )
-        self.particle_position = ti.Vector.field(
+        self.particles_A = ti.Vector.field(
             3,
             dtype=float,
             shape=(
@@ -109,7 +109,7 @@ class Phantom:
             ),
             needs_grad=False,
         )
-        self.particle_velocity = ti.Vector.field(
+        self.velocities_A = ti.Vector.field(
             3,
             dtype=float,
             shape=(
@@ -276,7 +276,7 @@ class Phantom:
     @ti.kernel
     def partition_point_cloud(self):
         for item in range(self.actual_total_num_particles):
-            pos = self.particles[item]
+            pos = self.particles_B[item]
             px = pos[0] - self.cylinder_cx[None]
             py = pos[1] - self.cylinder_cy[None]
             pz = pos[2] - self.cylinder_cz[None]
@@ -310,28 +310,28 @@ class Phantom:
         transformation_matrix[1, 3] = position[1]
         transformation_matrix[2, 3] = position[2]
         self.rotation_matrix[None] = rotation_matrix.tolist()
-        self.transformation_matrix[None] = transformation_matrix.tolist()
+        self.T_BA[None] = transformation_matrix.tolist()
 
     @ti.kernel
     def initialise_point_cloud(self):
         for i in range(self.actual_total_num_particles):
-            current_particle_position = self.particles[i]
-            target_particle_position = self.transformation_matrix[None] @ ti.Vector(
+            particle_position_local = self.particles_B[i]
+            particle_position_global = self.T_BA[None] @ ti.Vector(
                 [
-                    current_particle_position[0],
-                    current_particle_position[1],
-                    current_particle_position[2],
+                    particle_position_local[0],
+                    particle_position_local[1],
+                    particle_position_local[2],
                     1.0,
                 ]
             )
-            self.particle_position[0, i] = ti.Vector(
+            self.particles_A[0, i] = ti.Vector(
                 [
-                    target_particle_position[0],
-                    target_particle_position[1],
-                    target_particle_position[2],
+                    particle_position_global[0],
+                    particle_position_global[1],
+                    particle_position_global[2],
                 ]
             )
-            self.particle_velocity[0, i] = ti.Matrix(
+            self.velocities_A[0, i] = ti.Matrix(
                 [
                     self.initial_velocity[None][0],
                     self.initial_velocity[None][1],
@@ -440,11 +440,11 @@ class Phantom:
             shear_modulus = self.mu[self.titles[particle_id]]
             bulk_modulus = self.lam[self.titles[particle_id]]
             grid_base_index = (
-                self.particle_position[frame, particle_id]
+                self.particles_A[frame, particle_id]
                 * self.inverse_mpm_grid_cube_size
                 - 0.5
             ).cast(int)
-            particle_grid_diff = self.particle_position[
+            particle_grid_diff = self.particles_A[
                 frame, particle_id
             ] * self.inverse_mpm_grid_cube_size - grid_base_index.cast(float)
             weight_functions = [
@@ -488,7 +488,7 @@ class Phantom:
                     weight
                     * (
                         self.healthy_tissue_particle_mass
-                        * self.particle_velocity[frame, particle_id]
+                        * self.velocities_A[frame, particle_id]
                         + momentum_contribution @ dist_to_grid
                     )
                 )
@@ -579,11 +579,11 @@ class Phantom:
     def g2p(self, frame: ti.i32):
         for particle_id in range(self.actual_total_num_particles):
             grid_base_index = (
-                self.particle_position[frame, particle_id]
+                self.particles_A[frame, particle_id]
                 * self.inverse_mpm_grid_cube_size
                 - 0.5
             ).cast(int)
-            particle_grid_diff = self.particle_position[
+            particle_grid_diff = self.particles_A[
                 frame, particle_id
             ] * self.inverse_mpm_grid_cube_size - grid_base_index.cast(float)
             weight_functions = [
@@ -613,20 +613,20 @@ class Phantom:
                     * grid_node_velocity.outer_product(grid_relative_offset)
                 )
             if SYSTEM_PARAMS.phantom.fix_bottom_points == 1:
-                self.particle_velocity[frame + 1, particle_id] = ti.Vector(
+                self.velocities_A[frame + 1, particle_id] = ti.Vector(
                     [0.0, 0.0, 0.0]
                 )
                 self.affine_velocity_field[frame + 1, particle_id] = ti.Matrix.zero(
                     float, 3, 3
                 )
-                self.particle_position[frame + 1, particle_id] = self.particle_position[
+                self.particles_A[frame + 1, particle_id] = self.particles_A[
                     frame, particle_id
                 ]
             else:
-                self.particle_velocity[frame + 1, particle_id] = updated_velocity
+                self.velocities_A[frame + 1, particle_id] = updated_velocity
                 self.affine_velocity_field[frame + 1, particle_id] = updated_affine
-                self.particle_position[frame + 1, particle_id] = (
-                    self.particle_position[frame, particle_id]
+                self.particles_A[frame + 1, particle_id] = (
+                    self.particles_A[frame, particle_id]
                     + self.dt[None] * updated_velocity
                 )
 
@@ -651,8 +651,8 @@ class Phantom:
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):
         for p in range(self.actual_total_num_particles):
-            self.particle_position[target, p] = self.particle_position[source, p]
-            self.particle_velocity[target, p] = self.particle_velocity[source, p]
+            self.particles_A[target, p] = self.particles_A[source, p]
+            self.velocities_A[target, p] = self.velocities_A[source, p]
             self.affine_velocity_field[target, p] = self.affine_velocity_field[
                 source, p
             ]
@@ -669,8 +669,8 @@ class Phantom:
     ):
         for p in range(self.actual_total_num_particles):
             for i in ti.static(range(3)):
-                self.particle_position[f, p][i] = cache_x_0[p, i]
-                self.particle_velocity[f, p][i] = cache_v_0[p, i]
+                self.particles_A[f, p][i] = cache_x_0[p, i]
+                self.velocities_A[f, p][i] = cache_v_0[p, i]
             for i, j in ti.ndrange(3, 3):
                 self.affine_velocity_field[f, p][i, j] = cache_C_0[p, i, j]
                 self.deformation_gradient[f, p][i, j] = cache_F_0[p, i, j]
@@ -686,8 +686,8 @@ class Phantom:
     ):
         for p in range(self.actual_total_num_particles):
             for i in ti.static(range(3)):
-                cache_x_0[p, i] = self.particle_position[f, p][i]
-                cache_v_0[p, i] = self.particle_velocity[f, p][i]
+                cache_x_0[p, i] = self.particles_A[f, p][i]
+                cache_v_0[p, i] = self.velocities_A[f, p][i]
             for i, j in ti.ndrange(3, 3):
                 cache_C_0[p, i, j] = self.affine_velocity_field[f, p][i, j]
                 cache_F_0[p, i, j] = self.deformation_gradient[f, p][i, j]
@@ -728,7 +728,7 @@ class Phantom:
         )
 
     def get_keypoint_index(self) -> int:
-        positions = self.particle_position.to_numpy()[0]
+        positions = self.particles_A.to_numpy()[0]
         centroid_x = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[0]
         centroid_y = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[1]
         x_mask = (
@@ -751,6 +751,21 @@ class Phantom:
     def get_keypoint_coordinates(
         self, f: int, keypoint_indices: np.ndarray
     ) -> np.ndarray:
-        positions = self.particle_position.to_numpy()[f]
+        positions = self.particles_A.to_numpy()[f]
         coordinates = positions[keypoint_indices]
         return coordinates
+
+    def get_vein_indices(self):
+        points_3d = self.particles_A.to_numpy().astype(float)
+        titles = self.titles.to_numpy().astype(int)
+        
+        mask = titles == 1
+        filtered_points = points_3d[mask]
+        local_max_y_idx = np.argmax(filtered_points[:, 1])
+        local_min_y_idx = np.argmin(filtered_points[:, 1])
+        original_indices = np.where(mask)[0]
+        original_max_y_idx = original_indices[local_max_y_idx]
+        original_min_y_idx = original_indices[local_min_y_idx]
+        
+        return np.array([original_max_y_idx, original_min_y_idx])
+        

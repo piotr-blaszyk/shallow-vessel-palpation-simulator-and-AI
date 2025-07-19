@@ -9,7 +9,7 @@
         "keypoint_search_xy_threshold": 0.010
     },
     "contact": {
-        "pid_max_speed_translation": 0.500,
+        "pid_max_speed_translation": 0.100,
         "pid_position_tolerance": 0.001,
         "tangential_velocity_detection_threshold": 1e-6
     },
@@ -32,14 +32,14 @@
         "dist_eps": 0.1
     },
     "geometry": {
-        "gap": 0.010,
-        "phantom_z_length": 0.010,
+        "gap": 0.001,
+        "phantom_z_length": 0.022,
         "phantom_x_length": 0.080,
         "phantom_y_length": 0.040,
         "distance_from_camera_lens_to_outer_shell_surface": 0.020,
-        "sensor_offset": 0.020,
+        "sensor_xy_radius": 0.020,
         "vein": {
-            "cz_offset": 0.002,
+            "depth_beneath_surface": 0.003,
             "r": 0.002,
             "h": 1.000
         }

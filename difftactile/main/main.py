@@ -269,8 +269,10 @@ class Contact:
         twist_1_offset = R.from_euler(seq="xyz", angles=[-30, 0, 0], degrees=True)
         twist_2_offset = R.from_euler(seq="xyz", angles=[0, 0, -45], degrees=True)
         slide_offset = R.from_euler(seq="xyz", angles=[0, 0, 180], degrees=True)
+        twist_1_base_offset = R.from_euler(seq="xyz", angles=[0, 0, -90], degrees=True)
         slide_r = og_r * slide_offset
-        twist_1 = og_r * twist_1_offset
+        twist_1_r = og_r * twist_1_base_offset
+        twist_1 = twist_1_r * twist_1_offset
         twist_2 = og_r * twist_2_offset
         press_depth_surface = SYSTEM_PARAMS.geometry.gap
         press_depth_0 = press_depth_surface + SYSTEM_PARAMS.trajectory.press_depth_0
@@ -303,11 +305,11 @@ class Contact:
                 [x + slide_dist, y, z - press_depth_1, *slide_r.as_quat()],
             ],
             [
-                [x, y, z, *og_r.as_quat()],
-                [x, y, z, *og_r.as_quat()],
-                [x, y, z - press_depth_surface, *og_r.as_quat()],
+                [x, y, z, *twist_1_r.as_quat()],
+                [x, y, z, *twist_1_r.as_quat()],
+                [x, y, z - press_depth_surface, *twist_1_r.as_quat()],
 
-                [x, y, z - press_depth_2, *og_r.as_quat()],
+                [x, y, z - press_depth_2, *twist_1_r.as_quat()],
                 [x, y, z - press_depth_2, *twist_1.as_quat()],
             ],
             [
@@ -323,6 +325,7 @@ class Contact:
         a, b, c = self.trajectories_np.shape
         self.trajectories = ti.Vector.field(c, dtype=float, shape=(a, b), needs_grad=False)
         self.trajectories.from_numpy(self.trajectories_np)
+        cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
         self.state_dicts = [
             {
                 'tumour_present': False,
@@ -337,7 +340,7 @@ class Contact:
                 'tumour_present': True,
                 'cx': 0,
                 'cy': 0,
-                'cz': SYSTEM_PARAMS.geometry.vein.cz_offset,
+                'cz': cz_offset,
                 'theta': SYSTEM_PARAMS.geometry.vein.theta,
                 'h': SYSTEM_PARAMS.geometry.vein.h,
                 'r': SYSTEM_PARAMS.geometry.vein.r
@@ -784,6 +787,12 @@ class Contact:
             shape=(self.phantom.actual_total_num_particles,),
             needs_grad=False,
         )
+        self.tumour_2d_projections = ti.Vector.field(
+            2,
+            dtype=float,
+            shape=(self.phantom.actual_total_num_particles,),
+            needs_grad=False,
+        )
         self.sim_markers_undeformed = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
@@ -816,19 +825,30 @@ class Contact:
         self.fp_bp = ti.field(dtype=int, shape=(), needs_grad=False)
 
     @ti.kernel
-    def visualisation_reset_3d_scene(self):
+    def visualisation_reset_scene(self):
         self.healthy_tissue_points.fill(0)
         self.tumour_points.fill(0)
+        self.tumour_2d_projections.fill(-1)
 
     @ti.kernel
     def visualisation_draw_3d_scene(self, f: ti.i32):
         for p in range(self.phantom.actual_total_num_particles):
             if self.phantom.titles[p] == 0:
-                self.healthy_tissue_points[p] = self.phantom.particle_position[f, p]
+                self.healthy_tissue_points[p] = self.phantom.particles_A[f, p]
             elif self.phantom.titles[p] == 1:
-                self.tumour_points[p] = self.phantom.particle_position[f, p]
+                self.tumour_points[p] = self.phantom.particles_A[f, p]
         for p in range(self.vitactip.num_vertices):
             self.sensor_points[p] = self.vitactip.vertices_deformed_A[f, p]
+
+    @ti.kernel
+    def visualisation_project_vein_2d(self):
+        for i in range(self.tumour_points.shape[0]):
+            point = self.tumour_points[i]
+            origin = ti.Vector([0.0, 0.0, 0.0], dt=float)
+            if ti.math.length(point - origin) > 1e-6:
+                projection_2d = self.vitactip.project_A_point_2d(point)
+                projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
+                self.tumour_2d_projections[i] = projection_2d / self.tactile_image_resolution[None]
 
     @ti.kernel
     def visualisation_prepare_tactile_readout_data_fp(self):
@@ -867,33 +887,40 @@ class Contact:
             self.clock_arm_points[i] = point / self.tactile_image_resolution[None]
 
     def visualisation_draw_tactile_readout(self):
+        self.visualisation_project_vein_2d()
         self.vitactip.extract_clock_arm_2d_projections(SYSTEM_PARAMS.contact.num_sub_frames - 1)
         self.visualisation_prepare_clock_arm_points()
         self.tactile_canvas.set_image(self.bg_image)
         self.visualisation_prepare_tactile_readout_data_fp()
-        if (
-            self.fp_bp[None] == 0
-            or SYSTEM_PARAMS.visualisation.visualise_exp_markers_during_bp == 0
-        ):
-            self.tactile_canvas.circles(
-                self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
-            )
-            if False:
-                self.tactile_canvas.lines(
-                    self.arrow_line_vertices, color=(0, 1, 0), width=0.01
+        if False:
+            if (
+                self.fp_bp[None] == 0
+                or SYSTEM_PARAMS.visualisation.visualise_exp_markers_during_bp == 0
+            ):
+                self.tactile_canvas.circles(
+                    self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
                 )
-        else:
-            self.visualisation_prepare_tactile_readout_data_bp()
+                if False:
+                    self.tactile_canvas.lines(
+                        self.arrow_line_vertices, color=(0, 1, 0), width=0.01
+                    )
+            else:
+                self.visualisation_prepare_tactile_readout_data_bp()
+                self.tactile_canvas.circles(
+                    self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
+                )
+                self.tactile_canvas.circles(
+                    self.exp_marker_points, radius=0.01, color=(0, 1, 0)
+                )
             self.tactile_canvas.circles(
-                self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
-            )
-            self.tactile_canvas.circles(
-                self.exp_marker_points, radius=0.01, color=(0, 1, 0)
+                self.clock_arm_points,
+                radius=0.02,
+                per_vertex_color=self.clock_arm_points_per_vertex_color,
             )
         self.tactile_canvas.circles(
-            self.clock_arm_points,
-            radius=0.02,
-            per_vertex_color=self.clock_arm_points_per_vertex_color,
+            self.tumour_2d_projections,
+            radius=1e-2,
+            color=(1, 1, 0),
         )
         self.tactile_window.show()
 
@@ -908,7 +935,7 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
+        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
         self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
@@ -943,7 +970,7 @@ class Contact:
             print(
                 f"ViTacTip contains {nan_count} / {vitactip_coords.shape[0]} nan vertices at ts: {ts}"
             )
-        phantom_coords = self.phantom.particle_position.to_numpy()[0]
+        phantom_coords = self.phantom.particles_A.to_numpy()[0]
         if np.isnan(phantom_coords).any():
             nan_count = np.any(np.isnan(phantom_coords), axis=1).sum()
             print(
@@ -959,11 +986,13 @@ class Contact:
         self.keypoint_coords = np.vstack(
             (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms)
         )
-        self.visualisation_draw_tactile_readout()
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
         self.scene.point_light(pos=(0.5, 1.5, 1.5), color=(1, 1, 1))
-        self.visualisation_draw_3d_scene(0)
+        self.visualisation_draw_3d_scene(SYSTEM_PARAMS.contact.num_sub_frames - 1)
+        self.visualisation_draw_tactile_readout()
+        if ts == 36:
+            foo = 7
         self.scene.particles(
             self.healthy_tissue_points,
             color=(0.0, 0.0, 1.0),
@@ -1149,8 +1178,13 @@ class Contact:
             json.dump(results, f, indent=4)
     
     def set_dt(self):
+        if self.state_dicts[self.trajectory_ix[None]]['tumour_present']:
+            tumour_modulus = self.phantom.youngs_modulus[1]
+        else:
+            tumour_modulus = self.phantom.youngs_modulus[0]
         dt = calculate_cfl_timestep(
-            phantom_youngs_modulus=self.phantom.youngs_modulus[0],
+            phantom_healthy_youngs_modulus=self.phantom.youngs_modulus[0],
+            phantom_tumour_youngs_modulus=tumour_modulus,
             vitactip_youngs_modulus=self.vitactip.youngs_modulus[None],
             verbose=False,
         )
@@ -1188,19 +1222,18 @@ def main():
     contact_model.trajectory_ix[None] = 0
     contact_model.set_up_initial_positions_state_and_trajectory()
     contact_model.reset_pid_controller()
-    contact_model.visualisation_reset_3d_scene()
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
 
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
         # for i in range(contact_model.trajectories_np.shape[0]):
-        for i in range(2, 3):
+        for i in range(1, 2):
             print(f'trajectory {i}: {contact_model.trajectory_names[i]}')
             contact_model.trajectory_ix[None] = i
             contact_model.set_up_initial_positions_state_and_trajectory()
             contact_model.reset_pid_controller()
-            contact_model.visualisation_reset_3d_scene()
+            contact_model.visualisation_reset_scene()
             contact_model.reset_exp_sim_traj()
             contact_model.vitactip.extract_markers(0)
             contact_model.compute_mapping_between_experimental_and_sim_markers()
