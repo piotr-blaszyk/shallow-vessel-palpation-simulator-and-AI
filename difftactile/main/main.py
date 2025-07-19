@@ -904,31 +904,30 @@ class Contact:
         self.visualisation_prepare_clock_arm_points()
         self.tactile_canvas.set_image(self.bg_image)
         self.visualisation_prepare_tactile_readout_data_fp()
-        if False:
-            if (
-                self.fp_bp[None] == 0
-                or SYSTEM_PARAMS.visualisation.visualise_exp_markers_during_bp == 0
-            ):
-                self.tactile_canvas.circles(
-                    self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
-                )
-                if False:
-                    self.tactile_canvas.lines(
-                        self.arrow_line_vertices, color=(0, 1, 0), width=0.01
-                    )
-            else:
-                self.visualisation_prepare_tactile_readout_data_bp()
-                self.tactile_canvas.circles(
-                    self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
-                )
-                self.tactile_canvas.circles(
-                    self.exp_marker_points, radius=0.01, color=(0, 1, 0)
-                )
+        if (
+            self.fp_bp[None] == 0
+            or SYSTEM_PARAMS.visualisation.visualise_exp_markers_during_bp == 0
+        ):
             self.tactile_canvas.circles(
-                self.clock_arm_points,
-                radius=0.02,
-                per_vertex_color=self.clock_arm_points_per_vertex_color,
+                self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
             )
+            if False:
+                self.tactile_canvas.lines(
+                    self.arrow_line_vertices, color=(0, 1, 0), width=0.01
+                )
+        else:
+            self.visualisation_prepare_tactile_readout_data_bp()
+            self.tactile_canvas.circles(
+                self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
+            )
+            self.tactile_canvas.circles(
+                self.exp_marker_points, radius=0.01, color=(0, 1, 0)
+            )
+        self.tactile_canvas.circles(
+            self.clock_arm_points,
+            radius=0.02,
+            per_vertex_color=self.clock_arm_points_per_vertex_color,
+        )
         self.tactile_canvas.circles(
             self.tumour_2d_projections,
             radius=1e-2,
