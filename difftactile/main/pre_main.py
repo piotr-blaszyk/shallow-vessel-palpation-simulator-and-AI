@@ -39,31 +39,31 @@ def compute_and_print_learning_rates():
     learning_rates['vitactip'] = {
         'youngs_modulus': compute_learning_rate(
             gradients['vitactip']['youngs_modulus'],
-            SYSTEM_PARAMS.optimisation_update_steps.vitactip.youngs_modulus
+            SYSTEM_PARAMS.optimisation.update_steps.vitactip.youngs_modulus
         )
     }
     learning_rates['phantom'] = {
         'youngs_modulus': compute_learning_rate(
             gradients['phantom']['youngs_modulus'],
-            SYSTEM_PARAMS.optimisation_update_steps.phantom.youngs_modulus
+            SYSTEM_PARAMS.optimisation.update_steps.phantom.youngs_modulus
         )
     }
     learning_rates['contact'] = {
         'coulomb_friction_coeff': compute_learning_rate(
             gradients['contact']['coulomb_friction_coeff'],
-            SYSTEM_PARAMS.optimisation_update_steps.contact.coulomb_friction_coeff
+            SYSTEM_PARAMS.optimisation.update_steps.contact.coulomb_friction_coeff
         ),
         'normal_stiffness': compute_learning_rate(
             gradients['contact']['normal_stiffness'],
-            SYSTEM_PARAMS.optimisation_update_steps.contact.normal_stiffness
+            SYSTEM_PARAMS.optimisation.update_steps.contact.normal_stiffness
         ),
         'tangential_stiffness': compute_learning_rate(
             gradients['contact']['tangential_stiffness'],
-            SYSTEM_PARAMS.optimisation_update_steps.contact.tangential_stiffness
+            SYSTEM_PARAMS.optimisation.update_steps.contact.tangential_stiffness
         ),
         'normal_damping': compute_learning_rate(
             gradients['contact']['normal_damping'],
-            SYSTEM_PARAMS.optimisation_update_steps.contact.normal_damping
+            SYSTEM_PARAMS.optimisation.update_steps.contact.normal_damping
         )
     }
     res = {

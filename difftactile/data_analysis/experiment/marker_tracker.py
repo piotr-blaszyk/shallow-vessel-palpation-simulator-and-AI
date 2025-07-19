@@ -152,11 +152,15 @@ class MarkerTracker:
             2.0,
             (first_frame.shape[1], first_frame.shape[0]),
         )
-        def draw_markers(frame, markers, color):
-            for marker in markers:
+        def draw_markers(frame, markers, color, show_text=False):
+            for idx, marker in enumerate(markers):
                 if len(marker) > 0:
                     point = tuple(map(int, marker))
                     cv2.circle(frame, point, 5, color, -1)
+                    if show_text:
+                        text_point = (point[0], point[1] - 10)
+                        cv2.putText(frame, str(idx), text_point, cv2.FONT_HERSHEY_SIMPLEX, 
+                                0.5, color, 1, cv2.LINE_AA)
             return frame
         def draw_arrows(frame, start_markers, end_markers, mapping):
             for i, map_entry in enumerate(mapping):
@@ -200,11 +204,12 @@ class MarkerTracker:
                         markers_array = pickle.load(f)
                     base_frame = self.frames[0].copy()
                     base_frame = draw_markers(base_frame, markers_array[0], (255, 0, 0))
-                    frame = draw_markers(frame, markers_array[frame_idx], (0, 255, 0))
+                    frame = draw_markers(frame, markers_array[frame_idx], (0, 255, 0), show_text=True)
                     blended = cv2.addWeighted(frame, 0.7, base_frame, 0.3, 0)
-                    if frame_idx > 0:
-                        dummy_mapping = [(i, None) for i in range(len(markers_array[0]))]
-                        blended = draw_arrows(blended, markers_array[0], markers_array[frame_idx], dummy_mapping)
+                    if False:
+                        if frame_idx > 0:
+                            dummy_mapping = [(i, None) for i in range(len(markers_array[0]))]
+                            blended = draw_arrows(blended, markers_array[0], markers_array[frame_idx], dummy_mapping)
                 else:
                     base_frame = self.frames[0].copy()
                     base_frame = draw_markers(base_frame, self.frame_markers[0], (255, 0, 0))
@@ -256,7 +261,7 @@ class MarkerTracker:
             "wb") as f:
             pickle.dump(markers_array, f)
             
-        if True:
+        if False:
             visualization = np.zeros((1080, 1920, 3), dtype=np.uint8)
             for marker_pos in markers_array[0]:
                 x, y = int(marker_pos[0]), int(marker_pos[1])

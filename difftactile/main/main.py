@@ -67,12 +67,48 @@ class Contact:
         self.exp_markers = ti.Vector.field(2, dtype=float, shape=(4, max_0, max_1), needs_grad=False)
         self.marker_position_exp = ti.Vector.field(2, dtype=float, shape=(max_1,), needs_grad=False)
         self.sim_to_exp_markers = ti.field(dtype=int, shape=(127,), needs_grad=False)
+        self.exp_to_sim_markers = ti.field(dtype=int, shape=(127,), needs_grad=False)
+
+        self.traj_1_exp_marker_pairs_np = np.array([
+            [104, 105],
+            [105, 67],
+            [67, 46],
+            [46, 68],
+            [99, 79],
+            [79, 43],
+            [43, 44],
+            [44, 66],
+            [66, 16],
+            [41, 98],
+            [98, 63],
+            [63, 78],
+            [78, 42]
+        ])
+        self.traj_1_exp_marker_pairs = ti.Vector.field(
+            2, 
+            dtype=int, 
+            shape=(self.traj_1_exp_marker_pairs_np.shape[0],),
+            needs_grad=False
+        )
+        self.traj_1_exp_marker_pairs.from_numpy(self.traj_1_exp_marker_pairs_np)
+        self.traj_1_critical_frames_exp_np = np.array([175, 231])
+        self.traj_1_critical_frames_exp = ti.field(
+            dtype=int,
+            shape=(self.traj_1_critical_frames_exp_np.shape[0],),
+            needs_grad=False
+        )
+        self.cur_exp_frame = ti.field(
+            dtype=int,
+            shape=(),
+            needs_grad=False
+        )
     
     @ti.kernel
     def load_system_identification_data_2(self):
         self.exp_markers.fill(-1)
         self.marker_position_exp.fill(-1)
         self.sim_to_exp_markers.fill(-1)
+        self.exp_to_sim_markers.fill(-1)
     
     def load_system_identification_data_3(self):
         self.exp_markers.from_numpy(self.exp_markers_np)
@@ -88,6 +124,13 @@ class Contact:
         for ix_1, ix_2 in zip(ixs_1, ixs_2):
             self.sim_to_exp_markers_np[ix_1] = ix_2
         self.sim_to_exp_markers.from_numpy(self.sim_to_exp_markers_np)
+        self.exp_to_sim_markers_np = -np.ones_like(self.sim_to_exp_markers_np)
+        for i in range(self.sim_to_exp_markers_np.shape[0]):
+            exp = self.sim_to_exp_markers_np[i]
+            if exp != -1:
+                self.exp_to_sim_markers_np[exp] = i
+        self.exp_to_sim_markers.from_numpy(self.exp_to_sim_markers_np)
+        
 
     @ti.kernel
     def interpolate_experimental_frame(self, ts: ti.i32):
@@ -130,6 +173,7 @@ class Contact:
                 )
             else:
                 exp_keypoint = cur_exp_keypoints[start_ix]
+            self.cur_exp_frame[None] = exp_keypoint
             for i in range(self.exp_marker_shapes[self.trajectory_ix[None]][1]):
                 for j in range(2):
                     if end_ix != -1:
@@ -149,7 +193,8 @@ class Contact:
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
         self.total_loss = ti.field(float, (), needs_grad=False)
-        self.squared_error_sum = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.squared_error_sum_1 = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.squared_error_sum_2 = ti.field(dtype=float, shape=(), needs_grad=True)
 
     def set_up_collision_detection(self):
         self.num_sensor = 1
@@ -386,8 +431,10 @@ class Contact:
         self.marker_position_exp.fill(-1)
         self.sim_keypoints.fill(-1)
         self.sim_to_exp_markers.fill(-1)
+        self.exp_to_sim_markers.fill(-1)
         self.exp_marker_points.fill(-1)
         self.sim_markers_deformed_filtered.fill(-1)
+        self.cur_exp_frame.fill(-1)
 
     def reset_pid_controller(self):
         self.pos_error_sum.fill(0)
@@ -448,7 +495,8 @@ class Contact:
 
     @ti.kernel
     def clear_grad_helper(self):
-        self.squared_error_sum.grad.fill(0.0)
+        self.squared_error_sum_1.grad.fill(0.0)
+        self.squared_error_sum_2.grad.fill(0.0)
         self.normal_stiffness.grad.fill(0.0)
         self.normal_damping.grad.fill(0.0)
         self.tangential_stiffness.grad.fill(0.0)
@@ -461,13 +509,14 @@ class Contact:
 
     @ti.kernel
     def reset(self):
-        self.squared_error_sum.fill(0.0)
+        self.squared_error_sum_1.fill(0.0)
+        self.squared_error_sum_2.fill(0.0)
         self.contact_idx.fill(-1)
         self.vitactip.reset()
         self.phantom.reset()
 
     @ti.kernel
-    def compute_marker_loss_1(self, f: ti.i32):
+    def compute_marker_loss_1(self):
         for i in range(self.vitactip.num_markers):
             exp_ix = self.sim_to_exp_markers[i]
             if exp_ix != -1:
@@ -478,12 +527,43 @@ class Contact:
                 dx /= SYSTEM_PARAMS.fisheye_model.target_image_width
                 dy /= SYSTEM_PARAMS.fisheye_model.target_image_height
                 squared_error = dx * dx + dy * dy
-                self.squared_error_sum[None] += squared_error
+                self.squared_error_sum_1[None] += squared_error
 
     @ti.kernel
-    def compute_marker_loss_2(self, f: ti.i32):
-        rmse = ti.sqrt(self.squared_error_sum[None] / self.marker_position_exp.shape[0])
-        self.loss[None] += rmse
+    def compute_marker_loss_2(self):
+        rmse = ti.sqrt(self.squared_error_sum_1[None] / self.marker_position_exp.shape[0])
+        self.loss[None] += SYSTEM_PARAMS.optimisation.loss_1_weight * rmse
+    
+    @ti.kernel
+    def compute_marker_loss_3(self):
+        if (
+            self.trajectory_ix[None] == 1
+            and self.cur_exp_frame[None] >= self.traj_1_critical_frames_exp[0]
+            and self.cur_exp_frame[None] < self.traj_1_critical_frames_exp[1]
+        ):
+            for i in range(self.traj_1_exp_marker_pairs.shape[0]):
+                a_exp_ix = self.traj_1_exp_marker_pairs[i][0]
+                b_exp_ix = self.traj_1_exp_marker_pairs[i][1]
+                a_sim_ix = self.exp_to_sim_markers[a_exp_ix]
+                b_sim_ix = self.exp_to_sim_markers[b_exp_ix]
+
+                a_exp = self.marker_position_exp[a_exp_ix]
+                b_exp = self.marker_position_exp[b_exp_ix]
+                a_sim = self.vitactip.deformed_markers[a_sim_ix]
+                b_sim = self.vitactip.deformed_markers[b_sim_ix]
+
+                dist_exp = b_exp[0] - a_exp[0]
+                dist_sim = b_sim[0] - a_sim[0]
+
+                loss_term = dist_exp - dist_sim
+                loss_term /= SYSTEM_PARAMS.fisheye_model.target_image_width
+                squared_error = loss_term * loss_term
+                self.squared_error_sum_2[None] += squared_error
+
+    @ti.kernel
+    def compute_marker_loss_4(self):
+        rmse = ti.sqrt(self.squared_error_sum_2[None] / self.traj_1_exp_marker_pairs.shape[0])
+        self.loss[None] += SYSTEM_PARAMS.optimisation.loss_2_weight * rmse
 
     @ti.func
     def calculate_contact_force(
@@ -1055,8 +1135,8 @@ class Contact:
         if not self.gradients_printed:
             print(f"time step: {ts}")
             print(f"loss: {self.loss.grad[None]}")
-            print(f"squared_error_sum (grad): {self.squared_error_sum.grad[None]}")
-            print(f"squared_error_sum (val): {self.squared_error_sum[None]}")
+            print(f"squared_error_sum (grad): {self.squared_error_sum_1.grad[None]}")
+            print(f"squared_error_sum (val): {self.squared_error_sum_1[None]}")
             print()
             self.print_gradients_single(
                 "deformed_markers", self.vitactip.deformed_markers
@@ -1132,8 +1212,8 @@ class Contact:
         print()
     
     def update_param_none(self, ti_var, keys):
-        min_val = SYSTEM_PARAMS.optimisation_min_values
-        max_val = SYSTEM_PARAMS.optimisation_max_values
+        min_val = SYSTEM_PARAMS.optimisation.min_values
+        max_val = SYSTEM_PARAMS.optimisation.max_values
         learning_rate = SYSTEM_PARAMS_COMPUTED.learning_rates
         for i in range(len(keys)):
             min_val = min_val[keys[i]]
@@ -1152,8 +1232,8 @@ class Contact:
         print(f'{param_name}.update: {update}')
 
     def update_param_indexed(self, ti_var, keys, idx):
-        min_val = SYSTEM_PARAMS.optimisation_min_values
-        max_val = SYSTEM_PARAMS.optimisation_max_values
+        min_val = SYSTEM_PARAMS.optimisation.min_values
+        max_val = SYSTEM_PARAMS.optimisation.max_values
         learning_rate = SYSTEM_PARAMS_COMPUTED.learning_rates
         for i in range(len(keys)):
             min_val = min_val[keys[i]]
@@ -1282,11 +1362,15 @@ def main():
                     SYSTEM_PARAMS.contact.num_sub_frames - 1
                 )
                 contact_model.interpolate_experimental_frame(ts)
-                contact_model.compute_marker_loss_1(ts)
-                contact_model.compute_marker_loss_2(ts)
+                contact_model.compute_marker_loss_1()
+                contact_model.compute_marker_loss_2()
+                contact_model.compute_marker_loss_3()
+                contact_model.compute_marker_loss_4()
                 contact_model.visualisation_update_gui(ts)
-                contact_model.compute_marker_loss_2.grad(ts)
-                contact_model.compute_marker_loss_1.grad(ts)
+                contact_model.compute_marker_loss_4.grad()
+                contact_model.compute_marker_loss_3.grad()
+                contact_model.compute_marker_loss_2.grad()
+                contact_model.compute_marker_loss_1.grad()
                 contact_model.vitactip.extract_markers.grad(
                     SYSTEM_PARAMS.contact.num_sub_frames - 1
                 )

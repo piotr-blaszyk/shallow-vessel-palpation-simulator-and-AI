@@ -7,12 +7,12 @@
             "youngs_modulus": 5.000e+03
         },
         "single_material": {
-            "youngs_modulus": 5.000e+04
+            "youngs_modulus": 2.500e+03
         }
     },
     "phantom": {
         "silicone": {
-            "youngs_modulus": 2.500e+04
+            "youngs_modulus": 2.500e+03
         },
         "hard_plastic": {
             "youngs_modulus": 2.500e+05
