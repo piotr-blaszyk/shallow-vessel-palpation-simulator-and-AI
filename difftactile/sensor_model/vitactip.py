@@ -527,16 +527,16 @@ class ViTacTip:
                     1.0,
                 ]
             )
-            homogeneous_B = self.T_AB[None] @ homogeneous_A
-            inhomogeneous_B = ti.Vector(
+            homogeneous_E = self.T_BE[None] @ self.T_AB[None] @ homogeneous_A
+            inhomogeneous_E = ti.Vector(
                 [
-                    homogeneous_B[0],
-                    homogeneous_B[1],
-                    homogeneous_B[2],
+                    homogeneous_E[0],
+                    homogeneous_E[1],
+                    homogeneous_E[2],
                 ]
             )
             projections_2d = self.fisheye_model.project_3d_2d(
-                inhomogeneous_B
+                inhomogeneous_E
             )
             self.projection_2d_clock_arms[i] = projections_2d
 
