@@ -91,14 +91,15 @@ class Contact:
             needs_grad=False
         )
         self.traj_1_exp_marker_pairs.from_numpy(self.traj_1_exp_marker_pairs_np)
-        self.traj_1_critical_frames_exp_np = np.array([175, 231])
+        self.traj_1_critical_frames_exp_np = np.array([175, 231], dtype=int)
         self.traj_1_critical_frames_exp = ti.field(
             dtype=int,
             shape=(self.traj_1_critical_frames_exp_np.shape[0],),
             needs_grad=False
         )
+        self.traj_1_critical_frames_exp.from_numpy(self.traj_1_critical_frames_exp_np)
         self.cur_exp_frame = ti.field(
-            dtype=int,
+            dtype=float,
             shape=(),
             needs_grad=False
         )
@@ -1131,12 +1132,13 @@ class Contact:
         self.phantom.set_stiffness.grad()
         self.vitactip.set_up_system_params_2.grad()
 
-    def print_gradients(self, ts):
+    def print_gradients(self):
         if not self.gradients_printed:
-            print(f"time step: {ts}")
             print(f"loss: {self.loss.grad[None]}")
-            print(f"squared_error_sum (grad): {self.squared_error_sum_1.grad[None]}")
-            print(f"squared_error_sum (val): {self.squared_error_sum_1[None]}")
+            print(f"squared_error_sum_1 (grad): {self.squared_error_sum_1.grad[None]}")
+            print(f"squared_error_sum_1 (val): {self.squared_error_sum_1[None]}")
+            print(f"squared_error_sum_2 (grad): {self.squared_error_sum_2.grad[None]}")
+            print(f"squared_error_sum_2 (val): {self.squared_error_sum_2[None]}")
             print()
             self.print_gradients_single(
                 "deformed_markers", self.vitactip.deformed_markers
@@ -1163,12 +1165,93 @@ class Contact:
             self.print_gradients_single(
                 "coulomb_friction_coeff", self.coulomb_friction_coeff
             )
-            self.print_gradients_single("phantom.mu", self.phantom.mu)
-            self.print_gradients_single("phantom.lam", self.phantom.lam)
-            self.print_gradients_single(
-                "phantom.youngs_modulus", self.phantom.youngs_modulus
+            self.print_gradients_indexed("phantom.mu", self.phantom.mu, 0)
+            self.print_gradients_indexed("phantom.lam", self.phantom.lam, 0)
+            self.print_gradients_indexed(
+                "phantom.youngs_modulus", self.phantom.youngs_modulus, 0
+            )
+            self.print_gradients_indexed("phantom.mu", self.phantom.mu, 1)
+            self.print_gradients_indexed("phantom.lam", self.phantom.lam, 1)
+            self.print_gradients_indexed(
+                "phantom.youngs_modulus", self.phantom.youngs_modulus, 1
             )
             print()
+
+            gradient_data = {
+                "loss": float(self.loss.grad[None]),
+                "squared_error_sum_1": float(self.squared_error_sum_1.grad[None]),
+                "squared_error_sum_2": float(self.squared_error_sum_2.grad[None]),
+            }
+
+            def get_gradient_info(name, ti_var):
+                grad_npy = ti_var.grad.to_numpy()
+                return float(max(
+                    abs(grad_npy.min()),
+                    abs(grad_npy.max()),
+                ))
+
+            def get_gradient_info_indexed(name, ti_var, index):
+                grad_npy = ti_var.grad.to_numpy()[index]
+                return float(max(
+                    abs(grad_npy.min()),
+                    abs(grad_npy.max()),
+                ))
+
+            gradient_data["deformed_markers"] = get_gradient_info(
+                "deformed_markers", self.vitactip.deformed_markers
+            )
+            gradient_data["vertices_deformed_A"] = get_gradient_info(
+                "vertices_deformed_A", self.vitactip.vertices_deformed_A
+            )
+            gradient_data["vertex_velocities"] = get_gradient_info(
+                "vertex_velocities", self.vitactip.vertex_velocities
+            )
+            gradient_data["contact_forces_on_vertices"] = get_gradient_info(
+                "contact_forces_on_vertices", self.vitactip.contact_forces_on_vertices
+            )
+            gradient_data["vitactip_mu"] = get_gradient_info(
+                "vitactip.mu", self.vitactip.mu
+            )
+            gradient_data["vitactip_lam"] = get_gradient_info(
+                "vitactip.lam", self.vitactip.lam
+            )
+            gradient_data["vitactip_youngs_modulus"] = get_gradient_info(
+                "vitactip.youngs_modulus", self.vitactip.youngs_modulus
+            )
+            gradient_data["normal_stiffness"] = get_gradient_info(
+                "normal_stiffness", self.normal_stiffness
+            )
+            gradient_data["normal_damping"] = get_gradient_info(
+                "normal_damping", self.normal_damping
+            )
+            gradient_data["tangential_stiffness"] = get_gradient_info(
+                "tangential_stiffness", self.tangential_stiffness
+            )
+            gradient_data["coulomb_friction_coeff"] = get_gradient_info(
+                "coulomb_friction_coeff", self.coulomb_friction_coeff
+            )
+            gradient_data["phantom_mu_0"] = get_gradient_info_indexed(
+                "phantom.mu", self.phantom.mu, 0
+            )
+            gradient_data["phantom_mu_1"] = get_gradient_info_indexed(
+                "phantom.mu", self.phantom.mu, 1
+            )
+            gradient_data["phantom_lam_0"] = get_gradient_info_indexed(
+                "phantom.lam", self.phantom.lam, 0
+            )
+            gradient_data["phantom_lam_1"] = get_gradient_info_indexed(
+                "phantom.lam", self.phantom.lam, 1
+            )
+            gradient_data["phantom_youngs_modulus_0"] = get_gradient_info_indexed(
+                "phantom.youngs_modulus", self.phantom.youngs_modulus, 0
+            )
+            gradient_data["phantom_youngs_modulus_1"] = get_gradient_info_indexed(
+                "phantom.youngs_modulus", self.phantom.youngs_modulus, 1
+            )
+
+            with open(SYSTEM_PARAMS.files.optimisation_loop_calibration, 'w') as f:
+                json.dump(gradient_data, f, indent=4)
+
             self.gradients_printed = True
 
     def print_gradients_single(self, name, ti_var):
@@ -1178,6 +1261,15 @@ class Contact:
         print(f"{name} (grad) max: {grad_npy.max()}")
         print(f"{name} (val) min: {val_npy.min()}")
         print(f"{name} (val) max: {val_npy.max()}")
+        print()
+    
+    def print_gradients_indexed(self, name, ti_var, ix):
+        grad_npy = ti_var.grad.to_numpy()[ix]
+        val_npy = ti_var.to_numpy()[ix]
+        print(f"{name}_{ix} (grad) min: {grad_npy.min()}")
+        print(f"{name}_{ix} (grad) max: {grad_npy.max()}")
+        print(f"{name}_{ix} (val) min: {val_npy.min()}")
+        print(f"{name}_{ix} (val) max: {val_npy.max()}")
         print()
 
     def update_params(self, ts):
@@ -1362,6 +1454,8 @@ def main():
                     SYSTEM_PARAMS.contact.num_sub_frames - 1
                 )
                 contact_model.interpolate_experimental_frame(ts)
+                if ts == 70:
+                    foo = 7
                 contact_model.compute_marker_loss_1()
                 contact_model.compute_marker_loss_2()
                 contact_model.compute_marker_loss_3()
@@ -1376,6 +1470,7 @@ def main():
                 )
                 contact_model.backward_pass_common_part()
 
+            contact_model.print_gradients()
             if False:
                 contact_model.update_params(ts)
             contact_model.clear_grad()
