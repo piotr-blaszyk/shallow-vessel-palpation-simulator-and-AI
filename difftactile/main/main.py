@@ -790,7 +790,12 @@ class Contact:
         self.tumour_2d_projections = ti.Vector.field(
             2,
             dtype=float,
-            shape=(self.phantom.actual_total_num_particles,),
+            shape=(2,),
+            needs_grad=False,
+        )
+        self.vein_indices = ti.field(
+            dtype=int,
+            shape=(2,),
             needs_grad=False,
         )
         self.sim_markers_undeformed = ti.Vector.field(
@@ -825,10 +830,14 @@ class Contact:
         self.fp_bp = ti.field(dtype=int, shape=(), needs_grad=False)
 
     @ti.kernel
-    def visualisation_reset_scene(self):
+    def visualisation_reset_scene_1(self):
         self.healthy_tissue_points.fill(0)
         self.tumour_points.fill(0)
         self.tumour_2d_projections.fill(-1)
+    
+    def visualisation_reset_scene_2(self):
+        self.vein_indices_np = self.phantom.get_vein_indices()
+        self.vein_indices.from_numpy(self.vein_indices_np)
 
     @ti.kernel
     def visualisation_draw_3d_scene(self, f: ti.i32):
@@ -842,10 +851,13 @@ class Contact:
 
     @ti.kernel
     def visualisation_project_vein_2d(self):
-        for i in range(self.tumour_points.shape[0]):
-            point = self.tumour_points[i]
-            origin = ti.Vector([0.0, 0.0, 0.0], dt=float)
-            if ti.math.length(point - origin) > 1e-6:
+        for i in range(self.vein_indices.shape[0]):
+            ix = self.vein_indices[i]
+            if ix != -1:
+                point = self.phantom.particles_A[
+                    SYSTEM_PARAMS.contact.num_sub_frames - 1,
+                    ix
+                ]
                 projection_2d = self.vitactip.project_A_point_2d(point)
                 projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
                 self.tumour_2d_projections[i] = projection_2d / self.tactile_image_resolution[None]
@@ -1233,7 +1245,8 @@ def main():
             contact_model.trajectory_ix[None] = i
             contact_model.set_up_initial_positions_state_and_trajectory()
             contact_model.reset_pid_controller()
-            contact_model.visualisation_reset_scene()
+            contact_model.visualisation_reset_scene_1()
+            contact_model.visualisation_reset_scene_2()
             contact_model.reset_exp_sim_traj()
             contact_model.vitactip.extract_markers(0)
             contact_model.compute_mapping_between_experimental_and_sim_markers()

@@ -756,16 +756,20 @@ class Phantom:
         return coordinates
 
     def get_vein_indices(self):
-        points_3d = self.particles_A.to_numpy().astype(float)
+        points_3d = self.particles_A.to_numpy()[0].astype(float)
         titles = self.titles.to_numpy().astype(int)
         
         mask = titles == 1
         filtered_points = points_3d[mask]
+
+        if filtered_points.shape[0] == 0:
+            return np.array([-1, -1], dtype=int)
+
         local_max_y_idx = np.argmax(filtered_points[:, 1])
         local_min_y_idx = np.argmin(filtered_points[:, 1])
         original_indices = np.where(mask)[0]
         original_max_y_idx = original_indices[local_max_y_idx]
         original_min_y_idx = original_indices[local_min_y_idx]
         
-        return np.array([original_max_y_idx, original_min_y_idx])
+        return np.array([original_max_y_idx, original_min_y_idx], dtype=int)
         
