@@ -99,12 +99,9 @@ class ViTacTip:
             element_mass = volume * material_density
             for vertex_idx in tetra:
                 vertex_masses[vertex_idx] += element_mass / 4.0
-        max_z = np.max(node_coordinates[:, 2])
-        z_translation = (
-            SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface
-            - max_z
-        )
-        translation_vector = np.array([0, 0, z_translation])
+        
+        max_z = node_coordinates[:, 2].max()
+        translation_vector = np.array([0, 0, -max_z])
         node_coordinates = node_coordinates + translation_vector
         self.node_coordinates = node_coordinates
         self.tetrahedra_npy = all_tetrahedra
@@ -190,12 +187,21 @@ class ViTacTip:
             SYSTEM_PARAMS.files.vitactip_photo_default_state_detected_markers,
             marker_visualization_image,
         )
-        surface_nodes_z_up = self.node_coordinates[self.dome_surface_node_tags_npy]
+
+        dome_surface_nodes = self.node_coordinates[self.dome_surface_node_tags_npy]
+        max_z = np.max(dome_surface_nodes[:, 2])
+        z_translation = (
+            SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface
+            - max_z
+        )
+        translation_vector = np.array([0, 0, z_translation])
+        dome_surface_nodes += translation_vector
+
         surface_node_projections_2d = np.zeros(
-            (len(surface_nodes_z_up), 2), dtype=np.float32
+            (len(dome_surface_nodes), 2), dtype=np.float32
         )
         self.project_surface_nodes_to_2d(
-            surface_nodes_z_up, surface_node_projections_2d
+            dome_surface_nodes, surface_node_projections_2d
         )
         surface_node_visualization = initial_camera_image.copy()
         for projected_point in surface_node_projections_2d:
@@ -333,6 +339,11 @@ class ViTacTip:
         self.T_AB = ti.Matrix.field(4, 4, ti.f32, shape=(), needs_grad=False)
         self.T_CD = ti.Matrix.field(4, 4, ti.f32, shape=(), needs_grad=False)
         self.T_A = ti.Matrix.field(4, 4, ti.f32, shape=(), needs_grad=False)
+        self.T_BE = ti.Matrix.field(4, 4, ti.f32, shape=(), needs_grad=False)
+        T_BE_np = np.eye(4)
+        T_BE_np[2, 3] = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface
+        self.T_BE.from_numpy(T_BE_np)
+
         self.vertex_control_velocities = ti.Vector.field(
             3, float, shape=(self.num_vertices), needs_grad=False
         )
@@ -390,31 +401,31 @@ class ViTacTip:
                     1.0,
                 ]
             )
-            homogeneous_deformed_B = (
-                self.T_AB[None] @ homogeneous_deformed_A
+            homogeneous_deformed_E = (
+                self.T_BE[None] @ self.T_AB[None] @ homogeneous_deformed_A
             )
-            homogeneous_undeformed_B = (
-                self.T_AB[None] @ homogeneous_undeformed_A
+            homogeneous_undeformed_E = (
+                self.T_BE[None] @ self.T_AB[None] @ homogeneous_undeformed_A
             )
-            inhomogeneous_deformed_B = ti.Vector(
+            inhomogeneous_deformed_E = ti.Vector(
                 [
-                    homogeneous_deformed_B[0],
-                    homogeneous_deformed_B[1],
-                    homogeneous_deformed_B[2],
+                    homogeneous_deformed_E[0],
+                    homogeneous_deformed_E[1],
+                    homogeneous_deformed_E[2],
                 ]
             )
-            inhomogeneous_undeformed_B = ti.Vector(
+            inhomogeneous_undeformed_E = ti.Vector(
                 [
-                    homogeneous_undeformed_B[0],
-                    homogeneous_undeformed_B[1],
-                    homogeneous_undeformed_B[2],
+                    homogeneous_undeformed_E[0],
+                    homogeneous_undeformed_E[1],
+                    homogeneous_undeformed_E[2],
                 ]
             )
             projections_2d_deformed = self.fisheye_model.project_3d_2d(
-                inhomogeneous_deformed_B
+                inhomogeneous_deformed_E
             )
             projections_2d_undeformed = self.fisheye_model.project_3d_2d(
-                inhomogeneous_undeformed_B
+                inhomogeneous_undeformed_E
             )
             self.projection_2d_dome_surface_nodes_deformed[i] += (
                 projections_2d_deformed

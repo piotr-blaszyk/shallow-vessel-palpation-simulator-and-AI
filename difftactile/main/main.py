@@ -364,19 +364,14 @@ class Contact:
         assert(self.trajectories_np.shape[0] == len(self.state_dicts))
 
     def set_up_initial_positions_state_and_trajectory(self):
-        trajectory_ix = self.trajectory_ix[None]
-        ix = self.vitactip.get_keypoint_indices_numpy_point_a()
-        camera_lens_to_sensor_tip = self.vitactip.node_coordinates[ix, 2]
         self.tumour_present_ground_truth_label[None] = 0
         self.phantom.set_state_from_outside(
             pos=self.phantom_centroid_pose[:3],
             ori=self.phantom_centroid_pose[3:],
             vel=[0.0, 0.0, 0.0],
-            state_dict=self.state_dicts[trajectory_ix],
+            state_dict=self.state_dicts[self.trajectory_ix[None]],
         )
-        sensor_dome_tip_initial_pose = self.trajectories[self.trajectory_ix[None], 0].to_numpy().tolist()
-        sensor_dome_tip_initial_pose[2] += camera_lens_to_sensor_tip
-        sensor_dome_tip_initial_pose = np.array(sensor_dome_tip_initial_pose)
+        sensor_dome_tip_initial_pose = self.trajectories[self.trajectory_ix[None], 0].to_numpy()
         self.vitactip.set_up_pose(sensor_dome_tip_initial_pose)
         self.tactile_sensor_initial_position[0] = ti.Vector(
             sensor_dome_tip_initial_pose[:3]
@@ -913,8 +908,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
-        self.camera.up(0, 1, 0)
+        self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -1200,7 +1195,7 @@ def main():
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
         # for i in range(contact_model.trajectories_np.shape[0]):
-        for i in range(1, 2):
+        for i in range(2, 3):
             print(f'trajectory {i}: {contact_model.trajectory_names[i]}')
             contact_model.trajectory_ix[None] = i
             contact_model.set_up_initial_positions_state_and_trajectory()
