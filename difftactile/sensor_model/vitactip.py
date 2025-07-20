@@ -1044,12 +1044,6 @@ class ViTacTip:
         point_c_idx = int(np.argmax(y_coords_filtered))
         return np.array([point_a_idx, point_b_idx, point_c_idx])
 
-    def get_keypoint_indices_numpy_point_a(self):
-        positions = self.node_coordinates
-        z_coords = positions[:, 2]
-        point_a_idx = int(np.argmax(z_coords))
-        return point_a_idx
-
     def get_keypoint_coordinates(
         self, f: int, keypoint_indices: np.ndarray
     ) -> np.ndarray:
