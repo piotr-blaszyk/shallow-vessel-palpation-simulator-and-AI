@@ -247,6 +247,8 @@
         "traj_out": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_{}_out.mkv",
         "traj_markers": "difftactile/output/marker_tracker/domain-adaptation-vascular-markers/traj_{}_out.pkl",
         "traj_id": 1,
-        "optimisation_loop_calibration": "difftactile/output/optimisation_loop_calibration.json"
+        "optimisation_loop_calibration": "difftactile/output/optimisation_loop_calibration.json",
+        "press_no_vein": "/home/psb120/Documents/DiffTactile/difftactile/manual_or_experimental_data/press-no-vein.jpg",
+        "press_horizontal_vein": "/home/psb120/Documents/DiffTactile/difftactile/manual_or_experimental_data/press-horizontal-vein.jpg"
     }
 }
