@@ -118,7 +118,8 @@
             "depth_beneath_surface": 3.000e-02
         },
         "phantom_x_length": 8.000e-01,
-        "phantom_y_length": 4.000e-01
+        "phantom_y_length": 4.000e-01,
+        "camera_rotation_angle": 1.037e+01
     },
     "meta": {
         "target_courant_number": 5.000e-02,
@@ -249,6 +250,8 @@
         "traj_id": 1,
         "optimisation_loop_calibration": "difftactile/output/optimisation_loop_calibration.json",
         "press_no_vein": "/home/psb120/Documents/DiffTactile/difftactile/manual_or_experimental_data/press-no-vein.jpg",
-        "press_horizontal_vein": "/home/psb120/Documents/DiffTactile/difftactile/manual_or_experimental_data/press-horizontal-vein.jpg"
+        "press_horizontal_vein": "/home/psb120/Documents/DiffTactile/difftactile/manual_or_experimental_data/press-horizontal-vein.jpg",
+        "calibration_vertical": "/home/psb120/Documents/DiffTactile/difftactile/manual_or_experimental_data/calibration-vertical.png",
+        "calibration_horizontal": "/home/psb120/Documents/DiffTactile/difftactile/manual_or_experimental_data/calibration-horizontal.png"
     }
 }

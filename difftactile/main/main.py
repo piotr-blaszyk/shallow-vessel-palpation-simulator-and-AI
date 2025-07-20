@@ -312,6 +312,8 @@ class Contact:
         x, y, z = self.vitactip_tip_pose[:3]
         quat = self.vitactip_tip_pose[3:]
         og_r = R.from_quat(quat)
+        _dr = -SYSTEM_PARAMS.geometry.camera_rotation_angle
+        dr = R.from_euler(seq="xyz", angles=[0, 0, _dr], degrees=True)
         twist_1_offset = R.from_euler(seq="xyz", angles=[-30, 0, 0], degrees=True)
         twist_2_offset = R.from_euler(seq="xyz", angles=[0, 0, -45], degrees=True)
         slide_offset = R.from_euler(seq="xyz", angles=[0, 0, 180], degrees=True)
