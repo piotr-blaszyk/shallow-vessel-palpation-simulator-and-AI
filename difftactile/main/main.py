@@ -563,8 +563,13 @@ class Contact:
 
     @ti.kernel
     def compute_marker_loss_4(self):
-        rmse = ti.sqrt(self.squared_error_sum_2[None] / self.traj_1_exp_marker_pairs.shape[0])
-        self.loss[None] += SYSTEM_PARAMS.optimisation.loss_2_weight * rmse
+        if (
+            self.trajectory_ix[None] == 1
+            and self.cur_exp_frame[None] >= self.traj_1_critical_frames_exp[0]
+            and self.cur_exp_frame[None] < self.traj_1_critical_frames_exp[1]
+        ):
+            rmse = ti.sqrt(self.squared_error_sum_2[None] / self.traj_1_exp_marker_pairs.shape[0])
+            self.loss[None] += SYSTEM_PARAMS.optimisation.loss_2_weight * rmse
 
     @ti.func
     def calculate_contact_force(
@@ -1407,6 +1412,7 @@ def main():
     contact_model.reset_pid_controller()
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
+    foo = True
 
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
@@ -1454,8 +1460,6 @@ def main():
                     SYSTEM_PARAMS.contact.num_sub_frames - 1
                 )
                 contact_model.interpolate_experimental_frame(ts)
-                if ts == 70:
-                    foo = 7
                 contact_model.compute_marker_loss_1()
                 contact_model.compute_marker_loss_2()
                 contact_model.compute_marker_loss_3()
@@ -1469,6 +1473,14 @@ def main():
                     SYSTEM_PARAMS.contact.num_sub_frames - 1
                 )
                 contact_model.backward_pass_common_part()
+                if False:
+                    if foo and contact_model.cur_exp_frame[None] < contact_model.traj_1_critical_frames_exp[0]:
+                        print()
+                        print("leaving critical region")
+                        print()
+                        foo = False
+                    print(f"ts: {ts}; squared_error_sum_2 (grad): {contact_model.squared_error_sum_2.grad[None]}")
+                    print(f"ts: {ts}; squared_error_sum_2 (val): {contact_model.squared_error_sum_2[None]}")
 
             contact_model.print_gradients()
             if False:

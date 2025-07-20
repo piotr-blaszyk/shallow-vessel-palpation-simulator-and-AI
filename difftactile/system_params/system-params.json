@@ -181,7 +181,7 @@
             }
         },
         "loss_1_weight": 1.000e+00,
-        "loss_2_weight": 1.000e+01
+        "loss_2_weight": 2.000e-01
     },
     "fisheye_model": {
         "focal_length_x": 3.800e+02,
