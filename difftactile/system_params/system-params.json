@@ -246,6 +246,7 @@
         "is_fixed_layer": "difftactile/output/is_fixed_layer.pkl",
         "traj_in": "difftactile/manual_or_experimental_data/domain-adaptation-vascular-videos/mkv/traj_{}_trimmed.mkv",
         "traj_out": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_{}_out.mkv",
+        "traj_out_snapshot": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_{}_out_snapshot_frame_{}.jpg",
         "traj_markers": "difftactile/output/marker_tracker/domain-adaptation-vascular-markers/traj_{}_out.pkl",
         "traj_id": 1,
         "optimisation_loop_calibration": "difftactile/output/optimisation_loop_calibration.json",

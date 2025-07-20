@@ -8,6 +8,7 @@ from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.transform import Rotation as R
 
+from difftactile.sensor_model.fisheye_model import *
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
 from difftactile.main.constants import *
@@ -19,6 +20,7 @@ RUN_ON_LAB_MACHINE = True
 @ti.data_oriented
 class Contact:
     def __init__(self):
+        self.fisheye_model = FisheyeModel()
         self.set_up_system_params()
         self.load_system_identification_data_1()
         self.load_system_identification_data_2()
@@ -103,6 +105,7 @@ class Contact:
             shape=(),
             needs_grad=False
         )
+        
     
     @ti.kernel
     def load_system_identification_data_2(self):
@@ -131,7 +134,15 @@ class Contact:
             if exp != -1:
                 self.exp_to_sim_markers_np[exp] = i
         self.exp_to_sim_markers.from_numpy(self.exp_to_sim_markers_np)
-        
+    
+    @ti.func
+    def project_point_on_line(point, line_point1, line_point2):
+        line_vector = line_point2 - line_point1
+        point_vector = point - line_point1
+        line_direction = line_vector / ti.math.length(line_vector)
+        projection_length = ti.math.dot(point_vector, line_direction)
+        projected_point = line_point1 + projection_length * line_direction
+        return projected_point
 
     @ti.kernel
     def interpolate_experimental_frame(self, ts: ti.i32):
@@ -159,37 +170,75 @@ class Contact:
             start_ix != -1 
             and cur_exp_keypoints[start_ix] != -1
         ):
-            exp_keypoint = -1.0
-            if end_ix != -1:
-                exp_keypoint = (
-                    cur_exp_keypoints[start_ix] 
-                    + (
-                        cur_exp_keypoints[end_ix]
-                        - cur_exp_keypoints[start_ix]
-                    ) * (
-                        ts - self.sim_keypoints[start_ix]
-                    ) / (
-                        self.sim_keypoints[end_ix] - self.sim_keypoints[start_ix]
-                    )
+            if (
+                self.trajectory_ix[None] == 1
+                and start_ix >= 3
+            ):
+                target = self.phantom.particles_A[
+                    SYSTEM_PARAMS.contact.num_sub_frames - 1,
+                    self.vein_indices[0]
+                ]
+                x_E = self.exp_vein_3d_coords_E[0]
+                y_E = self.exp_vein_3d_coords_E[1]
+                x_A = self.vitactip.project_E_to_A(x_E)
+                y_A = self.vitactip.project_E_to_A(y_E)
+                target_projected = self.project_point_on_line(
+                    target,
+                    x_A,
+                    y_A
                 )
+                min_dist = SYSTEM_PARAMS.geometry.high_dist
+                min_ix = -1
+                for i in range(self.exp_vein_3d_coords_E_all.shape[0]):
+                    exp_vein_point_E = self.exp_vein_3d_coords_E_all[i]
+                    if ti.math.length(
+                        exp_vein_point_E
+                        - ti.Vector([-1.0, -1.0, -1.0], dt=float)
+                    ) > 1e6:
+                        exp_vein_point_A = self.vitactip.project_E_to_A(exp_vein_point_E)
+                        dist = ti.math.length(
+                            exp_vein_point_A
+                            - target_projected
+                        )
+                        if dist < min_dist:
+                            min_dist = dist
+                            min_ix = i
+                exp_vein_point_E_0 = self.exp_vein_3d_coords_E_all[min_ix]
+                # self.vein_speed_E[None]
+
+
             else:
-                exp_keypoint = cur_exp_keypoints[start_ix]
-            self.cur_exp_frame[None] = exp_keypoint
-            for i in range(self.exp_marker_shapes[self.trajectory_ix[None]][1]):
-                for j in range(2):
-                    if end_ix != -1:
-                        self.marker_position_exp[i][j] = (
-                            self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j] 
-                            + (exp_keypoint - ti.floor(exp_keypoint)) 
-                            * (
-                                self.exp_markers[self.trajectory_ix[None], ti.ceil(exp_keypoint, dtype=ti.i32), i][j]
-                                - self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
+                exp_keypoint = -1.0
+                if end_ix != -1:
+                    exp_keypoint = (
+                        cur_exp_keypoints[start_ix] 
+                        + (
+                            cur_exp_keypoints[end_ix]
+                            - cur_exp_keypoints[start_ix]
+                        ) * (
+                            ts - self.sim_keypoints[start_ix]
+                        ) / (
+                            self.sim_keypoints[end_ix] - self.sim_keypoints[start_ix]
+                        )
+                    )
+                else:
+                    exp_keypoint = cur_exp_keypoints[start_ix]
+                self.cur_exp_frame[None] = exp_keypoint
+                for i in range(self.exp_marker_shapes[self.trajectory_ix[None]][1]):
+                    for j in range(2):
+                        if end_ix != -1:
+                            self.marker_position_exp[i][j] = (
+                                self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j] 
+                                + (exp_keypoint - ti.floor(exp_keypoint)) 
+                                * (
+                                    self.exp_markers[self.trajectory_ix[None], ti.ceil(exp_keypoint, dtype=ti.i32), i][j]
+                                    - self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
+                                )
                             )
-                        )
-                    else:
-                        self.marker_position_exp[i][j] = (
-                            self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
-                        )
+                        else:
+                            self.marker_position_exp[i][j] = (
+                                self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
+                            )
 
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
@@ -293,11 +342,44 @@ class Contact:
             [-1, -1, 0, 23, 230],
             [-1, -1, 0, 30, 95],
             [-1, 0, 39, 133, 173]
-        ])
+        ], dtype=int)
         self.exp_keypoints = ti.Vector.field(
             5, dtype=int, shape=(self.exp_keypoints_np.shape[0],), needs_grad=False
         )
         self.exp_keypoints.from_numpy(self.exp_keypoints_np)
+
+        self.exp_vein_ixs = np.array([
+            103,
+            179
+        ], dtype=int)
+        self.exp_vein_2d_coords = np.array([
+            [935, 881],
+            [1197, 899]
+        ], dtype=float)
+        self.exp_vein_3d_coords_E_np = self.fisheye_model.project_pix_to_points_3d_plane(self.exp_vein_2d_coords)
+        self.exp_vein_3d_coords_E = ti.Vector.field(
+            3, dtype=float, shape=(self.exp_vein_3d_coords_E_np.shape[0],), needs_grad=False
+        )
+        self.exp_vein_3d_coords_E.from_numpy(self.exp_vein_3d_coords_E_np)
+        self.vein_speed_E_np = (
+            (self.exp_vein_3d_coords_E_np[1] - self.exp_vein_3d_coords_E_np[0])
+            /
+            (self.exp_vein_ixs[1] - self.exp_vein_ixs[0])
+        )
+        self.vein_speed_E = ti.Vector.field(
+            3, dtype=float, shape=(), needs_grad=False
+        )
+        self.vein_speed_E[None].from_numpy(self.vein_speed_E_np)
+        self.exp_vein_3d_coords_E_all_np = -np.ones(shape=(self.exp_keypoints_np[1][4]+1, 3), dtype=float)
+        for i in range(self.exp_keypoints_np[1][3], self.exp_keypoints_np[1][4]+1):
+            self.exp_vein_3d_coords_E_all_np = (
+                self.exp_vein_2d_coords 
+                + (i - self.exp_vein_ixs[0]) * self.vein_speed_E_np
+            )
+        self.exp_vein_3d_coords_E_all = ti.Vector.field(
+            3, dtype=float, shape=(self.exp_vein_3d_coords_E_all_np.shape[0],), needs_grad=False
+        )
+        self.exp_vein_3d_coords_E_all.from_numpy(self.exp_vein_3d_coords_E_all_np)
 
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate(

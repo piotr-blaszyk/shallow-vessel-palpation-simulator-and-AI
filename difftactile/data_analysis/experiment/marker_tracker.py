@@ -226,6 +226,8 @@ class MarkerTracker:
             elif mode == "unpaired-markers":
                 frame = draw_markers(frame, self.frame_markers[frame_idx], (0, 255, 0))
                 out.write(frame)
+            elif mode == "raw-video":
+                out.write(frame)
         out.release()
 
     def save_paired_markers_to_file(self):
@@ -275,7 +277,7 @@ class MarkerTracker:
         self.match_consecutive_frames()
         self.compute_base_frame_mappings()
         self.save_paired_markers_to_file()
-        self.create_visualization(mode="show-base", base_from_file=True)
+        self.create_visualization(mode="raw-video", base_from_file=True)
 
 
 class VideoPlayer:
@@ -285,6 +287,8 @@ class VideoPlayer:
         ))
         self.current_frame = 0
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if SYSTEM_PARAMS.files.traj_id == 1:
+            self.save_specific_frames([103, 179])
         self.root = tk.Tk()
         self.root.title("Marker Tracking Viewer")
         self.canvas = tk.Canvas(self.root)
@@ -327,15 +331,20 @@ class VideoPlayer:
         self.root.mainloop()
         self.cap.release()
 
-
-def process_and_view_video():
-    tracker = MarkerTracker()
-    tracker.process_video()
-    player = VideoPlayer()
-    player.run()
-
+    def save_specific_frames(self, frame_indices):
+        current_pos = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+        for frame_idx in frame_indices:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = self.cap.read()
+            if ret:
+                output_path = SYSTEM_PARAMS.files.traj_out_snapshot.format(
+                    SYSTEM_PARAMS.files.traj_id, frame_idx
+                )
+                cv2.imwrite(output_path, frame)
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, current_pos)
 
 def main():
-    process_and_view_video()
+    tracker = MarkerTracker()
+    tracker.process_video()
     player = VideoPlayer()
     player.run()

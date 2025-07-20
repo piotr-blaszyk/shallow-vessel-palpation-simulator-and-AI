@@ -20,7 +20,7 @@ class ViTacTip:
         self.set_up_system_params_2()
         self.load_mesh()
         self.initialise_camera_model()
-        self.set_up_physical_state()
+        self.set_up_physical_state_1()
 
     def set_up_system_params_1(self):
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
@@ -287,7 +287,7 @@ class ViTacTip:
             marker_interpolation_indices.astype(np.int32)
         )
 
-    def set_up_physical_state(self):
+    def set_up_physical_state_1(self):
         self.vertices_undeformed_A = ti.Vector.field(
             3,
             float,
@@ -340,10 +340,13 @@ class ViTacTip:
         self.T_CD = ti.Matrix.field(4, 4, ti.f32, shape=(), needs_grad=False)
         self.T_A = ti.Matrix.field(4, 4, ti.f32, shape=(), needs_grad=False)
         self.T_BE = ti.Matrix.field(4, 4, ti.f32, shape=(), needs_grad=False)
+        self.T_EB = ti.Matrix.field(4, 4, ti.f32, shape=(), needs_grad=False)
+        self.R_EB = ti.Matrix.field(3, 3, ti.f32, shape=(), needs_grad=False)
         T_BE_np = np.eye(4)
         T_BE_np[2, 3] = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface
         self.T_BE.from_numpy(T_BE_np)
-
+        self.T_EB[None] = self.T_BE[None].inverse()
+        
         self.vertex_control_velocities = ti.Vector.field(
             3, float, shape=(self.num_vertices), needs_grad=False
         )
@@ -356,6 +359,12 @@ class ViTacTip:
         )
         self.R_A = ti.Matrix.field(3, 3, dtype=float, shape=(), needs_grad=False)
         self.R_A_quat = ti.Vector.field(4, ti.f32, shape=(), needs_grad=False)
+    
+    @ti.kernel
+    def set_up_physical_state_2(self):
+        for i in range(3):
+            for j in range(3):
+                self.R_EB[None][i, j] = self.T_EB[None][i, j]
 
     def set_up_pose(self, pose):
         rotation_object = R.from_quat(pose[3:])
@@ -376,6 +385,35 @@ class ViTacTip:
         self.T_CD.from_numpy(np.eye(4))
         self.sensor_outward_normal[None] = self.R_BA[None] @ ti.Vector([0.0, 0.0, 1.0])
         self.set_up_pose_helper()
+
+    @ti.func
+    def rotate_E_to_A(self, inhomogeneous_velocity_E):
+        inhomogeneous_velocity_A = (
+            self.R_BA[None] @ self.R_EB[None] @ inhomogeneous_velocity_E
+        )
+        return inhomogeneous_velocity_A
+
+    @ti.func
+    def project_E_to_A(self, inhomogeneous_point_E):
+        homogeneous_point_E = ti.Vector(
+            [
+                inhomogeneous_point_E[0],
+                inhomogeneous_point_E[1],
+                inhomogeneous_point_E[2],
+                1.0,
+            ]
+        )
+        homogeneous_point_A = (
+            self.T_BA[None] @ self.T_EB[None] @ homogeneous_point_E
+        )
+        inhomogeneous_point_A = ti.Vector(
+            [
+                homogeneous_point_A[0],
+                homogeneous_point_A[1],
+                homogeneous_point_A[2],
+            ]
+        )
+        return inhomogeneous_point_A
 
     @ti.func
     def project_A_point_2d(self, inhomogeneous_point_A):
