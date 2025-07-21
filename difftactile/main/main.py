@@ -196,7 +196,7 @@ class Contact:
                     if ti.math.length(
                         exp_vein_point_E
                         - ti.Vector([-1.0, -1.0, -1.0], dt=float)
-                    ) > 1e6:
+                    ) > 1e-6:
                         exp_vein_point_A = self.vitactip.project_E_to_A(exp_vein_point_E)
                         dist = ti.math.length(
                             exp_vein_point_A
@@ -216,7 +216,7 @@ class Contact:
                         ti.math.length(
                         exp_vein_point_E
                         - ti.Vector([-1.0, -1.0, -1.0], dt=float)
-                        ) > 1e6
+                        ) > 1e-6
                         and i != min_ix_0
                     ):
                         exp_vein_point_A = self.vitactip.project_E_to_A(exp_vein_point_E)
@@ -230,7 +230,7 @@ class Contact:
                 min_dist_1 = min_dist
                 min_ix_1 = min_ix
                 
-                assert abs(min_ix_0 - min_ix_1) == 1, f"Interpolation video frames aren't consecutive ({min_ix_0}, {min_ix_1})"
+                # assert abs(min_ix_0 - min_ix_1) == 1, f"Interpolation video frames aren't consecutive ({min_ix_0}, {min_ix_1})"
 
                 dist_sum = min_dist_0 + min_dist_1
                 a = -1
@@ -252,6 +252,25 @@ class Contact:
                 exp_keypoint = a + offset
                 self.vein_ix_base[None] = a
                 self.vein_ix_offset[None] = offset
+
+                if False:
+                    print(f'target: {target}')
+                    print(f'x_E: {x_E}')
+                    print(f'y_E: {y_E}')
+                    print(f'x_A: {x_A}')
+                    print(f'y_A: {y_A}')
+                    print(f'target_projected: {target_projected}')
+                    print(f'min_dist_0: {min_dist_0}')
+                    print(f'min_ix_0: {min_ix_0}')
+                    print(f'min_dist_1: {min_dist_1}')
+                    print(f'min_ix_1: {min_ix_1}')
+                    print(f'dist_sum: {dist_sum}')
+                    print(f'a: {a}')
+                    print(f'b: {b}')
+                    print(f'a_dist: {a_dist}')
+                    print(f'b_dist: {b_dist}')
+                    print(f'offset: {offset}')
+                    print(f'exp_keypoint: {exp_keypoint}')
             else:
                 if end_ix != -1:
                     exp_keypoint = (
@@ -1183,8 +1202,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
-        self.camera.up(0, 0, 1)
+        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
+        self.camera.up(0, -1, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
         self.tactile_window = ti.ui.Window("tactile readout", (

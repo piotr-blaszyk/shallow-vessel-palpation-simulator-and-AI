@@ -393,6 +393,10 @@ class ViTacTip:
         )
         return inhomogeneous_velocity_A
 
+    @ti.kernel
+    def debug_project_E_to_A(self, inhomogeneous_point_E: ti.template()):
+        return self.project_E_to_A(inhomogeneous_point_E)
+
     @ti.func
     def project_E_to_A(self, inhomogeneous_point_E):
         homogeneous_point_E = ti.Vector(
