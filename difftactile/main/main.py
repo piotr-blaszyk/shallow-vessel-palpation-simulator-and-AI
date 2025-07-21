@@ -170,6 +170,7 @@ class Contact:
             start_ix != -1 
             and cur_exp_keypoints[start_ix] != -1
         ):
+            exp_keypoint = -1.0
             if (
                 self.trajectory_ix[None] == 1
                 and start_ix >= 3
@@ -187,6 +188,7 @@ class Contact:
                     x_A,
                     y_A
                 )
+
                 min_dist = SYSTEM_PARAMS.geometry.high_dist
                 min_ix = -1
                 for i in range(self.exp_vein_3d_coords_E_all.shape[0]):
@@ -203,12 +205,54 @@ class Contact:
                         if dist < min_dist:
                             min_dist = dist
                             min_ix = i
-                exp_vein_point_E_0 = self.exp_vein_3d_coords_E_all[min_ix]
-                # self.vein_speed_E[None]
+                min_dist_0 = min_dist
+                min_ix_0 = min_ix
 
+                min_dist = SYSTEM_PARAMS.geometry.high_dist
+                min_ix = -1
+                for i in range(self.exp_vein_3d_coords_E_all.shape[0]):
+                    exp_vein_point_E = self.exp_vein_3d_coords_E_all[i]
+                    if (
+                        ti.math.length(
+                        exp_vein_point_E
+                        - ti.Vector([-1.0, -1.0, -1.0], dt=float)
+                        ) > 1e6
+                        and i != min_ix_0
+                    ):
+                        exp_vein_point_A = self.vitactip.project_E_to_A(exp_vein_point_E)
+                        dist = ti.math.length(
+                            exp_vein_point_A
+                            - target_projected
+                        )
+                        if dist < min_dist:
+                            min_dist = dist
+                            min_ix = i
+                min_dist_1 = min_dist
+                min_ix_1 = min_ix
+                
+                assert abs(min_ix_0 - min_ix_1) == 1, f"Interpolation video frames aren't consecutive ({min_ix_0}, {min_ix_1})"
 
+                dist_sum = min_dist_0 + min_dist_1
+                a = -1
+                b = -1
+                a_dist = -1.0
+                b_dist = -1.0
+                if min_ix_0 < min_ix_1:
+                    a = min_ix_0
+                    b = min_ix_1
+                    a_dist = min_dist_0
+                    b_dist = min_dist_1
+                else:
+                    a = min_ix_1
+                    b = min_ix_0
+                    a_dist = min_dist_1
+                    b_dist = min_dist_0
+
+                offset = a_dist / dist_sum
+                exp_keypoint = a + offset
+                self.vein_ix_base[None] = a
+                self.vein_ix_offset[None] = offset
             else:
-                exp_keypoint = -1.0
                 if end_ix != -1:
                     exp_keypoint = (
                         cur_exp_keypoints[start_ix] 
@@ -223,22 +267,35 @@ class Contact:
                     )
                 else:
                     exp_keypoint = cur_exp_keypoints[start_ix]
-                self.cur_exp_frame[None] = exp_keypoint
-                for i in range(self.exp_marker_shapes[self.trajectory_ix[None]][1]):
-                    for j in range(2):
-                        if end_ix != -1:
-                            self.marker_position_exp[i][j] = (
-                                self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j] 
-                                + (exp_keypoint - ti.floor(exp_keypoint)) 
-                                * (
-                                    self.exp_markers[self.trajectory_ix[None], ti.ceil(exp_keypoint, dtype=ti.i32), i][j]
-                                    - self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
-                                )
+            self.cur_exp_frame[None] = exp_keypoint
+            for i in range(self.exp_marker_shapes[self.trajectory_ix[None]][1]):
+                for j in range(2):
+                    if end_ix != -1:
+                        self.marker_position_exp[i][j] = (
+                            self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j] 
+                            + (exp_keypoint - ti.floor(exp_keypoint)) 
+                            * (
+                                self.exp_markers[self.trajectory_ix[None], ti.ceil(exp_keypoint, dtype=ti.i32), i][j]
+                                - self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
                             )
-                        else:
-                            self.marker_position_exp[i][j] = (
-                                self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
-                            )
+                        )
+                    else:
+                        self.marker_position_exp[i][j] = (
+                            self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
+                        )
+
+    @ti.kernel
+    def compute_vein_exp_vis(self):
+        start_ix = self.vein_ix_base[None]
+        if start_ix != -1:
+            end_ix = start_ix + 1
+            offset = self.vein_ix_offset[None]
+            start_E = self.exp_vein_3d_coords_E_all[start_ix]
+            end_E = self.exp_vein_3d_coords_E_all[end_ix]
+            start_A = self.vitactip.project_E_to_A(start_E)
+            end_A = self.vitactip.project_E_to_A(end_E)
+            point = start_A + offset * (end_A - start_A)
+            self.vein_exp_vis[None] = point
 
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
@@ -521,6 +578,9 @@ class Contact:
         self.exp_marker_points.fill(-1)
         self.sim_markers_deformed_filtered.fill(-1)
         self.cur_exp_frame.fill(-1)
+        self.vein_ix_base.fill(-1)
+        self.vein_ix_offset.fill(-1)
+        self.vein_exp_vis.fill(0)
 
     def reset_pid_controller(self):
         self.pos_error_sum.fill(0)
@@ -936,7 +996,7 @@ class Contact:
             pickle.dump(f2v, f)
 
     def visualisation_initialise(self):
-        self.num_keypoints = 8
+        self.num_keypoints = 9
         self.key_points = ti.Vector.field(
             3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False
         )
@@ -999,6 +1059,11 @@ class Contact:
             SYSTEM_PARAMS.fisheye_model.target_image_height
         ])
         self.fp_bp = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.vein_ix_base = ti.field(dtype=int, shape=(), needs_grad=False)
+        self.vein_ix_offset = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.vein_exp_vis = ti.Vector.field(
+            3, dtype=float, shape=(), needs_grad=False
+        )
 
     @ti.kernel
     def visualisation_reset_scene_1(self):
@@ -1142,7 +1207,12 @@ class Contact:
         key_points_per_vertex_color_npy = np.tile(
             [1.0, 0.0, 0.0], (self.num_keypoints, 1)
         )
-        key_points_per_vertex_color_npy[-2:, :] = clock_arm_points_per_vertex_color_npy
+        key_points_per_vertex_color_npy[-3:-1, :] = clock_arm_points_per_vertex_color_npy
+        key_points_per_vertex_color_npy[-1, :] = np.array(
+            [
+                [0, 1, 1]
+            ]
+        )
         self.key_points_per_vertex_color.from_numpy(key_points_per_vertex_color_npy)
 
     def visualisation_update_gui(self, ts):
@@ -1165,8 +1235,11 @@ class Contact:
         vitactip_clock_arms = self.vitactip.get_keypoint_coordinates(
             f=0, keypoint_indices=self.vitactip.clock_arms_node_idxs.to_numpy()
         )
+        if self.trajectory_ix[None] == 1:
+            self.compute_vein_exp_vis()
+        vein_exp_vis = self.vein_exp_vis.to_numpy()
         self.keypoint_coords = np.vstack(
-            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms)
+            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms, vein_exp_vis)
         )
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
