@@ -136,7 +136,7 @@ class Contact:
         self.exp_to_sim_markers.from_numpy(self.exp_to_sim_markers_np)
     
     @ti.func
-    def project_point_on_line(point, line_point1, line_point2):
+    def project_point_on_line(self, point, line_point1, line_point2):
         line_vector = line_point2 - line_point1
         point_vector = point - line_point1
         line_direction = line_vector / ti.math.length(line_vector)
@@ -423,14 +423,15 @@ class Contact:
             /
             (self.exp_vein_ixs[1] - self.exp_vein_ixs[0])
         )
+        self.vein_speed_E_np.reshape((1, 3))
         self.vein_speed_E = ti.Vector.field(
             3, dtype=float, shape=(), needs_grad=False
         )
-        self.vein_speed_E[None].from_numpy(self.vein_speed_E_np)
+        self.vein_speed_E.from_numpy(self.vein_speed_E_np)
         self.exp_vein_3d_coords_E_all_np = -np.ones(shape=(self.exp_keypoints_np[1][4]+1, 3), dtype=float)
         for i in range(self.exp_keypoints_np[1][3], self.exp_keypoints_np[1][4]+1):
-            self.exp_vein_3d_coords_E_all_np = (
-                self.exp_vein_2d_coords 
+            self.exp_vein_3d_coords_E_all_np[i] = (
+                self.exp_vein_3d_coords_E_np[0]
                 + (i - self.exp_vein_ixs[0]) * self.vein_speed_E_np
             )
         self.exp_vein_3d_coords_E_all = ti.Vector.field(
@@ -1182,8 +1183,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
-        self.camera.up(-1, 0, 0)
+        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -1575,7 +1576,7 @@ def main():
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
         # for i in range(contact_model.trajectories_np.shape[0]):
-        for i in range(2, 3):
+        for i in range(1, 2):
             print(f'trajectory {i}: {contact_model.trajectory_names[i]}')
             contact_model.trajectory_ix[None] = i
             contact_model.set_up_initial_positions_state_and_trajectory()

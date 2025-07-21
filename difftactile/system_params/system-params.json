@@ -119,7 +119,8 @@
         },
         "phantom_x_length": 8.000e-01,
         "phantom_y_length": 4.000e-01,
-        "camera_rotation_angle": 1.037e+01
+        "camera_rotation_angle": 1.037e+01,
+        "high_dist": 1.000e+01
     },
     "meta": {
         "target_courant_number": 5.000e-02,
