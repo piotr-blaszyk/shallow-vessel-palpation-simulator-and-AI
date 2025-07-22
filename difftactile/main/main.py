@@ -166,6 +166,7 @@ class Contact:
         # if sim entry is invalid, it's -1
         # if exp entry is invalid, it's -1
         cur_exp_keypoints = self.exp_keypoints[self.trajectory_ix[None]]
+
         if (
             start_ix != -1 
             and cur_exp_keypoints[start_ix] != -1
@@ -207,6 +208,9 @@ class Contact:
                             min_ix = i
                 min_dist_0 = min_dist
                 min_ix_0 = min_ix
+                min_point_A_0 = self.vitactip.project_E_to_A(
+                    self.exp_vein_3d_coords_E_all[min_ix_0]
+                )
 
                 min_dist = SYSTEM_PARAMS.geometry.high_dist
                 min_ix = -1
@@ -229,9 +233,11 @@ class Contact:
                             min_ix = i
                 min_dist_1 = min_dist
                 min_ix_1 = min_ix
+                min_point_A_1 = self.vitactip.project_E_to_A(
+                    self.exp_vein_3d_coords_E_all[min_ix_1]
+                )
                 
                 # assert abs(min_ix_0 - min_ix_1) == 1, f"Interpolation video frames aren't consecutive ({min_ix_0}, {min_ix_1})"
-
                 dist_sum = min_dist_0 + min_dist_1
                 a = -1
                 b = -1
@@ -250,8 +256,23 @@ class Contact:
 
                 offset = a_dist / dist_sum
                 exp_keypoint = a + offset
-                self.vein_ix_base[None] = a
-                self.vein_ix_offset[None] = offset
+
+                dist_exp_veins = ti.math.length(
+                    min_point_A_1
+                    - min_point_A_0
+                )
+
+                if (
+                    min_dist_0 < dist_exp_veins
+                    and min_dist_1 < dist_exp_veins
+                ):
+                    self.vein_ix_base[None] = a
+                    self.vein_ix_offset[None] = offset
+                    self.interpolation_valid[None] = 1
+                else:
+                    self.vein_ix_base[None] = -1
+                    self.vein_ix_offset[None] = -1.0
+                    self.interpolation_valid[None] = 0
 
                 if False:
                     print(f'target: {target}')
@@ -286,22 +307,26 @@ class Contact:
                     )
                 else:
                     exp_keypoint = cur_exp_keypoints[start_ix]
-            self.cur_exp_frame[None] = exp_keypoint
+            if self.interpolation_valid[None] == 1:
+                self.cur_exp_frame[None] = exp_keypoint
             for i in range(self.exp_marker_shapes[self.trajectory_ix[None]][1]):
                 for j in range(2):
-                    if end_ix != -1:
-                        self.marker_position_exp[i][j] = (
-                            self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j] 
-                            + (exp_keypoint - ti.floor(exp_keypoint)) 
-                            * (
-                                self.exp_markers[self.trajectory_ix[None], ti.ceil(exp_keypoint, dtype=ti.i32), i][j]
-                                - self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
+                    if self.interpolation_valid[None] == 1:
+                        if end_ix != -1:
+                            self.marker_position_exp[i][j] = (
+                                self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j] 
+                                + (exp_keypoint - ti.floor(exp_keypoint)) 
+                                * (
+                                    self.exp_markers[self.trajectory_ix[None], ti.ceil(exp_keypoint, dtype=ti.i32), i][j]
+                                    - self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
+                                )
                             )
-                        )
+                        else:
+                            self.marker_position_exp[i][j] = (
+                                self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
+                            )
                     else:
-                        self.marker_position_exp[i][j] = (
-                            self.exp_markers[self.trajectory_ix[None], ti.floor(exp_keypoint, dtype=ti.i32), i][j]
-                        )
+                        self.marker_position_exp[i][j] = -1.0
 
     @ti.kernel
     def compute_vein_exp_vis(self):
@@ -632,6 +657,7 @@ class Contact:
         self.vein_ix_offset.fill(-1)
         self.vein_exp_vis.fill(0)
         self.vein_exp_vis_all.fill(0)
+        self.interpolation_valid.fill(1)
 
     def reset_pid_controller(self):
         self.pos_error_sum.fill(0)
@@ -714,27 +740,30 @@ class Contact:
 
     @ti.kernel
     def compute_marker_loss_1(self):
-        for i in range(self.vitactip.num_markers):
-            exp_ix = self.sim_to_exp_markers[i]
-            if exp_ix != -1:
-                sim_marker = self.vitactip.deformed_markers[i]
-                exp_marker = self.marker_position_exp[exp_ix]
-                dx = exp_marker[0] - sim_marker[0]
-                dy = exp_marker[1] - sim_marker[1]
-                dx /= SYSTEM_PARAMS.fisheye_model.target_image_width
-                dy /= SYSTEM_PARAMS.fisheye_model.target_image_height
-                squared_error = dx * dx + dy * dy
-                self.squared_error_sum_1[None] += squared_error
+        if self.interpolation_valid[None] == 1:
+            for i in range(self.vitactip.num_markers):
+                exp_ix = self.sim_to_exp_markers[i]
+                if exp_ix != -1:
+                    sim_marker = self.vitactip.deformed_markers[i]
+                    exp_marker = self.marker_position_exp[exp_ix]
+                    dx = exp_marker[0] - sim_marker[0]
+                    dy = exp_marker[1] - sim_marker[1]
+                    dx /= SYSTEM_PARAMS.fisheye_model.target_image_width
+                    dy /= SYSTEM_PARAMS.fisheye_model.target_image_height
+                    squared_error = dx * dx + dy * dy
+                    self.squared_error_sum_1[None] += squared_error
 
     @ti.kernel
     def compute_marker_loss_2(self):
-        rmse = ti.sqrt(self.squared_error_sum_1[None] / self.marker_position_exp.shape[0])
-        self.loss[None] += SYSTEM_PARAMS.optimisation.loss_1_weight * rmse
+        if self.interpolation_valid[None] == 1:
+            rmse = ti.sqrt(self.squared_error_sum_1[None] / self.marker_position_exp.shape[0])
+            self.loss[None] += SYSTEM_PARAMS.optimisation.loss_1_weight * rmse
     
     @ti.kernel
     def compute_marker_loss_3(self):
         if (
-            self.trajectory_ix[None] == 1
+            self.interpolation_valid[None] == 1
+            and self.trajectory_ix[None] == 1
             and self.cur_exp_frame[None] >= self.traj_1_critical_frames_exp[0]
             and self.cur_exp_frame[None] < self.traj_1_critical_frames_exp[1]
         ):
@@ -760,7 +789,8 @@ class Contact:
     @ti.kernel
     def compute_marker_loss_4(self):
         if (
-            self.trajectory_ix[None] == 1
+            self.interpolation_valid[None] == 1
+            and self.trajectory_ix[None] == 1
             and self.cur_exp_frame[None] >= self.traj_1_critical_frames_exp[0]
             and self.cur_exp_frame[None] < self.traj_1_critical_frames_exp[1]
         ):
@@ -1050,9 +1080,7 @@ class Contact:
         self.vein_exp_vis_all = ti.Vector.field(
             3, dtype=float, shape=(self.exp_vein_3d_coords_E_all.shape[0],), needs_grad=False
         )
-        self.num_keypoints = 9
-        if False:
-            self.num_keypoints += self.vein_exp_vis_all.shape[0]
+        self.num_keypoints = 8 + self.vein_exp_vis_all.shape[0]
         self.key_points = ti.Vector.field(
             3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False
         )
@@ -1120,6 +1148,10 @@ class Contact:
         self.vein_exp_vis = ti.Vector.field(
             3, dtype=float, shape=(), needs_grad=False
         )
+        self.interpolation_valid = ti.field(
+            dtype=int, shape=(), needs_grad=False
+        )
+        self.interpolation_valid[None] = 1
 
     @ti.kernel
     def visualisation_reset_scene_1(self):
@@ -1264,11 +1296,11 @@ class Contact:
             [1.0, 0.0, 0.0], (self.num_keypoints, 1)
         )
         key_points_per_vertex_color_npy[6:8, :] = clock_arm_points_per_vertex_color_npy
-        key_points_per_vertex_color_npy[8, :] = np.array([
-            [0, 1, 1]
-        ], dtype=float)
         if False:
-            key_points_per_vertex_color_npy[8:, :] = self.create_transition_array_vectorized(self.vein_exp_vis_all.shape[0])
+            key_points_per_vertex_color_npy[8, :] = np.array([
+                [0, 1, 1]
+            ], dtype=float)
+        key_points_per_vertex_color_npy[8:, :] = self.create_transition_array_vectorized(self.vein_exp_vis_all.shape[0])
         self.key_points_per_vertex_color.from_numpy(key_points_per_vertex_color_npy)
 
     def create_transition_array_vectorized(self, n):
@@ -1304,8 +1336,12 @@ class Contact:
         vein_exp_vis = self.vein_exp_vis.to_numpy()
         vein_exp_vis_all = self.vein_exp_vis_all.to_numpy()
         validation_point = self.validation_point_3d_A.to_numpy()
+        vein_point = self.phantom.particles_A[
+            SYSTEM_PARAMS.contact.num_sub_frames - 1,
+            self.vein_indices[0]
+        ]
         self.keypoint_coords = np.vstack(
-            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms, validation_point)
+            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms, vein_exp_vis_all)
         )
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
