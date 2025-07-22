@@ -740,8 +740,8 @@ class Contact:
 
     @ti.kernel
     def compute_marker_loss_1(self):
-        if self.interpolation_valid[None] == 1:
-            for i in range(self.vitactip.num_markers):
+        for i in range(self.vitactip.num_markers):
+            if self.interpolation_valid[None] == 1:
                 exp_ix = self.sim_to_exp_markers[i]
                 if exp_ix != -1:
                     sim_marker = self.vitactip.deformed_markers[i]
@@ -1654,6 +1654,11 @@ class Contact:
         with open(SYSTEM_PARAMS.files.vitactip_points_E, "wb") as f:
             pickle.dump(self.vitactip.vertices_E.to_numpy(), f)
 
+    @ti.kernel
+    def log(self):
+        if self.interpolation_valid[None] == 1:
+            print(0)
+
 
 def main():
     if RUN_ON_LAB_MACHINE:
@@ -1728,8 +1733,6 @@ def main():
                 contact_model.compute_marker_loss_3()
                 contact_model.compute_marker_loss_4()
                 contact_model.visualisation_update_gui(ts)
-                if contact_model.interpolation_valid[None] == 1:
-                    foo = 7
                 contact_model.compute_marker_loss_4.grad()
                 contact_model.compute_marker_loss_3.grad()
                 contact_model.compute_marker_loss_2.grad()
