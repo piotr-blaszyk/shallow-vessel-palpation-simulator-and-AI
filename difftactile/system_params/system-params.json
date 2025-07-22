@@ -59,7 +59,7 @@
         "tangential_stiffness": 8.800e+01,
         "normal_damping": 1.680e+00,
         "coulomb_friction_coeff": 8.500e-01,
-        "num_sub_frames": 250,
+        "num_sub_frames": 125,
         "num_opt_steps": 10,
         "pid_max_speed_translation": 1.000e+00,
         "pid_orientation_kp": 1.000e+00,
@@ -142,26 +142,13 @@
         "window_3d_height": 5.400e+02
     },
     "optimisation": {
-        "update_steps": {
-            "vitactip": {
-                "youngs_modulus": 1.000e+03
-            },
-            "phantom": {
-                "youngs_modulus": 1.000e+03
-            },
-            "contact": {
-                "coulomb_friction_coeff": 5.000e-02,
-                "normal_stiffness": 1.000e+02,
-                "tangential_stiffness": 100,
-                "normal_damping": 1.000e+00
-            }
-        },
         "min_values": {
             "vitactip": {
                 "youngs_modulus": 1.000e-02
             },
             "phantom": {
-                "youngs_modulus": 1.000e-02
+                "youngs_modulus_0": 1.000e-02,
+                "youngs_modulus_1": 1.000e-02
             },
             "contact": {
                 "coulomb_friction_coeff": 1.000e-02,
@@ -175,7 +162,8 @@
                 "youngs_modulus": 9.000e+06
             },
             "phantom": {
-                "youngs_modulus": 1.000e+05
+                "youngs_modulus_0": 1.000e+05,
+                "youngs_modulus_1": 1.000e+05
             },
             "contact": {
                 "coulomb_friction_coeff": 1.100e+00,
@@ -185,7 +173,8 @@
             }
         },
         "loss_1_weight": 1.000e+00,
-        "loss_2_weight": 2.000e-01
+        "loss_2_weight": 2.000e-01,
+        "mini_batch_size": 10
     },
     "fisheye_model": {
         "focal_length_x": 3.800e+02,

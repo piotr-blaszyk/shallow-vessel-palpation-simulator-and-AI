@@ -41,16 +41,17 @@
   "contact_surface_area": 0.12566370614359174,
   "learning_rates": {
     "vitactip": {
-      "youngs_modulus": 0.012114938969101983
+      "youngs_modulus": 0.010224970316132316
     },
     "phantom": {
-      "youngs_modulus": 0.0003028770288974973
+      "youngs_modulus_0": 2.204728242551149e-06,
+      "youngs_modulus_1": 10.85712725608109
     },
     "contact": {
-      "coulomb_friction_coeff": 7.710940170876902e-10,
-      "normal_stiffness": 4.7509729992702505e-05,
-      "tangential_stiffness": 0.03596349459454452,
-      "normal_damping": 3.718078984778533e-06
+      "coulomb_friction_coeff": 4.920824512514178e-10,
+      "normal_stiffness": 5.2055226050335545e-06,
+      "tangential_stiffness": 0.00038704952693684224,
+      "normal_damping": 9.963818374844416e-07
     }
   }
 }

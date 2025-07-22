@@ -17,59 +17,55 @@ def arr_str(xs):
         res.append(']')
         return ''.join(res)
 
-def compute_learning_rate(gradient: float, desired_update: float) -> float:
-    return abs(desired_update / gradient)
+def compute_learning_rate(
+        gradient, 
+        value, 
+        percentage_update=0.16
+    ):
+    return abs(percentage_update * value / gradient)
 
 def compute_and_print_learning_rates():
-    gradients = {
-        'vitactip': {
-            'youngs_modulus': -82542.71875
-        },
-        'phantom': {
-            'youngs_modulus': 3301670.0
-        },
-        'contact': {
-            'coulomb_friction_coeff': -64842936.0,
-            'normal_stiffness': 2104832.0,
-            'tangential_stiffness': 2780.597412109375,
-            'normal_damping': 268956.09375
+    with open(SYSTEM_PARAMS.files.optimisation_loop_calibration, 'r') as f:
+        gradients = json.load(f)
+    
+    return {
+        'learning_rates': {
+            'vitactip': {
+                'youngs_modulus': compute_learning_rate(
+                    gradients['vitactip_youngs_modulus'],
+                    SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
+                )
+            },
+            'phantom': {
+                'youngs_modulus_0': compute_learning_rate(
+                    gradients['phantom_youngs_modulus_0'],
+                    SYSTEM_PARAMS.phantom.silicone.youngs_modulus
+                ),
+                'youngs_modulus_1': compute_learning_rate(
+                    gradients['phantom_youngs_modulus_1'],
+                    SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus
+                )
+            },
+            'contact': {
+                'coulomb_friction_coeff': compute_learning_rate(
+                    gradients['coulomb_friction_coeff'],
+                    SYSTEM_PARAMS.contact.coulomb_friction_coeff
+                ),
+                'normal_stiffness': compute_learning_rate(
+                    gradients['normal_stiffness'],
+                    SYSTEM_PARAMS.contact.normal_stiffness
+                ),
+                'tangential_stiffness': compute_learning_rate(
+                    gradients['tangential_stiffness'],
+                    SYSTEM_PARAMS.contact.tangential_stiffness
+                ),
+                'normal_damping': compute_learning_rate(
+                    gradients['normal_damping'],
+                    SYSTEM_PARAMS.contact.normal_damping
+                )
+            }
         }
     }
-    learning_rates = {}
-    learning_rates['vitactip'] = {
-        'youngs_modulus': compute_learning_rate(
-            gradients['vitactip']['youngs_modulus'],
-            SYSTEM_PARAMS.optimisation.update_steps.vitactip.youngs_modulus
-        )
-    }
-    learning_rates['phantom'] = {
-        'youngs_modulus': compute_learning_rate(
-            gradients['phantom']['youngs_modulus'],
-            SYSTEM_PARAMS.optimisation.update_steps.phantom.youngs_modulus
-        )
-    }
-    learning_rates['contact'] = {
-        'coulomb_friction_coeff': compute_learning_rate(
-            gradients['contact']['coulomb_friction_coeff'],
-            SYSTEM_PARAMS.optimisation.update_steps.contact.coulomb_friction_coeff
-        ),
-        'normal_stiffness': compute_learning_rate(
-            gradients['contact']['normal_stiffness'],
-            SYSTEM_PARAMS.optimisation.update_steps.contact.normal_stiffness
-        ),
-        'tangential_stiffness': compute_learning_rate(
-            gradients['contact']['tangential_stiffness'],
-            SYSTEM_PARAMS.optimisation.update_steps.contact.tangential_stiffness
-        ),
-        'normal_damping': compute_learning_rate(
-            gradients['contact']['normal_damping'],
-            SYSTEM_PARAMS.optimisation.update_steps.contact.normal_damping
-        )
-    }
-    res = {
-        'learning_rates': learning_rates
-    }
-    return res
 
 def main():
     with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:

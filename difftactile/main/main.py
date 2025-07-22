@@ -738,6 +738,15 @@ class Contact:
         self.vitactip.reset()
         self.phantom.reset()
 
+    @ti.func
+    def dist(self, a, b) -> ti.f32:
+        dx = a[0] - b[0]
+        dy = a[1] - b[1]
+        dx /= SYSTEM_PARAMS.fisheye_model.target_image_width
+        dy /= SYSTEM_PARAMS.fisheye_model.target_image_height
+        squared_error = dx * dx + dy * dy
+        return ti.sqrt(squared_error)
+
     @ti.kernel
     def compute_marker_loss_1(self):
         for i in range(self.vitactip.num_markers):
@@ -746,12 +755,7 @@ class Contact:
                 if exp_ix != -1:
                     sim_marker = self.vitactip.deformed_markers[i]
                     exp_marker = self.marker_position_exp[exp_ix]
-                    dx = exp_marker[0] - sim_marker[0]
-                    dy = exp_marker[1] - sim_marker[1]
-                    dx /= SYSTEM_PARAMS.fisheye_model.target_image_width
-                    dy /= SYSTEM_PARAMS.fisheye_model.target_image_height
-                    squared_error = dx * dx + dy * dy
-                    self.squared_error_sum_1[None] += squared_error
+                    self.squared_error_sum_1[None] += self.dist(sim_marker, exp_marker) ** 2
 
     @ti.kernel
     def compute_marker_loss_2(self):
@@ -778,13 +782,10 @@ class Contact:
                 a_sim = self.vitactip.deformed_markers[a_sim_ix]
                 b_sim = self.vitactip.deformed_markers[b_sim_ix]
 
-                dist_exp = b_exp[0] - a_exp[0]
-                dist_sim = b_sim[0] - a_sim[0]
+                dist_exp = self.dist(a_exp, b_exp)
+                dist_sim = self.dist(a_sim, b_sim)
 
-                loss_term = dist_exp - dist_sim
-                loss_term /= SYSTEM_PARAMS.fisheye_model.target_image_width
-                squared_error = loss_term * loss_term
-                self.squared_error_sum_2[None] += squared_error
+                self.squared_error_sum_2[None] += (dist_exp - dist_sim) ** 2
 
     @ti.kernel
     def compute_marker_loss_4(self):
@@ -1442,77 +1443,26 @@ class Contact:
             )
             print()
 
-            gradient_data = {
-                "loss": float(self.loss.grad[None]),
-                "squared_error_sum_1": float(self.squared_error_sum_1.grad[None]),
-                "squared_error_sum_2": float(self.squared_error_sum_2.grad[None]),
+            base_gradient_data = {
+                "loss": self.loss.grad[None],
+                "squared_error_sum_1": self.squared_error_sum_1.grad[None],
+                "squared_error_sum_2": self.squared_error_sum_2.grad[None],
+                "vitactip_mu": self.vitactip.mu.grad[None],
+                "vitactip_lam": self.vitactip.lam.grad[None],
+                "vitactip_youngs_modulus": self.vitactip.youngs_modulus.grad[None],
+                "normal_stiffness": self.normal_stiffness.grad[None],
+                "normal_damping": self.normal_damping.grad[None],
+                "tangential_stiffness": self.tangential_stiffness.grad[None],
+                "coulomb_friction_coeff": self.coulomb_friction_coeff.grad[None],
+                "phantom_mu_0": self.phantom.mu.grad[0],
+                "phantom_mu_1": self.phantom.mu.grad[1],
+                "phantom_lam_0": self.phantom.lam.grad[0],
+                "phantom_lam_1": self.phantom.lam.grad[1],
+                "phantom_youngs_modulus_0": self.phantom.youngs_modulus.grad[0],
+                "phantom_youngs_modulus_1": self.phantom.youngs_modulus.grad[1]
             }
-
-            def get_gradient_info(name, ti_var):
-                grad_npy = ti_var.grad.to_numpy()
-                return float(max(
-                    abs(grad_npy.min()),
-                    abs(grad_npy.max()),
-                ))
-
-            def get_gradient_info_indexed(name, ti_var, index):
-                grad_npy = ti_var.grad.to_numpy()[index]
-                return float(max(
-                    abs(grad_npy.min()),
-                    abs(grad_npy.max()),
-                ))
-
-            gradient_data["deformed_markers"] = get_gradient_info(
-                "deformed_markers", self.vitactip.deformed_markers
-            )
-            gradient_data["vertices_deformed_A"] = get_gradient_info(
-                "vertices_deformed_A", self.vitactip.vertices_deformed_A
-            )
-            gradient_data["vertex_velocities"] = get_gradient_info(
-                "vertex_velocities", self.vitactip.vertex_velocities
-            )
-            gradient_data["contact_forces_on_vertices"] = get_gradient_info(
-                "contact_forces_on_vertices", self.vitactip.contact_forces_on_vertices
-            )
-            gradient_data["vitactip_mu"] = get_gradient_info(
-                "vitactip.mu", self.vitactip.mu
-            )
-            gradient_data["vitactip_lam"] = get_gradient_info(
-                "vitactip.lam", self.vitactip.lam
-            )
-            gradient_data["vitactip_youngs_modulus"] = get_gradient_info(
-                "vitactip.youngs_modulus", self.vitactip.youngs_modulus
-            )
-            gradient_data["normal_stiffness"] = get_gradient_info(
-                "normal_stiffness", self.normal_stiffness
-            )
-            gradient_data["normal_damping"] = get_gradient_info(
-                "normal_damping", self.normal_damping
-            )
-            gradient_data["tangential_stiffness"] = get_gradient_info(
-                "tangential_stiffness", self.tangential_stiffness
-            )
-            gradient_data["coulomb_friction_coeff"] = get_gradient_info(
-                "coulomb_friction_coeff", self.coulomb_friction_coeff
-            )
-            gradient_data["phantom_mu_0"] = get_gradient_info_indexed(
-                "phantom.mu", self.phantom.mu, 0
-            )
-            gradient_data["phantom_mu_1"] = get_gradient_info_indexed(
-                "phantom.mu", self.phantom.mu, 1
-            )
-            gradient_data["phantom_lam_0"] = get_gradient_info_indexed(
-                "phantom.lam", self.phantom.lam, 0
-            )
-            gradient_data["phantom_lam_1"] = get_gradient_info_indexed(
-                "phantom.lam", self.phantom.lam, 1
-            )
-            gradient_data["phantom_youngs_modulus_0"] = get_gradient_info_indexed(
-                "phantom.youngs_modulus", self.phantom.youngs_modulus, 0
-            )
-            gradient_data["phantom_youngs_modulus_1"] = get_gradient_info_indexed(
-                "phantom.youngs_modulus", self.phantom.youngs_modulus, 1
-            )
+            
+            gradient_data = {k: float(v) for k, v in base_gradient_data.items()}
 
             with open(SYSTEM_PARAMS.files.optimisation_loop_calibration, 'w') as f:
                 json.dump(gradient_data, f, indent=4)
@@ -1538,8 +1488,6 @@ class Contact:
         print()
 
     def update_params(self, ts):
-        print(f'ts: {ts}')
-        print(f'loss: {self.loss[None]}')
         self.update_param_none(
             self.vitactip.youngs_modulus, 
             ['vitactip', 'youngs_modulus']
@@ -1566,7 +1514,6 @@ class Contact:
             self.normal_damping,
             ['contact', 'normal_damping']
         )
-        print()
     
     def update_param_none(self, ti_var, keys):
         min_val = SYSTEM_PARAMS.optimisation.min_values
@@ -1585,8 +1532,9 @@ class Contact:
         ti_var[None] = ti.min(max_val, ti.max(min_val, ti_var[None]))
         
         param_name = '.'.join(keys)
-        print(f'{param_name}: {ti_var[None]}')
-        print(f'{param_name}.update: {update}')
+        if False:
+            print(f'{param_name}: {ti_var[None]}')
+            print(f'{param_name}.update: {update}')
 
     def update_param_indexed(self, ti_var, keys, idx):
         min_val = SYSTEM_PARAMS.optimisation.min_values
@@ -1605,27 +1553,37 @@ class Contact:
         ti_var[idx] = ti.min(max_val, ti.max(min_val, ti_var[idx]))
         
         param_name = '.'.join(keys)
-        print(f'{param_name}[{idx}]: {ti_var[idx]}')
-        print(f'{param_name}.update: {update}')
+        if False:
+            print(f'{param_name}[{idx}]: {ti_var[idx]}')
+            print(f'{param_name}.update: {update}')
     
     def save_final_params(self):
-        results = dict()
-        results["vitactip"] = {
-            "youngs_modulus": float(self.vitactip.youngs_modulus[None])
+        results = {
+            "vitactip": {
+                "youngs_modulus": self.vitactip.youngs_modulus[None]
+            },
+            "phantom": {
+                "youngs_modulus_0": self.phantom.youngs_modulus[0],
+                "youngs_modulus_1": self.phantom.youngs_modulus[1]
+            },
+            "contact": {
+                "coulomb_friction_coeff": self.coulomb_friction_coeff[None],
+                "normal_stiffness": self.normal_stiffness[None],
+                "tangential_stiffness": self.tangential_stiffness[None],
+                "normal_damping": self.normal_damping[None]
+            }
         }
-        results["phantom"] = {
-            "youngs_modulus": [float(self.phantom.youngs_modulus[i]) for i in range(2)]
-        }
-        results["contact"] = {
-            "coulomb_friction_coeff": float(self.coulomb_friction_coeff[None]),
-            "normal_stiffness": float(self.normal_stiffness[None]),
-            "tangential_stiffness": float(self.tangential_stiffness[None]),
-            "normal_damping": float(self.normal_damping[None])
+        results = {
+            k1: {
+                k2: float(v2) 
+                for k2, v2 in v1.items()
+            }
+            for k1, v1 in results.items()
         }
         with open(SYSTEM_PARAMS.files.domain_adaptation_results, "w") as f:
             json.dump(results, f, indent=4)
     
-    def set_dt(self):
+    def set_dt(self, verbose=False):
         if self.state_dicts[self.trajectory_ix[None]]['tumour_present']:
             tumour_modulus = self.phantom.youngs_modulus[1]
         else:
@@ -1639,7 +1597,8 @@ class Contact:
         self.dt[None] = dt
         self.phantom.dt[None] = dt
         self.vitactip.dt[None] = dt
-        print(f'dt={dt:0.3e} s')
+        if verbose:
+            print(f'dt={dt:0.3e} s')
     
     def get_keypoint_indices_and_validate(self):
         self.vitactip.test_mapping_from_global_space_to_camera_space()
@@ -1695,7 +1654,7 @@ def main():
             contact_model.reset_exp_sim_traj()
             contact_model.vitactip.extract_markers(0)
             contact_model.compute_mapping_between_experimental_and_sim_markers()
-            contact_model.set_dt()
+            contact_model.set_dt(verbose=True)
             contact_model.fp()
             print("forward")
             ts = 0
@@ -1720,6 +1679,7 @@ def main():
             contact_model.total_loss.fill(0.0)
             contact_model.clear_grad()
             print("backward")
+            passes = 0
             for ts in range(total_ts - 1, -1, -1):
                 contact_model.reset_loss()
                 contact_model.memory_from_cache(ts)
@@ -1741,19 +1701,13 @@ def main():
                     SYSTEM_PARAMS.contact.num_sub_frames - 1
                 )
                 contact_model.backward_pass_common_part()
-                if False:
-                    if foo and contact_model.cur_exp_frame[None] < contact_model.traj_1_critical_frames_exp[0]:
-                        print()
-                        print("leaving critical region")
-                        print()
-                        foo = False
-                    print(f"ts: {ts}; squared_error_sum_2 (grad): {contact_model.squared_error_sum_2.grad[None]}")
-                    print(f"ts: {ts}; squared_error_sum_2 (val): {contact_model.squared_error_sum_2[None]}")
-
+                passes += 1
+                if passes % SYSTEM_PARAMS.optimisation.mini_batch_size == 0:
+                    contact_model.update_params(ts)
+                    contact_model.set_dt()
+                    contact_model.clear_grad()
+            
             contact_model.print_gradients()
-            if False:
-                contact_model.update_params(ts)
-            contact_model.clear_grad()
         print(
             f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done; loss: {contact_model.total_loss[None]}"
         )
