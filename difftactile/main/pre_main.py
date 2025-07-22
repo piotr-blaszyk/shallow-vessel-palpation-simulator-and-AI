@@ -171,8 +171,11 @@ def main():
         "contact_surface_area": contact_surface_area,
     }
 
-    learning_rates_dict = compute_and_print_learning_rates()
-    res = system_params_computed | learning_rates_dict
+    if SYSTEM_PARAMS.optimisation.calibrate_learning_rates == 1:
+        learning_rates_dict = compute_and_print_learning_rates()
+        res = system_params_computed | learning_rates_dict
+    else:
+        res = system_params_computed
 
     # Save coordinates to JSON file
     with open(SYSTEM_PARAMS.files.system_params_computed, 'w') as f:

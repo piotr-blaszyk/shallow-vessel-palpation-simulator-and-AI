@@ -359,7 +359,10 @@ class Contact:
         self.validation_point_3d_A[None] = point_A
 
     def set_up_loss_computation(self):
+        self.prev_loss = ti.field(float, (), needs_grad=False)
         self.loss = ti.field(float, (), needs_grad=True)
+        self.loss_1 = ti.field(float, (), needs_grad=True)
+        self.loss_2 = ti.field(float, (), needs_grad=True)
         self.total_loss = ti.field(float, (), needs_grad=False)
         self.squared_error_sum_1 = ti.field(dtype=float, shape=(), needs_grad=True)
         self.squared_error_sum_2 = ti.field(dtype=float, shape=(), needs_grad=True)
@@ -715,9 +718,12 @@ class Contact:
         self.total_loss[None] += self.loss[None]
         self.loss.fill(0.0)
         self.loss.grad.fill(1.0)
+        
 
     @ti.kernel
     def clear_grad_helper(self):
+        self.loss_1.grad.fill(1.0)
+        self.loss_2.grad.fill(1.0)
         self.squared_error_sum_1.grad.fill(0.0)
         self.squared_error_sum_2.grad.fill(0.0)
         self.normal_stiffness.grad.fill(0.0)
@@ -732,6 +738,8 @@ class Contact:
 
     @ti.kernel
     def reset(self):
+        self.loss_1.fill(0.0)
+        self.loss_2.fill(0.0)
         self.squared_error_sum_1.fill(0.0)
         self.squared_error_sum_2.fill(0.0)
         self.contact_idx.fill(-1)
@@ -761,7 +769,7 @@ class Contact:
     def compute_marker_loss_2(self):
         if self.interpolation_valid[None] == 1:
             rmse = ti.sqrt(self.squared_error_sum_1[None] / self.marker_position_exp.shape[0])
-            self.loss[None] += SYSTEM_PARAMS.optimisation.loss_1_weight * rmse
+            self.loss_1[None] += SYSTEM_PARAMS.optimisation.loss_1_weight * rmse
     
     @ti.kernel
     def compute_marker_loss_3(self):
@@ -796,7 +804,15 @@ class Contact:
             and self.cur_exp_frame[None] < self.traj_1_critical_frames_exp[1]
         ):
             rmse = ti.sqrt(self.squared_error_sum_2[None] / self.traj_1_exp_marker_pairs.shape[0])
-            self.loss[None] += SYSTEM_PARAMS.optimisation.loss_2_weight * rmse
+            self.loss_2[None] += SYSTEM_PARAMS.optimisation.loss_2_weight * rmse
+    
+    @ti.kernel
+    def compute_marker_loss_5(self):
+        if (
+            self.interpolation_valid[None] == 1
+        ):
+            self.loss[None] += self.loss_1[None]
+            self.loss[None] += self.loss_2[None]
 
     @ti.func
     def calculate_contact_force(
@@ -1398,7 +1414,7 @@ class Contact:
         self.phantom.set_stiffness.grad()
         self.vitactip.set_up_system_params_2.grad()
 
-    def print_gradients(self):
+    def save_gradients_for_calibration(self):
         if not self.gradients_printed:
             print(f"loss: {self.loss.grad[None]}")
             print(f"squared_error_sum_1 (grad): {self.squared_error_sum_1.grad[None]}")
@@ -1464,8 +1480,9 @@ class Contact:
             
             gradient_data = {k: float(v) for k, v in base_gradient_data.items()}
 
-            with open(SYSTEM_PARAMS.files.optimisation_loop_calibration, 'w') as f:
-                json.dump(gradient_data, f, indent=4)
+            if SYSTEM_PARAMS.optimisation.calibrate_learning_rates == 1:
+                with open(SYSTEM_PARAMS.files.optimisation_loop_calibration, 'w') as f:
+                    json.dump(gradient_data, f, indent=4)
 
             self.gradients_printed = True
 
@@ -1486,6 +1503,15 @@ class Contact:
         print(f"{name}_{ix} (val) min: {val_npy.min()}")
         print(f"{name}_{ix} (val) max: {val_npy.max()}")
         print()
+    
+    def print_params_short(self):
+        print(f'vitactip.youngs_modulus: {self.vitactip.youngs_modulus[None]:0.3e} ({SYSTEM_PARAMS.vitactip.single_material.youngs_modulus:0.3e})')
+        print(f'phantom.youngs_modulus_0: {self.phantom.youngs_modulus[0]:0.3e} ({SYSTEM_PARAMS.phantom.silicone.youngs_modulus:0.3e})')
+        print(f'phantom.youngs_modulus_1: {self.phantom.youngs_modulus[1]:0.3e} ({SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus:0.3e})')
+        print(f'coulomb_friction_coeff: {self.coulomb_friction_coeff[None]:0.3e} ({SYSTEM_PARAMS.contact.coulomb_friction_coeff:0.3e})')
+        print(f'normal_stiffness: {self.normal_stiffness[None]:0.3e} ({SYSTEM_PARAMS.contact.normal_stiffness:0.3e})')
+        print(f'tangential_stiffness: {self.tangential_stiffness[None]:0.3e} ({SYSTEM_PARAMS.contact.tangential_stiffness:0.3e})')
+        print(f'normal_damping: {self.normal_damping[None]:0.3e} ({SYSTEM_PARAMS.contact.normal_damping:0.3e})')
 
     def update_params(self, ts):
         self.update_param_none(
@@ -1495,7 +1521,7 @@ class Contact:
         for i in range(2):
             self.update_param_indexed(
                 self.phantom.youngs_modulus,
-                ['phantom', 'youngs_modulus'],
+                ['phantom', f'youngs_modulus_{i}'],
                 i
             )
         self.update_param_none(
@@ -1678,10 +1704,10 @@ def main():
             contact_model.bp()
             contact_model.total_loss.fill(0.0)
             contact_model.clear_grad()
+            contact_model.prev_loss[None] = 0.0
             print("backward")
             passes = 0
             for ts in range(total_ts - 1, -1, -1):
-                contact_model.reset_loss()
                 contact_model.memory_from_cache(ts)
                 contact_model.forward_pass_common_part(ts)
                 contact_model.vitactip.extract_markers(
@@ -1692,7 +1718,9 @@ def main():
                 contact_model.compute_marker_loss_2()
                 contact_model.compute_marker_loss_3()
                 contact_model.compute_marker_loss_4()
+                contact_model.compute_marker_loss_5()
                 contact_model.visualisation_update_gui(ts)
+                contact_model.compute_marker_loss_5.grad()
                 contact_model.compute_marker_loss_4.grad()
                 contact_model.compute_marker_loss_3.grad()
                 contact_model.compute_marker_loss_2.grad()
@@ -1702,12 +1730,22 @@ def main():
                 )
                 contact_model.backward_pass_common_part()
                 passes += 1
-                if passes % SYSTEM_PARAMS.optimisation.mini_batch_size == 0:
+                if (
+                    passes % SYSTEM_PARAMS.optimisation.mini_batch_size == 0
+                    or (SYSTEM_PARAMS.optimisation.mini_batch_size > total_ts and ts == 0)
+                ):
+                    if SYSTEM_PARAMS.optimisation.calibrate_learning_rates == 1:
+                        contact_model.save_gradients_for_calibration()
+                    print(f'mini batch loss: {contact_model.loss[None]:0.3e}')
+                    print(f'mini batch loss 1: {contact_model.loss_1[None]:0.3e}')
+                    print(f'mini batch loss 1: {contact_model.loss_2[None]:0.3e}')
                     contact_model.update_params(ts)
+                    contact_model.print_params_short()
                     contact_model.set_dt()
                     contact_model.clear_grad()
+                    contact_model.reset_loss()
             
-            contact_model.print_gradients()
+            print(f'optimisation step {i} loss: {contact_model.loss[None]:0.3e}')
         print(
             f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done; loss: {contact_model.total_loss[None]}"
         )

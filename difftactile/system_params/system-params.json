@@ -159,22 +159,23 @@
         },
         "max_values": {
             "vitactip": {
-                "youngs_modulus": 9.000e+06
+                "youngs_modulus": 1.000e+10
             },
             "phantom": {
-                "youngs_modulus_0": 1.000e+05,
-                "youngs_modulus_1": 1.000e+05
+                "youngs_modulus_0": 1.000e+10,
+                "youngs_modulus_1": 1.000e+10
             },
             "contact": {
-                "coulomb_friction_coeff": 1.100e+00,
-                "normal_stiffness": 5.000e+06,
-                "tangential_stiffness": 3.500e+06,
-                "normal_damping": 2.000e+03
+                "coulomb_friction_coeff": 1.000e+10,
+                "normal_stiffness": 1.000e+10,
+                "tangential_stiffness": 1.000e+10,
+                "normal_damping": 1.000e+10
             }
         },
         "loss_1_weight": 1.000e+00,
         "loss_2_weight": 2.000e-01,
-        "mini_batch_size": 10
+        "mini_batch_size": 10,
+        "calibrate_learning_rates": 0
     },
     "fisheye_model": {
         "focal_length_x": 3.800e+02,
