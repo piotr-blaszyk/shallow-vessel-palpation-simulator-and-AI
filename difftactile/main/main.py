@@ -326,6 +326,12 @@ class Contact:
             ) > 1e-6:
                 point_A = self.vitactip.project_E_to_A(point_E)
                 self.vein_exp_vis_all[i] = point_A
+   
+    @ti.kernel
+    def compute_validation_point(self):
+        point_E = self.validation_point_3d_E[None]
+        point_A = self.vitactip.project_E_to_A(point_E)
+        self.validation_point_3d_A[None] = point_A
 
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
@@ -457,7 +463,7 @@ class Contact:
         self.vein_speed_E = ti.Vector.field(
             3, dtype=float, shape=(), needs_grad=False
         )
-        self.vein_speed_E.from_numpy(self.vein_speed_E_np)
+        self.vein_speed_E.from_numpy(self.vein_speed_E_np.reshape(3))
         self.exp_vein_3d_coords_E_all_np = -np.ones(shape=(self.exp_keypoints_np[1][4]+1, 3), dtype=float)
         for i in range(self.exp_keypoints_np[1][3], self.exp_keypoints_np[1][4]+1):
             self.exp_vein_3d_coords_E_all_np[i] = (
@@ -468,6 +474,19 @@ class Contact:
             3, dtype=float, shape=(self.exp_vein_3d_coords_E_all_np.shape[0],), needs_grad=False
         )
         self.exp_vein_3d_coords_E_all.from_numpy(self.exp_vein_3d_coords_E_all_np)
+        validation_point_2d = np.array([
+            [1028, 947]
+        ])
+        self.validation_point_3d_E_np = self.fisheye_model.project_pix_to_points_3d_plane(validation_point_2d)
+        with open(SYSTEM_PARAMS.files.validation_point_E, "wb") as f:
+            pickle.dump(self.validation_point_3d_E_np, f)
+        self.validation_point_3d_E = ti.Vector.field(
+            3, dtype=float, shape=(), needs_grad=False
+        )
+        self.validation_point_3d_E.from_numpy(self.validation_point_3d_E_np.reshape(3))
+        self.validation_point_3d_A = ti.Vector.field(
+            3, dtype=float, shape=(), needs_grad=False
+        )
 
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate(
@@ -487,9 +506,9 @@ class Contact:
         og_r = og_r * dr
         twist_1_offset = R.from_euler(seq="xyz", angles=[-30, 0, 0], degrees=True)
         twist_2_offset = R.from_euler(seq="xyz", angles=[0, 0, -45], degrees=True)
-        slide_offset = R.from_euler(seq="xyz", angles=[0, 0, 180], degrees=True)
+        # slide_offset = R.from_euler(seq="xyz", angles=[0, 0, 180], degrees=True)
         twist_1_base_offset = R.from_euler(seq="xyz", angles=[0, 0, -90], degrees=True)
-        slide_r = og_r * slide_offset
+        slide_r = og_r
         twist_1_r = og_r * twist_1_base_offset
         twist_1 = twist_1_r * twist_1_offset
         twist_2 = og_r * twist_2_offset
@@ -901,7 +920,7 @@ class Contact:
                 current_axis * rotation_per_second * time_duration
             )
         ori_control_quat = ori_control.as_quat()
-        self.vitactip.R_A_quat.from_numpy(ori_control_quat)
+        self.vitactip.R_A_quat.from_numpy(ori_control_quat.reshape(4))
         self.ori_error_magnitude_degrees[None] = np.rad2deg(current_angle_radians)
 
     @ti.kernel
@@ -963,7 +982,7 @@ class Contact:
 
     def pid_controller_3(self):
         self.vitactip.R_A.from_numpy(
-            R.from_quat(self.vitactip.R_A_quat.to_numpy()).as_matrix()
+            R.from_quat(self.vitactip.R_A_quat.to_numpy()).as_matrix().reshape(3,3)
         )
 
     def take_2d_markers_snapshot(self, opts):
@@ -1031,7 +1050,9 @@ class Contact:
         self.vein_exp_vis_all = ti.Vector.field(
             3, dtype=float, shape=(self.exp_vein_3d_coords_E_all.shape[0],), needs_grad=False
         )
-        self.num_keypoints = 8 + self.vein_exp_vis_all.shape[0]
+        self.num_keypoints = 9
+        if False:
+            self.num_keypoints += self.vein_exp_vis_all.shape[0]
         self.key_points = ti.Vector.field(
             3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False
         )
@@ -1243,12 +1264,18 @@ class Contact:
             [1.0, 0.0, 0.0], (self.num_keypoints, 1)
         )
         key_points_per_vertex_color_npy[6:8, :] = clock_arm_points_per_vertex_color_npy
-        key_points_per_vertex_color_npy[8:, :] = np.array(
-            [
-                [0, 1, 1]
-            ]
-        )
+        key_points_per_vertex_color_npy[8, :] = np.array([
+            [0, 1, 1]
+        ], dtype=float)
+        if False:
+            key_points_per_vertex_color_npy[8:, :] = self.create_transition_array_vectorized(self.vein_exp_vis_all.shape[0])
         self.key_points_per_vertex_color.from_numpy(key_points_per_vertex_color_npy)
+
+    def create_transition_array_vectorized(self, n):
+        t = np.linspace(0, 1, n)[:, np.newaxis]
+        start = np.array([0, 1, 1])
+        end = np.array([1, 0, 0])
+        return (1 - t) * start + t * end
 
     def visualisation_update_gui(self, ts):
         vitactip_coords = self.vitactip.vertices_deformed_A.to_numpy()[0]
@@ -1273,10 +1300,12 @@ class Contact:
         if self.trajectory_ix[None] == 1:
             self.compute_vein_exp_vis()
             self.compute_vein_exp_vis_all()
+            self.compute_validation_point()
         vein_exp_vis = self.vein_exp_vis.to_numpy()
         vein_exp_vis_all = self.vein_exp_vis_all.to_numpy()
+        validation_point = self.validation_point_3d_A.to_numpy()
         self.keypoint_coords = np.vstack(
-            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms, vein_exp_vis_all)
+            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms, validation_point)
         )
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
@@ -1585,6 +1614,9 @@ class Contact:
         initial_markers = self.vitactip.deformed_markers.to_numpy()
         with open(SYSTEM_PARAMS.files.sim_markers_initial_positions, "wb") as f:
             pickle.dump(initial_markers, f)
+        self.vitactip.compute_vertices_E()
+        with open(SYSTEM_PARAMS.files.vitactip_points_E, "wb") as f:
+            pickle.dump(self.vitactip.vertices_E.to_numpy(), f)
 
 
 def main():

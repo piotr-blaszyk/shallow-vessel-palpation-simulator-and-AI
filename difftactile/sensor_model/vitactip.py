@@ -294,6 +294,12 @@ class ViTacTip:
             shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices),
             needs_grad=False,
         )
+        self.vertices_E = ti.Vector.field(
+            3,
+            float,
+            shape=(self.num_vertices),
+            needs_grad=False,
+        )
         self.vertices_B_testing = ti.Vector.field(
             3,
             float,
@@ -398,6 +404,33 @@ class ViTacTip:
         return self.project_E_to_A(inhomogeneous_point_E)
 
     @ti.func
+    def project_A_to_E(self, inhomogeneous_point_A):
+        homogeneous_point_A = ti.Vector(
+            [
+                inhomogeneous_point_A[0],
+                inhomogeneous_point_A[1],
+                inhomogeneous_point_A[2],
+                1.0,
+            ]
+        )
+        homogeneous_point_E = (
+            self.T_BE[None] @ self.T_AB[None] @ homogeneous_point_A
+        )
+        inhomogeneous_point_E = ti.Vector(
+            [
+                homogeneous_point_E[0],
+                homogeneous_point_E[1],
+                homogeneous_point_E[2],
+            ]
+        )
+        return inhomogeneous_point_E
+
+    @ti.kernel
+    def compute_vertices_E(self):
+        for i in range(self.num_vertices):
+            self.vertices_E[i] = self.project_A_to_E(self.vertices_undeformed_A[0, i])
+
+    @ti.func
     def project_E_to_A(self, inhomogeneous_point_E):
         homogeneous_point_E = ti.Vector(
             [
@@ -495,11 +528,20 @@ class ViTacTip:
             ]
 
     def get_keypoint_idxs(self):
-        points = self.projection_2d_dome_surface_nodes_deformed.to_numpy()
-        idx = np.argmax(points[:, 0])
-        self.clock_arms_node_idxs[0] = self.dome_surface_node_tags[idx]
-        idx = np.argmin(points[:, 1])
-        self.clock_arms_node_idxs[1] = self.dome_surface_node_tags[idx]
+        self.compute_vertices_E()
+        points = self.vertices_E.to_numpy()
+        
+        tip_z = np.max(points[:, 2])
+        max_z = tip_z - SYSTEM_PARAMS.geometry.clock_arms_z_min_offset
+        min_z = tip_z - SYSTEM_PARAMS.geometry.clock_arms_z_max_offset
+        valid_mask = (points[:, 2] <= max_z) & (points[:, 2] >= min_z)
+        filtered_points = points[valid_mask]
+        filtered_indices = np.where(valid_mask)[0]
+        
+        idx_max_x = np.argmax(filtered_points[:, 0])
+        self.clock_arms_node_idxs[0] = filtered_indices[idx_max_x]
+        idx_min_y = np.argmax(filtered_points[:, 1])
+        self.clock_arms_node_idxs[1] = filtered_indices[idx_min_y]
 
     def save_predicted_markers_to_image(self):
         initial_camera_image = cv2.imread(

@@ -6,10 +6,17 @@ from difftactile.main.constants import *
 
 class VisualiseMesh:
     def __init__(self):
-        self.load_tetrahedra()
-        self.load_deformed_points()
-        self.load_is_fixed_layer()
-        # self.apply_is_fixed_layer()
+        self.load_points_E()
+        self.load_validation_point()
+        self.merge()
+    
+    def load_points_E(self):
+        with open(SYSTEM_PARAMS.files.vitactip_points_E, 'rb') as f:
+            self.point_coordinates = pickle.load(f)
+
+    def load_validation_point(self):
+        with open(SYSTEM_PARAMS.files.validation_point_E, 'rb') as f:
+            self.validation_point = pickle.load(f)
     
     def load_tetrahedra(self):
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
@@ -51,6 +58,12 @@ class VisualiseMesh:
                 good_tetrahedra.append(tetra)
         good_tetrahedra = np.array(good_tetrahedra)
         self.tetrahedra = good_tetrahedra
+    
+    def merge(self):
+        self.point_coordinates = np.vstack([
+            self.point_coordinates,
+            self.validation_point
+        ])
 
     def visualise_point_cloud(self):
         _min = np.min(self.point_coordinates, axis=0)
@@ -83,5 +96,5 @@ class VisualiseMesh:
 if __name__ == '__main__':
     visualise_mesh = VisualiseMesh()
     # visualise_mesh.use_dome_surface_points()
-    visualise_mesh.visualise_mesh()
+    visualise_mesh.visualise_point_cloud()
     

@@ -29,8 +29,8 @@ class FisheyeModel:
         r_x = SYSTEM_PARAMS.fisheye_model.focal_length_x * theta
         r_y = SYSTEM_PARAMS.fisheye_model.focal_length_y * theta
         p = ti.Vector([0.0, 0.0])
-        p[0] = r_x * ti.cos(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_x
-        p[1] = r_y * ti.sin(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_y
+        p[0] = -r_x * ti.cos(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_x
+        p[1] = -r_y * ti.sin(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_y
         return p
 
     def project_points_to_pix(self, a):
@@ -81,6 +81,7 @@ class FisheyeModel:
         theta = r
         phi = np.arctan2(y_norm, x_norm)
         z = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1
+        # z = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface * 2
         r_plane = z * np.tan(theta)
         ps = np.zeros((len(ps), 3))
         ps[:, 0] = r_plane * np.cos(phi)

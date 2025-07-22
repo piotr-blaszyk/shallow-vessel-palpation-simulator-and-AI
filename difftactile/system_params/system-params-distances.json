@@ -43,7 +43,9 @@
             "depth_beneath_surface": 0.003,
             "r": 0.002,
             "h": 1.000
-        }
+        },
+        "clock_arms_z_min_offset": 0.004,
+        "clock_arms_z_max_offset": 0.006
     },
     "visualisation": {
         "camera_offset": 1.0,
