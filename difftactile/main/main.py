@@ -315,6 +315,17 @@ class Contact:
             end_A = self.vitactip.project_E_to_A(end_E)
             point = start_A + offset * (end_A - start_A)
             self.vein_exp_vis[None] = point
+    
+    @ti.kernel
+    def compute_vein_exp_vis_all(self):
+        for i in range(self.exp_vein_3d_coords_E_all.shape[0]):
+            point_E = self.exp_vein_3d_coords_E_all[i]
+            if ti.math.length(
+                point_E
+                - ti.Vector([-1.0, -1.0, -1.0], dt=float)
+            ) > 1e-6:
+                point_A = self.vitactip.project_E_to_A(point_E)
+                self.vein_exp_vis_all[i] = point_A
 
     def set_up_loss_computation(self):
         self.loss = ti.field(float, (), needs_grad=True)
@@ -601,6 +612,7 @@ class Contact:
         self.vein_ix_base.fill(-1)
         self.vein_ix_offset.fill(-1)
         self.vein_exp_vis.fill(0)
+        self.vein_exp_vis_all.fill(0)
 
     def reset_pid_controller(self):
         self.pos_error_sum.fill(0)
@@ -1016,7 +1028,10 @@ class Contact:
             pickle.dump(f2v, f)
 
     def visualisation_initialise(self):
-        self.num_keypoints = 9
+        self.vein_exp_vis_all = ti.Vector.field(
+            3, dtype=float, shape=(self.exp_vein_3d_coords_E_all.shape[0],), needs_grad=False
+        )
+        self.num_keypoints = 8 + self.vein_exp_vis_all.shape[0]
         self.key_points = ti.Vector.field(
             3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False
         )
@@ -1227,8 +1242,8 @@ class Contact:
         key_points_per_vertex_color_npy = np.tile(
             [1.0, 0.0, 0.0], (self.num_keypoints, 1)
         )
-        key_points_per_vertex_color_npy[-3:-1, :] = clock_arm_points_per_vertex_color_npy
-        key_points_per_vertex_color_npy[-1, :] = np.array(
+        key_points_per_vertex_color_npy[6:8, :] = clock_arm_points_per_vertex_color_npy
+        key_points_per_vertex_color_npy[8:, :] = np.array(
             [
                 [0, 1, 1]
             ]
@@ -1257,9 +1272,11 @@ class Contact:
         )
         if self.trajectory_ix[None] == 1:
             self.compute_vein_exp_vis()
+            self.compute_vein_exp_vis_all()
         vein_exp_vis = self.vein_exp_vis.to_numpy()
+        vein_exp_vis_all = self.vein_exp_vis_all.to_numpy()
         self.keypoint_coords = np.vstack(
-            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms, vein_exp_vis)
+            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms, vein_exp_vis_all)
         )
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
