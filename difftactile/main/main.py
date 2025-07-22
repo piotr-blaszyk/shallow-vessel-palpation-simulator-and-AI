@@ -1728,6 +1728,8 @@ def main():
                 contact_model.compute_marker_loss_3()
                 contact_model.compute_marker_loss_4()
                 contact_model.visualisation_update_gui(ts)
+                if contact_model.interpolation_valid[None] == 1:
+                    foo = 7
                 contact_model.compute_marker_loss_4.grad()
                 contact_model.compute_marker_loss_3.grad()
                 contact_model.compute_marker_loss_2.grad()

@@ -121,7 +121,7 @@
         "phantom_y_length": 4.000e-01,
         "camera_rotation_angle": 1.037e+01,
         "high_dist": 1.000e+01,
-        "clock_arms_z_min_offset": 5.000e-02,
+        "clock_arms_z_min_offset": 4.000e-02,
         "clock_arms_z_max_offset": 6.000e-02
     },
     "meta": {
