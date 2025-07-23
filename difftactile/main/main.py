@@ -712,18 +712,11 @@ class Contact:
             self.phantom.grid_node_mass.grad[f, i, j, k] = ti.math.clamp(
                 self.phantom.grid_node_mass.grad[f, i, j, k], -1000.0, 1000.0
             )
-
-    @ti.kernel
-    def reset_loss(self):
-        self.total_loss[None] += self.loss[None]
-        self.loss.fill(0.0)
-        self.loss.grad.fill(1.0)
         
-
     @ti.kernel
     def clear_grad_helper(self):
-        self.loss_1.grad.fill(1.0)
-        self.loss_2.grad.fill(1.0)
+        self.loss_1.grad.fill(0.0)
+        self.loss_2.grad.fill(0.0)
         self.squared_error_sum_1.grad.fill(0.0)
         self.squared_error_sum_2.grad.fill(0.0)
         self.normal_stiffness.grad.fill(0.0)
@@ -735,16 +728,21 @@ class Contact:
         self.clear_grad_helper()
         self.vitactip.clear_grad()
         self.phantom.clear_grad()
-
+    
     @ti.kernel
-    def reset(self):
+    def reset_loss(self):
+        self.total_loss[None] += self.loss[None]
+        self.loss.fill(0.0)
         self.loss_1.fill(0.0)
         self.loss_2.fill(0.0)
         self.squared_error_sum_1.fill(0.0)
         self.squared_error_sum_2.fill(0.0)
+
+    @ti.kernel
+    def reset_state(self):
         self.contact_idx.fill(-1)
-        self.vitactip.reset()
-        self.phantom.reset()
+        self.vitactip.reset_state()
+        self.phantom.reset_state()
 
     @ti.func
     def dist(self, a, b) -> ti.f32:
@@ -1402,7 +1400,7 @@ class Contact:
     def forward_pass_common_part(self, ts):
         self.vitactip.set_control_vel(0)
         self.vitactip.set_vel(0)
-        self.reset()
+        self.reset_state()
         self.vitactip.set_up_system_params_2()
         self.phantom.set_stiffness()
         for ss in range(SYSTEM_PARAMS.contact.num_sub_frames - 1):
@@ -1702,6 +1700,7 @@ def main():
             
             total_ts = ts
             contact_model.bp()
+            contact_model.reset_loss()
             contact_model.total_loss.fill(0.0)
             contact_model.clear_grad()
             contact_model.prev_loss[None] = 0.0
@@ -1716,14 +1715,14 @@ def main():
                 contact_model.interpolate_experimental_frame(ts)
                 contact_model.compute_marker_loss_1()
                 contact_model.compute_marker_loss_2()
-                contact_model.compute_marker_loss_3()
-                contact_model.compute_marker_loss_4()
+                # contact_model.compute_marker_loss_3()
+                # contact_model.compute_marker_loss_4()
                 contact_model.compute_marker_loss_5()
                 contact_model.visualisation_update_gui(ts)
                 contact_model.loss.grad[None] = 1.0
                 contact_model.compute_marker_loss_5.grad()
-                contact_model.compute_marker_loss_4.grad()
-                contact_model.compute_marker_loss_3.grad()
+                # contact_model.compute_marker_loss_4.grad()
+                # contact_model.compute_marker_loss_3.grad()
                 contact_model.compute_marker_loss_2.grad()
                 contact_model.compute_marker_loss_1.grad()
                 contact_model.vitactip.extract_markers.grad(
@@ -1744,12 +1743,9 @@ def main():
                     contact_model.print_params_short()
                     contact_model.set_dt()
                     contact_model.clear_grad()
-                    contact_model.total_loss[None] += contact_model.loss[None]
-                    contact_model.loss.fill(0.0)
-            
-            print(f'optimisation step {i} loss: {contact_model.loss[None]:0.3e}')
+                    contact_model.reset_loss()
         print(
-            f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done; loss: {contact_model.total_loss[None]}"
+            f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
         )
     print("optimisation loop done")
     contact_model.save_final_params()

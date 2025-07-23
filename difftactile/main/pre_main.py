@@ -20,7 +20,7 @@ def arr_str(xs):
 def compute_learning_rate(
         gradient, 
         value, 
-        percentage_update=1.0
+        percentage_update=0.5
     ):
     return abs(percentage_update * value / gradient)
 

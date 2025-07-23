@@ -631,7 +631,7 @@ class Phantom:
                 )
 
     @ti.func
-    def reset(self):
+    def reset_state(self):
         self.mu.fill(0.0)
         self.lam.fill(0.0)
         self.grid_node_momentum_in.fill(0.0)
