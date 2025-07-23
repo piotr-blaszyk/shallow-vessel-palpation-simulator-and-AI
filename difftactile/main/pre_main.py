@@ -20,7 +20,7 @@ def arr_str(xs):
 def compute_learning_rate(
         gradient, 
         value, 
-        percentage_update=0.16
+        percentage_update=1.0
     ):
     return abs(percentage_update * value / gradient)
 
@@ -171,11 +171,8 @@ def main():
         "contact_surface_area": contact_surface_area,
     }
 
-    if SYSTEM_PARAMS.optimisation.calibrate_learning_rates == 1:
-        learning_rates_dict = compute_and_print_learning_rates()
-        res = system_params_computed | learning_rates_dict
-    else:
-        res = system_params_computed
+    learning_rates_dict = compute_and_print_learning_rates()
+    res = system_params_computed | learning_rates_dict
 
     # Save coordinates to JSON file
     with open(SYSTEM_PARAMS.files.system_params_computed, 'w') as f:

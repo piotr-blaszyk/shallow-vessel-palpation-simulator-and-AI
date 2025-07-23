@@ -1505,13 +1505,13 @@ class Contact:
         print()
     
     def print_params_short(self):
-        print(f'vitactip.youngs_modulus: {self.vitactip.youngs_modulus[None]:0.3e} ({SYSTEM_PARAMS.vitactip.single_material.youngs_modulus:0.3e})')
-        print(f'phantom.youngs_modulus_0: {self.phantom.youngs_modulus[0]:0.3e} ({SYSTEM_PARAMS.phantom.silicone.youngs_modulus:0.3e})')
-        print(f'phantom.youngs_modulus_1: {self.phantom.youngs_modulus[1]:0.3e} ({SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus:0.3e})')
-        print(f'coulomb_friction_coeff: {self.coulomb_friction_coeff[None]:0.3e} ({SYSTEM_PARAMS.contact.coulomb_friction_coeff:0.3e})')
-        print(f'normal_stiffness: {self.normal_stiffness[None]:0.3e} ({SYSTEM_PARAMS.contact.normal_stiffness:0.3e})')
-        print(f'tangential_stiffness: {self.tangential_stiffness[None]:0.3e} ({SYSTEM_PARAMS.contact.tangential_stiffness:0.3e})')
-        print(f'normal_damping: {self.normal_damping[None]:0.3e} ({SYSTEM_PARAMS.contact.normal_damping:0.3e})')
+        print(f'vitactip.youngs_modulus: {self.vitactip.youngs_modulus[None]:0.16e} ({SYSTEM_PARAMS.vitactip.single_material.youngs_modulus:0.16e})')
+        print(f'phantom.youngs_modulus_0: {self.phantom.youngs_modulus[0]:0.16e} ({SYSTEM_PARAMS.phantom.silicone.youngs_modulus:0.16e})')
+        print(f'phantom.youngs_modulus_1: {self.phantom.youngs_modulus[1]:0.16e} ({SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus:0.16e})')
+        print(f'coulomb_friction_coeff: {self.coulomb_friction_coeff[None]:0.16e} ({SYSTEM_PARAMS.contact.coulomb_friction_coeff:0.16e})')
+        print(f'normal_stiffness: {self.normal_stiffness[None]:0.16e} ({SYSTEM_PARAMS.contact.normal_stiffness:0.16e})')
+        print(f'tangential_stiffness: {self.tangential_stiffness[None]:0.16e} ({SYSTEM_PARAMS.contact.tangential_stiffness:0.16e})')
+        print(f'normal_damping: {self.normal_damping[None]:0.16e} ({SYSTEM_PARAMS.contact.normal_damping:0.16e})')
 
     def update_params(self, ts):
         self.update_param_none(
@@ -1720,6 +1720,7 @@ def main():
                 contact_model.compute_marker_loss_4()
                 contact_model.compute_marker_loss_5()
                 contact_model.visualisation_update_gui(ts)
+                contact_model.loss.grad[None] = 1.0
                 contact_model.compute_marker_loss_5.grad()
                 contact_model.compute_marker_loss_4.grad()
                 contact_model.compute_marker_loss_3.grad()
@@ -1738,12 +1739,13 @@ def main():
                         contact_model.save_gradients_for_calibration()
                     print(f'mini batch loss: {contact_model.loss[None]:0.3e}')
                     print(f'mini batch loss 1: {contact_model.loss_1[None]:0.3e}')
-                    print(f'mini batch loss 1: {contact_model.loss_2[None]:0.3e}')
+                    print(f'mini batch loss 2: {contact_model.loss_2[None]:0.3e}')
                     contact_model.update_params(ts)
                     contact_model.print_params_short()
                     contact_model.set_dt()
                     contact_model.clear_grad()
-                    contact_model.reset_loss()
+                    contact_model.total_loss[None] += contact_model.loss[None]
+                    contact_model.loss.fill(0.0)
             
             print(f'optimisation step {i} loss: {contact_model.loss[None]:0.3e}')
         print(

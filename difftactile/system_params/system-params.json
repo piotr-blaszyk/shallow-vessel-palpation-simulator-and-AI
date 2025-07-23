@@ -174,7 +174,7 @@
         },
         "loss_1_weight": 1.000e+00,
         "loss_2_weight": 2.000e-01,
-        "mini_batch_size": 10,
+        "mini_batch_size": 40,
         "calibrate_learning_rates": 0
     },
     "fisheye_model": {
