@@ -886,6 +886,7 @@ class ViTacTip:
     
     @ti.func
     def reset_state(self):
+        self.youngs_modulus.fill(0.0)
         self.mu.fill(0.0)
         self.lam.fill(0.0)
         self.contact_forces_on_vertices.fill(0.0)

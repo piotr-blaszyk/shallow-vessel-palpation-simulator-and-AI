@@ -770,9 +770,13 @@ class Contact:
 
     @ti.kernel
     def reset_state(self):
-        self.contact_idx.fill(-1)
         self.vitactip.reset_state()
         self.phantom.reset_state()
+        self.contact_idx.fill(-1)
+        self.coulomb_friction_coeff.fill(0)
+        self.normal_stiffness.fill(0)
+        self.tangential_stiffness.fill(0)
+        self.normal_damping.fill(0)
 
     @ti.func
     def dist(self, a, b) -> ti.f32:
@@ -1432,9 +1436,10 @@ class Contact:
         self.window.show()
 
     def forward_pass_common_part(self, ts):
+        self.reset_state()
+        self.set_optimisation_params_from_log()
         self.vitactip.set_control_vel(0)
         self.vitactip.set_vel(0)
-        self.reset_state()
         self.vitactip.set_up_system_params_2()
         self.phantom.set_stiffness()
         for ss in range(SYSTEM_PARAMS.contact.num_sub_frames - 1):
@@ -1445,6 +1450,7 @@ class Contact:
             self.update_grad(ss)
         self.phantom.set_stiffness.grad()
         self.vitactip.set_up_system_params_2.grad()
+        self.set_optimisation_params_from_log.grad()
 
     def save_gradients_for_calibration(self):
         if not self.gradients_printed:
@@ -1615,13 +1621,13 @@ class Contact:
     
     @ti.kernel
     def set_optimisation_params_from_log(self):
-        self.vitactip.youngs_modulus[None] = ti.exp(self.vitactip_youngs_modulus_log[None])
-        self.phantom.youngs_modulus[0] = ti.exp(self.phantom_youngs_modulus_0_log[None])
-        self.phantom.youngs_modulus[1] = ti.exp(self.phantom_youngs_modulus_1_log[None])
-        self.coulomb_friction_coeff[None] = ti.exp(self.coulomb_friction_coeff_log[None])
-        self.normal_stiffness[None] = ti.exp(self.normal_stiffness_log[None])
-        self.tangential_stiffness[None] = ti.exp(self.tangential_stiffness_log[None])
-        self.normal_damping[None] = ti.exp(self.normal_damping_log[None])
+        self.vitactip.youngs_modulus[None] += ti.exp(self.vitactip_youngs_modulus_log[None])
+        self.phantom.youngs_modulus[0] += ti.exp(self.phantom_youngs_modulus_0_log[None])
+        self.phantom.youngs_modulus[1] += ti.exp(self.phantom_youngs_modulus_1_log[None])
+        self.coulomb_friction_coeff[None] += ti.exp(self.coulomb_friction_coeff_log[None])
+        self.normal_stiffness[None] += ti.exp(self.normal_stiffness_log[None])
+        self.tangential_stiffness[None] += ti.exp(self.tangential_stiffness_log[None])
+        self.normal_damping[None] += ti.exp(self.normal_damping_log[None])
     
     def update_param_none(self, ti_var, keys):
         min_val = SYSTEM_PARAMS.optimisation.min_values
@@ -1837,7 +1843,6 @@ def main():
                     contact_model.set_dt()
                     contact_model.clear_grad()
                     contact_model.reset_batch_loss()
-                    contact_model.set_optimisation_params_from_log()
                 if False:
                     print()
         losses.append(float(contact_model.trajectory_loss[None]))
