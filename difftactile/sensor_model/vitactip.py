@@ -33,7 +33,7 @@ class ViTacTip:
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.vitactip.rayleigh_damping_beta
         self.mass_density = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         self.mu = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         self.lam = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
         self.mass_density[None] += SYSTEM_PARAMS.vitactip.single_material.density
@@ -887,6 +887,7 @@ class ViTacTip:
     @ti.func
     def reset_state(self):
         self.youngs_modulus.fill(0.0)
+        self.poissons_ratio.fill(0.0)
         self.mu.fill(0.0)
         self.lam.fill(0.0)
         self.contact_forces_on_vertices.fill(0.0)
@@ -907,6 +908,7 @@ class ViTacTip:
         self.mu.grad.fill(0.0)
         self.lam.grad.fill(0.0)
         self.youngs_modulus.grad.fill(0.0)
+        self.poissons_ratio.grad.fill(0.0)
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):

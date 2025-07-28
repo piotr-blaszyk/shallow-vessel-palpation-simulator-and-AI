@@ -28,7 +28,7 @@ class Phantom:
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_beta
         self.inverse_mpm_grid_cube_size = 1 / SYSTEM_PARAMS.phantom.mpm_grid_cube_size
         self.youngs_modulus = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
         self.lam = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
         self.mu = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
         self.youngs_modulus[0] += SYSTEM_PARAMS.phantom.silicone.youngs_modulus
@@ -633,6 +633,7 @@ class Phantom:
     @ti.func
     def reset_state(self):
         self.youngs_modulus.fill(0.0)
+        self.poissons_ratio.fill(0.0)
         self.mu.fill(0.0)
         self.lam.fill(0.0)
         self.grid_node_momentum_in.fill(0.0)
@@ -648,6 +649,7 @@ class Phantom:
         self.mu.grad.fill(0.0)
         self.lam.grad.fill(0.0)
         self.youngs_modulus.grad.fill(0.0)
+        self.poissons_ratio.grad.fill(0.0)
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):

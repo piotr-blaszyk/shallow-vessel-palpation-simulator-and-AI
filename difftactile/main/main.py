@@ -736,6 +736,9 @@ class Contact:
         self.vitactip_youngs_modulus_log.grad.fill(0)
         self.phantom_youngs_modulus_0_log.grad.fill(0)
         self.phantom_youngs_modulus_1_log.grad.fill(0)
+        self.vitactip_poissons_ratio_log.grad.fill(0)
+        self.phantom_poissons_ratio_0_log.grad.fill(0)
+        self.phantom_poissons_ratio_1_log.grad.fill(0)
         self.coulomb_friction_coeff_log.grad.fill(0)
         self.normal_stiffness_log.grad.fill(0)
         self.tangential_stiffness_log.grad.fill(0)
@@ -1546,6 +1549,9 @@ class Contact:
         print(f'vitactip.youngs_modulus: {self.vitactip.youngs_modulus[None]:0.16e} ({SYSTEM_PARAMS.vitactip.single_material.youngs_modulus:0.16e})')
         print(f'phantom.youngs_modulus_0: {self.phantom.youngs_modulus[0]:0.16e} ({SYSTEM_PARAMS.phantom.silicone.youngs_modulus:0.16e})')
         print(f'phantom.youngs_modulus_1: {self.phantom.youngs_modulus[1]:0.16e} ({SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus:0.16e})')
+        print(f'vitactip.poissons_ratio: {self.vitactip.poissons_ratio[None]:0.16e} ({SYSTEM_PARAMS.vitactip.single_material.poissons_ratio:0.16e})')
+        print(f'phantom.poissons_ratio_0: {self.phantom.poissons_ratio[0]:0.16e} ({SYSTEM_PARAMS.phantom.silicone.poissons_ratio:0.16e})')
+        print(f'phantom.poissons_ratio_1: {self.phantom.poissons_ratio[1]:0.16e} ({SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio:0.16e})')
         print(f'coulomb_friction_coeff: {self.coulomb_friction_coeff[None]:0.16e} ({SYSTEM_PARAMS.contact.coulomb_friction_coeff:0.16e})')
         print(f'normal_stiffness: {self.normal_stiffness[None]:0.16e} ({SYSTEM_PARAMS.contact.normal_stiffness:0.16e})')
         print(f'tangential_stiffness: {self.tangential_stiffness[None]:0.16e} ({SYSTEM_PARAMS.contact.tangential_stiffness:0.16e})')
@@ -1555,6 +1561,9 @@ class Contact:
         print(f'vitactip.youngs_modulus: {ti.exp(self.vitactip_youngs_modulus_log[None]):0.16e} ({SYSTEM_PARAMS.vitactip.single_material.youngs_modulus:0.16e})')
         print(f'phantom.youngs_modulus_0: {ti.exp(self.phantom_youngs_modulus_0_log[None]):0.16e} ({SYSTEM_PARAMS.phantom.silicone.youngs_modulus:0.16e})')
         print(f'phantom.youngs_modulus_1: {ti.exp(self.phantom_youngs_modulus_1_log[None]):0.16e} ({SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus:0.16e})')
+        print(f'vitactip.poissons_ratio: {ti.exp(self.vitactip_poissons_ratio_log[None]):0.16e} ({SYSTEM_PARAMS.vitactip.single_material.poissons_ratio:0.16e})')
+        print(f'phantom.poissons_ratio_0: {ti.exp(self.phantom_poissons_ratio_0_log[None]):0.16e} ({SYSTEM_PARAMS.phantom.silicone.poissons_ratio:0.16e})')
+        print(f'phantom.poissons_ratio_1: {ti.exp(self.phantom_poissons_ratio_1_log[None]):0.16e} ({SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio:0.16e})')
         print(f'coulomb_friction_coeff: {ti.exp(self.coulomb_friction_coeff_log[None]):0.16e} ({SYSTEM_PARAMS.contact.coulomb_friction_coeff:0.16e})')
         print(f'normal_stiffness: {ti.exp(self.normal_stiffness_log[None]):0.16e} ({SYSTEM_PARAMS.contact.normal_stiffness:0.16e})')
         print(f'tangential_stiffness: {ti.exp(self.tangential_stiffness_log[None]):0.16e} ({SYSTEM_PARAMS.contact.tangential_stiffness:0.16e})')
@@ -1564,6 +1573,9 @@ class Contact:
         self.vitactip_youngs_modulus_log = ti.field(dtype=float, shape=(), needs_grad=True)
         self.phantom_youngs_modulus_0_log = ti.field(dtype=float, shape=(), needs_grad=True)
         self.phantom_youngs_modulus_1_log = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.vitactip_poissons_ratio_log = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.phantom_poissons_ratio_0_log = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.phantom_poissons_ratio_1_log = ti.field(dtype=float, shape=(), needs_grad=True)
         self.coulomb_friction_coeff_log = ti.field(dtype=float, shape=(), needs_grad=True)
         self.normal_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=True)
         self.tangential_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=True)
@@ -1572,6 +1584,9 @@ class Contact:
         self.vitactip_youngs_modulus_log[None] = ti.log(self.vitactip.youngs_modulus[None])
         self.phantom_youngs_modulus_0_log[None] = ti.log(self.phantom.youngs_modulus[0])
         self.phantom_youngs_modulus_1_log[None] = ti.log(self.phantom.youngs_modulus[1])
+        self.vitactip_poissons_ratio_log[None] = ti.log(self.vitactip.poissons_ratio[None])
+        self.phantom_poissons_ratio_0_log[None] = ti.log(self.phantom.poissons_ratio[0])
+        self.phantom_poissons_ratio_1_log[None] = ti.log(self.phantom.poissons_ratio[1])
         self.coulomb_friction_coeff_log[None] = ti.log(self.coulomb_friction_coeff[None])
         self.normal_stiffness_log[None] = ti.log(self.normal_stiffness[None])
         self.tangential_stiffness_log[None] = ti.log(self.tangential_stiffness[None])
@@ -1580,6 +1595,9 @@ class Contact:
         self.vitactip_youngs_modulus_torch = torch.tensor(self.vitactip_youngs_modulus_log[None], requires_grad=False)
         self.phantom_youngs_modulus_0_torch = torch.tensor(self.phantom_youngs_modulus_0_log[None], requires_grad=False)
         self.phantom_youngs_modulus_1_torch = torch.tensor(self.phantom_youngs_modulus_1_log[None], requires_grad=False)
+        self.vitactip_poissons_ratio_torch = torch.tensor(self.vitactip_poissons_ratio_log[None], requires_grad=False)
+        self.phantom_poissons_ratio_0_torch = torch.tensor(self.phantom_poissons_ratio_0_log[None], requires_grad=False)
+        self.phantom_poissons_ratio_1_torch = torch.tensor(self.phantom_poissons_ratio_1_log[None], requires_grad=False)
         self.coulomb_friction_coeff_torch = torch.tensor(self.coulomb_friction_coeff_log[None], requires_grad=False)
         self.normal_stiffness_torch = torch.tensor(self.normal_stiffness_log[None], requires_grad=False)
         self.tangential_stiffness_torch = torch.tensor(self.tangential_stiffness_log[None], requires_grad=False)
@@ -1589,23 +1607,30 @@ class Contact:
             self.vitactip_youngs_modulus_torch,
             self.phantom_youngs_modulus_0_torch,
             self.phantom_youngs_modulus_1_torch,
+            self.vitactip_poissons_ratio_torch,
+            self.phantom_poissons_ratio_0_torch,
+            self.phantom_poissons_ratio_1_torch,
             self.coulomb_friction_coeff_torch,
             self.normal_stiffness_torch,
             self.tangential_stiffness_torch,
             self.normal_damping_torch
         ]
 
-        self.optimiser = optim.Adam(self.torch_params, lr=1e-1, betas=(0.9, 0.999), eps=1e-8)
+        if False:
+            self.optimiser = optim.Adam(self.torch_params, lr=1e-1, betas=(0.9, 0.999), eps=1e-8)
 
-        # self.optimiser = optim.Adam([
-        #     {'params': [self.vitactip_youngs_modulus_torch], 'lr': 1e-3},
-        #     {'params': [self.phantom_youngs_modulus_0_torch], 'lr': 1e-3},
-        #     {'params': [self.phantom_youngs_modulus_1_torch], 'lr': 1e-3},
-        #     {'params': [self.coulomb_friction_coeff_torch], 'lr': 1e-3},
-        #     {'params': [self.normal_stiffness_torch], 'lr': 1e-3},
-        #     {'params': [self.tangential_stiffness_torch], 'lr': 1e-3},
-        #     {'params': [self.normal_damping_torch], 'lr': 1e-3}
-        # ], lr=1e-3, betas=(0.9, 0.999), eps=1e-8)
+        self.optimiser = optim.Adam([
+            {'params': [self.vitactip_youngs_modulus_torch]},
+            {'params': [self.phantom_youngs_modulus_0_torch]},
+            {'params': [self.phantom_youngs_modulus_1_torch]},
+            {'params': [self.vitactip_poissons_ratio_torch], 'lr': 0},
+            {'params': [self.phantom_poissons_ratio_0_torch], 'lr': 0},
+            {'params': [self.phantom_poissons_ratio_1_torch], 'lr': 0},
+            {'params': [self.coulomb_friction_coeff_torch]},
+            {'params': [self.normal_stiffness_torch]},
+            {'params': [self.tangential_stiffness_torch]},
+            {'params': [self.normal_damping_torch]}
+        ], lr=1e-1, betas=(0.9, 0.999), eps=1e-8)
     
     def update_params(self, ts):
         self.optimiser.zero_grad()
@@ -1613,6 +1638,9 @@ class Contact:
         self.vitactip_youngs_modulus_torch.grad = torch.tensor(self.vitactip_youngs_modulus_log.grad[None])
         self.phantom_youngs_modulus_0_torch.grad = torch.tensor(self.phantom_youngs_modulus_0_log.grad[None])
         self.phantom_youngs_modulus_1_torch.grad = torch.tensor(self.phantom_youngs_modulus_1_log.grad[None])
+        self.vitactip_poissons_ratio_torch.grad = torch.tensor(self.vitactip_poissons_ratio_log.grad[None])
+        self.phantom_poissons_ratio_0_torch.grad = torch.tensor(self.phantom_poissons_ratio_0_log.grad[None])
+        self.phantom_poissons_ratio_1_torch.grad = torch.tensor(self.phantom_poissons_ratio_1_log.grad[None])
         self.coulomb_friction_coeff_torch.grad = torch.tensor(self.coulomb_friction_coeff_log.grad[None])
         self.normal_stiffness_torch.grad = torch.tensor(self.normal_stiffness_log.grad[None])
         self.tangential_stiffness_torch.grad = torch.tensor(self.tangential_stiffness_log.grad[None])
@@ -1623,6 +1651,9 @@ class Contact:
         self.vitactip_youngs_modulus_log[None] = self.vitactip_youngs_modulus_torch.item()
         self.phantom_youngs_modulus_0_log[None] = self.phantom_youngs_modulus_0_torch.item()
         self.phantom_youngs_modulus_1_log[None] = self.phantom_youngs_modulus_1_torch.item()
+        self.vitactip_poissons_ratio_log[None] = self.vitactip_poissons_ratio_torch.item()
+        self.phantom_poissons_ratio_0_log[None] = self.phantom_poissons_ratio_0_torch.item()
+        self.phantom_poissons_ratio_1_log[None] = self.phantom_poissons_ratio_1_torch.item()
         self.coulomb_friction_coeff_log[None] = self.coulomb_friction_coeff_torch.item()
         self.normal_stiffness_log[None] = self.normal_stiffness_torch.item()
         self.tangential_stiffness_log[None] = self.tangential_stiffness_torch.item()
@@ -1633,6 +1664,9 @@ class Contact:
         self.vitactip.youngs_modulus[None] += ti.exp(self.vitactip_youngs_modulus_log[None])
         self.phantom.youngs_modulus[0] += ti.exp(self.phantom_youngs_modulus_0_log[None])
         self.phantom.youngs_modulus[1] += ti.exp(self.phantom_youngs_modulus_1_log[None])
+        self.vitactip.poissons_ratio[None] += ti.exp(self.vitactip_poissons_ratio_log[None])
+        self.phantom.poissons_ratio[0] += ti.exp(self.phantom_poissons_ratio_0_log[None])
+        self.phantom.poissons_ratio[1] += ti.exp(self.phantom_poissons_ratio_1_log[None])
         self.coulomb_friction_coeff[None] += ti.exp(self.coulomb_friction_coeff_log[None])
         self.normal_stiffness[None] += ti.exp(self.normal_stiffness_log[None])
         self.tangential_stiffness[None] += ti.exp(self.tangential_stiffness_log[None])
