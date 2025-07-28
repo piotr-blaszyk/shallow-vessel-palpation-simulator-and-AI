@@ -1551,6 +1551,15 @@ class Contact:
         print(f'tangential_stiffness: {self.tangential_stiffness[None]:0.16e} ({SYSTEM_PARAMS.contact.tangential_stiffness:0.16e})')
         print(f'normal_damping: {self.normal_damping[None]:0.16e} ({SYSTEM_PARAMS.contact.normal_damping:0.16e})')
     
+    def print_params_short_from_log(self):
+        print(f'vitactip.youngs_modulus: {ti.exp(self.vitactip_youngs_modulus_log[None]):0.16e} ({SYSTEM_PARAMS.vitactip.single_material.youngs_modulus:0.16e})')
+        print(f'phantom.youngs_modulus_0: {ti.exp(self.phantom_youngs_modulus_0_log[None]):0.16e} ({SYSTEM_PARAMS.phantom.silicone.youngs_modulus:0.16e})')
+        print(f'phantom.youngs_modulus_1: {ti.exp(self.phantom_youngs_modulus_1_log[None]):0.16e} ({SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus:0.16e})')
+        print(f'coulomb_friction_coeff: {ti.exp(self.coulomb_friction_coeff_log[None]):0.16e} ({SYSTEM_PARAMS.contact.coulomb_friction_coeff:0.16e})')
+        print(f'normal_stiffness: {ti.exp(self.normal_stiffness_log[None]):0.16e} ({SYSTEM_PARAMS.contact.normal_stiffness:0.16e})')
+        print(f'tangential_stiffness: {ti.exp(self.tangential_stiffness_log[None]):0.16e} ({SYSTEM_PARAMS.contact.tangential_stiffness:0.16e})')
+        print(f'normal_damping: {ti.exp(self.normal_damping_log[None]):0.16e} ({SYSTEM_PARAMS.contact.normal_damping:0.16e})')
+    
     def set_up_torch_params(self):
         self.vitactip_youngs_modulus_log = ti.field(dtype=float, shape=(), needs_grad=True)
         self.phantom_youngs_modulus_0_log = ti.field(dtype=float, shape=(), needs_grad=True)
@@ -1586,7 +1595,7 @@ class Contact:
             self.normal_damping_torch
         ]
 
-        self.optimiser = optim.Adam(self.torch_params, lr=1e1, betas=(0.9, 0.999), eps=1e-8)
+        self.optimiser = optim.Adam(self.torch_params, lr=1e-1, betas=(0.9, 0.999), eps=1e-8)
 
         # self.optimiser = optim.Adam([
         #     {'params': [self.vitactip_youngs_modulus_torch], 'lr': 1e-3},
@@ -1839,8 +1848,10 @@ def main():
                     print(f'mini batch loss 1: {contact_model.batch_loss_1[None]:0.3e}')
                     print(f'mini batch loss 2: {contact_model.batch_loss_2[None]:0.3e}')
                     contact_model.update_params(ts)
+                    contact_model.reset_state()
+                    contact_model.set_optimisation_params_from_log()
                     contact_model.print_params_short()
-                    contact_model.set_dt()
+                    contact_model.set_dt(verbose=True)
                     contact_model.clear_grad()
                     contact_model.reset_batch_loss()
                 if False:
@@ -1852,6 +1863,7 @@ def main():
     print("optimisation loop done")
     plt.figure(figsize=(10, 6))
     plt.plot(list(range(len(losses))), losses)
+    plt.gca().xaxis.set_major_locator(plt.MultipleLocator(1))
     plt.grid(True)
     plt.xlabel('batch index')
     plt.ylabel('batch loss')

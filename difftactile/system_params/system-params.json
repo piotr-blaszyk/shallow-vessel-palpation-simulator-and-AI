@@ -60,7 +60,7 @@
         "normal_damping": 1.680e+00,
         "coulomb_friction_coeff": 8.500e-01,
         "num_sub_frames": 125,
-        "num_opt_steps": 3,
+        "num_opt_steps": 10,
         "pid_max_speed_translation": 1.000e+00,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,
@@ -189,7 +189,7 @@
         },
         "loss_1_weight": 1.000e+00,
         "loss_2_weight": 1.000e+00,
-        "mini_batch_size": 10,
+        "mini_batch_size": 1000,
         "calibrate_learning_rates": 0
     },
     "fisheye_model": {
