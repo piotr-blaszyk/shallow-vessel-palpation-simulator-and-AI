@@ -20,9 +20,9 @@ def arr_str(xs):
 def compute_learning_rate(
         gradient, 
         value, 
-        percentage_update=0.5
+        relative_step_size=0.1
     ):
-    return abs(percentage_update * value / gradient)
+    return abs(relative_step_size * value / gradient)
 
 def compute_and_print_learning_rates():
     with open(SYSTEM_PARAMS.files.optimisation_loop_calibration, 'r') as f:

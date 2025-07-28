@@ -248,6 +248,7 @@
         "calibration_vertical": "difftactile/manual_or_experimental_data/calibration-vertical.png",
         "calibration_horizontal": "difftactile/manual_or_experimental_data/calibration-horizontal.png",
         "validation_point_E": "difftactile/output/validation_point_E.pkl",
-        "vitactip_points_E": "difftactile/output/vitactip_points_E.pkl"
+        "vitactip_points_E": "difftactile/output/vitactip_points_E.pkl",
+        "losses": "difftactile/output/losses.png"
     }
 }

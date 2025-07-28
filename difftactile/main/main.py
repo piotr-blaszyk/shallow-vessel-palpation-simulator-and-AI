@@ -7,6 +7,7 @@ import sys
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.transform import Rotation as R
+import matplotlib.pyplot as plt
 
 from difftactile.sensor_model.fisheye_model import *
 from difftactile.sensor_model.vitactip import ViTacTip
@@ -363,9 +364,15 @@ class Contact:
         self.loss = ti.field(float, (), needs_grad=True)
         self.loss_1 = ti.field(float, (), needs_grad=True)
         self.loss_2 = ti.field(float, (), needs_grad=True)
-        self.total_loss = ti.field(float, (), needs_grad=False)
+        self.batch_loss = ti.field(float, (), needs_grad=False)
+        self.batch_loss_1 = ti.field(float, (), needs_grad=False)
+        self.batch_loss_2 = ti.field(float, (), needs_grad=False)
         self.squared_error_sum_1 = ti.field(dtype=float, shape=(), needs_grad=True)
         self.squared_error_sum_2 = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.error_sum_1 = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.error_sum_2 = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.mean_error_1 = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.mean_error_2 = ti.field(dtype=float, shape=(), needs_grad=False)
 
     def set_up_collision_detection(self):
         self.num_sensor = 1
@@ -731,12 +738,24 @@ class Contact:
     
     @ti.kernel
     def reset_loss(self):
-        self.total_loss[None] += self.loss[None]
+        self.batch_loss[None] += self.loss[None]
+        self.batch_loss_1[None] += self.loss_1[None]
+        self.batch_loss_2[None] += self.loss_2[None]
         self.loss.fill(0.0)
         self.loss_1.fill(0.0)
         self.loss_2.fill(0.0)
         self.squared_error_sum_1.fill(0.0)
         self.squared_error_sum_2.fill(0.0)
+        self.error_sum_1.fill(0.0)
+        self.error_sum_2.fill(0.0)
+        self.mean_error_1.fill(0.0)
+        self.mean_error_2.fill(0.0)
+    
+    @ti.kernel
+    def reset_batch_loss(self):
+        self.batch_loss[None] = 0
+        self.batch_loss_1[None] = 0
+        self.batch_loss_2[None] = 0
 
     @ti.kernel
     def reset_state(self):
@@ -762,12 +781,14 @@ class Contact:
                     sim_marker = self.vitactip.deformed_markers[i]
                     exp_marker = self.marker_position_exp[exp_ix]
                     self.squared_error_sum_1[None] += self.dist(sim_marker, exp_marker) ** 2
+                    self.error_sum_1[None] += self.dist(sim_marker, exp_marker)
 
     @ti.kernel
     def compute_marker_loss_2(self):
         if self.interpolation_valid[None] == 1:
             rmse = ti.sqrt(self.squared_error_sum_1[None] / self.marker_position_exp.shape[0])
             self.loss_1[None] += SYSTEM_PARAMS.optimisation.loss_1_weight * rmse
+            self.mean_error_1[None] += self.error_sum_1[None] / self.marker_position_exp.shape[0]
     
     @ti.kernel
     def compute_marker_loss_3(self):
@@ -792,6 +813,7 @@ class Contact:
                 dist_sim = self.dist(a_sim, b_sim)
 
                 self.squared_error_sum_2[None] += (dist_exp - dist_sim) ** 2
+                self.error_sum_2[None] += abs(dist_exp - dist_sim)
 
     @ti.kernel
     def compute_marker_loss_4(self):
@@ -803,6 +825,7 @@ class Contact:
         ):
             rmse = ti.sqrt(self.squared_error_sum_2[None] / self.traj_1_exp_marker_pairs.shape[0])
             self.loss_2[None] += SYSTEM_PARAMS.optimisation.loss_2_weight * rmse
+            self.mean_error_2[None] += self.error_sum_2[None] / self.traj_1_exp_marker_pairs.shape[0]
     
     @ti.kernel
     def compute_marker_loss_5(self):
@@ -1664,11 +1687,12 @@ def main():
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
     foo = True
+    losses = []
 
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
         # for i in range(contact_model.trajectories_np.shape[0]):
-        for i in range(1, 2):
+        for i in range(0, 1):
             print(f'trajectory {i}: {contact_model.trajectory_names[i]}')
             contact_model.trajectory_ix[None] = i
             contact_model.set_up_initial_positions_state_and_trajectory()
@@ -1701,12 +1725,13 @@ def main():
             total_ts = ts
             contact_model.bp()
             contact_model.reset_loss()
-            contact_model.total_loss.fill(0.0)
+            contact_model.batch_loss.fill(0.0)
             contact_model.clear_grad()
             contact_model.prev_loss[None] = 0.0
             print("backward")
             passes = 0
             for ts in range(total_ts - 1, -1, -1):
+                contact_model.reset_loss()
                 contact_model.memory_from_cache(ts)
                 contact_model.forward_pass_common_part(ts)
                 contact_model.vitactip.extract_markers(
@@ -1719,6 +1744,10 @@ def main():
                 # contact_model.compute_marker_loss_4()
                 contact_model.compute_marker_loss_5()
                 contact_model.visualisation_update_gui(ts)
+                print(f"mean error 1: {contact_model.mean_error_1[None]}")
+                print(f"mean error 2: {contact_model.mean_error_2[None]}")
+                print(f"exp frame: {contact_model.cur_exp_frame[None]}")
+                print(f"sim frame: {ts}")
                 contact_model.loss.grad[None] = 1.0
                 contact_model.compute_marker_loss_5.grad()
                 # contact_model.compute_marker_loss_4.grad()
@@ -1736,17 +1765,27 @@ def main():
                 ):
                     if SYSTEM_PARAMS.optimisation.calibrate_learning_rates == 1:
                         contact_model.save_gradients_for_calibration()
-                    print(f'mini batch loss: {contact_model.loss[None]:0.3e}')
-                    print(f'mini batch loss 1: {contact_model.loss_1[None]:0.3e}')
-                    print(f'mini batch loss 2: {contact_model.loss_2[None]:0.3e}')
+                    print(f'mini batch loss: {contact_model.batch_loss[None]:0.3e}')
+                    print(f'mini batch loss 1: {contact_model.batch_loss_1[None]:0.3e}')
+                    print(f'mini batch loss 2: {contact_model.batch_loss_2[None]:0.3e}')
+                    losses.append(float(contact_model.loss[None]))
                     contact_model.update_params(ts)
                     contact_model.print_params_short()
                     contact_model.set_dt()
                     contact_model.clear_grad()
-                    contact_model.reset_loss()
+                    contact_model.reset_batch_loss()
+                print()
         print(
             f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
         )
     print("optimisation loop done")
+    plt.figure(figsize=(10, 6))
+    plt.plot(losses)
+    plt.grid(True)
+    plt.xlabel('Index')
+    plt.ylabel('Value')
+    plt.title('Array Values vs Index')
+    plt.savefig(SYSTEM_PARAMS.files.losses)
+    plt.show()
     contact_model.save_final_params()
     print("all done")
