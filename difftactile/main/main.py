@@ -733,6 +733,13 @@ class Contact:
         self.normal_damping.grad.fill(0.0)
         self.tangential_stiffness.grad.fill(0.0)
         self.coulomb_friction_coeff.grad.fill(0.0)
+        self.vitactip_youngs_modulus_log.grad.fill(0)
+        self.phantom_youngs_modulus_0_log.grad.fill(0)
+        self.phantom_youngs_modulus_1_log.grad.fill(0)
+        self.coulomb_friction_coeff_log.grad.fill(0)
+        self.normal_stiffness_log.grad.fill(0)
+        self.tangential_stiffness_log.grad.fill(0)
+        self.normal_damping_log.grad.fill(0)
 
     def clear_grad(self):
         self.clear_grad_helper()
@@ -1539,13 +1546,13 @@ class Contact:
         print(f'normal_damping: {self.normal_damping[None]:0.16e} ({SYSTEM_PARAMS.contact.normal_damping:0.16e})')
     
     def set_up_torch_params(self):
-        self.vitactip_youngs_modulus_log = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.phantom_youngs_modulus_0_log = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.phantom_youngs_modulus_1_log = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.coulomb_friction_coeff_log = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.normal_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.tangential_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.normal_damping_log = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.vitactip_youngs_modulus_log = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.phantom_youngs_modulus_0_log = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.phantom_youngs_modulus_1_log = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.coulomb_friction_coeff_log = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.normal_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.tangential_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.normal_damping_log = ti.field(dtype=float, shape=(), needs_grad=True)
 
         self.vitactip_youngs_modulus_log[None] = ti.log(self.vitactip.youngs_modulus[None])
         self.phantom_youngs_modulus_0_log[None] = ti.log(self.phantom.youngs_modulus[0])
@@ -1588,22 +1595,33 @@ class Contact:
     def update_params(self, ts):
         self.optimiser.zero_grad()
         
-        self.vitactip_youngs_modulus_torch.grad = torch.tensor(self.vitactip.youngs_modulus.grad[None])
-        self.phantom_youngs_modulus_0_torch.grad = torch.tensor(self.phantom.youngs_modulus.grad[0])
-        self.phantom_youngs_modulus_1_torch.grad = torch.tensor(self.phantom.youngs_modulus.grad[1])
-        self.coulomb_friction_coeff_torch.grad = torch.tensor(self.coulomb_friction_coeff.grad[None])
-        self.normal_stiffness_torch.grad = torch.tensor(self.normal_stiffness.grad[None])
-        self.tangential_stiffness_torch.grad = torch.tensor(self.tangential_stiffness.grad[None])
-        self.normal_damping_torch.grad = torch.tensor(self.normal_damping.grad[None])
+        self.vitactip_youngs_modulus_torch.grad = torch.tensor(self.vitactip_youngs_modulus_log.grad[None])
+        self.phantom_youngs_modulus_0_torch.grad = torch.tensor(self.phantom_youngs_modulus_0_log.grad[None])
+        self.phantom_youngs_modulus_1_torch.grad = torch.tensor(self.phantom_youngs_modulus_1_log.grad[None])
+        self.coulomb_friction_coeff_torch.grad = torch.tensor(self.coulomb_friction_coeff_log.grad[None])
+        self.normal_stiffness_torch.grad = torch.tensor(self.normal_stiffness_log.grad[None])
+        self.tangential_stiffness_torch.grad = torch.tensor(self.tangential_stiffness_log.grad[None])
+        self.normal_damping_torch.grad = torch.tensor(self.normal_damping_log.grad[None])
         
         self.optimiser.step()
         
-        self.vitactip.youngs_modulus[None] = self.vitactip_youngs_modulus_torch.item()
-        self.phantom.youngs_modulus[0] = self.phantom_youngs_modulus_0_torch.item()
-        self.phantom.youngs_modulus[1] = self.phantom_youngs_modulus_1_torch.item()
-        self.coulomb_friction_coeff[None] = self.coulomb_friction_coeff_torch.item()
-        self.normal_stiffness[None] = self.normal_stiffness_torch.item()
-        self.tangential_stiffness[None] = self.tangential_stiffness_torch.item()
+        self.vitactip_youngs_modulus_log[None] = self.vitactip_youngs_modulus_torch.item()
+        self.phantom_youngs_modulus_0_log[None] = self.phantom_youngs_modulus_0_torch.item()
+        self.phantom_youngs_modulus_1_log[None] = self.phantom_youngs_modulus_1_torch.item()
+        self.coulomb_friction_coeff_log[None] = self.coulomb_friction_coeff_torch.item()
+        self.normal_stiffness_log[None] = self.normal_stiffness_torch.item()
+        self.tangential_stiffness_log[None] = self.tangential_stiffness_torch.item()
+        self.normal_damping_log[None] = self.normal_damping_torch.item()
+    
+    @ti.kernel
+    def set_optimisation_params_from_log(self):
+        self.vitactip.youngs_modulus[None] = ti.exp(self.vitactip_youngs_modulus_log[None])
+        self.phantom.youngs_modulus[0] = ti.exp(self.phantom_youngs_modulus_0_log[None])
+        self.phantom.youngs_modulus[1] = ti.exp(self.phantom_youngs_modulus_1_log[None])
+        self.coulomb_friction_coeff[None] = ti.exp(self.coulomb_friction_coeff_log[None])
+        self.normal_stiffness[None] = ti.exp(self.normal_stiffness_log[None])
+        self.tangential_stiffness[None] = ti.exp(self.tangential_stiffness_log[None])
+        self.normal_damping[None] = ti.exp(self.normal_damping_log[None])
     
     def update_param_none(self, ti_var, keys):
         min_val = SYSTEM_PARAMS.optimisation.min_values
@@ -1819,6 +1837,7 @@ def main():
                     contact_model.set_dt()
                     contact_model.clear_grad()
                     contact_model.reset_batch_loss()
+                    contact_model.set_optimisation_params_from_log()
                 if False:
                     print()
         losses.append(float(contact_model.trajectory_loss[None]))
