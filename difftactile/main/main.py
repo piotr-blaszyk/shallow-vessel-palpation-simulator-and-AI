@@ -542,10 +542,10 @@ class Contact:
         _dr = -SYSTEM_PARAMS.geometry.camera_rotation_angle
         dr = R.from_euler(seq="xyz", angles=[0, 0, _dr], degrees=True)
         og_r = og_r * dr
-        twist_1_offset = R.from_euler(seq="xyz", angles=[-30, 0, 0], degrees=True)
+        twist_1_offset = R.from_euler(seq="xyz", angles=[30, 0, 0], degrees=True)
         twist_2_offset = R.from_euler(seq="xyz", angles=[0, 0, -45], degrees=True)
         # slide_offset = R.from_euler(seq="xyz", angles=[0, 0, 180], degrees=True)
-        twist_1_base_offset = R.from_euler(seq="xyz", angles=[0, 0, -90], degrees=True)
+        twist_1_base_offset = R.from_euler(seq="xyz", angles=[0, 0, 90], degrees=True)
         slide_r = og_r
         twist_1_r = og_r * twist_1_base_offset
         twist_1 = twist_1_r * twist_1_offset
@@ -1326,8 +1326,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
-        self.camera.up(0, 0, 1)
+        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
+        self.camera.up(0, -1, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -1803,7 +1803,7 @@ def main():
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
         # for i in range(contact_model.trajectories_np.shape[0]):
-        for i in range(0, 1):
+        for i in range(3, 4):
             print(f'trajectory {i}: {contact_model.trajectory_names[i]}')
             contact_model.trajectory_ix[None] = i
             contact_model.set_up_initial_positions_state_and_trajectory()
