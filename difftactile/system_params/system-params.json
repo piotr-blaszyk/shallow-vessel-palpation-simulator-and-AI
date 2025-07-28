@@ -188,9 +188,10 @@
             }
         },
         "loss_1_weight": 1.000e+00,
-        "loss_2_weight": 1.000e+00,
+        "loss_2_weight": 2.000e+01,
         "mini_batch_size": 1000,
-        "calibrate_learning_rates": 0
+        "calibrate_learning_rates": 0,
+        "enable_loss_2": 1
     },
     "fisheye_model": {
         "focal_length_x": 3.800e+02,

@@ -1326,8 +1326,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
-        self.camera.up(0, -1, 0)
+        self.camera.position(x, y+SYSTEM_PARAMS.visualisation.camera_offset, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -1803,7 +1803,7 @@ def main():
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
         # for i in range(contact_model.trajectories_np.shape[0]):
-        for i in range(3, 4):
+        for i in range(1, 2):
             print(f'trajectory {i}: {contact_model.trajectory_names[i]}')
             contact_model.trajectory_ix[None] = i
             contact_model.set_up_initial_positions_state_and_trajectory()
@@ -1852,8 +1852,9 @@ def main():
                 contact_model.interpolate_experimental_frame(ts)
                 contact_model.compute_marker_loss_1()
                 contact_model.compute_marker_loss_2()
-                # contact_model.compute_marker_loss_3()
-                # contact_model.compute_marker_loss_4()
+                if SYSTEM_PARAMS.optimisation.enable_loss_2 == 1:
+                    contact_model.compute_marker_loss_3()
+                    contact_model.compute_marker_loss_4()
                 contact_model.compute_marker_loss_5()
                 contact_model.visualisation_update_gui(ts)
                 if False:
@@ -1863,8 +1864,9 @@ def main():
                     print(f"sim frame: {ts}")
                 contact_model.loss.grad[None] = 1.0
                 contact_model.compute_marker_loss_5.grad()
-                # contact_model.compute_marker_loss_4.grad()
-                # contact_model.compute_marker_loss_3.grad()
+                if SYSTEM_PARAMS.optimisation.enable_loss_2 == 1:
+                    contact_model.compute_marker_loss_4.grad()
+                    contact_model.compute_marker_loss_3.grad()
                 contact_model.compute_marker_loss_2.grad()
                 contact_model.compute_marker_loss_1.grad()
                 contact_model.vitactip.extract_markers.grad(
