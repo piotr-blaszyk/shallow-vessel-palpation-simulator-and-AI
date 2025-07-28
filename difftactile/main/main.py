@@ -1565,7 +1565,7 @@ class Contact:
     def update_param_none(self, ti_var, keys):
         min_val = SYSTEM_PARAMS.optimisation.min_values
         max_val = SYSTEM_PARAMS.optimisation.max_values
-        learning_rate = SYSTEM_PARAMS_COMPUTED.learning_rates
+        learning_rate = SYSTEM_PARAMS.optimisation.learning_rates
         for i in range(len(keys)):
             min_val = min_val[keys[i]]
             max_val = max_val[keys[i]]
@@ -1586,7 +1586,7 @@ class Contact:
     def update_param_indexed(self, ti_var, keys, idx):
         min_val = SYSTEM_PARAMS.optimisation.min_values
         max_val = SYSTEM_PARAMS.optimisation.max_values
-        learning_rate = SYSTEM_PARAMS_COMPUTED.learning_rates
+        learning_rate = SYSTEM_PARAMS.optimisation.learning_rates
         for i in range(len(keys)):
             min_val = min_val[keys[i]]
             max_val = max_val[keys[i]]
@@ -1778,13 +1778,14 @@ def main():
         print(
             f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
         )
+        break
     print("optimisation loop done")
     plt.figure(figsize=(10, 6))
-    plt.plot(losses)
+    plt.plot(list(range(len(losses))), losses)
     plt.grid(True)
-    plt.xlabel('Index')
-    plt.ylabel('Value')
-    plt.title('Array Values vs Index')
+    plt.xlabel('batch index')
+    plt.ylabel('batch loss')
+    plt.title('batch loss over time')
     plt.savefig(SYSTEM_PARAMS.files.losses)
     plt.show()
     contact_model.save_final_params()

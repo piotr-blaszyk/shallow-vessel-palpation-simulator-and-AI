@@ -172,6 +172,21 @@
                 "normal_damping": 1.000e+10
             }
         },
+        "learning_rates": {
+            "vitactip": {
+                "youngs_modulus": 1.000e-10
+            },
+            "phantom": {
+                "youngs_modulus_0": 1.000e-11,
+                "youngs_modulus_1": 1.000e-10
+            },
+            "contact": {
+                "coulomb_friction_coeff": 1.000e-11,
+                "normal_stiffness": 1.000e-11,
+                "tangential_stiffness": 1.000e-11,
+                "normal_damping": 1.000e-11
+            }
+        },
         "loss_1_weight": 1.000e+00,
         "loss_2_weight": 1.000e+00,
         "mini_batch_size": 1000,
