@@ -8,6 +8,8 @@ from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
+import torch
+import torch.optim as optim
 
 from difftactile.sensor_model.fisheye_model import *
 from difftactile.sensor_model.vitactip import ViTacTip
@@ -364,6 +366,7 @@ class Contact:
         self.loss = ti.field(float, (), needs_grad=True)
         self.loss_1 = ti.field(float, (), needs_grad=True)
         self.loss_2 = ti.field(float, (), needs_grad=True)
+        self.trajectory_loss = ti.field(float, (), needs_grad=False)
         self.batch_loss = ti.field(float, (), needs_grad=False)
         self.batch_loss_1 = ti.field(float, (), needs_grad=False)
         self.batch_loss_2 = ti.field(float, (), needs_grad=False)
@@ -753,6 +756,7 @@ class Contact:
     
     @ti.kernel
     def reset_batch_loss(self):
+        self.trajectory_loss[None] += self.batch_loss[None]
         self.batch_loss[None] = 0
         self.batch_loss_1[None] = 0
         self.batch_loss_2[None] = 0
@@ -1308,8 +1312,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
-        self.camera.up(0, -1, 0)
+        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -1533,34 +1537,73 @@ class Contact:
         print(f'normal_stiffness: {self.normal_stiffness[None]:0.16e} ({SYSTEM_PARAMS.contact.normal_stiffness:0.16e})')
         print(f'tangential_stiffness: {self.tangential_stiffness[None]:0.16e} ({SYSTEM_PARAMS.contact.tangential_stiffness:0.16e})')
         print(f'normal_damping: {self.normal_damping[None]:0.16e} ({SYSTEM_PARAMS.contact.normal_damping:0.16e})')
+    
+    def set_up_torch_params(self):
+        self.vitactip_youngs_modulus_log = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.phantom_youngs_modulus_0_log = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.phantom_youngs_modulus_1_log = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.coulomb_friction_coeff_log = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.normal_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.tangential_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=False)
+        self.normal_damping_log = ti.field(dtype=float, shape=(), needs_grad=False)
 
+        self.vitactip_youngs_modulus_log[None] = ti.log(self.vitactip.youngs_modulus[None])
+        self.phantom_youngs_modulus_0_log[None] = ti.log(self.phantom.youngs_modulus[0])
+        self.phantom_youngs_modulus_1_log[None] = ti.log(self.phantom.youngs_modulus[1])
+        self.coulomb_friction_coeff_log[None] = ti.log(self.coulomb_friction_coeff[None])
+        self.normal_stiffness_log[None] = ti.log(self.normal_stiffness[None])
+        self.tangential_stiffness_log[None] = ti.log(self.tangential_stiffness[None])
+        self.normal_damping_log[None] = ti.log(self.normal_damping[None])
+
+        self.vitactip_youngs_modulus_torch = torch.tensor(self.vitactip_youngs_modulus_log[None], requires_grad=False)
+        self.phantom_youngs_modulus_0_torch = torch.tensor(self.phantom_youngs_modulus_0_log[None], requires_grad=False)
+        self.phantom_youngs_modulus_1_torch = torch.tensor(self.phantom_youngs_modulus_1_log[None], requires_grad=False)
+        self.coulomb_friction_coeff_torch = torch.tensor(self.coulomb_friction_coeff_log[None], requires_grad=False)
+        self.normal_stiffness_torch = torch.tensor(self.normal_stiffness_log[None], requires_grad=False)
+        self.tangential_stiffness_torch = torch.tensor(self.tangential_stiffness_log[None], requires_grad=False)
+        self.normal_damping_torch = torch.tensor(self.normal_damping_log[None], requires_grad=False)
+
+        self.torch_params = [
+            self.vitactip_youngs_modulus_torch,
+            self.phantom_youngs_modulus_0_torch,
+            self.phantom_youngs_modulus_1_torch,
+            self.coulomb_friction_coeff_torch,
+            self.normal_stiffness_torch,
+            self.tangential_stiffness_torch,
+            self.normal_damping_torch
+        ]
+
+        self.optimiser = optim.Adam(self.torch_params, lr=1e1, betas=(0.9, 0.999), eps=1e-8)
+
+        # self.optimiser = optim.Adam([
+        #     {'params': [self.vitactip_youngs_modulus_torch], 'lr': 1e-3},
+        #     {'params': [self.phantom_youngs_modulus_0_torch], 'lr': 1e-3},
+        #     {'params': [self.phantom_youngs_modulus_1_torch], 'lr': 1e-3},
+        #     {'params': [self.coulomb_friction_coeff_torch], 'lr': 1e-3},
+        #     {'params': [self.normal_stiffness_torch], 'lr': 1e-3},
+        #     {'params': [self.tangential_stiffness_torch], 'lr': 1e-3},
+        #     {'params': [self.normal_damping_torch], 'lr': 1e-3}
+        # ], lr=1e-3, betas=(0.9, 0.999), eps=1e-8)
+    
     def update_params(self, ts):
-        self.update_param_none(
-            self.vitactip.youngs_modulus, 
-            ['vitactip', 'youngs_modulus']
-        )
-        for i in range(2):
-            self.update_param_indexed(
-                self.phantom.youngs_modulus,
-                ['phantom', f'youngs_modulus_{i}'],
-                i
-            )
-        self.update_param_none(
-            self.coulomb_friction_coeff,
-            ['contact', 'coulomb_friction_coeff']
-        )
-        self.update_param_none(
-            self.normal_stiffness,
-            ['contact', 'normal_stiffness']
-        )
-        self.update_param_none(
-            self.tangential_stiffness,
-            ['contact', 'tangential_stiffness']
-        )
-        self.update_param_none(
-            self.normal_damping,
-            ['contact', 'normal_damping']
-        )
+        self.optimiser.zero_grad()
+        
+        self.vitactip_youngs_modulus_torch.grad = torch.tensor(self.vitactip.youngs_modulus.grad[None])
+        self.phantom_youngs_modulus_0_torch.grad = torch.tensor(self.phantom.youngs_modulus.grad[0])
+        self.phantom_youngs_modulus_1_torch.grad = torch.tensor(self.phantom.youngs_modulus.grad[1])
+        self.coulomb_friction_coeff_torch.grad = torch.tensor(self.coulomb_friction_coeff.grad[None])
+        self.normal_stiffness_torch.grad = torch.tensor(self.normal_stiffness.grad[None])
+        self.tangential_stiffness_torch.grad = torch.tensor(self.tangential_stiffness.grad[None])
+        self.normal_damping_torch.grad = torch.tensor(self.normal_damping.grad[None])
+        
+        self.optimiser.step()
+        
+        self.vitactip.youngs_modulus[None] = self.vitactip_youngs_modulus_torch.item()
+        self.phantom.youngs_modulus[0] = self.phantom_youngs_modulus_0_torch.item()
+        self.phantom.youngs_modulus[1] = self.phantom_youngs_modulus_1_torch.item()
+        self.coulomb_friction_coeff[None] = self.coulomb_friction_coeff_torch.item()
+        self.normal_stiffness[None] = self.normal_stiffness_torch.item()
+        self.tangential_stiffness[None] = self.tangential_stiffness_torch.item()
     
     def update_param_none(self, ti_var, keys):
         min_val = SYSTEM_PARAMS.optimisation.min_values
@@ -1686,6 +1729,7 @@ def main():
     contact_model.reset_pid_controller()
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
+    contact_model.set_up_torch_params()
     foo = True
     losses = []
 
@@ -1728,6 +1772,7 @@ def main():
             contact_model.batch_loss.fill(0.0)
             contact_model.clear_grad()
             contact_model.prev_loss[None] = 0.0
+            contact_model.trajectory_loss[None] = 0.0
             print("backward")
             passes = 0
             for ts in range(total_ts - 1, -1, -1):
@@ -1744,10 +1789,11 @@ def main():
                 # contact_model.compute_marker_loss_4()
                 contact_model.compute_marker_loss_5()
                 contact_model.visualisation_update_gui(ts)
-                print(f"mean error 1: {contact_model.mean_error_1[None]}")
-                print(f"mean error 2: {contact_model.mean_error_2[None]}")
-                print(f"exp frame: {contact_model.cur_exp_frame[None]}")
-                print(f"sim frame: {ts}")
+                if False:
+                    print(f"mean error 1: {contact_model.mean_error_1[None]}")
+                    print(f"mean error 2: {contact_model.mean_error_2[None]}")
+                    print(f"exp frame: {contact_model.cur_exp_frame[None]}")
+                    print(f"sim frame: {ts}")
                 contact_model.loss.grad[None] = 1.0
                 contact_model.compute_marker_loss_5.grad()
                 # contact_model.compute_marker_loss_4.grad()
@@ -1768,17 +1814,17 @@ def main():
                     print(f'mini batch loss: {contact_model.batch_loss[None]:0.3e}')
                     print(f'mini batch loss 1: {contact_model.batch_loss_1[None]:0.3e}')
                     print(f'mini batch loss 2: {contact_model.batch_loss_2[None]:0.3e}')
-                    losses.append(float(contact_model.loss[None]))
                     contact_model.update_params(ts)
                     contact_model.print_params_short()
                     contact_model.set_dt()
                     contact_model.clear_grad()
                     contact_model.reset_batch_loss()
-                print()
+                if False:
+                    print()
+        losses.append(float(contact_model.trajectory_loss[None]))
         print(
             f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
         )
-        break
     print("optimisation loop done")
     plt.figure(figsize=(10, 6))
     plt.plot(list(range(len(losses))), losses)
