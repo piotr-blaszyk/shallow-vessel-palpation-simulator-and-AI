@@ -694,8 +694,9 @@ class Contact:
 
         press_depth_surface = SYSTEM_PARAMS.geometry.gap
         press_depth_1 = press_depth_surface + SYSTEM_PARAMS.trajectory.press_depth_1
-        k = 0.002 * SYSTEM_PARAMS.meta.distance_scaling_factor
-        press_depth_rand = np.random.uniform(-k, k)
+        k_0 = SYSTEM_PARAMS.trajectory.press_depth_offset_0
+        k_1 = SYSTEM_PARAMS.trajectory.press_depth_offset_1
+        press_depth_rand = np.random.uniform(-k_0, k_1)
         press_depth_1 = press_depth_1 + press_depth_rand
         slide_dist = SYSTEM_PARAMS.trajectory.slide_distance
 
@@ -2153,7 +2154,8 @@ class Contact:
         print("all done")
 
     def collect_training_data(self):
-        self.clear_training_data_folders()
+        if False:
+            self.clear_training_data_folders()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for i in range(1, 2):

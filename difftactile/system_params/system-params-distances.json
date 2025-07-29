@@ -18,7 +18,9 @@
         "press_depth_1": 0.004,
         "press_depth_2": 0.006,
         "press_depth_3": 0.008,
-        "slide_distance": 0.050
+        "slide_distance": 0.050,
+        "press_depth_offset_0": 0.001,
+        "press_depth_offset_1": 0.002
     },
     "gmsh_mm": {
         "characteristic_length_factor": 1.25,
