@@ -267,7 +267,7 @@
         "validation_point_E": "difftactile/output/validation_point_E.pkl",
         "vitactip_points_E": "difftactile/output/vitactip_points_E.pkl",
         "losses": "difftactile/output/losses_{}.png",
-        "training_data_markers": "difftactile/output/training_data/markers/markers_{}_{}.pkl",
-        "training_data_segmentation_mask": "difftactile/output/training_data/segmentation_mask/segmentation_mask{}_{}.pkl"
+        "training_data_markers": "difftactile/output/training_data/markers/markers_{}_{}.png",
+        "training_data_segmentation_mask": "difftactile/output/training_data/segmentation_mask/segmentation_mask_{}_{}.png"
     }
 }

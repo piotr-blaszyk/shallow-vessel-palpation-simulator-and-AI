@@ -1127,7 +1127,7 @@ class Contact:
 
     def record_training_data_point(self, training_iteration, ts):
         markers = self.sim_markers_deformed_og_resolution.to_numpy()
-        vein = self.vein_all_2d_projection.to_numpy()
+        vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
 
         markers_img = np.zeros((1080, 1920), dtype=np.uint8)
         vein_img = np.zeros((1080, 1920), dtype=np.uint8)
@@ -1248,13 +1248,13 @@ class Contact:
         )
         self.vein_all_indices = ti.field(
             dtype=int,
-            shape=(self.phantom.group_cardinality[1],),
+            shape=(self.phantom.actual_total_num_particles,),
             needs_grad=False,
         )
         self.vein_all_2d_projection = ti.Vector.field(
             2,
             dtype=float,
-            shape=(self.phantom.group_cardinality[1],),
+            shape=(self.phantom.actual_total_num_particles,),
             needs_grad=False,
         )
         self.sim_markers_undeformed = ti.Vector.field(
@@ -1300,19 +1300,29 @@ class Contact:
         )
         self.interpolation_valid[None] = 1
 
+    def visualisation_reset_scene(self):
+        self.visualisation_reset_scene_1()
+        self.visualisation_reset_scene_2()
+
     @ti.kernel
     def visualisation_reset_scene_1(self):
         self.healthy_tissue_points.fill(0)
         self.tumour_points.fill(0)
         self.tumour_2d_projections.fill(-1)
+        self.vein_all_indices.fill(-1)
+        self.vein_all_2d_projection.fill(-1)
     
     def visualisation_reset_scene_2(self):
         self.vein_endpoints_indices_np = self.phantom.get_vein_endpoints_indices()
         self.vein_endpoints_indices.from_numpy(self.vein_endpoints_indices_np)
 
         self.vein_all_indices_np = self.phantom.get_vein_all_indices()
-        if self.vein_all_indices_np.shape[0] == self.vein_all_indices.shape[0]:
-            self.vein_all_indices.from_numpy(self.vein_endpoints_indices_np)
+        self.visualisation_reset_scene_2_helper(self.vein_all_indices_np)
+    
+    @ti.kernel
+    def visualisation_reset_scene_2_helper(self, vein_all_indices_np: ti.types.ndarray()):
+        for i in range(vein_all_indices_np.shape[0]):
+            self.vein_all_indices[i] = vein_all_indices_np[i]
 
     @ti.kernel
     def visualisation_draw_3d_scene(self, f: ti.i32):
@@ -1339,7 +1349,7 @@ class Contact:
 
     @ti.kernel
     def visualisation_project_2d_vein_all(self):
-        for i in range(self.vein_all_indices.shape[0]):
+        for i in range(self.vein_all_indices_np.shape[0]):
             ix = self.vein_all_indices[i]
             point = self.phantom.particles_A[
                 SYSTEM_PARAMS.contact.num_sub_frames - 1,
@@ -1927,8 +1937,7 @@ class Contact:
                 self.trajectory_ix[None] = i
                 self.set_up_initial_positions_state_and_trajectory()
                 self.reset_pid_controller()
-                self.visualisation_reset_scene_1()
-                self.visualisation_reset_scene_2()
+                self.visualisation_reset_scene()
                 self.reset_exp_sim_traj()
                 self.vitactip.extract_markers(0)
                 self.compute_mapping_between_experimental_and_sim_markers()
@@ -2060,8 +2069,7 @@ class Contact:
                 self.randomise()
                 self.set_up_initial_positions_state_and_trajectory()
                 self.reset_pid_controller()
-                self.visualisation_reset_scene_1()
-                self.visualisation_reset_scene_2()
+                self.visualisation_reset_scene()
                 self.reset_exp_sim_traj()
                 self.vitactip.extract_markers(0)
                 self.compute_mapping_between_experimental_and_sim_markers()
@@ -2118,4 +2126,4 @@ def main():
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
     contact_model.set_up_torch_params()
-    contact_model.domain_adaptation()
+    contact_model.collect_training_data()
