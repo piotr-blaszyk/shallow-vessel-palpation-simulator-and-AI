@@ -1645,7 +1645,7 @@ class Contact:
             {'params': [self.normal_damping_torch]}
         ], lr=1e-1, betas=(0.9, 0.999), eps=1e-8)
 
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimiser, step_size=1, gamma=0.5)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimiser, step_size=1, gamma=1.0)
     
     def update_params(self, ts):
         try:
