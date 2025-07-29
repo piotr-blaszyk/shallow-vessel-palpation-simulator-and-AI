@@ -183,7 +183,7 @@ class Contact:
             ):
                 target = self.phantom.particles_A[
                     SYSTEM_PARAMS.contact.num_sub_frames - 1,
-                    self.vein_indices[0]
+                    self.vein_endpoints_indices[0]
                 ]
                 x_E = self.exp_vein_3d_coords_E[0]
                 y_E = self.exp_vein_3d_coords_E[1]
@@ -413,17 +413,17 @@ class Contact:
         self.predict_markers_snapshots = ti.Vector.field(
             2,
             dtype=ti.f32,
-            shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers),
+            shape=(SYSTEM_PARAMS.contact.num_training_trajectories, self.vitactip.num_markers),
             needs_grad=False,
         )
         self.virtual_markers_snapshots = ti.Vector.field(
             2,
             dtype=ti.f32,
-            shape=(SYSTEM_PARAMS.contact.num_opt_steps, self.vitactip.num_markers),
+            shape=(SYSTEM_PARAMS.contact.num_training_trajectories, self.vitactip.num_markers),
             needs_grad=False,
         )
         self.ground_truth_labels = ti.field(
-            dtype=int, shape=(SYSTEM_PARAMS.contact.num_opt_steps,), needs_grad=False
+            dtype=int, shape=(SYSTEM_PARAMS.contact.num_training_trajectories,), needs_grad=False
         )
 
     def set_up_pid(self):
@@ -529,6 +529,7 @@ class Contact:
         self.validation_point_3d_A = ti.Vector.field(
             3, dtype=float, shape=(), needs_grad=False
         )
+        self.trajectories = ti.Vector.field(7, dtype=float, shape=(4, 5), needs_grad=False)
 
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate(
@@ -602,8 +603,6 @@ class Contact:
                 [x, y, z - press_depth_surface, *twist_2.as_quat()],
             ]
         ])
-        a, b, c = self.trajectories_np.shape
-        self.trajectories = ti.Vector.field(c, dtype=float, shape=(a, b), needs_grad=False)
         self.trajectories.from_numpy(self.trajectories_np)
         cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
         self.state_dicts = [
@@ -646,13 +645,60 @@ class Contact:
         ]
         assert(self.trajectories_np.shape[0] == len(self.state_dicts))
 
+    def randomise(self):
+        x, y, z = self.vitactip_tip_pose[:3]
+        quat = self.vitactip_tip_pose[3:]
+        og_r = R.from_quat(quat)
+        _dr = -SYSTEM_PARAMS.geometry.camera_rotation_angle
+        dr = R.from_euler(seq="xyz", angles=[0, 0, _dr], degrees=True)
+        og_r = og_r * dr
+        xr = np.random.uniform(-10, 10)
+        yr = np.random.uniform(-10, 10)
+        zr = np.random.uniform(-10, 10)
+        rand_r = R.from_euler(seq="xyz", angles=[xr, yr, zr], degrees=True)
+        og_r = og_r * rand_r
+        slide_r = og_r
+
+        press_depth_surface = SYSTEM_PARAMS.geometry.gap
+        press_depth_1 = press_depth_surface + SYSTEM_PARAMS.trajectory.press_depth_1
+        k = 0.002 * SYSTEM_PARAMS.meta.distance_scaling_factor
+        press_depth_rand = np.random.uniform(-k, k)
+        press_depth_1 = press_depth_1 + press_depth_rand
+        slide_dist = SYSTEM_PARAMS.trajectory.slide_distance
+
+        self.trajectories_np[1] = np.array([
+            [x, y, z, *slide_r.as_quat()],
+            [x, y, z, *slide_r.as_quat()],
+            [x, y, z - press_depth_surface, *slide_r.as_quat()],
+
+            [x, y, z - press_depth_1, *slide_r.as_quat()],
+            [x + slide_dist, y, z - press_depth_1, *slide_r.as_quat()],
+        ])
+        self.trajectories.from_numpy(self.trajectories_np)
+
+        theta_rand = np.random.uniform(-90, 90)
+
+        cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
+        state_dict = {
+            'tumour_present': True,
+            'cx': 0,
+            'cy': 0,
+            'cz': cz_offset,
+            'theta': SYSTEM_PARAMS.geometry.vein.theta + theta_rand,
+            'h': SYSTEM_PARAMS.geometry.vein.h,
+            'r': SYSTEM_PARAMS.geometry.vein.r
+        }
+        self.state_dicts[1] = state_dict
+
     def set_up_initial_positions_state_and_trajectory(self):
-        self.tumour_present_ground_truth_label[None] = 0
+        state_dict = self.state_dicts[self.trajectory_ix[None]]
+        self.tumour_present_ground_truth_label[None] = state_dict['tumour_present']
+
         self.phantom.set_state_from_outside(
             pos=self.phantom_centroid_pose[:3],
             ori=self.phantom_centroid_pose[3:],
             vel=[0.0, 0.0, 0.0],
-            state_dict=self.state_dicts[self.trajectory_ix[None]],
+            state_dict=state_dict,
         )
         sensor_dome_tip_initial_pose = self.trajectories[self.trajectory_ix[None], 0].to_numpy()
         self.vitactip.set_up_pose(sensor_dome_tip_initial_pose)
@@ -965,6 +1011,10 @@ class Contact:
                             closest_sensor_vertex_idx, -1 * total_contact_force, frame
                         )
 
+    def copy_frame(self):
+        self.vitactip.copy_frame(SYSTEM_PARAMS.contact.num_sub_frames - 1, 0)
+        self.phantom.copy_frame(SYSTEM_PARAMS.contact.num_sub_frames - 1, 0)
+
     def memory_to_cache(self, t):
         self.vitactip.memory_to_cache(t)
         self.phantom.memory_to_cache(t)
@@ -1075,21 +1125,44 @@ class Contact:
             R.from_quat(self.vitactip.R_A_quat.to_numpy()).as_matrix().reshape(3,3)
         )
 
-    def take_2d_markers_snapshot(self, opts):
-        self.take_snapshot_1(opts)
-        self.take_snapshot_2(opts)
+    def record_training_data_point(self, training_iteration, ts):
+        markers = self.sim_markers_deformed_og_resolution.to_numpy()
+        vein = self.vein_all_2d_projection.to_numpy()
+
+        markers_img = np.zeros((1080, 1920), dtype=np.uint8)
+        vein_img = np.zeros((1080, 1920), dtype=np.uint8)
+
+        for point in markers:
+            x, y = int(point[0]), int(point[1])
+            if 0 <= x < 1920 and 0 <= y < 1080:
+                cv2.circle(markers_img, (x, y), radius=2, color=255, thickness=-1)
+
+        for point in vein:
+            x, y = int(point[0]), int(point[1])
+            if 0 <= x < 1920 and 0 <= y < 1080:
+                cv2.circle(vein_img, (x, y), radius=2, color=255, thickness=-1)
+
+        markers_file = SYSTEM_PARAMS.files.training_data_markers.format(training_iteration, ts)
+        vein_file = SYSTEM_PARAMS.files.training_data_segmentation_mask.format(training_iteration, ts)
+        
+        cv2.imwrite(markers_file, markers_img)
+        cv2.imwrite(vein_file, vein_img)
+
+    def take_2d_markers_snapshot(self, k):
+        self.take_snapshot_1(k)
+        self.take_snapshot_2(k)
 
     @ti.kernel
-    def take_snapshot_1(self, opts: ti.i32):
+    def take_snapshot_1(self, k: ti.i32):
         for i in range(self.vitactip.num_markers):
-            self.predict_markers_snapshots[opts, i] = self.vitactip.deformed_markers[i]
-            self.virtual_markers_snapshots[opts, i] = self.vitactip.undeformed_markers[
+            self.predict_markers_snapshots[k, i] = self.vitactip.deformed_markers[i]
+            self.virtual_markers_snapshots[k, i] = self.vitactip.undeformed_markers[
                 i
             ]
 
     @ti.kernel
-    def take_snapshot_2(self, opts: ti.i32):
-        self.ground_truth_labels[opts] = self.tumour_present_ground_truth_label[None]
+    def take_snapshot_2(self, k: ti.i32):
+        self.ground_truth_labels[k] = self.tumour_present_ground_truth_label[None]
 
     def save_marker_data_and_ground_truth_labels_to_file(self):
         predict_np = self.predict_markers_snapshots.to_numpy()
@@ -1168,15 +1241,29 @@ class Contact:
             shape=(2,),
             needs_grad=False,
         )
-        self.vein_indices = ti.field(
+        self.vein_endpoints_indices = ti.field(
             dtype=int,
             shape=(2,),
+            needs_grad=False,
+        )
+        self.vein_all_indices = ti.field(
+            dtype=int,
+            shape=(self.phantom.group_cardinality[1],),
+            needs_grad=False,
+        )
+        self.vein_all_2d_projection = ti.Vector.field(
+            2,
+            dtype=float,
+            shape=(self.phantom.group_cardinality[1],),
             needs_grad=False,
         )
         self.sim_markers_undeformed = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
         self.sim_markers_deformed = ti.Vector.field(
+            2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
+        )
+        self.sim_markers_deformed_og_resolution = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
         self.sim_markers_deformed_filtered = ti.Vector.field(
@@ -1220,8 +1307,12 @@ class Contact:
         self.tumour_2d_projections.fill(-1)
     
     def visualisation_reset_scene_2(self):
-        self.vein_indices_np = self.phantom.get_vein_indices()
-        self.vein_indices.from_numpy(self.vein_indices_np)
+        self.vein_endpoints_indices_np = self.phantom.get_vein_endpoints_indices()
+        self.vein_endpoints_indices.from_numpy(self.vein_endpoints_indices_np)
+
+        self.vein_all_indices_np = self.phantom.get_vein_all_indices()
+        if self.vein_all_indices_np.shape[0] == self.vein_all_indices.shape[0]:
+            self.vein_all_indices.from_numpy(self.vein_endpoints_indices_np)
 
     @ti.kernel
     def visualisation_draw_3d_scene(self, f: ti.i32):
@@ -1234,9 +1325,9 @@ class Contact:
             self.sensor_points[p] = self.vitactip.vertices_deformed_A[f, p]
 
     @ti.kernel
-    def visualisation_project_vein_2d(self):
-        for i in range(self.vein_indices.shape[0]):
-            ix = self.vein_indices[i]
+    def visualisation_project_2d_vein_endpoints(self):
+        for i in range(self.vein_endpoints_indices.shape[0]):
+            ix = self.vein_endpoints_indices[i]
             if ix != -1:
                 point = self.phantom.particles_A[
                     SYSTEM_PARAMS.contact.num_sub_frames - 1,
@@ -1247,12 +1338,25 @@ class Contact:
                 self.tumour_2d_projections[i] = projection_2d / self.tactile_image_resolution[None]
 
     @ti.kernel
+    def visualisation_project_2d_vein_all(self):
+        for i in range(self.vein_all_indices.shape[0]):
+            ix = self.vein_all_indices[i]
+            point = self.phantom.particles_A[
+                SYSTEM_PARAMS.contact.num_sub_frames - 1,
+                ix
+            ]
+            projection_2d = self.vitactip.project_A_point_2d(point)
+            projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
+            self.vein_all_2d_projection[i] = projection_2d
+
+    @ti.kernel
     def visualisation_prepare_tactile_readout_data_fp(self):
         for i in range(self.vitactip.num_markers):
             undeformed = self.vitactip.undeformed_markers[i]
             deformed = self.vitactip.deformed_markers[i]
             undeformed[1] = self.tactile_image_resolution[None][1] - undeformed[1]
             deformed[1] = self.tactile_image_resolution[None][1] - deformed[1]
+            self.sim_markers_deformed_og_resolution[i] = deformed
             undeformed = undeformed / self.tactile_image_resolution[None]
             deformed = deformed / self.tactile_image_resolution[None]
             offset = deformed - undeformed
@@ -1283,7 +1387,8 @@ class Contact:
             self.clock_arm_points[i] = point / self.tactile_image_resolution[None]
 
     def visualisation_draw_tactile_readout(self):
-        self.visualisation_project_vein_2d()
+        self.visualisation_project_2d_vein_endpoints()
+        self.visualisation_project_2d_vein_all()
         self.vitactip.extract_clock_arm_2d_projections(SYSTEM_PARAMS.contact.num_sub_frames - 1)
         self.visualisation_prepare_clock_arm_points()
         self.tactile_canvas.set_image(self.bg_image)
@@ -1398,7 +1503,7 @@ class Contact:
         validation_point = self.validation_point_3d_A.to_numpy()
         vein_point = self.phantom.particles_A[
             SYSTEM_PARAMS.contact.num_sub_frames - 1,
-            self.vein_indices[0]
+            self.vein_endpoints_indices[0]
         ]
         self.keypoint_coords = np.vstack(
             (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms, vein_exp_vis_all)
@@ -1645,7 +1750,7 @@ class Contact:
             {'params': [self.normal_damping_torch]}
         ], lr=1e-1, betas=(0.9, 0.999), eps=1e-8)
 
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimiser, step_size=1, gamma=1.0)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimiser, step_size=1, gamma=0.5)
     
     def update_params(self, ts):
         try:
@@ -1948,10 +2053,11 @@ class Contact:
         print("all done")
 
     def collect_training_data(self):
-        for opts in range(SYSTEM_PARAMS.contact.num_training_trajectories):
-            print(f"training trajectory: {opts} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
+        for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
+            print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for i in range(1, 2):
                 self.trajectory_ix[None] = i
+                self.randomise()
                 self.set_up_initial_positions_state_and_trajectory()
                 self.reset_pid_controller()
                 self.visualisation_reset_scene_1()
@@ -1961,7 +2067,6 @@ class Contact:
                 self.compute_mapping_between_experimental_and_sim_markers()
                 self.set_dt(verbose=True)
                 self.fp()
-                print("forward")
                 ts = 0
                 while self.last_target_reached[None] != 1:
                     self.pid_controller_1()
@@ -1971,12 +2076,12 @@ class Contact:
                     self.vitactip.set_pose_control_2()
                     self.vitactip.set_pose_control_3()
                     self.forward_pass_common_part(ts)
-                    self.memory_to_cache(ts)
+                    self.copy_frame()
                     self.vitactip.extract_markers(
                         SYSTEM_PARAMS.contact.num_sub_frames - 1
                     )
                     self.visualisation_update_gui(ts)
-                    self.maybe_save_tactile_sensor_mesh_to_pickle(ts)
+                    self.record_training_data_point(j, ts)
                     ts += 1
                 
                 self.reset_loss()
@@ -1986,9 +2091,9 @@ class Contact:
                 self.trajectory_loss[None] = 0.0
                 
             print(
-                f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
+                f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1} done"
             )
-        print("optimisation loop done")
+        print("training data collection done")
         print("all done")
 
 

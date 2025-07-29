@@ -758,7 +758,7 @@ class Phantom:
         coordinates = positions[keypoint_indices]
         return coordinates
 
-    def get_vein_indices(self):
+    def get_vein_endpoints_indices(self):
         points_3d = self.particles_A.to_numpy()[0].astype(float)
         titles = self.titles.to_numpy().astype(int)
         
@@ -775,4 +775,8 @@ class Phantom:
         original_min_y_idx = original_indices[local_min_y_idx]
         
         return np.array([original_max_y_idx, original_min_y_idx], dtype=int)
-        
+    
+    def get_vein_all_indices(self):
+        titles = self.titles.to_numpy().astype(int)
+        return np.where(titles == 1)[0]
+    

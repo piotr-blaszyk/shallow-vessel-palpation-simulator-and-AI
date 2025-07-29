@@ -61,7 +61,7 @@
         "coulomb_friction_coeff": 8.500e-01,
         "num_sub_frames": 125,
         "num_opt_steps": 10,
-        "num_training_trajectories": 100,
+        "num_training_trajectories": 2,
         "pid_max_speed_translation": 1.000e+00,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,
@@ -266,6 +266,8 @@
         "calibration_horizontal": "difftactile/manual_or_experimental_data/calibration-horizontal.png",
         "validation_point_E": "difftactile/output/validation_point_E.pkl",
         "vitactip_points_E": "difftactile/output/vitactip_points_E.pkl",
-        "losses": "difftactile/output/losses_{}.png"
+        "losses": "difftactile/output/losses_{}.png",
+        "training_data_markers": "difftactile/output/training_data/markers/markers_{}_{}.pkl",
+        "training_data_segmentation_mask": "difftactile/output/training_data/segmentation_mask/segmentation_mask{}_{}.pkl"
     }
 }
