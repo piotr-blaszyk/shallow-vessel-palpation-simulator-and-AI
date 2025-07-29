@@ -1187,11 +1187,13 @@ class Contact:
 
         markers = self.crop(markers)
         vein = self.crop(vein)
+        all_points = [
+            markers,
+            vein
+        ]
 
         w = SYSTEM_PARAMS.fisheye_model.crop_width
         h = SYSTEM_PARAMS.fisheye_model.crop_height
-        markers_img = np.zeros((w, h), dtype=np.uint8)
-        vein_img = np.zeros((w, h), dtype=np.uint8)
 
         markers_file = SYSTEM_PARAMS.files.training_data_markers.format(training_iteration, ts)
         vein_file = SYSTEM_PARAMS.files.training_data_segmentation_mask.format(training_iteration, ts)
@@ -1200,25 +1202,39 @@ class Contact:
         center_y = SYSTEM_PARAMS.fisheye_model.circle_centre_y - SYSTEM_PARAMS.fisheye_model.crop_y
         radius = SYSTEM_PARAMS.fisheye_model.circle_radius
 
+        all_points_filtered = []
+        for points in all_points:
+            points_filtered = []
+            for point in points:
+                x, y = point
+                if (0 <= x < w and 0 <= y < h and
+                    ((x - center_x) ** 2 + (y - center_y) ** 2) <= radius ** 2):
+                    points_filtered.append([x, y])
+            points_filtered = np.array(points_filtered, dtype=float)
+            all_points_filtered.append(points_filtered)
+
+        k = 4
+
+        all_points_filtered[0] /= k
+        all_points_filtered[1] /= k
+        w_scaled = int(w / k)
+        h_scaled = int(h / k)
+        markers_img = np.zeros((w_scaled, h_scaled), dtype=np.uint8)
+        vein_img = np.zeros((w_scaled, h_scaled), dtype=np.uint8)
+
+        markers = all_points_filtered[0]
+        vein = all_points_filtered[1]
+
         for point in markers:
             x, y = int(point[0]), int(point[1])
-            if (0 <= x < 744 and 0 <= y < 744 and
-                ((x - center_x) ** 2 + (y - center_y) ** 2) <= radius ** 2):
-                cv2.circle(markers_img, (x, y), radius=3, color=255, thickness=-1)
+            cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
 
-        vein_filtered = []
-        for point in vein:
-            x, y = int(point[0]), int(point[1])
-            if (0 <= x < 744 and 0 <= y < 744 and
-                ((x - center_x) ** 2 + (y - center_y) ** 2) <= radius ** 2):
-                vein_filtered.append([x, y])
-        vein_filtered = np.array(vein_filtered)
-        contour = self.alpha_shape(vein_filtered, alpha=0.02).astype(np.int32)
+        contour = self.alpha_shape(vein, alpha=0.02).astype(np.int32)
         contour_cv = contour.reshape((-1, 1, 2))
 
         cv2.fillPoly(vein_img, [contour_cv], color=255)
         if False:
-            for pt in vein_filtered:
+            for pt in vein:
                 cv2.circle(vein_img, pt, 2, 0, -1)
 
         cv2.imwrite(markers_file, markers_img)
