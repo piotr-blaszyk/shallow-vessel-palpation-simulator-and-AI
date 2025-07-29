@@ -1408,8 +1408,6 @@ class Contact:
         self.scene.point_light(pos=(0.5, 1.5, 1.5), color=(1, 1, 1))
         self.visualisation_draw_3d_scene(SYSTEM_PARAMS.contact.num_sub_frames - 1)
         self.visualisation_draw_tactile_readout()
-        if ts == 36:
-            foo = 7
         self.scene.particles(
             self.healthy_tissue_points,
             color=(0.0, 0.0, 1.0),
@@ -1814,6 +1812,185 @@ class Contact:
         if self.interpolation_valid[None] == 1:
             print(0)
 
+    def domain_adaptation(self):
+        losses_per_trajectory = []
+        for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
+            print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
+            # for i in range(contact_model.trajectories_np.shape[0]):
+            for i in range(0, 4):
+                print(f'trajectory {i}: {self.trajectory_names[i]}')
+                self.trajectory_ix[None] = i
+                self.set_up_initial_positions_state_and_trajectory()
+                self.reset_pid_controller()
+                self.visualisation_reset_scene_1()
+                self.visualisation_reset_scene_2()
+                self.reset_exp_sim_traj()
+                self.vitactip.extract_markers(0)
+                self.compute_mapping_between_experimental_and_sim_markers()
+                self.set_dt(verbose=True)
+                self.fp()
+                print("forward")
+                ts = 0
+                while self.last_target_reached[None] != 1:
+                    self.pid_controller_1()
+                    self.pid_controller_2(ts)
+                    self.pid_controller_3()
+                    self.vitactip.set_pose_control_1()
+                    self.vitactip.set_pose_control_2()
+                    self.vitactip.set_pose_control_3()
+                    self.forward_pass_common_part(ts)
+                    self.memory_to_cache(ts)
+                    self.vitactip.extract_markers(
+                        SYSTEM_PARAMS.contact.num_sub_frames - 1
+                    )
+                    self.visualisation_update_gui(ts)
+                    self.maybe_save_tactile_sensor_mesh_to_pickle(ts)
+                    ts += 1
+                
+                total_ts = ts
+                self.bp()
+                self.reset_loss()
+                self.batch_loss.fill(0.0)
+                self.clear_grad()
+                self.prev_loss[None] = 0.0
+                self.trajectory_loss[None] = 0.0
+                print("backward")
+                passes = 0
+                ts = total_ts-1
+                while ts >= 0:
+                    self.reset_loss()
+                    self.memory_from_cache(ts)
+                    self.forward_pass_common_part(ts)
+                    self.vitactip.extract_markers(
+                        SYSTEM_PARAMS.contact.num_sub_frames - 1
+                    )
+                    self.interpolate_experimental_frame(ts)
+                    self.compute_marker_loss_1()
+                    self.compute_marker_loss_2()
+                    if SYSTEM_PARAMS.optimisation.enable_loss_2 == 1:
+                        self.compute_marker_loss_3()
+                        self.compute_marker_loss_4()
+                    self.compute_marker_loss_5()
+                    self.visualisation_update_gui(ts)
+                    if False:
+                        print(f"mean error 1: {self.mean_error_1[None]}")
+                        print(f"mean error 2: {self.mean_error_2[None]}")
+                        print(f"exp frame: {self.cur_exp_frame[None]}")
+                        print(f"sim frame: {ts}")
+                    self.loss.grad[None] = 1.0
+                    self.compute_marker_loss_5.grad()
+                    if SYSTEM_PARAMS.optimisation.enable_loss_2 == 1:
+                        self.compute_marker_loss_4.grad()
+                        self.compute_marker_loss_3.grad()
+                    self.compute_marker_loss_2.grad()
+                    self.compute_marker_loss_1.grad()
+                    self.vitactip.extract_markers.grad(
+                        SYSTEM_PARAMS.contact.num_sub_frames - 1
+                    )
+                    self.backward_pass_common_part()
+                    passes += 1
+                    if (
+                        passes % SYSTEM_PARAMS.optimisation.mini_batch_size == 0
+                        or (SYSTEM_PARAMS.optimisation.mini_batch_size > total_ts and ts == 0)
+                    ):
+                        if SYSTEM_PARAMS.optimisation.calibrate_learning_rates == 1:
+                            self.save_gradients_for_calibration()
+                        print(f'mini batch loss: {self.batch_loss[None]:0.3e}')
+                        print(f'mini batch loss 1: {self.batch_loss_1[None]:0.3e}')
+                        print(f'mini batch loss 2: {self.batch_loss_2[None]:0.3e}')
+                        self.update_params(ts)
+                        if self.retry:
+                            break
+                        self.reset_state()
+                        self.set_optimisation_params_from_log()
+                        self.print_params_short()
+                        self.set_dt(verbose=True)
+                        self.clear_grad()
+                        self.reset_batch_loss()
+                    if False:
+                        print()
+                    if not self.retry:
+                        ts -= 1
+                    else:
+                        self.retry = False
+                losses_per_trajectory.append(float(self.trajectory_loss[None]))
+            previous_lr = self.optimiser.param_groups[0]['lr']
+            self.scheduler.step()
+            current_lr = self.optimiser.param_groups[0]['lr']
+            print(f"lr: {previous_lr:0.3e} -> {current_lr:0.3e}")
+            print(
+                f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
+            )
+        print("optimisation loop done")
+        print(f"courant_number: {self.courant_number}")
+        losses_per_trajectory = np.array(losses_per_trajectory)
+        losses_per_opt_step = losses_per_trajectory.reshape(-1, 4).sum(axis=1)
+        xs = [
+            losses_per_opt_step,
+            losses_per_trajectory
+        ]
+        names = [
+            "per_opt_step",
+            "per_trajectory"
+        ]
+        for i in range(len(xs)):
+            x = xs[i]
+            plt.figure(figsize=(10, 6))
+            plt.plot(list(range(len(x))), x)
+            plt.gca().xaxis.set_major_locator(plt.MultipleLocator(1))
+            plt.grid(True)
+            plt.xlabel('batch index')
+            plt.ylabel('batch loss')
+            plt.title('batch loss over time')
+            plt.savefig(SYSTEM_PARAMS.files.losses.format(names[i]))
+            plt.show()
+        self.save_final_params()
+        print("all done")
+
+    def collect_training_data(self):
+        for opts in range(SYSTEM_PARAMS.contact.num_training_trajectories):
+            print(f"training trajectory: {opts} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
+            for i in range(1, 2):
+                self.trajectory_ix[None] = i
+                self.set_up_initial_positions_state_and_trajectory()
+                self.reset_pid_controller()
+                self.visualisation_reset_scene_1()
+                self.visualisation_reset_scene_2()
+                self.reset_exp_sim_traj()
+                self.vitactip.extract_markers(0)
+                self.compute_mapping_between_experimental_and_sim_markers()
+                self.set_dt(verbose=True)
+                self.fp()
+                print("forward")
+                ts = 0
+                while self.last_target_reached[None] != 1:
+                    self.pid_controller_1()
+                    self.pid_controller_2(ts)
+                    self.pid_controller_3()
+                    self.vitactip.set_pose_control_1()
+                    self.vitactip.set_pose_control_2()
+                    self.vitactip.set_pose_control_3()
+                    self.forward_pass_common_part(ts)
+                    self.memory_to_cache(ts)
+                    self.vitactip.extract_markers(
+                        SYSTEM_PARAMS.contact.num_sub_frames - 1
+                    )
+                    self.visualisation_update_gui(ts)
+                    self.maybe_save_tactile_sensor_mesh_to_pickle(ts)
+                    ts += 1
+                
+                self.reset_loss()
+                self.batch_loss.fill(0.0)
+                self.clear_grad()
+                self.prev_loss[None] = 0.0
+                self.trajectory_loss[None] = 0.0
+                
+            print(
+                f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
+            )
+        print("optimisation loop done")
+        print("all done")
+
 
 def main():
     if RUN_ON_LAB_MACHINE:
@@ -1836,138 +2013,4 @@ def main():
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
     contact_model.set_up_torch_params()
-    foo = True
-    losses_per_trajectory = []
-
-    for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
-        print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
-        # for i in range(contact_model.trajectories_np.shape[0]):
-        for i in range(0, 4):
-            print(f'trajectory {i}: {contact_model.trajectory_names[i]}')
-            contact_model.trajectory_ix[None] = i
-            contact_model.set_up_initial_positions_state_and_trajectory()
-            contact_model.reset_pid_controller()
-            contact_model.visualisation_reset_scene_1()
-            contact_model.visualisation_reset_scene_2()
-            contact_model.reset_exp_sim_traj()
-            contact_model.vitactip.extract_markers(0)
-            contact_model.compute_mapping_between_experimental_and_sim_markers()
-            contact_model.set_dt(verbose=True)
-            contact_model.fp()
-            print("forward")
-            ts = 0
-            while contact_model.last_target_reached[None] != 1:
-                contact_model.pid_controller_1()
-                contact_model.pid_controller_2(ts)
-                contact_model.pid_controller_3()
-                contact_model.vitactip.set_pose_control_1()
-                contact_model.vitactip.set_pose_control_2()
-                contact_model.vitactip.set_pose_control_3()
-                contact_model.forward_pass_common_part(ts)
-                contact_model.memory_to_cache(ts)
-                contact_model.vitactip.extract_markers(
-                    SYSTEM_PARAMS.contact.num_sub_frames - 1
-                )
-                contact_model.visualisation_update_gui(ts)
-                contact_model.maybe_save_tactile_sensor_mesh_to_pickle(ts)
-                ts += 1
-            
-            total_ts = ts
-            contact_model.bp()
-            contact_model.reset_loss()
-            contact_model.batch_loss.fill(0.0)
-            contact_model.clear_grad()
-            contact_model.prev_loss[None] = 0.0
-            contact_model.trajectory_loss[None] = 0.0
-            print("backward")
-            passes = 0
-            ts = total_ts-1
-            while ts >= 0:
-                contact_model.reset_loss()
-                contact_model.memory_from_cache(ts)
-                contact_model.forward_pass_common_part(ts)
-                contact_model.vitactip.extract_markers(
-                    SYSTEM_PARAMS.contact.num_sub_frames - 1
-                )
-                contact_model.interpolate_experimental_frame(ts)
-                contact_model.compute_marker_loss_1()
-                contact_model.compute_marker_loss_2()
-                if SYSTEM_PARAMS.optimisation.enable_loss_2 == 1:
-                    contact_model.compute_marker_loss_3()
-                    contact_model.compute_marker_loss_4()
-                contact_model.compute_marker_loss_5()
-                contact_model.visualisation_update_gui(ts)
-                if False:
-                    print(f"mean error 1: {contact_model.mean_error_1[None]}")
-                    print(f"mean error 2: {contact_model.mean_error_2[None]}")
-                    print(f"exp frame: {contact_model.cur_exp_frame[None]}")
-                    print(f"sim frame: {ts}")
-                contact_model.loss.grad[None] = 1.0
-                contact_model.compute_marker_loss_5.grad()
-                if SYSTEM_PARAMS.optimisation.enable_loss_2 == 1:
-                    contact_model.compute_marker_loss_4.grad()
-                    contact_model.compute_marker_loss_3.grad()
-                contact_model.compute_marker_loss_2.grad()
-                contact_model.compute_marker_loss_1.grad()
-                contact_model.vitactip.extract_markers.grad(
-                    SYSTEM_PARAMS.contact.num_sub_frames - 1
-                )
-                contact_model.backward_pass_common_part()
-                passes += 1
-                if (
-                    passes % SYSTEM_PARAMS.optimisation.mini_batch_size == 0
-                    or (SYSTEM_PARAMS.optimisation.mini_batch_size > total_ts and ts == 0)
-                ):
-                    if SYSTEM_PARAMS.optimisation.calibrate_learning_rates == 1:
-                        contact_model.save_gradients_for_calibration()
-                    print(f'mini batch loss: {contact_model.batch_loss[None]:0.3e}')
-                    print(f'mini batch loss 1: {contact_model.batch_loss_1[None]:0.3e}')
-                    print(f'mini batch loss 2: {contact_model.batch_loss_2[None]:0.3e}')
-                    contact_model.update_params(ts)
-                    if contact_model.retry:
-                        break
-                    contact_model.reset_state()
-                    contact_model.set_optimisation_params_from_log()
-                    contact_model.print_params_short()
-                    contact_model.set_dt(verbose=True)
-                    contact_model.clear_grad()
-                    contact_model.reset_batch_loss()
-                if False:
-                    print()
-                if not contact_model.retry:
-                    ts -= 1
-                else:
-                    contact_model.retry = False
-            losses_per_trajectory.append(float(contact_model.trajectory_loss[None]))
-        previous_lr = contact_model.optimiser.param_groups[0]['lr']
-        contact_model.scheduler.step()
-        current_lr = contact_model.optimiser.param_groups[0]['lr']
-        print(f"lr: {previous_lr:0.3e} -> {current_lr:0.3e}")
-        print(
-            f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
-        )
-    print("optimisation loop done")
-    print(f"courant_number: {contact_model.courant_number}")
-    losses_per_trajectory = np.array(losses_per_trajectory)
-    losses_per_opt_step = losses_per_trajectory.reshape(-1, 4).sum(axis=1)
-    xs = [
-        losses_per_opt_step,
-        losses_per_trajectory
-    ]
-    names = [
-        "per_opt_step",
-        "per_trajectory"
-    ]
-    for i in range(len(xs)):
-        x = xs[i]
-        plt.figure(figsize=(10, 6))
-        plt.plot(list(range(len(x))), x)
-        plt.gca().xaxis.set_major_locator(plt.MultipleLocator(1))
-        plt.grid(True)
-        plt.xlabel('batch index')
-        plt.ylabel('batch loss')
-        plt.title('batch loss over time')
-        plt.savefig(SYSTEM_PARAMS.files.losses.format(names[i]))
-        plt.show()
-    contact_model.save_final_params()
-    print("all done")
+    contact_model.domain_adaptation()
