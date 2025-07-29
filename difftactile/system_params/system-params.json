@@ -61,7 +61,7 @@
         "coulomb_friction_coeff": 8.500e-01,
         "num_sub_frames": 125,
         "num_opt_steps": 10,
-        "num_training_trajectories": 2,
+        "num_training_trajectories": 1,
         "pid_max_speed_translation": 1.000e+00,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,
@@ -205,7 +205,11 @@
         "circle_centre_y": 5.800e+02,
         "circle_radius": 3.700e+02,
         "shell_inner_r": 3.533e+02,
-        "shell_outer_r": 3.633e+02
+        "shell_outer_r": 3.633e+02,
+        "crop_x": 663,
+        "crop_y": 208,
+        "crop_width": 744,
+        "crop_height": 744
     },
     "marker_tracker": {
         "seconds_per_frame": 1.000e-01
@@ -268,6 +272,8 @@
         "vitactip_points_E": "difftactile/output/vitactip_points_E.pkl",
         "losses": "difftactile/output/losses_{}.png",
         "training_data_markers": "difftactile/output/training_data/markers/markers_{}_{}.png",
-        "training_data_segmentation_mask": "difftactile/output/training_data/segmentation_mask/segmentation_mask_{}_{}.png"
+        "training_data_segmentation_mask": "difftactile/output/training_data/segmentation_mask/segmentation_mask_{}_{}.png",
+        "training_data_markers_folder": "difftactile/output/training_data/markers",
+        "training_data_segmentation_mask_folder": "difftactile/output/training_data/segmentation_mask"
     }
 }

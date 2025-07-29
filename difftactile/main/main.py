@@ -4,6 +4,7 @@ import pickle
 import json
 import cv2
 import sys
+import os
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.transform import Rotation as R
@@ -11,6 +12,9 @@ import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
 import math
+from shapely.geometry import Polygon, MultiLineString
+from shapely.ops import unary_union, polygonize
+from scipy.spatial import Delaunay
 
 from difftactile.sensor_model.fisheye_model import *
 from difftactile.sensor_model.vitactip import ViTacTip
@@ -41,6 +45,35 @@ class Contact:
         self.set_up_snapshot()
         self.set_up_loss_computation()
         self.visualisation_initialise()
+
+    def alpha_shape(self, points, alpha):
+        if len(points) < 4:
+            return points
+
+        tri = Delaunay(points)
+        edges = set()
+
+        for ia, ib, ic in tri.simplices:
+            pa, pb, pc = points[ia], points[ib], points[ic]
+            a = np.linalg.norm(pa - pb)
+            b = np.linalg.norm(pb - pc)
+            c = np.linalg.norm(pc - pa)
+            s = (a + b + c) / 2.0
+            area = max(s * (s - a) * (s - b) * (s - c), 1e-10) ** 0.5
+            circum_r = a * b * c / (4.0 * area)
+
+            if circum_r < 1.0 / alpha:
+                edges.update([(ia, ib), (ib, ic), (ic, ia)])
+
+        edge_segments = [ (points[i], points[j]) for i, j in edges ]
+        m = MultiLineString(edge_segments)
+        triangles = list(polygonize(m))
+        concave = unary_union(triangles)
+
+        if isinstance(concave, Polygon):
+            return np.array(concave.exterior.coords)
+        else:
+            return np.array(concave.geoms[0].exterior.coords)
 
     @ti.kernel
     def fp(self):
@@ -1125,26 +1158,69 @@ class Contact:
             R.from_quat(self.vitactip.R_A_quat.to_numpy()).as_matrix().reshape(3,3)
         )
 
+    def clear_training_data_folders(self):
+        folders = [
+            SYSTEM_PARAMS.files.training_data_markers_folder,
+            SYSTEM_PARAMS.files.training_data_segmentation_mask_folder
+        ]
+        for folder in folders:
+            for file in os.listdir(folder):
+                file_path = os.path.join(folder, file)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+    
+    def crop(self, points_np):
+        cropped_points = points_np.copy()
+        cropped_points[:, 0] = points_np[:, 0] - SYSTEM_PARAMS.fisheye_model.crop_x
+        cropped_points[:, 1] = points_np[:, 1] - SYSTEM_PARAMS.fisheye_model.crop_y
+        
+        mask = (
+            (cropped_points[:, 0] >= 0) & (cropped_points[:, 0] < SYSTEM_PARAMS.fisheye_model.crop_width)
+            & (cropped_points[:, 1] >= 0) & (cropped_points[:, 1] < SYSTEM_PARAMS.fisheye_model.crop_height)
+        )
+        
+        return cropped_points[mask]
+
     def record_training_data_point(self, training_iteration, ts):
         markers = self.sim_markers_deformed_og_resolution.to_numpy()
         vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
 
-        markers_img = np.zeros((1080, 1920), dtype=np.uint8)
-        vein_img = np.zeros((1080, 1920), dtype=np.uint8)
+        markers = self.crop(markers)
+        vein = self.crop(vein)
 
-        for point in markers:
-            x, y = int(point[0]), int(point[1])
-            if 0 <= x < 1920 and 0 <= y < 1080:
-                cv2.circle(markers_img, (x, y), radius=2, color=255, thickness=-1)
-
-        for point in vein:
-            x, y = int(point[0]), int(point[1])
-            if 0 <= x < 1920 and 0 <= y < 1080:
-                cv2.circle(vein_img, (x, y), radius=2, color=255, thickness=-1)
+        w = SYSTEM_PARAMS.fisheye_model.crop_width
+        h = SYSTEM_PARAMS.fisheye_model.crop_height
+        markers_img = np.zeros((w, h), dtype=np.uint8)
+        vein_img = np.zeros((w, h), dtype=np.uint8)
 
         markers_file = SYSTEM_PARAMS.files.training_data_markers.format(training_iteration, ts)
         vein_file = SYSTEM_PARAMS.files.training_data_segmentation_mask.format(training_iteration, ts)
-        
+
+        center_x = SYSTEM_PARAMS.fisheye_model.circle_centre_x - SYSTEM_PARAMS.fisheye_model.crop_x
+        center_y = SYSTEM_PARAMS.fisheye_model.circle_centre_y - SYSTEM_PARAMS.fisheye_model.crop_y
+        radius = SYSTEM_PARAMS.fisheye_model.circle_radius
+
+        for point in markers:
+            x, y = int(point[0]), int(point[1])
+            if (0 <= x < 744 and 0 <= y < 744 and
+                ((x - center_x) ** 2 + (y - center_y) ** 2) <= radius ** 2):
+                cv2.circle(markers_img, (x, y), radius=3, color=255, thickness=-1)
+
+        vein_filtered = []
+        for point in vein:
+            x, y = int(point[0]), int(point[1])
+            if (0 <= x < 744 and 0 <= y < 744 and
+                ((x - center_x) ** 2 + (y - center_y) ** 2) <= radius ** 2):
+                vein_filtered.append([x, y])
+        vein_filtered = np.array(vein_filtered)
+        contour = self.alpha_shape(vein_filtered, alpha=0.02).astype(np.int32)
+        contour_cv = contour.reshape((-1, 1, 2))
+
+        cv2.fillPoly(vein_img, [contour_cv], color=255)
+        if False:
+            for pt in vein_filtered:
+                cv2.circle(vein_img, pt, 2, 0, -1)
+
         cv2.imwrite(markers_file, markers_img)
         cv2.imwrite(vein_file, vein_img)
 
@@ -1356,7 +1432,6 @@ class Contact:
                 ix
             ]
             projection_2d = self.vitactip.project_A_point_2d(point)
-            projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
             self.vein_all_2d_projection[i] = projection_2d
 
     @ti.kernel
@@ -1364,9 +1439,9 @@ class Contact:
         for i in range(self.vitactip.num_markers):
             undeformed = self.vitactip.undeformed_markers[i]
             deformed = self.vitactip.deformed_markers[i]
+            self.sim_markers_deformed_og_resolution[i] = deformed
             undeformed[1] = self.tactile_image_resolution[None][1] - undeformed[1]
             deformed[1] = self.tactile_image_resolution[None][1] - deformed[1]
-            self.sim_markers_deformed_og_resolution[i] = deformed
             undeformed = undeformed / self.tactile_image_resolution[None]
             deformed = deformed / self.tactile_image_resolution[None]
             offset = deformed - undeformed
@@ -2062,6 +2137,7 @@ class Contact:
         print("all done")
 
     def collect_training_data(self):
+        self.clear_training_data_folders()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for i in range(1, 2):
