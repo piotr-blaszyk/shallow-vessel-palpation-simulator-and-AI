@@ -12,6 +12,7 @@ def calculate_cfl_timestep(
         phantom_healthy_youngs_modulus,
         phantom_tumour_youngs_modulus,
         vitactip_youngs_modulus,
+        courant_number,
         verbose,
 ):
     materials = [
@@ -37,22 +38,22 @@ def calculate_cfl_timestep(
             "particle_spacing": SYSTEM_PARAMS_COMPUTED.vitactip_min_particle_spacing.all,
         },
     ]
-    cfl_number = SYSTEM_PARAMS.meta.target_courant_number
     dt_values = {}
     for material in materials:
         c = calculate_wave_speed(
             material["density"], material["youngs_modulus"], material["poissons_ratio"]
         )
-        dt = cfl_number * material["particle_spacing"] / c
+        dt = courant_number * material["particle_spacing"] / c
         dt_values[material["name"]] = dt
         num_frames_per_second = 1 / (dt * SYSTEM_PARAMS.contact.num_sub_frames)
-        if verbose:
+        if False:
             print(f"dt_{material['name']}: {dt:0.3e}")
             print(f"num_frames_per_second_{material['name']}: {num_frames_per_second:0.0f}")
     dt = min(dt_values.values())
     num_frames_per_second = 1 / (dt * SYSTEM_PARAMS.contact.num_sub_frames)
     if verbose:
-        print(f"\nrequired dt: {dt:0.3e}")
+        print(f"uncapped dt: {dt:0.3e}")
+    if False:
         print(f"num_frames_per_second: {num_frames_per_second:0.0f}")
     dt = min(dt, 5.0e-5)
     return dt

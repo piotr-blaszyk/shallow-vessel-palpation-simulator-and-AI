@@ -35,7 +35,7 @@
         "gravity": [
             0.0,
             0.0,
-            -9.81
+            0.0
         ],
         "silicone": {
             "density": 1.070e+03,
@@ -125,7 +125,7 @@
         "clock_arms_z_max_offset": 6.000e-02
     },
     "meta": {
-        "target_courant_number": 5.000e-02,
+        "target_courant_number": 2.000e-01,
         "enable_tactile_map": 1,
         "enable_pid_controller": 1,
         "distance_scaling_factor": 1.000e+01,
@@ -189,7 +189,7 @@
         },
         "loss_1_weight": 1.000e+00,
         "loss_2_weight": 2.000e+01,
-        "mini_batch_size": 1000,
+        "mini_batch_size": 10,
         "calibrate_learning_rates": 0,
         "enable_loss_2": 1
     },
@@ -265,6 +265,6 @@
         "calibration_horizontal": "difftactile/manual_or_experimental_data/calibration-horizontal.png",
         "validation_point_E": "difftactile/output/validation_point_E.pkl",
         "vitactip_points_E": "difftactile/output/vitactip_points_E.pkl",
-        "losses": "difftactile/output/losses.png"
+        "losses": "difftactile/output/losses_{}.png"
     }
 }

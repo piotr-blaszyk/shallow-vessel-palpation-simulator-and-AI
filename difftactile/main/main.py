@@ -10,12 +10,14 @@ from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
+import math
 
 from difftactile.sensor_model.fisheye_model import *
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
 from difftactile.main.constants import *
 from difftactile.main.cfl_and_contact_params_estimation import *
+from difftactile.main.apply_scaling import ScientificNotationEncoder
 
 RUN_ON_LAB_MACHINE = True
 
@@ -404,6 +406,8 @@ class Contact:
         self.tangential_stiffness[None] = SYSTEM_PARAMS.contact.tangential_stiffness
         self.coulomb_friction_coeff[None] = SYSTEM_PARAMS.contact.coulomb_friction_coeff
         self.gradients_printed = False
+        self.courant_number = SYSTEM_PARAMS.meta.target_courant_number
+        self.retry = False
 
     def set_up_snapshot(self):
         self.predict_markers_snapshots = ti.Vector.field(
@@ -1556,6 +1560,17 @@ class Contact:
         print(f'normal_stiffness: {self.normal_stiffness[None]:0.16e} ({SYSTEM_PARAMS.contact.normal_stiffness:0.16e})')
         print(f'tangential_stiffness: {self.tangential_stiffness[None]:0.16e} ({SYSTEM_PARAMS.contact.tangential_stiffness:0.16e})')
         print(f'normal_damping: {self.normal_damping[None]:0.16e} ({SYSTEM_PARAMS.contact.normal_damping:0.16e})')
+        
+        assert not math.isnan(float(self.vitactip.youngs_modulus[None])), "vitactip.youngs_modulus is NaN"
+        assert not math.isnan(float(self.phantom.youngs_modulus[0])), "phantom.youngs_modulus[0] is NaN"
+        assert not math.isnan(float(self.phantom.youngs_modulus[1])), "phantom.youngs_modulus[1] is NaN"
+        assert not math.isnan(float(self.vitactip.poissons_ratio[None])), "vitactip.poissons_ratio is NaN"
+        assert not math.isnan(float(self.phantom.poissons_ratio[0])), "phantom.poissons_ratio[0] is NaN"
+        assert not math.isnan(float(self.phantom.poissons_ratio[1])), "phantom.poissons_ratio[1] is NaN"
+        assert not math.isnan(float(self.coulomb_friction_coeff[None])), "coulomb_friction_coeff is NaN"
+        assert not math.isnan(float(self.normal_stiffness[None])), "normal_stiffness is NaN"
+        assert not math.isnan(float(self.tangential_stiffness[None])), "tangential_stiffness is NaN"
+        assert not math.isnan(float(self.normal_damping[None])), "normal_damping is NaN"
     
     def print_params_short_from_log(self):
         print(f'vitactip.youngs_modulus: {ti.exp(self.vitactip_youngs_modulus_log[None]):0.16e} ({SYSTEM_PARAMS.vitactip.single_material.youngs_modulus:0.16e})')
@@ -1631,10 +1646,30 @@ class Contact:
             {'params': [self.tangential_stiffness_torch]},
             {'params': [self.normal_damping_torch]}
         ], lr=1e-1, betas=(0.9, 0.999), eps=1e-8)
+
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimiser, step_size=1, gamma=0.5)
     
     def update_params(self, ts):
+        try:
+            assert not math.isnan(float(self.vitactip_youngs_modulus_log.grad[None])), "vitactip_youngs_modulus gradient is NaN"
+            assert not math.isnan(float(self.phantom_youngs_modulus_0_log.grad[None])), "phantom_youngs_modulus_0 gradient is NaN"
+            assert not math.isnan(float(self.phantom_youngs_modulus_1_log.grad[None])), "phantom_youngs_modulus_1 gradient is NaN"
+            assert not math.isnan(float(self.vitactip_poissons_ratio_log.grad[None])), "vitactip_poissons_ratio gradient is NaN"
+            assert not math.isnan(float(self.phantom_poissons_ratio_0_log.grad[None])), "phantom_poissons_ratio_0 gradient is NaN"
+            assert not math.isnan(float(self.phantom_poissons_ratio_1_log.grad[None])), "phantom_poissons_ratio_1 gradient is NaN"
+            assert not math.isnan(float(self.coulomb_friction_coeff_log.grad[None])), "coulomb_friction_coeff gradient is NaN"
+            assert not math.isnan(float(self.normal_stiffness_log.grad[None])), "normal_stiffness gradient is NaN"
+            assert not math.isnan(float(self.tangential_stiffness_log.grad[None])), "tangential_stiffness gradient is NaN"
+            assert not math.isnan(float(self.normal_damping_log.grad[None])), "normal_damping gradient is NaN"
+        except:
+            self.courant_number /= 2
+            self.retry = True
+            self.clear_grad()
+            self.set_dt(verbose=True)
+            return
+
         self.optimiser.zero_grad()
-        
+
         self.vitactip_youngs_modulus_torch.grad = torch.tensor(self.vitactip_youngs_modulus_log.grad[None])
         self.phantom_youngs_modulus_0_torch.grad = torch.tensor(self.phantom_youngs_modulus_0_log.grad[None])
         self.phantom_youngs_modulus_1_torch.grad = torch.tensor(self.phantom_youngs_modulus_1_log.grad[None])
@@ -1717,11 +1752,14 @@ class Contact:
     def save_final_params(self):
         results = {
             "vitactip": {
-                "youngs_modulus": self.vitactip.youngs_modulus[None]
+                "youngs_modulus": self.vitactip.youngs_modulus[None],
+                "poissons_ratio": self.vitactip.poissons_ratio[None]
             },
             "phantom": {
                 "youngs_modulus_0": self.phantom.youngs_modulus[0],
-                "youngs_modulus_1": self.phantom.youngs_modulus[1]
+                "youngs_modulus_1": self.phantom.youngs_modulus[1],
+                "poissons_ratio_0": self.phantom.poissons_ratio[0],
+                "poissons_ratio_1": self.phantom.poissons_ratio[1]
             },
             "contact": {
                 "coulomb_friction_coeff": self.coulomb_friction_coeff[None],
@@ -1738,7 +1776,7 @@ class Contact:
             for k1, v1 in results.items()
         }
         with open(SYSTEM_PARAMS.files.domain_adaptation_results, "w") as f:
-            json.dump(results, f, indent=4)
+            json.dump(results, f, indent=4, cls=ScientificNotationEncoder)
     
     def set_dt(self, verbose=False):
         if self.state_dicts[self.trajectory_ix[None]]['tumour_present']:
@@ -1749,7 +1787,8 @@ class Contact:
             phantom_healthy_youngs_modulus=self.phantom.youngs_modulus[0],
             phantom_tumour_youngs_modulus=tumour_modulus,
             vitactip_youngs_modulus=self.vitactip.youngs_modulus[None],
-            verbose=False,
+            courant_number=self.courant_number,
+            verbose=verbose,
         )
         self.dt[None] = dt
         self.phantom.dt[None] = dt
@@ -1798,12 +1837,12 @@ def main():
     contact_model.get_keypoint_indices_and_validate()
     contact_model.set_up_torch_params()
     foo = True
-    losses = []
+    losses_per_trajectory = []
 
     for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
         print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
         # for i in range(contact_model.trajectories_np.shape[0]):
-        for i in range(1, 2):
+        for i in range(0, 4):
             print(f'trajectory {i}: {contact_model.trajectory_names[i]}')
             contact_model.trajectory_ix[None] = i
             contact_model.set_up_initial_positions_state_and_trajectory()
@@ -1842,7 +1881,8 @@ def main():
             contact_model.trajectory_loss[None] = 0.0
             print("backward")
             passes = 0
-            for ts in range(total_ts - 1, -1, -1):
+            ts = total_ts-1
+            while ts >= 0:
                 contact_model.reset_loss()
                 contact_model.memory_from_cache(ts)
                 contact_model.forward_pass_common_part(ts)
@@ -1884,6 +1924,8 @@ def main():
                     print(f'mini batch loss 1: {contact_model.batch_loss_1[None]:0.3e}')
                     print(f'mini batch loss 2: {contact_model.batch_loss_2[None]:0.3e}')
                     contact_model.update_params(ts)
+                    if contact_model.retry:
+                        break
                     contact_model.reset_state()
                     contact_model.set_optimisation_params_from_log()
                     contact_model.print_params_short()
@@ -1892,19 +1934,40 @@ def main():
                     contact_model.reset_batch_loss()
                 if False:
                     print()
-        losses.append(float(contact_model.trajectory_loss[None]))
+                if not contact_model.retry:
+                    ts -= 1
+                else:
+                    contact_model.retry = False
+            losses_per_trajectory.append(float(contact_model.trajectory_loss[None]))
+        previous_lr = contact_model.optimiser.param_groups[0]['lr']
+        contact_model.scheduler.step()
+        current_lr = contact_model.optimiser.param_groups[0]['lr']
+        print(f"lr: {previous_lr:0.3e} -> {current_lr:0.3e}")
         print(
             f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
         )
     print("optimisation loop done")
-    plt.figure(figsize=(10, 6))
-    plt.plot(list(range(len(losses))), losses)
-    plt.gca().xaxis.set_major_locator(plt.MultipleLocator(1))
-    plt.grid(True)
-    plt.xlabel('batch index')
-    plt.ylabel('batch loss')
-    plt.title('batch loss over time')
-    plt.savefig(SYSTEM_PARAMS.files.losses)
-    plt.show()
+    print(f"courant_number: {contact_model.courant_number}")
+    losses_per_trajectory = np.array(losses_per_trajectory)
+    losses_per_opt_step = losses_per_trajectory.reshape(-1, 4).sum(axis=1)
+    xs = [
+        losses_per_opt_step,
+        losses_per_trajectory
+    ]
+    names = [
+        "per_opt_step",
+        "per_trajectory"
+    ]
+    for i in range(len(xs)):
+        x = xs[i]
+        plt.figure(figsize=(10, 6))
+        plt.plot(list(range(len(x))), x)
+        plt.gca().xaxis.set_major_locator(plt.MultipleLocator(1))
+        plt.grid(True)
+        plt.xlabel('batch index')
+        plt.ylabel('batch loss')
+        plt.title('batch loss over time')
+        plt.savefig(SYSTEM_PARAMS.files.losses.format(names[i]))
+        plt.show()
     contact_model.save_final_params()
     print("all done")
