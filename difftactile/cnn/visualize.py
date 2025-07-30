@@ -4,9 +4,39 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 import numpy as np
 from difftactile.cnn.train import *
+import matplotlib.colors as mcolors
 
 
-def visualize_predictions(model_path=None, num_samples=5):
+def calculate_iou(ground_truth, prediction):
+    intersection = np.logical_and(ground_truth, prediction)
+    union = np.logical_or(ground_truth, prediction)
+    iou_score = np.sum(intersection) / np.sum(union) if np.sum(union) > 0 else 0
+    return iou_score
+
+
+def create_confusion_matrix_overlay(ground_truth, prediction):
+    overlay = np.zeros((*ground_truth.shape, 3))
+    
+    # True Negative (black)
+    tn_mask = (ground_truth == 0) & (prediction == 0)
+    overlay[tn_mask] = [0, 0, 0]
+    
+    # True Positive (white)
+    tp_mask = (ground_truth == 1) & (prediction == 1)
+    overlay[tp_mask] = [1, 1, 1]
+    
+    # False Positive (red)
+    fp_mask = (ground_truth == 0) & (prediction == 1)
+    overlay[fp_mask] = [1, 0, 0]
+    
+    # False Negative (blue)
+    fn_mask = (ground_truth == 1) & (prediction == 0)
+    overlay[fn_mask] = [0, 0, 1]
+    
+    return overlay
+
+
+def visualize_predictions(model_path, num_samples):
     full_dataset = SegmentationDataset(
         SYSTEM_PARAMS.files.training_data_markers_folder,
         SYSTEM_PARAMS.files.training_data_segmentation_mask_folder,
@@ -34,8 +64,10 @@ def visualize_predictions(model_path=None, num_samples=5):
     model.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
-    fig, axes = plt.subplots(num_samples, 3, figsize=(15, 5 * num_samples))
+    
+    fig, axes = plt.subplots(num_samples, 2, figsize=(10, 5 * num_samples))
     plt.tight_layout(pad=3.0)
+    
     with torch.no_grad():
         for i, (image, mask) in enumerate(test_loader):
             if i >= num_samples:
@@ -44,20 +76,28 @@ def visualize_predictions(model_path=None, num_samples=5):
             pred = model(image)
             pred = torch.sigmoid(pred)
             pred = (pred > 0.5).float()
+            
             image = image.cpu().numpy().squeeze()
             mask = mask.cpu().numpy().squeeze()
             pred = pred.cpu().numpy().squeeze()
+            
+            iou_score = calculate_iou(mask, pred)
+            
+            confusion_overlay = create_confusion_matrix_overlay(mask, pred)
+            
             axes[i, 0].imshow(image, cmap="gray")
-            axes[i, 0].set_title("Original Image")
+            axes[i, 0].set_title(f"sample {i+1}")
             axes[i, 0].axis("off")
-            axes[i, 1].imshow(mask, cmap="gray")
-            axes[i, 1].set_title("Ground Truth Mask")
+            
+            axes[i, 1].imshow(confusion_overlay)
+            axes[i, 1].set_title(f"IoU: {iou_score:.3f}")
             axes[i, 1].axis("off")
-            axes[i, 2].imshow(pred, cmap="gray")
-            axes[i, 2].set_title("Predicted Mask")
-            axes[i, 2].axis("off")
+            
     plt.show()
 
 
 if __name__ == "__main__":
-    visualize_predictions(model_path="saved_models/final_segmentation_model.pt")
+    visualize_predictions(
+        model_path="saved_models/final_segmentation_model.pt",
+        num_samples=5
+    )

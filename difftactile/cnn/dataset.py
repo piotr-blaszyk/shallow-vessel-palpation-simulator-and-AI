@@ -14,7 +14,7 @@ class SegmentationDataset(Dataset):
     def __init__(self, image_dir, mask_dir):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
-        self.images = sorted(os.listdir(image_dir))[:100]
+        self.images = sorted(os.listdir(image_dir))[:1_000]
         
         self.target_size = SYSTEM_PARAMS.cnn.target_size
         self.pad_h = self.target_size - SYSTEM_PARAMS.cnn.input_size

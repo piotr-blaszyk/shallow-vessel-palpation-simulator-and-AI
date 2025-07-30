@@ -25,6 +25,7 @@ class SegmentationModel(pl.LightningModule):
         loss = self.loss_fn(logits, y)
         probs = torch.sigmoid(logits)
         preds = (probs > 0.5).float()
+        preds = preds.squeeze(1)
         iou = self.iou_score(preds, y)
         self.log(f"{stage}_loss", loss, prog_bar=True, on_epoch=True)
         self.log(f"{stage}_iou", iou, prog_bar=True, on_epoch=True)
@@ -43,7 +44,7 @@ class SegmentationModel(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
 
     def iou_score(self, preds, targets, eps=1e-6):
-        intersection = (preds * targets).sum(dim=(1, 2, 3))
-        union = (preds + targets).sum(dim=(1, 2, 3)) - intersection
+        intersection = (preds * targets).sum(dim=(1, 2))
+        union = (preds + targets).sum(dim=(1, 2)) - intersection
         iou = (intersection + eps) / (union + eps)
         return iou.mean()

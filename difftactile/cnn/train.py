@@ -13,10 +13,9 @@ from difftactile.main.constants import *
 
 
 def main():
-    IMG_SIZE = SYSTEM_PARAMS.cnn.target_size
-    BATCH_SIZE = 8
+    BATCH_SIZE = 32
     NUM_EPOCHS = 25
-    NUM_WORKERS = 4
+    NUM_WORKERS = 16
     LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="segmentation_model")
