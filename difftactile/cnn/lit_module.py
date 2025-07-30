@@ -1,18 +1,17 @@
-# lit_module.py
-
 import pytorch_lightning as pl
 import segmentation_models_pytorch as smp
 import torch
 import torch.nn.functional as F
+
 
 class SegmentationModel(pl.LightningModule):
     def __init__(self, lr=1e-3):
         super().__init__()
         self.model = smp.Unet(
             encoder_name="timm-mobilenetv3_small_075",
-            encoder_weights=None,  # TRAIN FROM SCRATCH
-            in_channels=3,
-            classes=1,             # Binary segmentation
+            encoder_weights=None,
+            in_channels=1,
+            classes=1,
         )
         self.loss_fn = smp.losses.DiceLoss(mode="binary")
         self.lr = lr
@@ -36,6 +35,9 @@ class SegmentationModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         return self.shared_step(batch, "val")
+
+    def test_step(self, batch, batch_idx):
+        return self.shared_step(batch, "test")
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.lr)

@@ -216,6 +216,10 @@
     "marker_tracker": {
         "seconds_per_frame": 1.000e-01
     },
+    "cnn": {
+        "input_size": 186,
+        "target_size": 192
+    },
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",
         "biomimetic_tip_points": "difftactile/output/biomimetic-tip-points.pkl",
@@ -273,8 +277,8 @@
         "validation_point_E": "difftactile/output/validation_point_E.pkl",
         "vitactip_points_E": "difftactile/output/vitactip_points_E.pkl",
         "losses": "difftactile/output/losses_{}.png",
-        "training_data_markers": "difftactile/output/training_data/markers/markers_{}_{}.png",
-        "training_data_segmentation_mask": "difftactile/output/training_data/segmentation_mask/segmentation_mask_{}_{}.png",
+        "training_data_markers": "difftactile/output/training_data/markers/image_{}_{}.png",
+        "training_data_segmentation_mask": "difftactile/output/training_data/segmentation_mask/image_{}_{}.png",
         "training_data_markers_folder": "difftactile/output/training_data/markers",
         "training_data_segmentation_mask_folder": "difftactile/output/training_data/segmentation_mask"
     }

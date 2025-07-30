@@ -1,26 +1,32 @@
-import numpy as np
-import cv2
+import os
+import re
 
-image_path = "difftactile/output/training_data/segmentation_mask/segmentation_mask_0_42.png"
+markers_folder = "difftactile/output/training_data/markers"
+masks_folder = "difftactile/output/training_data/segmentation_mask"
 
-image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-if image is None:
-    print(f"Error: Could not load image from {image_path}")
-    exit(1)
 
-image_size = image.shape
+def rename_files_in_folder(folder_path, old_pattern, new_pattern):
+    if not os.path.exists(folder_path):
+        print(f"Folder not found: {folder_path}")
+        return
+    files = os.listdir(folder_path)
+    pattern = re.compile(old_pattern.format(r"(\d+)", r"(\d+)"))
+    for file in files:
+        match = pattern.match(file)
+        if match:
+            num1, num2 = match.groups()
+            new_name = new_pattern.format(num1, num2)
+            old_path = os.path.join(folder_path, file)
+            new_path = os.path.join(folder_path, new_name)
+            try:
+                os.rename(old_path, new_path)
+                print(f"Renamed: {file} -> {new_name}")
+            except Exception as e:
+                print(f"Error renaming {file}: {str(e)}")
 
-# blur_kernel_size = (41, 41)
-# processed_image = cv2.GaussianBlur(image, blur_kernel_size, 0)
-# _, processed_image = cv2.threshold(processed_image, 10, 255, cv2.THRESH_BINARY)
 
-cv2.imshow("Original Image", image)
-# cv2.imshow("Processed Image (after blur/threshold)", processed_image)
-
-contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-filled_shape_image = np.zeros(image_size, dtype=np.uint8)
-cv2.drawContours(filled_shape_image, contours, -1, 255, cv2.FILLED)
-
-cv2.imshow("Filled Contours", filled_shape_image)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+print("\nProcessing markers folder...")
+rename_files_in_folder(markers_folder, "markers_{}_{}.png", "image_{}_{}.png")
+print("\nProcessing masks folder...")
+rename_files_in_folder(masks_folder, "segmentation_mask_{}_{}.png", "image_{}_{}.png")
+print("\nRenaming process completed!")
