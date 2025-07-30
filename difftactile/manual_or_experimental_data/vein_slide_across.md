@@ -1,0 +1,21 @@
+In [6]: s.execute_trajectory(0)
+target 0 (pose: [-382.1576   85.3686   28.      180.        0.        0.    ]) reached at frame: 60!
+target 1 (pose: [-382.1576   85.3686   24.      180.        0.        0.    ]) reached at frame: 77!
+target 2 (pose: [-317.1576   85.3686   24.      180.        0.        0.    ]) reached at frame: 169!
+target 3 (pose: [-317.1576   65.3686   24.      180.        0.        0.    ]) reached at frame: 205!
+target 4 (pose: [-382.1576   65.3686   24.      180.        0.        0.    ]) reached at frame: 297!
+target 5 (pose: [-382.1576   45.3686   24.      180.        0.        0.    ]) reached at frame: 333!
+target 6 (pose: [-317.1576   45.3686   24.      180.        0.        0.    ]) reached at frame: 425!
+target 7 (pose: [-317.1576   25.3686   24.      180.        0.        0.    ]) reached at frame: 461!
+target 8 (pose: [-382.1576   25.3686   24.      180.        0.        0.    ]) reached at frame: 554!
+target 9 (pose: [-382.1576    5.3686   24.      180.        0.        0.    ]) reached at frame: 590!
+target 10 (pose: [-317.1576    5.3686   24.      180.        0.        0.    ]) reached at frame: 683!
+target 11 (pose: [-317.1576  -14.6314   24.      180.        0.        0.    ]) reached at frame: 719!
+target 12 (pose: [-382.1576  -14.6314   24.      180.        0.        0.    ]) reached at frame: 812!
+target 13 (pose: [-382.1576  -34.6314   24.      180.        0.        0.    ]) reached at frame: 849!
+target 14 (pose: [-317.1576  -34.6314   24.      180.        0.        0.    ]) reached at frame: 941!
+target 15 (pose: [-317.1576  -54.6314   24.      180.        0.        0.    ]) reached at frame: 978!
+target 16 (pose: [-382.1576  -54.6314   24.      180.        0.        0.    ]) reached at frame: 1077!
+target 17 (pose: [-382.1576  -74.6314   24.      180.        0.        0.    ]) reached at frame: 1114!
+target 18 (pose: [-317.1576  -74.6314   24.      180.        0.        0.    ]) reached at frame: 1207!
+target 19 (pose: [-317.1576  -94.6314   24.      180.        0.        0.    ]) reached at frame: 1243!
