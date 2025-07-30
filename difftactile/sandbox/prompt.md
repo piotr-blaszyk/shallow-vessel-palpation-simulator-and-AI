@@ -1,8 +1,18 @@
-I'm using the DiffTactile fully differentiable physics simulator to simulate a soft optical tactile sensor (ViTacTip) that collides with a silicone phantom that mimics human tissue. I model the sensor and the phantom as using a single material each. The simulator uses MLS-MPM (based on github.com/yuanming-hu/taichi_mpm/blob/master/mls-mpm88-explained.cpp), the neo-hookean elastic model and Corotated Linear Elastic model for the phantom, and FEM for the sensor. The code uses SI units throughout.
+I want to use the following hardware settings for my camera.
 
-I have an issue. When I set the Young's modulus of the sensor and of the phantom to have equal values, the sensor doesn't deform during a downward press into the phantom. In order for the sensor to deform, I need to set its Young's modulus value to be 1 order of magnitude less than the Young's modulus value of the phantom. In reality, the sensor is stiffer than the phantom and both the sensor and the phantom deform during the collision.
-
-Please review my physics code and try to identify any potential culprits.
-
-
-I'm using the DiffTactile fully differentiable physics simulator (based on Taichi) to simulate a soft optical tactile sensor (ViTacTip) that collides with a silicone phantom that mimics human tissue. I model the sensor and the phantom as using a single material each. The simulator uses FEM for the sensor and MLS-MPM for the phantom. The original DiffTactile code scales all distances present in the simulation by x10. In other words, it models each of the phantom and the sensor as being x10 larger than in real life. This allows to hack the Courant-Friedrichs-Lewy maximum time step duration formula and speed up the simulation at the cost of smaller deformations. Is such distance-scaling common in physics simulations aimed at generating large amounts of training data for an ML model?
+camera hardware settings
+- brightness: -64 (-64, 64)
+- contrast: 48 (0, 64)
+- saturation: 0 (0, 128)
+- hue: 0 (-40, 40)
+- white balance, automatic: false (false, true)
+- gamma: 100 (72, 500)
+- gain: 0 (0, 100)
+- power line frequency: 50 Hz (disabled, 50 Hz, 60 Hz)
+- white balance temperature: 5000 (2800, 6500)
+- sharpness: 3 (0, 6)
+- backlight compensation: 0 (0, 2)
+- auto exposure: manual mode (manual mode, aperture priority mode)
+- exposure time, absolute: 100 (1, 5000)
+- exposure, dynamic framerate: false (false, true)
+- resolution: 1920 x 1080

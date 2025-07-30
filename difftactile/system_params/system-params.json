@@ -280,6 +280,10 @@
         "training_data_markers": "difftactile/output/training_data/markers/image_{}_{}.png",
         "training_data_segmentation_mask": "difftactile/output/training_data/segmentation_mask/image_{}_{}.png",
         "training_data_markers_folder": "difftactile/output/training_data/markers",
-        "training_data_segmentation_mask_folder": "difftactile/output/training_data/segmentation_mask"
+        "training_data_segmentation_mask_folder": "difftactile/output/training_data/segmentation_mask",
+        "phantom_uncropped_compressed": "difftactile/manual_or_experimental_data/phantom-uncropped-compressed.jpg",
+        "phantom_uncropped_compressed_undistorted": "difftactile/manual_or_experimental_data/phantom-uncropped-compressed-undistorted.jpg",
+        "exp_phantom_labels": "difftactile/manual_or_experimental_data/phantom-labels-vgg.json",
+        "robot_video": "difftactile/output/robot_video.avi"
     }
 }
