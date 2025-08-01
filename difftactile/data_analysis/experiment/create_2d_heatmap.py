@@ -3,6 +3,8 @@ import cv2
 import torch
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import os
+import glob
 
 from difftactile.data_analysis.experiment.marker_tracker import *
 from difftactile.main.constants import *
@@ -97,7 +99,7 @@ class HeatmapGenerator:
         cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x - SYSTEM_PARAMS.fisheye_model.crop_x
         cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y - SYSTEM_PARAMS.fisheye_model.crop_y
         r = SYSTEM_PARAMS.fisheye_model.circle_radius
-        k = 4
+        k = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
         w_scaled = int(w / k)
         h_scaled = int(h / k)
         markers_file = SYSTEM_PARAMS.files.vein_slide_across_markers.format(ix)
@@ -123,6 +125,46 @@ class HeatmapGenerator:
             pred = (pred * 255).astype(np.uint8)
             cv2.imwrite(segmentation_file, pred)
 
+    def upsample(self):
+        crop_x = SYSTEM_PARAMS.fisheye_model.crop_x
+        crop_y = SYSTEM_PARAMS.fisheye_model.crop_y
+        crop_width = SYSTEM_PARAMS.fisheye_model.crop_width
+        crop_height = SYSTEM_PARAMS.fisheye_model.crop_height
+        down_scaling_factor = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
+
+        scaled_width = int(crop_width / down_scaling_factor)
+        scaled_height = int(crop_height / down_scaling_factor)
+        full_hd_width = 1920
+        full_hd_height = 1080
+        output_folder = SYSTEM_PARAMS.files.vein_slide_across_segmentation_mask_folder_full_hd
+        os.makedirs(output_folder, exist_ok=True)
+        input_folder = SYSTEM_PARAMS.files.vein_slide_across_segmentation_mask_folder
+        image_files = glob.glob(os.path.join(input_folder, "*.png"))
+        print(f"Found {len(image_files)} images to upsample")
+
+        for image_file in image_files:
+            filename = os.path.basename(image_file)
+            scaled_img = cv2.imread(image_file, cv2.IMREAD_GRAYSCALE)
+            if scaled_img is None:
+                print(f"Warning: Could not read {image_file}")
+                continue
+            if scaled_img.shape != (scaled_height, scaled_width):
+                print(f"Warning: Image {filename} has unexpected dimensions {scaled_img.shape}, expected ({scaled_height}, {scaled_width})")
+                continue
+
+            upsampled_img = cv2.resize(scaled_img, (crop_width, crop_height), interpolation=cv2.INTER_LINEAR)
+            full_hd_img = np.zeros((full_hd_height, full_hd_width), dtype=np.uint8)
+            full_hd_img[crop_y:crop_y + crop_height, crop_x:crop_x + crop_width] = upsampled_img
+            output_path = os.path.join(output_folder, filename)
+            cv2.imwrite(output_path, full_hd_img)
+        print(f"Upsampled {len(image_files)} images to {output_folder}")
+
+    def project_2d_to_3d(self):
+        pass
+
+    def project_3d_to_2d(self):
+        pass
+
     def go(self):
         positions = self.linear_interpolation()
         print(f"interpolated positions length: {len(positions)}")
@@ -145,6 +187,7 @@ class HeatmapGenerator:
             for i in range(len(self.marker_tracker.frame_markers)):
                 markers = self.marker_tracker.frame_markers[i]
                 self.generate_synthetic_image_and_segmentation_mask(i, markers)
+            self.upsample()
 
 
 def main():

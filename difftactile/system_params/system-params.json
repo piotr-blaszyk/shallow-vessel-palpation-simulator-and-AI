@@ -211,7 +211,8 @@
         "crop_x": 663,
         "crop_y": 208,
         "crop_width": 744,
-        "crop_height": 744
+        "crop_height": 744,
+        "down_scaling_factor": 4
     },
     "marker_tracker": {
         "seconds_per_frame": 1.000e-01
@@ -289,6 +290,9 @@
         "vein_slide_across_extracted_markers": "difftactile/output/marker_tracker/vein_slide_across_extracted_markers.mkv",
         "vein_slide_across_markers": "difftactile/output/vein_slide_across/markers/frame_{}.png",
         "vein_slide_across_segmentation_mask": "difftactile/output/vein_slide_across/segmentation_mask/frame_{}.png",
+        "vein_slide_across_segmentation_mask_folder": "difftactile/output/vein_slide_across/segmentation_mask",
+        "vein_slide_across_segmentation_mask_full_hd": "difftactile/output/vein_slide_across/segmentation_mask_full_hd/frame_{}.png",
+        "vein_slide_across_segmentation_mask_folder_full_hd": "difftactile/output/vein_slide_across/segmentation_mask_full_hd",
         "segmentation_model_weights": "saved_models/final_segmentation_model.pt"
     }
 }
