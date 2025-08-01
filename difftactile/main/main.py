@@ -26,25 +26,21 @@ from difftactile.main.apply_scaling import ScientificNotationEncoder
 RUN_ON_LAB_MACHINE = True
 
 
-@ti.data_oriented
-class Contact:
+class SyntheticImageGenerator:
     def __init__(self):
-        self.fisheye_model = FisheyeModel()
-        self.set_up_system_params()
-        self.load_system_identification_data_1()
-        self.load_system_identification_data_2()
-        self.load_system_identification_data_3()
-        self.vitactip = ViTacTip()
-        self.phantom = Phantom()
-        self.set_up_initial_positions_and_trajectory_first_init_only()
-        self.set_up_trajectories_and_phantom_states()
-        self.set_up_initial_positions_state_and_trajectory()
-        self.set_up_keypoints()
-        self.set_up_collision_detection()
-        self.set_up_pid()
-        self.set_up_snapshot()
-        self.set_up_loss_computation()
-        self.visualisation_initialise()
+        pass
+
+    def crop(self, points_np):
+        cropped_points = points_np.copy()
+        cropped_points[:, 0] = points_np[:, 0] - SYSTEM_PARAMS.fisheye_model.crop_x
+        cropped_points[:, 1] = points_np[:, 1] - SYSTEM_PARAMS.fisheye_model.crop_y
+        
+        mask = (
+            (cropped_points[:, 0] >= 0) & (cropped_points[:, 0] < SYSTEM_PARAMS.fisheye_model.crop_width)
+            & (cropped_points[:, 1] >= 0) & (cropped_points[:, 1] < SYSTEM_PARAMS.fisheye_model.crop_height)
+        )
+        
+        return cropped_points[mask]
 
     def alpha_shape(self, points, alpha):
         if len(points) < 4:
@@ -74,6 +70,38 @@ class Contact:
             return np.array(concave.exterior.coords)
         else:
             return np.array(concave.geoms[0].exterior.coords)
+    
+    def filter_points(self, w, h, cx, cy, r, points):
+        points_filtered = []
+        for point in points:
+            x, y = point
+            if (0 <= x < w and 0 <= y < h and
+                ((x - cx) ** 2 + (y - cy) ** 2) <= r ** 2):
+                points_filtered.append([x, y])
+        points_filtered = np.array(points_filtered, dtype=float)
+        return points_filtered
+
+
+@ti.data_oriented
+class Contact:
+    def __init__(self):
+        self.synthetic_image_generator = SyntheticImageGenerator()
+        self.fisheye_model = FisheyeModel()
+        self.set_up_system_params()
+        self.load_system_identification_data_1()
+        self.load_system_identification_data_2()
+        self.load_system_identification_data_3()
+        self.vitactip = ViTacTip()
+        self.phantom = Phantom()
+        self.set_up_initial_positions_and_trajectory_first_init_only()
+        self.set_up_trajectories_and_phantom_states()
+        self.set_up_initial_positions_state_and_trajectory()
+        self.set_up_keypoints()
+        self.set_up_collision_detection()
+        self.set_up_pid()
+        self.set_up_snapshot()
+        self.set_up_loss_computation()
+        self.visualisation_initialise()
 
     @ti.kernel
     def fp(self):
@@ -1169,76 +1197,39 @@ class Contact:
                 file_path = os.path.join(folder, file)
                 if os.path.isfile(file_path):
                     os.remove(file_path)
-    
-    def crop(self, points_np):
-        cropped_points = points_np.copy()
-        cropped_points[:, 0] = points_np[:, 0] - SYSTEM_PARAMS.fisheye_model.crop_x
-        cropped_points[:, 1] = points_np[:, 1] - SYSTEM_PARAMS.fisheye_model.crop_y
-        
-        mask = (
-            (cropped_points[:, 0] >= 0) & (cropped_points[:, 0] < SYSTEM_PARAMS.fisheye_model.crop_width)
-            & (cropped_points[:, 1] >= 0) & (cropped_points[:, 1] < SYSTEM_PARAMS.fisheye_model.crop_height)
-        )
-        
-        return cropped_points[mask]
 
     def record_training_data_point(self, training_iteration, ts):
-        markers = self.sim_markers_deformed_og_resolution.to_numpy()
-        vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
-
-        markers = self.crop(markers)
-        vein = self.crop(vein)
-        all_points = [
-            markers,
-            vein
-        ]
-
         w = SYSTEM_PARAMS.fisheye_model.crop_width
         h = SYSTEM_PARAMS.fisheye_model.crop_height
 
         markers_file = SYSTEM_PARAMS.files.training_data_markers.format(training_iteration, ts)
         vein_file = SYSTEM_PARAMS.files.training_data_segmentation_mask.format(training_iteration, ts)
 
-        center_x = SYSTEM_PARAMS.fisheye_model.circle_centre_x - SYSTEM_PARAMS.fisheye_model.crop_x
-        center_y = SYSTEM_PARAMS.fisheye_model.circle_centre_y - SYSTEM_PARAMS.fisheye_model.crop_y
-        radius = SYSTEM_PARAMS.fisheye_model.circle_radius
-
-        all_points_filtered = []
-        for points in all_points:
-            points_filtered = []
-            for point in points:
-                x, y = point
-                if (0 <= x < w and 0 <= y < h and
-                    ((x - center_x) ** 2 + (y - center_y) ** 2) <= radius ** 2):
-                    points_filtered.append([x, y])
-            points_filtered = np.array(points_filtered, dtype=float)
-            all_points_filtered.append(points_filtered)
-
+        cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x - SYSTEM_PARAMS.fisheye_model.crop_x
+        cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y - SYSTEM_PARAMS.fisheye_model.crop_y
+        r = SYSTEM_PARAMS.fisheye_model.circle_radius
         k = 4
-
-        all_points_filtered[0] /= k
-        all_points_filtered[1] /= k
         w_scaled = int(w / k)
         h_scaled = int(h / k)
+
+        markers = self.sim_markers_deformed_og_resolution.to_numpy()
+        markers = self.synthetic_image_generator.crop(markers)
+        markers = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, markers)
+        markers /= k
         markers_img = np.zeros((w_scaled, h_scaled), dtype=np.uint8)
-        vein_img = np.zeros((w_scaled, h_scaled), dtype=np.uint8)
-
-        markers = all_points_filtered[0]
-        vein = all_points_filtered[1]
-
         for point in markers:
             x, y = int(point[0]), int(point[1])
             cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
-
-        contour = self.alpha_shape(vein, alpha=0.02).astype(np.int32)
-        contour_cv = contour.reshape((-1, 1, 2))
-
-        cv2.fillPoly(vein_img, [contour_cv], color=255)
-        if False:
-            for pt in vein:
-                cv2.circle(vein_img, pt, 2, 0, -1)
-
         cv2.imwrite(markers_file, markers_img)
+
+        vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
+        vein = self.synthetic_image_generator.crop(vein)
+        vein = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, vein)
+        vein /= k
+        vein_img = np.zeros((w_scaled, h_scaled), dtype=np.uint8)
+        contour = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
+        contour_cv = contour.reshape((-1, 1, 2))
+        cv2.fillPoly(vein_img, [contour_cv], color=255)
         cv2.imwrite(vein_file, vein_img)
 
     def take_2d_markers_snapshot(self, k):

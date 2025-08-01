@@ -268,7 +268,7 @@
         "traj_out": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_{}_out.mkv",
         "traj_out_snapshot": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_{}_out_snapshot_frame_{}.jpg",
         "traj_markers": "difftactile/output/marker_tracker/domain-adaptation-vascular-markers/traj_{}_out.pkl",
-        "traj_id": 1,
+        "traj_id": -1,
         "optimisation_loop_calibration": "difftactile/output/optimisation_loop_calibration.json",
         "press_no_vein": "difftactile/manual_or_experimental_data/press-no-vein.jpg",
         "press_horizontal_vein": "difftactile/manual_or_experimental_data/press-horizontal-vein.jpg",
@@ -285,6 +285,10 @@
         "phantom_uncropped_compressed_undistorted": "difftactile/manual_or_experimental_data/phantom-uncropped-compressed-undistorted.jpg",
         "exp_phantom_labels": "difftactile/manual_or_experimental_data/phantom-labels-vgg.json",
         "robot_video": "difftactile/output/robot_video.avi",
-        "vein_slide_across": "difftactile/manual_or_experimental_data/vein_slide_across.avi"
+        "vein_slide_across": "difftactile/manual_or_experimental_data/vein_slide_across.avi",
+        "vein_slide_across_extracted_markers": "difftactile/output/marker_tracker/vein_slide_across_extracted_markers.mkv",
+        "vein_slide_across_markers": "difftactile/output/vein_slide_across/markers/frame_{}.png",
+        "vein_slide_across_segmentation_mask": "difftactile/output/vein_slide_across/segmentation_mask/frame_{}.png",
+        "segmentation_model_weights": "saved_models/final_segmentation_model.pt"
     }
 }

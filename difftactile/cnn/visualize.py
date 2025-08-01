@@ -98,6 +98,6 @@ def visualize_predictions(model_path, num_samples):
 
 if __name__ == "__main__":
     visualize_predictions(
-        model_path="saved_models/final_segmentation_model.pt",
+        model_path=SYSTEM_PARAMS.files.segmentation_model_weights,
         num_samples=5
     )

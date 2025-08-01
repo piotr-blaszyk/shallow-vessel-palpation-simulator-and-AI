@@ -141,13 +141,11 @@ class MarkerTracker:
             
             self.base_frame_mappings.append(mapping)
 
-    def create_visualization(self, mode, base_from_file):
+    def create_visualization(self, out_path, mode, base_from_file):
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
         first_frame = self.frames[0]
         out = cv2.VideoWriter(
-            str(
-                SYSTEM_PARAMS.files.traj_out.format(SYSTEM_PARAMS.files.traj_id)
-            ),
+            str(out_path),
             fourcc,
             2.0,
             (first_frame.shape[1], first_frame.shape[0]),
@@ -277,14 +275,16 @@ class MarkerTracker:
         self.match_consecutive_frames()
         self.compute_base_frame_mappings()
         self.save_paired_markers_to_file()
-        self.create_visualization(mode="raw-video", base_from_file=True)
+        self.create_visualization(
+            out_path=SYSTEM_PARAMS.files.traj_out.format(SYSTEM_PARAMS.files.traj_id),
+            mode="raw-video",
+            base_from_file=True
+        )
 
 
 class VideoPlayer:
-    def __init__(self):
-        self.cap = cv2.VideoCapture(str(
-            SYSTEM_PARAMS.files.traj_out.format(SYSTEM_PARAMS.files.traj_id)
-        ))
+    def __init__(self, in_path):
+        self.cap = cv2.VideoCapture(str(in_path))
         self.current_frame = 0
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         if SYSTEM_PARAMS.files.traj_id == 1:
@@ -346,5 +346,7 @@ class VideoPlayer:
 def main():
     tracker = MarkerTracker()
     tracker.process_video()
-    player = VideoPlayer()
+    player = VideoPlayer(
+        in_path=SYSTEM_PARAMS.files.traj_out.format(SYSTEM_PARAMS.files.traj_id)
+    )
     player.run()
