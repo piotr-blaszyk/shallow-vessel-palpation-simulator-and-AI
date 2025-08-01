@@ -22,9 +22,9 @@ class MarkerTracker:
             criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
         )
 
-    def extract_frames(self):
+    def extract_frames(self, input_path):
         cap = cv2.VideoCapture(str(
-            SYSTEM_PARAMS.files.traj_in.format(SYSTEM_PARAMS.files.traj_id)
+            input_path
             ))
         fps = cap.get(cv2.CAP_PROP_FPS)
         frame_interval = int(fps * SYSTEM_PARAMS.marker_tracker.seconds_per_frame)
@@ -273,7 +273,7 @@ class MarkerTracker:
             cv2.destroyAllWindows()
 
     def process_video(self):
-        self.extract_frames()
+        self.extract_frames(SYSTEM_PARAMS.files.traj_in.format(SYSTEM_PARAMS.files.traj_id))
         self.match_consecutive_frames()
         self.compute_base_frame_mappings()
         self.save_paired_markers_to_file()

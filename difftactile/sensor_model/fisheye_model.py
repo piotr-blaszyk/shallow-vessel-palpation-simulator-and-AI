@@ -6,7 +6,6 @@ import math
 import taichi as ti
 from glob import glob
 import pickle
-import matplotlib.pyplot as plt
 import json
 from difftactile.main.constants import *
 
