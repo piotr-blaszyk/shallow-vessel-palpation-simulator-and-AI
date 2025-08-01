@@ -10,3 +10,7 @@ vitactip
 phantom
 - A - global
 - B - local initial
+
+heatmap
+- A - global
+- E - camera space

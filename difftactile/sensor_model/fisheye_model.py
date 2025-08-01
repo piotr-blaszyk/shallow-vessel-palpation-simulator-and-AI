@@ -4,7 +4,7 @@ from os import path as osp
 import os
 import math
 import taichi as ti
-from glob import glob
+import glob
 import pickle
 import json
 from difftactile.main.constants import *
@@ -69,7 +69,7 @@ class FisheyeModel:
             )
         return points
 
-    def project_pix_to_points_3d_plane(self, ps):
+    def project_pix_to_points_3d_plane(self, ps, dist_lens_to_plane):
         x_norm = (
             ps[:, 0] - SYSTEM_PARAMS.fisheye_model.principal_point_x
         ) / SYSTEM_PARAMS.fisheye_model.focal_length_x
@@ -79,8 +79,7 @@ class FisheyeModel:
         r = np.sqrt(x_norm**2 + y_norm**2)
         theta = r
         phi = np.arctan2(y_norm, x_norm)
-        z = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1
-        # z = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface * 2
+        z = dist_lens_to_plane
         r_plane = z * np.tan(theta)
         ps = np.zeros((len(ps), 3))
         ps[:, 0] = r_plane * np.cos(phi)
@@ -149,10 +148,10 @@ class FisheyeModel:
         image_files = []
         for ext in image_extensions:
             image_files.extend(
-                glob(os.path.join(SYSTEM_PARAMS.files.fisheye_model_image_dir, ext))
+                glob.glob(os.path.join(SYSTEM_PARAMS.files.fisheye_model_image_dir, ext))
             )
             image_files.extend(
-                glob(
+                glob.glob(
                     os.path.join(
                         SYSTEM_PARAMS.files.fisheye_model_image_dir, ext.upper()
                     )
@@ -223,10 +222,10 @@ class FisheyeModel:
         image_files = []
         for ext in image_extensions:
             image_files.extend(
-                glob(os.path.join(SYSTEM_PARAMS.files.fisheye_model_image_dir, ext))
+                glob.glob(os.path.join(SYSTEM_PARAMS.files.fisheye_model_image_dir, ext))
             )
             image_files.extend(
-                glob(
+                glob.glob(
                     os.path.join(
                         SYSTEM_PARAMS.files.fisheye_model_image_dir, ext.upper()
                     )

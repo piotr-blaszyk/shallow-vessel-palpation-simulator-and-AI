@@ -7,12 +7,14 @@ import os
 import glob
 
 from difftactile.data_analysis.experiment.marker_tracker import *
+from difftactile.sensor_model.fisheye_model import *
 from difftactile.main.constants import *
 from difftactile.main.main import SyntheticImageGenerator
 from difftactile.cnn.lit_module import SegmentationModel
 
 class HeatmapGenerator:
     def __init__(self):
+        self.fisheye_model = FisheyeModel()
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.marker_tracker = MarkerTracker()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -152,15 +154,39 @@ class HeatmapGenerator:
                 print(f"Warning: Image {filename} has unexpected dimensions {scaled_img.shape}, expected ({scaled_height}, {scaled_width})")
                 continue
 
-            upsampled_img = cv2.resize(scaled_img, (crop_width, crop_height), interpolation=cv2.INTER_LINEAR)
+            upsampled_img = cv2.resize(scaled_img, (crop_width, crop_height), interpolation=cv2.INTER_NEAREST)
             full_hd_img = np.zeros((full_hd_height, full_hd_width), dtype=np.uint8)
             full_hd_img[crop_y:crop_y + crop_height, crop_x:crop_x + crop_width] = upsampled_img
             output_path = os.path.join(output_folder, filename)
             cv2.imwrite(output_path, full_hd_img)
         print(f"Upsampled {len(image_files)} images to {output_folder}")
-
+    
     def project_2d_to_3d(self):
-        pass
+        image_files = sorted(glob.glob(os.path.join(SYSTEM_PARAMS.files.vein_slide_across_segmentation_mask_folder_full_hd, '*')))
+        if not image_files:
+            raise ValueError(f"No images found in {SYSTEM_PARAMS.files.vein_slide_across_segmentation_mask_folder_full_hd}")
+        first_img = cv2.imread(image_files[0], cv2.IMREAD_GRAYSCALE)
+        if first_img is None:
+            raise ValueError(f"Failed to read first image: {image_files[0]}")
+        height, width = first_img.shape
+        num_images = len(image_files)
+        points_E = []
+        for i, img_path in enumerate(image_files):
+            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                print(f"Warning: Failed to read image {img_path}, skipping...")
+                continue
+            threshold = img.max() * 0.5
+            y_coords, x_coords = np.where(img > threshold)
+            if len(x_coords) > 0:
+                pixel_coords = np.column_stack((x_coords, y_coords))
+                cur_points_E = self.fisheye_model.project_pix_to_points_3d_plane(
+                    ps=pixel_coords, 
+                    dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
+                )
+                points_E.append(cur_points_E)
+        
+        return points_E
 
     def project_3d_to_2d(self):
         pass
@@ -187,7 +213,7 @@ class HeatmapGenerator:
             for i in range(len(self.marker_tracker.frame_markers)):
                 markers = self.marker_tracker.frame_markers[i]
                 self.generate_synthetic_image_and_segmentation_mask(i, markers)
-            self.upsample()
+        self.upsample()
 
 
 def main():

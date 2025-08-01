@@ -552,7 +552,10 @@ class Contact:
             [935, 881],
             [1197, 899]
         ], dtype=float)
-        self.exp_vein_3d_coords_E_np = self.fisheye_model.project_pix_to_points_3d_plane(self.exp_vein_2d_coords)
+        self.exp_vein_3d_coords_E_np = self.fisheye_model.project_pix_to_points_3d_plane(
+            ps=self.exp_vein_2d_coords,
+            dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
+        )
         self.exp_vein_3d_coords_E = ti.Vector.field(
             3, dtype=float, shape=(self.exp_vein_3d_coords_E_np.shape[0],), needs_grad=False
         )
@@ -580,7 +583,10 @@ class Contact:
         validation_point_2d = np.array([
             [1028, 947]
         ])
-        self.validation_point_3d_E_np = self.fisheye_model.project_pix_to_points_3d_plane(validation_point_2d)
+        self.validation_point_3d_E_np = self.fisheye_model.project_pix_to_points_3d_plane(
+            ps=validation_point_2d,
+            dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
+        )
         with open(SYSTEM_PARAMS.files.validation_point_E, "wb") as f:
             pickle.dump(self.validation_point_3d_E_np, f)
         self.validation_point_3d_E = ti.Vector.field(
