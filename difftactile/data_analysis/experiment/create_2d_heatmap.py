@@ -72,7 +72,7 @@ class HeatmapGenerator:
         self.min_x = self.poses[1][0] - 20
         self.max_x = self.min_x + 105
         self.min_y = self.poses[16][1] - 20
-        self.max_y = self.min_x + 180
+        self.max_y = self.min_y + 180
         self.bins = np.zeros(shape=(2, 105, 180), dtype=int)
 
     def linear_interpolation(self):
@@ -212,7 +212,26 @@ class HeatmapGenerator:
                         )
                         points_A_h = points_A @ t_EA.T
                         points_A = points_A_h[:, :3]
-                        self.update_bins(points_A, label)
+                        
+                        if i == 82 and label == 1:
+                            foo = 7
+                        mask = (
+                            (points_A[:, 0] >= self.min_x) & 
+                            (points_A[:, 0] <= self.max_x) & 
+                            (points_A[:, 1] >= self.min_y) & 
+                            (points_A[:, 1] <= self.max_y)
+                        )
+                        points_A = points_A[mask]
+                        points_A[:, 0] -= self.min_x
+                        points_A[:, 1] -= self.min_y
+                        points_A = points_A[:, :2]
+                        
+                        x_indices = points_A[:, 0].astype(int)
+                        y_indices = points_A[:, 1].astype(int)
+                        x_indices = np.clip(x_indices, 0, 104)
+                        y_indices = np.clip(y_indices, 0, 179)
+                        for x_idx, y_idx in zip(x_indices, y_indices):
+                            self.bins[label, x_idx, y_idx] += 1
         
         bins_0 = self.bins[0, :, :]
         bins_1 = self.bins[1, :, :]
@@ -224,8 +243,9 @@ class HeatmapGenerator:
         ratio[nonzero_mask] = bins_1[nonzero_mask] / total_bins[nonzero_mask]
         binary = (ratio > 0.5).astype(int)
         
-        img = (binary * 255).astype(np.uint8)
+        img = (ratio * 255).astype(np.uint8)
         cv2.imwrite(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, img)
+        foo = 7
 
     def get_T_EA(self, k, x, y, z):
         cos_k = np.cos(k)
@@ -240,46 +260,27 @@ class HeatmapGenerator:
         T[:3, :3] = R
         T[:3, 3:] = t
         return T
-    
-    def update_bins(self, points_A, label):
-        mask = (
-            (points_A[:, 0] >= self.min_x) & 
-            (points_A[:, 0] <= self.max_x) & 
-            (points_A[:, 1] >= self.min_y) & 
-            (points_A[:, 1] <= self.max_y)
-        )
-        points_A = points_A[mask]
-        points_A[:, 0] -= self.min_x
-        points_A[:, 1] -= self.min_y
-        points_A = points_A[:, :2]
         
-        x_indices = points_A[:, 0].astype(int)
-        y_indices = points_A[:, 1].astype(int)
-        x_indices = np.clip(x_indices, 0, 104)
-        y_indices = np.clip(y_indices, 0, 179)
-        for x_idx, y_idx in zip(x_indices, y_indices):
-            self.bins[label, x_idx, y_idx] += 1
-
     def go(self):
         self.linear_interpolation()
         print(f"interpolated positions length: {len(self.all_positions)}")
-        self.marker_tracker.extract_frames(
-            SYSTEM_PARAMS.files.vein_slide_across
-        )
-        print(f"marker tracker num of extracted frames: {len(self.marker_tracker.frame_markers)}")
-        self.marker_tracker.create_visualization(
-            out_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers,
-            mode="unpaired-markers",
-            base_from_file=False
-        )
+        # self.marker_tracker.extract_frames(
+        #     SYSTEM_PARAMS.files.vein_slide_across
+        # )
+        # print(f"marker tracker num of extracted frames: {len(self.marker_tracker.frame_markers)}")
+        # self.marker_tracker.create_visualization(
+        #     out_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers,
+        #     mode="unpaired-markers",
+        #     base_from_file=False
+        # )
         # player = VideoPlayer(
         #     in_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers
         # )
         # player.run()
-        for i in range(len(self.marker_tracker.frame_markers)):
-            markers = self.marker_tracker.frame_markers[i]
-            self.generate_synthetic_image_and_segmentation_mask(i, markers)
-        self.upsample()
+        # for i in range(len(self.marker_tracker.frame_markers)):
+        #     markers = self.marker_tracker.frame_markers[i]
+        #     self.generate_synthetic_image_and_segmentation_mask(i, markers)
+        # self.upsample()
         self.aggregate_segmentation_mask()
 
 
