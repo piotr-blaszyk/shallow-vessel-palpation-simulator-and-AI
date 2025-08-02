@@ -73,6 +73,7 @@ class HeatmapGenerator:
         self.max_x = self.min_x + 105
         self.min_y = self.poses[16][1] - 20
         self.max_y = self.min_x + 180
+        self.bins = np.zeros(shape=(2, 105, 180), dtype=int)
 
     def linear_interpolation(self):
         cap = cv2.VideoCapture(str(SYSTEM_PARAMS.files.vein_slide_across))
@@ -161,11 +162,16 @@ class HeatmapGenerator:
             upsampled_img = cv2.resize(scaled_img, (crop_width, crop_height), interpolation=cv2.INTER_NEAREST)
             full_hd_img = np.zeros((full_hd_height, full_hd_width), dtype=np.uint8)
             full_hd_img[crop_y:crop_y + crop_height, crop_x:crop_x + crop_width] = upsampled_img
+            
+            downsampled_width = full_hd_width // 8
+            downsampled_height = full_hd_height // 8
+            downsampled_img = cv2.resize(full_hd_img, (downsampled_width, downsampled_height), interpolation=cv2.INTER_NEAREST)
+            
             output_path = os.path.join(output_folder, filename)
-            cv2.imwrite(output_path, full_hd_img)
+            cv2.imwrite(output_path, downsampled_img)
         print(f"Upsampled {len(image_files)} images to {output_folder}")
     
-    def project_2d_to_3d(self):
+    def aggregate_segmentation_mask(self):
         image_files = sorted(glob.glob(os.path.join(SYSTEM_PARAMS.files.vein_slide_across_segmentation_mask_folder_full_hd, '*')))
         if not image_files:
             raise ValueError(f"No images found in {SYSTEM_PARAMS.files.vein_slide_across_segmentation_mask_folder_full_hd}")
@@ -175,45 +181,51 @@ class HeatmapGenerator:
         height, width = first_img.shape
         num_images = len(image_files)
         print(f"num images: {num_images}")
-        self.points_A_0 = self.project_2d_to_3d_helper(image_files, 0)
-        self.points_A_1 = self.project_2d_to_3d_helper(image_files, 1)
 
-    def project_2d_to_3d_helper(self, image_files, label):
-        points_E = []
-        points_A = []
         for i, img_path in enumerate(image_files):
-            if i >= self.start_ix and i < self.end_ix:
-                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-                if img is None:
-                    print(f"Warning: Failed to read image {img_path}, skipping...")
-                    continue
-                threshold = img.max() * 0.5
-                if label == 1:
-                    y_coords, x_coords = np.where(img > threshold)
-                else:
-                    y_coords, x_coords = np.where(img <= threshold)
-                if len(x_coords) > 0:
-                    pixel_coords = np.column_stack((x_coords, y_coords))
-                    cur_points_E = self.fisheye_model.project_pix_to_points_3d_plane(
-                        ps=pixel_coords, 
-                        dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
-                    )
-                    points_E.append(cur_points_E)
+            for label in [0, 1]:
+                if i >= self.start_ix and i < self.end_ix:
+                    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+                    if img is None:
+                        print(f"Warning: Failed to read image {img_path}, skipping...")
+                        continue
+                    threshold = img.max() * 0.5
+                    if label == 1:
+                        y_coords, x_coords = np.where(img > threshold)
+                    else:
+                        y_coords, x_coords = np.where(img <= threshold)
+                    if len(x_coords) > 0:
+                        pixel_coords = np.column_stack((x_coords, y_coords))
+                        points_E = self.fisheye_model.project_pix_to_points_3d_plane(
+                            ps=pixel_coords, 
+                            dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
+                        )
 
-                    n = cur_points_E.shape[0]
-                    cur_points_E_h = np.hstack((cur_points_E, np.ones((n, 1))))
-                    x, y, z = self.all_positions[i]
-                    t_EA = self.get_T_EA(
-                        np.deg2rad(SYSTEM_PARAMS.geometry.camera_rotation_angle),
-                        x,
-                        y,
-                        z
-                    )
-                    cur_points_A_h = cur_points_E_h @ t_EA.T
-                    cur_points_A = cur_points_A_h[:, :3]
-                    points_A.append(cur_points_A)
-
-        return np.vstack(points_A)
+                        n = points_E.shape[0]
+                        points_A = np.hstack((points_E, np.ones((n, 1))))
+                        x, y, z = self.all_positions[i]
+                        t_EA = self.get_T_EA(
+                            np.deg2rad(SYSTEM_PARAMS.geometry.camera_rotation_angle),
+                            x,
+                            y,
+                            z
+                        )
+                        points_A_h = points_A @ t_EA.T
+                        points_A = points_A_h[:, :3]
+                        self.update_bins(points_A, label)
+        
+        bins_0 = self.bins[0, :, :]
+        bins_1 = self.bins[1, :, :]
+        bins_0 = bins_0.astype(float)
+        bins_1 = bins_1.astype(float)
+        total_bins = bins_0 + bins_1
+        ratio = np.zeros_like(total_bins, dtype=float)
+        nonzero_mask = total_bins > 0
+        ratio[nonzero_mask] = bins_1[nonzero_mask] / total_bins[nonzero_mask]
+        binary = (ratio > 0.5).astype(int)
+        
+        img = (binary * 255).astype(np.uint8)
+        cv2.imwrite(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, img)
 
     def get_T_EA(self, k, x, y, z):
         cos_k = np.cos(k)
@@ -228,22 +240,8 @@ class HeatmapGenerator:
         T[:3, :3] = R
         T[:3, 3:] = t
         return T
-
-    def project_3d_to_2d(self):
-        bins_0 = self.project_3d_to_2d_helper(self.points_A_0)
-        bins_1 = self.project_3d_to_2d_helper(self.points_A_1)
-        bins_0 = bins_0.astype(float)
-        bins_1 = bins_1.astype(float)
-        total_bins = bins_0 + bins_1
-        ratio = np.zeros_like(total_bins, dtype=float)
-        nonzero_mask = total_bins > 0
-        ratio[nonzero_mask] = bins_1[nonzero_mask] / total_bins[nonzero_mask]
-        binary = (ratio > 0.5).astype(int)
-        
-        img = (binary * 255).astype(np.uint8)
-        cv2.imwrite(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, img)
-
-    def project_3d_to_2d_helper(self, points_A):
+    
+    def update_bins(self, points_A, label):
         mask = (
             (points_A[:, 0] >= self.min_x) & 
             (points_A[:, 0] <= self.max_x) & 
@@ -254,16 +252,13 @@ class HeatmapGenerator:
         points_A[:, 0] -= self.min_x
         points_A[:, 1] -= self.min_y
         points_A = points_A[:, :2]
-        points_A_binned = np.zeros(shape=(105, 180), dtype=int)
         
         x_indices = points_A[:, 0].astype(int)
         y_indices = points_A[:, 1].astype(int)
         x_indices = np.clip(x_indices, 0, 104)
         y_indices = np.clip(y_indices, 0, 179)
         for x_idx, y_idx in zip(x_indices, y_indices):
-            points_A_binned[x_idx, y_idx] += 1
-            
-        return points_A_binned
+            self.bins[label, x_idx, y_idx] += 1
 
     def go(self):
         self.linear_interpolation()
@@ -285,8 +280,7 @@ class HeatmapGenerator:
             markers = self.marker_tracker.frame_markers[i]
             self.generate_synthetic_image_and_segmentation_mask(i, markers)
         self.upsample()
-        self.project_2d_to_3d()
-        self.project_3d_to_2d()
+        self.aggregate_segmentation_mask()
 
 
 def main():
