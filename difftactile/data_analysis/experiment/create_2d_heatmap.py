@@ -193,22 +193,11 @@ class HeatmapGenerator:
                         print(f"Warning: Failed to read image {img_path}, skipping...")
                         continue
                     threshold = img.max() * 0.5
-                    if i == self.start_ix:
-                        y_coords, x_coords = np.where(np.ones_like(img))
-                        k = SYSTEM_PARAMS.heatmap.down_scaling_factor
-                        cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x / k
-                        cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y / k
-                        r = SYSTEM_PARAMS.fisheye_model.circle_radius / k
-                        distances = (x_coords - cx)**2 + (y_coords - cy)**2
-                        circle_mask = distances <= r**2
-                        y_coords = y_coords[circle_mask]
-                        x_coords = x_coords[circle_mask]
-                    if False:
-                        if label == 1:
-                            y_coords, x_coords = np.where(img > threshold)
-                        else:
-                            y_coords, x_coords = np.where(img <= threshold)
-                    if i == self.start_ix and len(x_coords) > 0:
+                    if label == 1:
+                        y_coords, x_coords = np.where(img > threshold)
+                    else:
+                        y_coords, x_coords = np.where(img <= threshold)
+                    if len(x_coords) > 0:
                         pixel_coords = np.column_stack((x_coords, y_coords))
                         points_E = self.fisheye_model.project_pix_to_points_3d_plane(
                             ps=pixel_coords,
@@ -352,7 +341,7 @@ class HeatmapGenerator:
         #     self.generate_synthetic_image_and_segmentation_mask(i, markers)
         # self.upsample()
         self.aggregate_segmentation_mask()
-        # self.evaluate()
+        self.evaluate()
 
 
 def main():
