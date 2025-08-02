@@ -69,13 +69,27 @@ class FisheyeModel:
             )
         return points
 
-    def project_pix_to_points_3d_plane(self, ps, dist_lens_to_plane):
+    def project_pix_to_points_3d_plane(
+            self,
+            ps,
+            dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
+            resolution_down_scaling_factor=None
+        ):
+        cx = SYSTEM_PARAMS.fisheye_model.principal_point_x
+        cy = SYSTEM_PARAMS.fisheye_model.principal_point_y
+        fx = SYSTEM_PARAMS.fisheye_model.focal_length_x
+        fy = SYSTEM_PARAMS.fisheye_model.focal_length_y
+        if resolution_down_scaling_factor is not None:
+            cx /= resolution_down_scaling_factor
+            cy /= resolution_down_scaling_factor
+            fx /= resolution_down_scaling_factor
+            fy /= resolution_down_scaling_factor
         x_norm = (
-            ps[:, 0] - SYSTEM_PARAMS.fisheye_model.principal_point_x
-        ) / SYSTEM_PARAMS.fisheye_model.focal_length_x
+            ps[:, 0] - cx
+        ) / fx
         y_norm = (
-            ps[:, 1] - SYSTEM_PARAMS.fisheye_model.principal_point_y
-        ) / SYSTEM_PARAMS.fisheye_model.focal_length_y
+            ps[:, 1] - cy
+        ) / fy
         r = np.sqrt(x_norm**2 + y_norm**2)
         theta = r
         phi = np.arctan2(y_norm, x_norm)

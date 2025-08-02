@@ -5,6 +5,7 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import os
 import glob
+from tqdm import tqdm
 
 from difftactile.data_analysis.experiment.marker_tracker import *
 from difftactile.sensor_model.fisheye_model import *
@@ -163,8 +164,8 @@ class HeatmapGenerator:
             full_hd_img = np.zeros((full_hd_height, full_hd_width), dtype=np.uint8)
             full_hd_img[crop_y:crop_y + crop_height, crop_x:crop_x + crop_width] = upsampled_img
             
-            downsampled_width = full_hd_width // 8
-            downsampled_height = full_hd_height // 8
+            downsampled_width = full_hd_width // SYSTEM_PARAMS.heatmap.down_scaling_factor
+            downsampled_height = full_hd_height // SYSTEM_PARAMS.heatmap.down_scaling_factor
             downsampled_img = cv2.resize(full_hd_img, (downsampled_width, downsampled_height), interpolation=cv2.INTER_NEAREST)
             
             output_path = os.path.join(output_folder, filename)
@@ -182,7 +183,7 @@ class HeatmapGenerator:
         num_images = len(image_files)
         print(f"num images: {num_images}")
 
-        for i, img_path in enumerate(image_files):
+        for i, img_path in tqdm(enumerate(image_files)):
             for label in [0, 1]:
                 if i >= self.start_ix and i < self.end_ix:
                     img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
@@ -198,8 +199,10 @@ class HeatmapGenerator:
                         pixel_coords = np.column_stack((x_coords, y_coords))
                         points_E = self.fisheye_model.project_pix_to_points_3d_plane(
                             ps=pixel_coords, 
-                            dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
+                            dist_lens_to_plane=SYSTEM_PARAMS.scaling_factor_1.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.scaling_factor_1.press_depth_1,
+                            resolution_down_scaling_factor=SYSTEM_PARAMS.heatmap.down_scaling_factor
                         )
+                        points_E *= 1_000
 
                         n = points_E.shape[0]
                         points_A = np.hstack((points_E, np.ones((n, 1))))
@@ -242,8 +245,9 @@ class HeatmapGenerator:
         nonzero_mask = total_bins > 0
         ratio[nonzero_mask] = bins_1[nonzero_mask] / total_bins[nonzero_mask]
         binary = (ratio > 0.5).astype(int)
+        binary_2 = (bins_1 > 0).astype(int)
         
-        img = (ratio * 255).astype(np.uint8)
+        img = (binary_2 * 255).astype(np.uint8)
         cv2.imwrite(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, img)
         foo = 7
 

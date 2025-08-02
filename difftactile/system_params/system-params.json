@@ -127,6 +127,10 @@
         "clock_arms_z_min_offset": 4.000e-02,
         "clock_arms_z_max_offset": 6.000e-02
     },
+    "scaling_factor_1": {
+        "distance_from_camera_lens_to_outer_shell_surface": 2.000e-02,
+        "press_depth_1": 4.000e-03
+    },
     "meta": {
         "target_courant_number": 2.000e-01,
         "enable_tactile_map": 1,
@@ -213,6 +217,9 @@
         "crop_width": 744,
         "crop_height": 744,
         "down_scaling_factor": 4
+    },
+    "heatmap": {
+        "down_scaling_factor": 8
     },
     "marker_tracker": {
         "seconds_per_frame": 1.000e-01
