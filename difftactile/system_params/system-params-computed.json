@@ -12,6 +12,7 @@
     0,
     0
   ],
+  "phantom_top_surface_z": 0.29500000000000004,
   "vitactip_tip_position": [
     0.6000000000000001,
     0.4,
@@ -30,7 +31,7 @@
   "min_coord": 0.07500000000000001,
   "max_coord_x": 1.5250000000000001,
   "max_coord_y": 0.7250000000000001,
-  "max_coord_z": 0.7250000000000001,
+  "max_coord_z": 0.325,
   "object_scale": 0.8,
   "phantom_min_max_particle_spacing": 0.01509433962264151,
   "vitactip_min_particle_spacing": {

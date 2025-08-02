@@ -715,7 +715,7 @@ class Contact:
         og_r = og_r * dr
         xr = np.random.uniform(-10, 10)
         yr = np.random.uniform(-10, 10)
-        zr = np.random.uniform(-10, 10)
+        zr = np.random.uniform(-180, 180)
         rand_r = R.from_euler(seq="xyz", angles=[xr, yr, zr], degrees=True)
         og_r = og_r * rand_r
         slide_r = og_r
@@ -1204,6 +1204,7 @@ class Contact:
 
         markers_file = SYSTEM_PARAMS.files.training_data_markers.format(training_iteration, ts)
         vein_file = SYSTEM_PARAMS.files.training_data_segmentation_mask.format(training_iteration, ts)
+        contact_file = SYSTEM_PARAMS.files.training_data_contact.format(training_iteration, ts)
 
         cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x - SYSTEM_PARAMS.fisheye_model.crop_x
         cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y - SYSTEM_PARAMS.fisheye_model.crop_y
@@ -1222,15 +1223,28 @@ class Contact:
             cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
         cv2.imwrite(markers_file, markers_img)
 
+        nodes = self.vitactip.projection_2d_dome_surface_nodes_deformed.to_numpy()
+        contact_mask = self.vitactip.dome_surface_node_contact_mask.to_numpy().astype(bool)
+        nodes = nodes[contact_mask]
+        nodes = self.synthetic_image_generator.crop(nodes)
+        nodes /= k
+        contact_img = np.zeros((w_scaled, h_scaled), dtype=np.uint8)
+        contour_contact = self.synthetic_image_generator.alpha_shape(nodes, alpha=0.02).astype(np.int32)
+        contour_contact_cv = contour_contact.reshape((-1, 1, 2))
+        cv2.fillPoly(contact_img, [contour_contact_cv], color=255)
+        cv2.imwrite(contact_file, contact_img)
+        
         vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
         vein = self.synthetic_image_generator.crop(vein)
         vein = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, vein)
         vein /= k
         vein_img = np.zeros((w_scaled, h_scaled), dtype=np.uint8)
-        contour = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
-        contour_cv = contour.reshape((-1, 1, 2))
-        cv2.fillPoly(vein_img, [contour_cv], color=255)
+        contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
+        contour_vein_cv = contour_vein.reshape((-1, 1, 2))
+        cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
+        vein_img = cv2.bitwise_and(vein_img, contact_img)
         cv2.imwrite(vein_file, vein_img)
+
 
     def take_2d_markers_snapshot(self, k):
         self.take_snapshot_1(k)
@@ -2171,6 +2185,9 @@ class Contact:
                     self.forward_pass_common_part(ts)
                     self.copy_frame()
                     self.vitactip.extract_markers(
+                        SYSTEM_PARAMS.contact.num_sub_frames - 1
+                    )
+                    self.vitactip.mark_surface_nodes_in_contact(
                         SYSTEM_PARAMS.contact.num_sub_frames - 1
                     )
                     self.visualisation_update_gui(ts)

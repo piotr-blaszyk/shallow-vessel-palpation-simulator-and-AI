@@ -63,6 +63,11 @@ class ViTacTip:
             needs_grad=False,
         )
         self.dome_surface_node_tags.from_numpy(self.dome_surface_node_tags_npy)
+        self.dome_surface_node_contact_mask = ti.field(
+            dtype=int,
+            shape=(self.dome_surface_node_tags.shape[0],),
+            needs_grad=False,
+        )
         if False:
             self.surface_node_tags_npy = mesh_data["surface_node_tags"]
         all_tetrahedra = mesh_data["all_tetrahedra"]
@@ -476,6 +481,16 @@ class ViTacTip:
             inhomogeneous_point_E
         )
         return projection_2d
+
+    @ti.kernel
+    def mark_surface_nodes_in_contact(self, frame_idx: ti.i32):
+        for i in range(self.dome_surface_node_tags.shape[0]):
+            node_ix = self.dome_surface_node_tags[i]
+            deformed_A = self.vertices_deformed_A[frame_idx, node_ix]
+            if deformed_A[2] <= SYSTEM_PARAMS_COMPUTED.phantom_top_surface_z:
+                self.dome_surface_node_contact_mask[i] = 1
+            else:
+                self.dome_surface_node_contact_mask[i] = 0
 
     @ti.kernel
     def extract_markers(self, frame_idx: ti.i32):
@@ -894,6 +909,7 @@ class ViTacTip:
         self.total_surface_force.fill(0.0)
         self.deformed_markers.fill(0.0)
         self.projection_2d_dome_surface_nodes_deformed.fill(0.0)
+        self.dome_surface_node_contact_mask.fill(0)
         for i in range(1, self.vertices_deformed_A.shape[0]):
             for j in range(self.vertices_deformed_A.shape[1]):
                 self.vertices_deformed_A[i, j] = ti.Vector([0.0, 0.0, 0.0])
