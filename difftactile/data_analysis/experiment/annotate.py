@@ -21,7 +21,7 @@ def main():
                 list(zip(shape["all_points_x"], shape["all_points_y"])), dtype=np.int32
             )
             cv2.fillPoly(mask, [pts], color=1)
-    cv2.imwrite("binary_mask.png", mask * 255)
+    cv2.imwrite(SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask, mask * 255)
     plt.figure(figsize=(10, 5))
     plt.subplot(1, 2, 1)
     plt.title("Original Image")

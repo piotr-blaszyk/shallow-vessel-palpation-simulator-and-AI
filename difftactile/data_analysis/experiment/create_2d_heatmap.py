@@ -6,12 +6,14 @@ from albumentations.pytorch import ToTensorV2
 import os
 import glob
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 from difftactile.data_analysis.experiment.marker_tracker import *
 from difftactile.sensor_model.fisheye_model import *
 from difftactile.main.constants import *
 from difftactile.main.main import SyntheticImageGenerator
 from difftactile.cnn.lit_module import SegmentationModel
+from difftactile.cnn.visualise import *
 
 class HeatmapGenerator:
     def __init__(self):
@@ -191,14 +193,25 @@ class HeatmapGenerator:
                         print(f"Warning: Failed to read image {img_path}, skipping...")
                         continue
                     threshold = img.max() * 0.5
-                    if label == 1:
-                        y_coords, x_coords = np.where(img > threshold)
-                    else:
-                        y_coords, x_coords = np.where(img <= threshold)
-                    if len(x_coords) > 0:
+                    if i == self.start_ix:
+                        y_coords, x_coords = np.where(np.ones_like(img))
+                        k = SYSTEM_PARAMS.heatmap.down_scaling_factor
+                        cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x / k
+                        cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y / k
+                        r = SYSTEM_PARAMS.fisheye_model.circle_radius / k
+                        distances = (x_coords - cx)**2 + (y_coords - cy)**2
+                        circle_mask = distances <= r**2
+                        y_coords = y_coords[circle_mask]
+                        x_coords = x_coords[circle_mask]
+                    if False:
+                        if label == 1:
+                            y_coords, x_coords = np.where(img > threshold)
+                        else:
+                            y_coords, x_coords = np.where(img <= threshold)
+                    if i == self.start_ix and len(x_coords) > 0:
                         pixel_coords = np.column_stack((x_coords, y_coords))
                         points_E = self.fisheye_model.project_pix_to_points_3d_plane(
-                            ps=pixel_coords, 
+                            ps=pixel_coords,
                             dist_lens_to_plane=SYSTEM_PARAMS.scaling_factor_1.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.scaling_factor_1.press_depth_1,
                             resolution_down_scaling_factor=SYSTEM_PARAMS.heatmap.down_scaling_factor
                         )
@@ -248,6 +261,7 @@ class HeatmapGenerator:
         binary_2 = (bins_1 > 0).astype(int)
         
         img = (binary_2 * 255).astype(np.uint8)
+        img = np.flip(np.flip(img, axis=0), axis=1)
         cv2.imwrite(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, img)
         foo = 7
 
@@ -264,6 +278,58 @@ class HeatmapGenerator:
         T[:3, :3] = R
         T[:3, 3:] = t
         return T
+
+    def evaluate(self):
+        # Load ground truth and predicted masks
+        ground_truth = cv2.imread(SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask, cv2.IMREAD_GRAYSCALE)
+        prediction = cv2.imread(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, cv2.IMREAD_GRAYSCALE)
+        
+        if ground_truth is None:
+            raise ValueError(f"Failed to read ground truth mask from {SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask}")
+        if prediction is None:
+            raise ValueError(f"Failed to read prediction mask from {SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask}")
+
+        # Convert to binary masks
+        ground_truth = (ground_truth > 127).astype(np.uint8)
+        prediction = (prediction > 127).astype(np.uint8)
+
+        # Calculate IoU score
+        iou_score = calculate_iou(ground_truth, prediction)
+        print(f"IoU Score: {iou_score:.3f}")
+
+        # Create confusion matrix overlay
+        confusion_overlay = create_confusion_matrix_overlay(ground_truth, prediction)
+
+        # Create visualization
+        plt.figure(figsize=(15, 5))
+        
+        plt.subplot(131)
+        plt.imshow(ground_truth, cmap='gray')
+        plt.title('Ground Truth')
+        plt.axis('off')
+        
+        plt.subplot(132)
+        plt.imshow(prediction, cmap='gray')
+        plt.title('Prediction')
+        plt.axis('off')
+        
+        plt.subplot(133)
+        plt.imshow(confusion_overlay)
+        plt.title(f'Overlay (IoU: {iou_score:.3f})')
+        plt.axis('off')
+
+        # Add a legend
+        legend_elements = [
+            plt.Rectangle((0, 0), 1, 1, fc='black', label='True Negative'),
+            plt.Rectangle((0, 0), 1, 1, fc='white', label='True Positive'),
+            plt.Rectangle((0, 0), 1, 1, fc='red', label='False Positive'),
+            plt.Rectangle((0, 0), 1, 1, fc='blue', label='False Negative')
+        ]
+        plt.figlegend(handles=legend_elements, loc='center right')
+        
+        plt.tight_layout()
+        plt.savefig(SYSTEM_PARAMS.files.vein_slide_across_evaluation_visualization)
+        plt.close()
         
     def go(self):
         self.linear_interpolation()
@@ -286,6 +352,7 @@ class HeatmapGenerator:
         #     self.generate_synthetic_image_and_segmentation_mask(i, markers)
         # self.upsample()
         self.aggregate_segmentation_mask()
+        # self.evaluate()
 
 
 def main():

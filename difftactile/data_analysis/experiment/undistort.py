@@ -40,11 +40,8 @@ def main():
     # Step 4: Apply the warp perspective
     warped = cv2.warpPerspective(image, M, (width, height))
 
-    # Step 5: Save or display the result
+    # Step 5: Save the result
     cv2.imwrite(SYSTEM_PARAMS.files.phantom_uncropped_compressed_undistorted, warped)
-    cv2.imshow('Warped', warped)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
