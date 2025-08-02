@@ -301,6 +301,7 @@ class HeatmapGenerator:
         print(f"Scale factor used: {scale_factor}")
         print(f"Original prediction size: {pred_height}x{pred_width}")
         print(f"Scaled prediction size: {scaled_height}x{scaled_width}")
+        print(f"Padded prediction size: {prediction.shape[0]}x{prediction.shape[1]}")
         print(f"Ground truth size: {gt_height}x{gt_width}")
         confusion_overlay = create_confusion_matrix_overlay(ground_truth, prediction)
 
@@ -326,7 +327,7 @@ class HeatmapGenerator:
         ]
         plt.figlegend(handles=legend_elements, loc='center right')
         plt.tight_layout()
-        plt.savefig(SYSTEM_PARAMS.files.vein_slide_across_evaluation_visualization)
+        plt.show()
         plt.close()
         
     def go(self):
@@ -349,7 +350,7 @@ class HeatmapGenerator:
         #     markers = self.marker_tracker.frame_markers[i]
         #     self.generate_synthetic_image_and_segmentation_mask(i, markers)
         # self.upsample()
-        self.aggregate_segmentation_mask()
+        # self.aggregate_segmentation_mask()
         self.evaluate()
 
 
