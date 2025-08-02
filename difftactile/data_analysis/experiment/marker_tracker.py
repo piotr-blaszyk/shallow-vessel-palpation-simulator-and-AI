@@ -34,7 +34,7 @@ class MarkerTracker:
             ret, frame = cap.read()
             if not ret:
                 break
-            if frame_count % frame_interval == 0:
+            if True or frame_count % frame_interval == 0:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 self.frames.append(frame)
                 markers, _, _ = self.fisheye_model.get_marker_image(gray)

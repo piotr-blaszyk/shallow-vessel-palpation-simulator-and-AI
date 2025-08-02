@@ -293,6 +293,7 @@
         "vein_slide_across_segmentation_mask_folder": "difftactile/output/vein_slide_across/segmentation_mask",
         "vein_slide_across_segmentation_mask_full_hd": "difftactile/output/vein_slide_across/segmentation_mask_full_hd/frame_{}.png",
         "vein_slide_across_segmentation_mask_folder_full_hd": "difftactile/output/vein_slide_across/segmentation_mask_full_hd",
-        "segmentation_model_weights": "saved_models/final_segmentation_model.pt"
+        "segmentation_model_weights": "saved_models/final_segmentation_model.pt",
+        "vein_slide_across_predicted_aggregated_segmentation_mask": "difftactile/output/vein_slide_across/segmentation_mask_predicted_aggregated.png"
     }
 }

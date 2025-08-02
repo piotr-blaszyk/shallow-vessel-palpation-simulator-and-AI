@@ -23,14 +23,7 @@ class HeatmapGenerator:
         self.model = self.model.to(self.device)
         self.model.eval()
         self.transforms = A.Compose([ToTensorV2()])
-
-    def linear_interpolation(self):
-        cap = cv2.VideoCapture(str(SYSTEM_PARAMS.files.vein_slide_across))
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        cap.release()
-        print(f"raw video total frames: {total_frames}")
-
-        poses = np.array([
+        self.poses = np.array([
             [-382.1576,   85.3686,   28.0000,   180.0,   0.0,   0.0],  # target 0
             [-382.1576,   85.3686,   24.0000,   180.0,   0.0,   0.0],  # target 1
             [-317.1576,   85.3686,   24.0000,   180.0,   0.0,   0.0],  # target 2
@@ -51,9 +44,8 @@ class HeatmapGenerator:
             [-382.1576,  -74.6314,   24.0000,   180.0,   0.0,   0.0],  # target 17
             [-317.1576,  -74.6314,   24.0000,   180.0,   0.0,   0.0],  # target 18
             [-317.1576,  -94.6314,   24.0000,   180.0,   0.0,   0.0],  # target 19
-        ])
-
-        video_frames = np.array([
+        ], dtype=float)
+        self.video_frames = np.array([
             60,    # target 0
             77,    # target 1
             169,   # target 2
@@ -74,15 +66,27 @@ class HeatmapGenerator:
             1114,  # target 17
             1207,  # target 18
             1243,  # target 19
-        ])
+        ], dtype=int)
+        self.start_ix = 77
+        self.end_ix = 1077
+        self.min_x = self.poses[1][0] - 20
+        self.max_x = self.min_x + 105
+        self.min_y = self.poses[16][1] - 20
+        self.max_y = self.min_x + 180
 
-        positions = poses[:, :3]
+    def linear_interpolation(self):
+        cap = cv2.VideoCapture(str(SYSTEM_PARAMS.files.vein_slide_across))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+        print(f"raw video total frames: {total_frames}")
+
+        positions = self.poses[:, :3]
         all_positions = np.zeros(shape=(total_frames, 3))
-        all_positions[video_frames] = positions
+        all_positions[self.video_frames] = positions
         
-        for i in range(len(video_frames) - 1):
-            start_frame = video_frames[i]
-            end_frame = video_frames[i + 1]
+        for i in range(len(self.video_frames) - 1):
+            start_frame = self.video_frames[i]
+            end_frame = self.video_frames[i + 1]
             start_pos = positions[i]
             end_pos = positions[i + 1]
             
@@ -93,7 +97,7 @@ class HeatmapGenerator:
                 interpolated_pos = (1 - t) * start_pos + t * end_pos
                 all_positions[start_frame + j] = interpolated_pos
         
-        return all_positions
+        self.all_positions = all_positions
 
     def generate_synthetic_image_and_segmentation_mask(self, ix, markers):
         w = SYSTEM_PARAMS.fisheye_model.crop_width
@@ -170,50 +174,119 @@ class HeatmapGenerator:
             raise ValueError(f"Failed to read first image: {image_files[0]}")
         height, width = first_img.shape
         num_images = len(image_files)
+        print(f"num images: {num_images}")
+        self.points_A_0 = self.project_2d_to_3d_helper(image_files, 0)
+        self.points_A_1 = self.project_2d_to_3d_helper(image_files, 1)
+
+    def project_2d_to_3d_helper(self, image_files, label):
         points_E = []
+        points_A = []
         for i, img_path in enumerate(image_files):
-            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-            if img is None:
-                print(f"Warning: Failed to read image {img_path}, skipping...")
-                continue
-            threshold = img.max() * 0.5
-            y_coords, x_coords = np.where(img > threshold)
-            if len(x_coords) > 0:
-                pixel_coords = np.column_stack((x_coords, y_coords))
-                cur_points_E = self.fisheye_model.project_pix_to_points_3d_plane(
-                    ps=pixel_coords, 
-                    dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
-                )
-                points_E.append(cur_points_E)
-        
-        return points_E
+            if i >= self.start_ix and i < self.end_ix:
+                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+                if img is None:
+                    print(f"Warning: Failed to read image {img_path}, skipping...")
+                    continue
+                threshold = img.max() * 0.5
+                if label == 1:
+                    y_coords, x_coords = np.where(img > threshold)
+                else:
+                    y_coords, x_coords = np.where(img <= threshold)
+                if len(x_coords) > 0:
+                    pixel_coords = np.column_stack((x_coords, y_coords))
+                    cur_points_E = self.fisheye_model.project_pix_to_points_3d_plane(
+                        ps=pixel_coords, 
+                        dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
+                    )
+                    points_E.append(cur_points_E)
+
+                    n = cur_points_E.shape[0]
+                    cur_points_E_h = np.hstack((cur_points_E, np.ones((n, 1))))
+                    x, y, z = self.all_positions[i]
+                    t_EA = self.get_T_EA(
+                        np.deg2rad(SYSTEM_PARAMS.geometry.camera_rotation_angle),
+                        x,
+                        y,
+                        z
+                    )
+                    cur_points_A_h = cur_points_E_h @ t_EA.T
+                    cur_points_A = cur_points_A_h[:, :3]
+                    points_A.append(cur_points_A)
+
+        return np.vstack(points_A)
+
+    def get_T_EA(self, k, x, y, z):
+        cos_k = np.cos(k)
+        sin_k = np.sin(k)
+        R = np.array([
+            [ cos_k,  sin_k, 0],
+            [ sin_k, -cos_k, 0],
+            [     0,      0, -1]
+        ])
+        t = np.array([[x], [y], [z]])
+        T = np.eye(4)
+        T[:3, :3] = R
+        T[:3, 3:] = t
+        return T
 
     def project_3d_to_2d(self):
-        pass
+        bins_0 = self.project_3d_to_2d_helper(self.points_A_0)
+        bins_1 = self.project_3d_to_2d_helper(self.points_A_1)
+        bins_0 = bins_0.astype(float)
+        bins_1 = bins_1.astype(float)
+        total_bins = bins_0 + bins_1
+        ratio = np.zeros_like(total_bins, dtype=float)
+        nonzero_mask = total_bins > 0
+        ratio[nonzero_mask] = bins_1[nonzero_mask] / total_bins[nonzero_mask]
+        binary = (ratio > 0.5).astype(int)
+        
+        img = (binary * 255).astype(np.uint8)
+        cv2.imwrite(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, img)
+
+    def project_3d_to_2d_helper(self, points_A):
+        mask = (
+            (points_A[:, 0] >= self.min_x) & 
+            (points_A[:, 0] <= self.max_x) & 
+            (points_A[:, 1] >= self.min_y) & 
+            (points_A[:, 1] <= self.max_y)
+        )
+        points_A = points_A[mask]
+        points_A[:, 0] -= self.min_x
+        points_A[:, 1] -= self.min_y
+        points_A = points_A[:, :2]
+        points_A_binned = np.zeros(shape=(105, 180), dtype=int)
+        
+        x_indices = points_A[:, 0].astype(int)
+        y_indices = points_A[:, 1].astype(int)
+        x_indices = np.clip(x_indices, 0, 104)
+        y_indices = np.clip(y_indices, 0, 179)
+        for x_idx, y_idx in zip(x_indices, y_indices):
+            points_A_binned[x_idx, y_idx] += 1
+            
+        return points_A_binned
 
     def go(self):
-        positions = self.linear_interpolation()
-        print(f"interpolated positions length: {len(positions)}")
-        if False:
-            self.marker_tracker.extract_frames(
-                SYSTEM_PARAMS.files.vein_slide_across
-            )
-            print(f"marker tracker num of extracted frames: {len(self.marker_tracker.frame_markers)}")
-        if False:
-            marker_tracker.create_visualization(
-                out_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers,
-                mode="unpaired-markers",
-                base_from_file=False
-            )
-            player = VideoPlayer(
-                in_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers
-            )
-            player.run()
-        if False:
-            for i in range(len(self.marker_tracker.frame_markers)):
-                markers = self.marker_tracker.frame_markers[i]
-                self.generate_synthetic_image_and_segmentation_mask(i, markers)
+        self.linear_interpolation()
+        print(f"interpolated positions length: {len(self.all_positions)}")
+        self.marker_tracker.extract_frames(
+            SYSTEM_PARAMS.files.vein_slide_across
+        )
+        print(f"marker tracker num of extracted frames: {len(self.marker_tracker.frame_markers)}")
+        self.marker_tracker.create_visualization(
+            out_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers,
+            mode="unpaired-markers",
+            base_from_file=False
+        )
+        # player = VideoPlayer(
+        #     in_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers
+        # )
+        # player.run()
+        for i in range(len(self.marker_tracker.frame_markers)):
+            markers = self.marker_tracker.frame_markers[i]
+            self.generate_synthetic_image_and_segmentation_mask(i, markers)
         self.upsample()
+        self.project_2d_to_3d()
+        self.project_3d_to_2d()
 
 
 def main():
