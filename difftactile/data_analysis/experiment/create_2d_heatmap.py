@@ -269,45 +269,55 @@ class HeatmapGenerator:
         return T
 
     def evaluate(self):
-        # Load ground truth and predicted masks
         ground_truth = cv2.imread(SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask, cv2.IMREAD_GRAYSCALE)
         prediction = cv2.imread(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, cv2.IMREAD_GRAYSCALE)
-        
         if ground_truth is None:
             raise ValueError(f"Failed to read ground truth mask from {SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask}")
         if prediction is None:
             raise ValueError(f"Failed to read prediction mask from {SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask}")
-
-        # Convert to binary masks
         ground_truth = (ground_truth > 127).astype(np.uint8)
         prediction = (prediction > 127).astype(np.uint8)
+        
+        gt_height, gt_width = ground_truth.shape
+        pred_height, pred_width = prediction.shape
+        scale_x = gt_width // pred_width
+        scale_y = gt_height // pred_height
+        scale_factor = min(scale_x, scale_y)
+        scale_factor = max(1, scale_factor)
+        scaled_prediction = cv2.resize(prediction, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
+        scaled_height, scaled_width = scaled_prediction.shape
+        pad_height = gt_height - scaled_height
+        pad_width = gt_width - scaled_width
+        pad_top = pad_height // 2
+        pad_bottom = pad_height - pad_top
+        pad_left = pad_width // 2
+        pad_right = pad_width - pad_left
+        padded_prediction = np.zeros((gt_height, gt_width), dtype=np.uint8)
+        padded_prediction[pad_top:pad_top+scaled_height, pad_left:pad_left+scaled_width] = scaled_prediction
+        prediction = padded_prediction
 
-        # Calculate IoU score
         iou_score = calculate_iou(ground_truth, prediction)
         print(f"IoU Score: {iou_score:.3f}")
-
-        # Create confusion matrix overlay
+        print(f"Scale factor used: {scale_factor}")
+        print(f"Original prediction size: {pred_height}x{pred_width}")
+        print(f"Scaled prediction size: {scaled_height}x{scaled_width}")
+        print(f"Ground truth size: {gt_height}x{gt_width}")
         confusion_overlay = create_confusion_matrix_overlay(ground_truth, prediction)
 
-        # Create visualization
         plt.figure(figsize=(15, 5))
-        
         plt.subplot(131)
         plt.imshow(ground_truth, cmap='gray')
         plt.title('Ground Truth')
         plt.axis('off')
-        
         plt.subplot(132)
         plt.imshow(prediction, cmap='gray')
-        plt.title('Prediction')
+        plt.title('Prediction (Scaled & Padded)')
         plt.axis('off')
-        
         plt.subplot(133)
         plt.imshow(confusion_overlay)
         plt.title(f'Overlay (IoU: {iou_score:.3f})')
         plt.axis('off')
-
-        # Add a legend
+        
         legend_elements = [
             plt.Rectangle((0, 0), 1, 1, fc='black', label='True Negative'),
             plt.Rectangle((0, 0), 1, 1, fc='white', label='True Positive'),
@@ -315,7 +325,6 @@ class HeatmapGenerator:
             plt.Rectangle((0, 0), 1, 1, fc='blue', label='False Negative')
         ]
         plt.figlegend(handles=legend_elements, loc='center right')
-        
         plt.tight_layout()
         plt.savefig(SYSTEM_PARAMS.files.vein_slide_across_evaluation_visualization)
         plt.close()
