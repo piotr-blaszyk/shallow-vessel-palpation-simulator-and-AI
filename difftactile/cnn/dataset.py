@@ -151,6 +151,7 @@ class TransformDataset(torch.utils.data.Dataset):
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, split):
         super().__init__()
+        self.synthetic_image_generator = SyntheticImageGenerator()
         self.split = split
         self.image_dir = Path(f'{SYSTEM_PARAMS.files.dataset_root}/splits/{split}/images')
         self.label_dir = Path(f'{SYSTEM_PARAMS.files.dataset_root}/splits/{split}/labels')
@@ -166,6 +167,12 @@ class MyDataset(torch.utils.data.Dataset):
                 label_file = self.label_dir / f'trajectory_{traj_num:04d}' / f'img_{img_num:04d}.pkl'
                 if label_file.exists():
                     self.samples.append((img_file, label_file))
+        
+        w = SYSTEM_PARAMS.fisheye_model.crop_width
+        h = SYSTEM_PARAMS.fisheye_model.crop_height
+        k = 4
+        self.w_scaled = int(w / k)
+        self.h_scaled = int(h / k)
 
     def __len__(self):
         return len(self.samples)
@@ -179,9 +186,27 @@ class MyDataset(torch.utils.data.Dataset):
         with open(label_path, 'rb') as f:
             label = pickle.load(f)
         
+        image = self.generate_markers_image(image)
+        label = self.generate_vein_image(label)
+
         if not isinstance(image, torch.Tensor):
             image = torch.from_numpy(image)
         if not isinstance(label, torch.Tensor):
             label = torch.from_numpy(label)
-            
+        
         return image, label
+
+    def generate_markers_image(self, points):
+        image = np.zeros((self.w_scaled, self.h_scaled), dtype=np.uint8)
+        for point in points:
+            x, y = int(point[0]), int(point[1])
+            cv2.circle(image, (x, y), radius=1, color=255, thickness=-1)
+        return image
+
+    def generate_vein_image(self, points):
+        image = np.zeros((self.w_scaled, self.h_scaled), dtype=np.uint8)
+        if len(points) > 0:
+            contour_vein = self.synthetic_image_generator.alpha_shape(points, alpha=0.02).astype(np.int32)
+            contour_vein_cv = contour_vein.reshape((-1, 1, 2))
+            cv2.fillPoly(image, [contour_vein_cv], color=255)
+        return image
