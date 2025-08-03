@@ -6,15 +6,21 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from sklearn.model_selection import train_test_split
 import numpy as np
+import pickle
+import shutil
+import random
+from pathlib import Path
 
 from difftactile.main.constants import *
+from difftactile.main.main import SyntheticImageGenerator
 
 
 class SegmentationDataset(Dataset):
-    def __init__(self, image_dir, mask_dir):
-        self.image_dir = image_dir
-        self.mask_dir = mask_dir
-        self.images = sorted(os.listdir(image_dir))[:1_000]
+    def __init__(self, markers_pickle_dir, vein_pickle_dir):
+        self.synthetic_image_generator = SyntheticImageGenerator()
+        self.markers_pickle_dir = markers_pickle_dir
+        self.vein_pickle_dir = vein_pickle_dir
+        self.pickle_files = sorted([f for f in os.listdir(markers_pickle_dir) if f.endswith('.pickle')])[:1_000]
         
         self.target_size = SYSTEM_PARAMS.cnn.target_size
         self.pad_h = self.target_size - SYSTEM_PARAMS.cnn.input_size
@@ -25,30 +31,84 @@ class SegmentationDataset(Dataset):
         self.pad_right = self.pad_w - self.pad_left
 
     def __len__(self):
-        return len(self.images)
+        return len(self.pickle_files)
+
+    def split_files(self):
+        random.seed(42)
+        xs = [
+            'markers',
+            'segmentation_mask'
+        ]
+        for x in xs:
+            root = SYSTEM_PARAMS.files.dataset_root
+            cur_dir = f'{root}/pickle/{x}'
+            trajectory_dirs = sorted(os.listdir(cur_dir))
+            random.shuffle(trajectory_dirs)
+
+            n = len(trajectory_dirs)
+            train_split = int(0.8 * n)
+            val_split = int(0.9 * n)
+
+            splits = {
+                'train': trajectory_dirs[:train_split],
+                'val': trajectory_dirs[train_split:val_split],
+                'test': trajectory_dirs[val_split:]
+            }
+
+            for split, trajs in splits.items():
+                os.makedirs(f'dataset/{split}', exist_ok=True)
+                for traj in trajs:
+                    shutil.copy(f'all_trajectories/{traj}', f'dataset/{split}/{traj}')
+
+    def generate_image_from_points(self, points, w, h):
+        if len(points) == 0:
+            return np.zeros((h, w), dtype=np.uint8)
+        points = points.copy()
+        points = points.astype(np.float32)
+        img = np.zeros((h, w), dtype=np.uint8)
+        if points.shape[0] > 3:
+            try:
+                contour = self.synthetic_image_generator.alpha_shape(points, alpha=0.02).astype(np.int32)
+                contour_cv = contour.reshape((-1, 1, 2))
+                cv2.fillPoly(img, [contour_cv], color=255)
+            except:
+                for point in points:
+                    x, y = int(point[0]), int(point[1])
+                    if 0 <= x < w and 0 <= y < h:
+                        cv2.circle(img, (x, y), radius=1, color=255, thickness=-1)
+        else:
+            for point in points:
+                x, y = int(point[0]), int(point[1])
+                if 0 <= x < w and 0 <= y < h:
+                    cv2.circle(img, (x, y), radius=1, color=255, thickness=-1)
+        return img
 
     def __getitem__(self, idx):
-        image_path = os.path.join(self.image_dir, self.images[idx])
-        mask_path = os.path.join(self.mask_dir, self.images[idx])
-        
-        image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
-        
-        image = cv2.copyMakeBorder(
-            image, 
+        pickle_file = self.pickle_files[idx]
+        markers_path = os.path.join(self.markers_pickle_dir, pickle_file)
+        with open(markers_path, 'rb') as f:
+            markers_data = pickle.load(f)
+        vein_path = os.path.join(self.vein_pickle_dir, pickle_file)
+        with open(vein_path, 'rb') as f:
+            vein_data = pickle.load(f)
+        markers = markers_data[-1] if markers_data else np.array([])
+        vein = vein_data[-1] if vein_data else np.array([])
+        w = h = SYSTEM_PARAMS.cnn.input_size
+        markers_img = self.generate_image_from_points(markers, w, h)
+        vein_img = self.generate_image_from_points(vein, w, h)
+        markers_img = cv2.copyMakeBorder(
+            markers_img,
             self.pad_top, self.pad_bottom, self.pad_left, self.pad_right,
-            cv2.BORDER_REFLECT
+            cv2.BORDER_REPLICATE
         )
-        mask = cv2.copyMakeBorder(
-            mask, 
+        vein_img = cv2.copyMakeBorder(
+            vein_img,
             self.pad_top, self.pad_bottom, self.pad_left, self.pad_right,
-            cv2.BORDER_REFLECT
+            cv2.BORDER_REPLICATE
         )
-        
-        image = image.astype(np.float32) / 255.0
-        mask = (mask > 127).astype(np.float32)
-        
-        return image, mask
+        markers_img = markers_img.astype(np.float32) / 255.0
+        vein_img = (vein_img > 127).astype(np.float32)
+        return markers_img, vein_img
 
     @staticmethod
     def create_splits(
@@ -86,3 +146,42 @@ class TransformDataset(torch.utils.data.Dataset):
             image = augmented["image"]
             mask = augmented["mask"]
         return image, mask
+
+
+class MyDataset(torch.utils.data.Dataset):
+    def __init__(self, split):
+        super().__init__()
+        self.split = split
+        self.image_dir = Path(f'{SYSTEM_PARAMS.files.dataset_root}/splits/{split}/images')
+        self.label_dir = Path(f'{SYSTEM_PARAMS.files.dataset_root}/splits/{split}/labels')
+        self.trajectory_dirs = sorted([d for d in self.image_dir.iterdir() if d.is_dir()])
+
+        self.samples = []
+        for traj_dir in self.trajectory_dirs:
+            traj_num = int(traj_dir.name.split('_')[1])
+            image_files = sorted(traj_dir.glob('img_*.pkl'))
+            
+            for img_file in image_files:
+                img_num = int(img_file.stem.split('_')[1])
+                label_file = self.label_dir / f'trajectory_{traj_num:04d}' / f'img_{img_num:04d}.pkl'
+                if label_file.exists():
+                    self.samples.append((img_file, label_file))
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        image_path, label_path = self.samples[idx]
+        
+        with open(image_path, 'rb') as f:
+            image = pickle.load(f)
+        
+        with open(label_path, 'rb') as f:
+            label = pickle.load(f)
+        
+        if not isinstance(image, torch.Tensor):
+            image = torch.from_numpy(image)
+        if not isinstance(label, torch.Tensor):
+            label = torch.from_numpy(label)
+            
+        return image, label

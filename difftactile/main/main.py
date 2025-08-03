@@ -88,9 +88,7 @@ class Contact:
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.fisheye_model = FisheyeModel()
         self.set_up_system_params()
-        self.load_system_identification_data_1()
-        self.load_system_identification_data_2()
-        self.load_system_identification_data_3()
+        self.load_system_identification_data()
         self.vitactip = ViTacTip()
         self.phantom = Phantom()
         self.set_up_initial_positions_and_trajectory_first_init_only()
@@ -110,6 +108,11 @@ class Contact:
     @ti.kernel
     def bp(self):
         self.fp_bp[None] = 1
+
+    def load_system_identification_data(self):
+        self.load_system_identification_data_1()
+        self.load_system_identification_data_2()
+        self.load_system_identification_data_3()
 
     def load_system_identification_data_1(self):
         self.exp_marker_shapes_np = np.zeros(shape=(4, 3), dtype=int)
@@ -171,7 +174,6 @@ class Contact:
             shape=(),
             needs_grad=False
         )
-        
     
     @ti.kernel
     def load_system_identification_data_2(self):
@@ -1190,7 +1192,9 @@ class Contact:
     def clear_training_data_folders(self):
         folders = [
             SYSTEM_PARAMS.files.training_data_markers_folder,
-            SYSTEM_PARAMS.files.training_data_segmentation_mask_folder
+            SYSTEM_PARAMS.files.training_data_segmentation_mask_folder,
+            SYSTEM_PARAMS.files.training_data_markers_pickle_folder,
+            SYSTEM_PARAMS.files.training_data_segmentation_mask_pickle_folder
         ]
         for folder in folders:
             for file in os.listdir(folder):
@@ -1222,6 +1226,12 @@ class Contact:
             x, y = int(point[0]), int(point[1])
             cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
         cv2.imwrite(markers_file, markers_img)
+        markers_pickle_file = SYSTEM_PARAMS.files.training_data_markers_pickle.format(
+            training_iteration,
+            ts
+        )
+        with open(markers_pickle_file, 'wb') as f:
+            pickle.dump(markers, f)
 
         nodes = self.vitactip.projection_2d_dome_surface_nodes_deformed.to_numpy()
         contact_mask = self.vitactip.dome_surface_node_contact_mask.to_numpy().astype(bool)
@@ -1238,13 +1248,24 @@ class Contact:
         vein = self.synthetic_image_generator.crop(vein)
         vein = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, vein)
         vein /= k
+        vein_points_filtered = []
+        for point in vein:
+            x, y = int(point[0]), int(point[1])
+            if 0 <= x < w_scaled and 0 <= y < h_scaled and contact_img[y, x] > 0:
+                vein_points_filtered.append(point)
+        vein = np.array(vein_points_filtered)
         vein_img = np.zeros((w_scaled, h_scaled), dtype=np.uint8)
-        contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
-        contour_vein_cv = contour_vein.reshape((-1, 1, 2))
-        cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
-        vein_img = cv2.bitwise_and(vein_img, contact_img)
+        if len(vein) > 0:
+            contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
+            contour_vein_cv = contour_vein.reshape((-1, 1, 2))
+            cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
         cv2.imwrite(vein_file, vein_img)
-
+        vein_pickle_file = SYSTEM_PARAMS.files.training_data_segmentation_mask_pickle.format(
+            training_iteration,
+            ts
+        )
+        with open(vein_pickle_file, 'wb') as f:
+            pickle.dump(vein, f)
 
     def take_2d_markers_snapshot(self, k):
         self.take_snapshot_1(k)

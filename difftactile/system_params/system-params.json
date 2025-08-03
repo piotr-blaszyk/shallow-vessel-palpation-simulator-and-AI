@@ -285,12 +285,6 @@
         "validation_point_E": "difftactile/output/validation_point_E.pkl",
         "vitactip_points_E": "difftactile/output/vitactip_points_E.pkl",
         "losses": "difftactile/output/losses_{}.png",
-        "training_data_markers": "difftactile/output/training_data/markers/image_{:04d}_{:04d}.png",
-        "training_data_segmentation_mask": "difftactile/output/training_data/segmentation_mask/image_{:04d}_{:04d}.png",
-        "training_data_contact": "difftactile/output/training_data/contact/image_{:04d}_{:04d}.png",
-        "training_data_contact_folder": "difftactile/output/training_data/contact",
-        "training_data_markers_folder": "difftactile/output/training_data/markers",
-        "training_data_segmentation_mask_folder": "difftactile/output/training_data/segmentation_mask",
         "phantom_uncropped_compressed": "difftactile/manual_or_experimental_data/phantom-uncropped-compressed.jpg",
         "phantom_uncropped_compressed_undistorted": "difftactile/manual_or_experimental_data/phantom-uncropped-compressed-undistorted.jpg",
         "phantom_ground_truth_segmentation_mask": "difftactile/output/phantom_ground_truth_segmentation_mask.jpg",
@@ -305,6 +299,18 @@
         "vein_slide_across_segmentation_mask_full_hd": "difftactile/output/vein_slide_across/segmentation_mask_full_hd/frame_{:04d}.png",
         "vein_slide_across_segmentation_mask_folder_full_hd": "difftactile/output/vein_slide_across/segmentation_mask_full_hd",
         "segmentation_model_weights": "saved_models/final_segmentation_model.pt",
-        "vein_slide_across_predicted_aggregated_segmentation_mask": "difftactile/output/vein_slide_across/segmentation_mask_predicted_aggregated.png"
+        "vein_slide_across_predicted_aggregated_segmentation_mask": "difftactile/output/vein_slide_across/segmentation_mask_predicted_aggregated.png",
+
+        "training_data_markers": "difftactile/output/training_data/images/image_{:04d}_{:04d}.png",
+        "training_data_segmentation_mask": "difftactile/output/training_data/labels/image_{:04d}_{:04d}.png",
+        "training_data_contact": "difftactile/output/training_data/contact/image_{:04d}_{:04d}.png",
+        "training_data_contact_folder": "difftactile/output/training_data/contact",
+        "training_data_markers_folder": "difftactile/output/training_data/images",
+        "training_data_segmentation_mask_folder": "difftactile/output/training_data/labels",
+        "training_data_markers_pickle": "difftactile/output/training_data/pickle/images/trajectory_{:04d}/img_{:04d}.pkl",
+        "training_data_markers_pickle_folder": "difftactile/output/training_data/pickle/images",
+        "training_data_segmentation_mask_pickle": "difftactile/output/training_data/pickle/labels/trajectory_{:04d}/img_{:04d}.pkl",
+        "training_data_segmentation_mask_pickle_folder": "difftactile/output/training_data/pickle/labels",
+        "dataset_root": "difftactile/output/training_data"
     }
 }
