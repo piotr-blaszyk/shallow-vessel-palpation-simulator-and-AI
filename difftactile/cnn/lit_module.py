@@ -1,19 +1,22 @@
 import pytorch_lightning as pl
-import segmentation_models_pytorch as smp
 import torch
 import torch.nn.functional as F
+from monai.networks.nets import UNet
+from monai.losses import DiceLoss
 
 
 class SegmentationModel(pl.LightningModule):
     def __init__(self, lr=1e-3):
         super().__init__()
-        self.model = smp.Unet(
-            encoder_name="timm-mobilenetv3_small_075",
-            encoder_weights=None,
+        self.model = UNet(
+            spatial_dims=3,
             in_channels=1,
-            classes=1,
+            out_channels=1,
+            channels=(16, 32, 64),
+            strides=(2, 2),
+            num_res_units=2,
         )
-        self.loss_fn = smp.losses.DiceLoss(mode="binary")
+        self.loss_fn = DiceLoss(sigmoid=True, batch=True)
         self.lr = lr
 
     def forward(self, x):
@@ -26,6 +29,7 @@ class SegmentationModel(pl.LightningModule):
         probs = torch.sigmoid(logits)
         preds = (probs > 0.5).float()
         preds = preds.squeeze(1)
+        y = y.squeeze(1)
         iou = self.iou_score(preds, y)
         self.log(f"{stage}_loss", loss, prog_bar=True, on_epoch=True)
         self.log(f"{stage}_iou", iou, prog_bar=True, on_epoch=True)
@@ -44,7 +48,7 @@ class SegmentationModel(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
 
     def iou_score(self, preds, targets, eps=1e-6):
-        intersection = (preds * targets).sum(dim=(1, 2))
-        union = (preds + targets).sum(dim=(1, 2)) - intersection
+        intersection = (preds * targets).sum(dim=(1, 2, 3))
+        union = (preds + targets).sum(dim=(1, 2, 3)) - intersection
         iou = (intersection + eps) / (union + eps)
         return iou.mean()

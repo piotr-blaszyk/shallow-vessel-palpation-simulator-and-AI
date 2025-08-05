@@ -9,10 +9,12 @@ import numpy as np
 import pickle
 import shutil
 import random
+import math
 from pathlib import Path
 
 from difftactile.main.constants import *
 from difftactile.main.main import SyntheticImageGenerator
+from difftactile.sensor_model.fisheye_model import *
 
 
 class SegmentationDataset(Dataset):
@@ -149,10 +151,12 @@ class TransformDataset(torch.utils.data.Dataset):
 
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, split):
+    def __init__(self, split, apply_augmentation=False):
         super().__init__()
         self.synthetic_image_generator = SyntheticImageGenerator()
+        self.fisheye_model = FisheyeModel()
         self.split = split
+        self.apply_augmentation = apply_augmentation
         self.image_dir = Path(f'{SYSTEM_PARAMS.files.dataset_root}/splits/{split}/images')
         self.label_dir = Path(f'{SYSTEM_PARAMS.files.dataset_root}/splits/{split}/labels')
         self.trajectory_dirs = sorted([d for d in self.image_dir.iterdir() if d.is_dir()])
@@ -186,6 +190,17 @@ class MyDataset(torch.utils.data.Dataset):
         with open(label_path, 'rb') as f:
             label = pickle.load(f)
         
+        if self.apply_augmentation and self.split == 'train':
+            
+            image = self.augmentation_rotation(image)
+            label = self.augmentation_rotation(label)
+            image = self.shift_radial(image)
+            label = self.shift_radial(label)
+            image = self.uniform_shift(image)
+            label = self.uniform_shift(label)
+            image = self.rotate_xy(image)
+            label = self.rotate_xy(label)
+        
         image = self.generate_markers_image(image)
         label = self.generate_vein_image(label)
 
@@ -210,3 +225,94 @@ class MyDataset(torch.utils.data.Dataset):
             contour_vein_cv = contour_vein.reshape((-1, 1, 2))
             cv2.fillPoly(image, [contour_vein_cv], color=255)
         return image
+
+    def augmentation_rotation(self, points):
+        discrete_angles = [0, 60, 120, 180, 240, 300]
+        angle_degrees = random.choice(discrete_angles)
+        cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
+        cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
+        if len(points) == 0:
+            return points
+        angle_rad = math.radians(angle_degrees)
+        cos_a = math.cos(angle_rad)
+        sin_a = math.sin(angle_rad)
+        centered_points = points - np.array([cx, cy])
+        rotated_points = np.zeros_like(centered_points)
+        rotated_points[:, 0] = centered_points[:, 0] * cos_a - centered_points[:, 1] * sin_a
+        rotated_points[:, 1] = centered_points[:, 0] * sin_a + centered_points[:, 1] * cos_a
+        rotated_points = rotated_points + np.array([cx, cy])
+        return rotated_points
+
+    def uniform_shift(self, points):
+        if len(points) == 0:
+            return points
+        angle_rad = random.uniform(0, 2 * math.pi)
+        magnitude = random.uniform(0, 20)
+        shift_x = magnitude * math.cos(angle_rad)
+        shift_y = magnitude * math.sin(angle_rad)
+        shifted_points = points + np.array([shift_x, shift_y])
+        return shifted_points
+
+    def shift_radial(self, points):
+        if len(points) == 0:
+            return points
+        cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
+        cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
+        radial_shift = random.uniform(-10, 10)
+        shifted_points = np.zeros_like(points)
+        for i, point in enumerate(points):
+            dx = point[0] - cx
+            dy = point[1] - cy
+            distance = math.sqrt(dx**2 + dy**2)
+            if distance > 0:
+                unit_x = dx / distance
+                unit_y = dy / distance
+                shifted_points[i, 0] = point[0] + radial_shift * unit_x
+                shifted_points[i, 1] = point[1] + radial_shift * unit_y
+            else:
+                shifted_points[i] = point
+        return shifted_points
+
+    def rotate_xy(self, points):
+        if len(points) == 0:
+            return points
+        points_3d = self.fisheye_model.project_pix_to_points_3d_plane(points)
+        z_coord = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1
+        points_3d[:, 2] = z_coord
+        angle_x = math.radians(random.uniform(-10, 10))
+        angle_y = math.radians(random.uniform(-10, 10))
+        
+        # Rotation matrices
+        # Rotation around x-axis (line parallel to x-axis through (0,0,z_coord))
+        cos_x = math.cos(angle_x)
+        sin_x = math.sin(angle_x)
+        Rx = np.array([
+            [1, 0, 0],
+            [0, cos_x, -sin_x],
+            [0, sin_x, cos_x]
+        ])
+        
+        # Rotation around y-axis (line parallel to y-axis through (0,0,z_coord))
+        cos_y = math.cos(angle_y)
+        sin_y = math.sin(angle_y)
+        Ry = np.array([
+            [cos_y, 0, sin_y],
+            [0, 1, 0],
+            [-sin_y, 0, cos_y]
+        ])
+        
+        # Apply rotations: first around x-axis, then around y-axis
+        rotated_points_3d = np.zeros_like(points_3d)
+        for i, point_3d in enumerate(points_3d):
+            # Apply x-axis rotation
+            point_rotated_x = Rx @ point_3d
+            # Apply y-axis rotation
+            point_rotated_xy = Ry @ point_rotated_x
+            rotated_points_3d[i] = point_rotated_xy
+        
+        # Project back to 2D
+        rotated_points_2d = self.fisheye_model.project_points_3d_plane_to_pix(rotated_points_3d)
+        
+        return rotated_points_2d
+
+
