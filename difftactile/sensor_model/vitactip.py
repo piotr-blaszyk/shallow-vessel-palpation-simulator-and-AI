@@ -163,7 +163,7 @@ class ViTacTip:
             pos = ti.Vector(
                 [surface_nodes[i, 0], surface_nodes[i, 1], surface_nodes[i, 2]]
             )
-            proj = self.fisheye_model.project_3d_2d_ti(pos)
+            proj = self.fisheye_model.project_3d_2d(pos)
             output_projections[i, 0] = proj[0]
             output_projections[i, 1] = proj[1]
 
@@ -477,7 +477,7 @@ class ViTacTip:
                 homogeneous_point_E[2],
             ]
         )
-        projection_2d = self.fisheye_model.project_3d_2d_ti(
+        projection_2d = self.fisheye_model.project_3d_2d(
             inhomogeneous_point_E
         )
         return projection_2d

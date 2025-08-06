@@ -149,6 +149,39 @@ class TransformDataset(torch.utils.data.Dataset):
             mask = augmented["mask"]
         return image, mask
 
+class MarkerTrajectoryDataset(Dataset):
+    def __init__(self, data_dir, clip_len=16, transform=None):
+        self.data_dir = data_dir
+        self.clip_len = clip_len
+        self.transform = transform
+        self.files = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith('.pkl')]
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        with open(self.files[idx], 'rb') as f:
+            data = pickle.load(f)
+
+        markers = data["marker_positions"]  # shape: (T, N, 2)
+        total_frames = markers.shape[0]
+
+        if total_frames < self.clip_len:
+            raise ValueError(f"Clip too short: {total_frames} < {self.clip_len}")
+
+        # Random temporal cropping
+        start = random.randint(0, total_frames - self.clip_len)
+        clip = markers[start:start + self.clip_len]  # shape: (clip_len, N, 2)
+
+        # Optional: convert to tensor
+        clip = torch.tensor(clip, dtype=torch.float32)  # shape: (T, N, 2)
+
+        # Optional: apply transform
+        if self.transform:
+            clip = self.transform(clip)
+
+        return clip
+
 
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, split, apply_augmentation=False):
@@ -214,6 +247,27 @@ class MyDataset(torch.utils.data.Dataset):
             label = torch.from_numpy(label)
         
         return image, label
+
+    @staticmethod
+    def create_splits(
+        dataset, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42
+    ):
+        assert abs(train_size + val_size + test_size - 1.0) < 1e-10, (
+            "Split proportions must sum to 1"
+        )
+        indices = np.arange(len(dataset))
+        train_idx, temp_idx = train_test_split(
+            indices, train_size=train_size, random_state=random_state
+        )
+        relative_val_size = val_size / (val_size + test_size)
+        val_idx, test_idx = train_test_split(
+            temp_idx, train_size=relative_val_size, random_state=random_state
+        )
+        return (
+            Subset(dataset, train_idx),
+            Subset(dataset, val_idx),
+            Subset(dataset, test_idx),
+        )
 
     def generate_markers_image(self, points):
         image = np.zeros((self.w_scaled, self.h_scaled), dtype=np.uint8)

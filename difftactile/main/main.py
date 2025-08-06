@@ -100,6 +100,11 @@ class Contact:
         self.set_up_snapshot()
         self.set_up_loss_computation()
         self.visualisation_initialise()
+        self.training_data_collection_initialise()
+    
+    def training_data_collection_initialise(self):
+        self.marker_data = []
+        self.vein_data = []
 
     @ti.kernel
     def fp(self):
@@ -1214,19 +1219,9 @@ class Contact:
         cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
         r = SYSTEM_PARAMS.fisheye_model.circle_radius
 
-        markers_pickle_file = SYSTEM_PARAMS.files.training_data_markers_pickle.format(
-            training_iteration,
-            ts
-        )
-        vein_pickle_file = SYSTEM_PARAMS.files.training_data_segmentation_mask_pickle.format(
-            training_iteration,
-            ts
-        )
-
         markers = self.sim_markers_deformed_og_resolution.to_numpy()
         markers = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, markers)
-        with open(markers_pickle_file, 'wb') as f:
-            pickle.dump(markers, f)
+        self.marker_data.append(markers)
         markers_img = np.zeros((w, h), dtype=np.uint8)
         for point in markers:
             x, y = int(point[0]), int(point[1])
@@ -1250,8 +1245,7 @@ class Contact:
             if 0 <= x < w and 0 <= y < h and contact_img[y, x] > 0:
                 vein_points_filtered.append(point)
         vein = np.array(vein_points_filtered)
-        with open(vein_pickle_file, 'wb') as f:
-            pickle.dump(vein, f)
+        self.vein_data.append(vein)
         vein_img = np.zeros((w, h), dtype=np.uint8)
         if len(vein) > 0:
             contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
@@ -1284,6 +1278,22 @@ class Contact:
                 contour_vein_cv = contour_vein.reshape((-1, 1, 2))
                 cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
             cv2.imwrite(vein_file, vein_img)
+
+    def write_training_data_to_file(self, training_iteration):
+        markers_pickle_file = SYSTEM_PARAMS.files.training_data_markers_pickle.format(
+            training_iteration
+        )
+        vein_pickle_file = SYSTEM_PARAMS.files.training_data_segmentation_mask_pickle.format(
+            training_iteration
+        )
+
+        with open(markers_pickle_file, 'wb') as f:
+            pickle.dump(np.array(self.marker_data), f)
+        with open(vein_pickle_file, 'wb') as f:
+            pickle.dump(np.array(self.vein_data), f)
+        
+        self.marker_data = []
+        self.vein_data = []
 
     def take_2d_markers_snapshot(self, k):
         self.take_snapshot_1(k)

@@ -65,6 +65,7 @@ class MeshGenerator:
         gmsh.option.setNumber("Mesh.Optimize", 1)
         gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
         gmsh.option.setNumber("Mesh.Algorithm", 6)
+        gmsh.option.setNumber("Geometry.BooleanOptimizeTopology", 1)
         gmsh.option.setNumber(
             "Mesh.CharacteristicLengthFactor",
             SYSTEM_PARAMS.gmsh_mm.characteristic_length_factor,
@@ -209,6 +210,8 @@ class MeshGenerator:
             print(f"Gel Volume: {volumes['gel']:0.3e} m³")
             print(f"Shell Volume: {volumes['shell']:0.3e} m³")
         self.get_difftactile_variables()
+        gmsh.model.occ.synchronize()
+        gmsh.write(SYSTEM_PARAMS.files.sensor_geometry_step)
         gmsh.fltk.run()
         gmsh.finalize()
 
