@@ -172,11 +172,11 @@ class MyDataset(torch.utils.data.Dataset):
                 if label_file.exists():
                     self.samples.append((img_file, label_file))
         
-        w = SYSTEM_PARAMS.fisheye_model.crop_width
-        h = SYSTEM_PARAMS.fisheye_model.crop_height
-        k = 4
-        self.w_scaled = int(w / k)
-        self.h_scaled = int(h / k)
+        self.w = SYSTEM_PARAMS.fisheye_model.crop_width
+        self.h = SYSTEM_PARAMS.fisheye_model.crop_height
+        self.k = 4
+        self.w_scaled = int(self.w / self.k)
+        self.h_scaled = int(self.h / self.k)
 
     def __len__(self):
         return len(self.samples)
@@ -200,6 +200,10 @@ class MyDataset(torch.utils.data.Dataset):
             label = self.uniform_shift(label)
             image = self.rotate_xy(image)
             label = self.rotate_xy(label)
+            image = self.randomly_remove(image)
+        
+        image = self.downscale('markers', image)
+        label = self.downscale('vein', label)
         
         image = self.generate_markers_image(image)
         label = self.generate_vein_image(label)
@@ -276,14 +280,15 @@ class MyDataset(torch.utils.data.Dataset):
     def rotate_xy(self, points):
         if len(points) == 0:
             return points
+            
         points_3d = self.fisheye_model.project_pix_to_points_3d_plane(points)
         z_coord = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1
-        points_3d[:, 2] = z_coord
+        assert np.allclose(points_3d[:, 2], z_coord, atol=1e-6), f"All z-coordinates must be equal to {z_coord}"
+        
         angle_x = math.radians(random.uniform(-10, 10))
         angle_y = math.radians(random.uniform(-10, 10))
         
-        # Rotation matrices
-        # Rotation around x-axis (line parallel to x-axis through (0,0,z_coord))
+        # Rotation matrices around axes through origin
         cos_x = math.cos(angle_x)
         sin_x = math.sin(angle_x)
         Rx = np.array([
@@ -292,7 +297,6 @@ class MyDataset(torch.utils.data.Dataset):
             [0, sin_x, cos_x]
         ])
         
-        # Rotation around y-axis (line parallel to y-axis through (0,0,z_coord))
         cos_y = math.cos(angle_y)
         sin_y = math.sin(angle_y)
         Ry = np.array([
@@ -301,18 +305,55 @@ class MyDataset(torch.utils.data.Dataset):
             [-sin_y, 0, cos_y]
         ])
         
-        # Apply rotations: first around x-axis, then around y-axis
+        # Apply rotations: translate to origin, rotate, translate back
         rotated_points_3d = np.zeros_like(points_3d)
         for i, point_3d in enumerate(points_3d):
-            # Apply x-axis rotation
-            point_rotated_x = Rx @ point_3d
-            # Apply y-axis rotation
+            # Translate so that (0,0,z_coord) becomes origin
+            translated_point = point_3d - np.array([0, 0, z_coord])
+            
+            # Apply x-axis rotation around origin
+            point_rotated_x = Rx @ translated_point
+            
+            # Apply y-axis rotation around origin
             point_rotated_xy = Ry @ point_rotated_x
-            rotated_points_3d[i] = point_rotated_xy
+            
+            # Translate back
+            rotated_points_3d[i] = point_rotated_xy + np.array([0, 0, z_coord])
         
         # Project back to 2D
-        rotated_points_2d = self.fisheye_model.project_points_3d_plane_to_pix(rotated_points_3d)
+        rotated_points_2d = self.fisheye_model.project_3d_2d_np(rotated_points_3d)
         
         return rotated_points_2d
+    
+    def randomly_remove(self, points):
+        if len(points) == 0:
+            return points
+        k = random.randint(0, min(20, len(points)))
+        if k == 0:
+            return points
+        indices_to_remove = random.sample(range(len(points)), k)
+        mask = np.ones(len(points), dtype=bool)
+        mask[indices_to_remove] = False
+        return points[mask]
 
+    def downscale(self, mode, points):
+        if mode == 'markers':
+            markers = self.synthetic_image_generator.crop(points)
+            markers /= self.k
+            markers_img = np.zeros((self.w_scaled, self.h_scaled), dtype=np.uint8)
+            for point in markers:
+                x, y = int(point[0]), int(point[1])
+                cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
+            return markers_img
+        elif mode == 'vein':
+            vein = self.synthetic_image_generator.crop(points)
+            vein /= self.k
+            vein_img = np.zeros((self.w_scaled, self.h_scaled), dtype=np.uint8)
+            if len(vein) > 0:
+                contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
+                contour_vein_cv = contour_vein.reshape((-1, 1, 2))
+                cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
+            return vein_img
+        else:
+            raise Exception()
 

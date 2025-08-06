@@ -32,20 +32,26 @@ class FisheyeModel:
         p[1] = -r_y * ti.sin(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_y
         return p
 
-    def project_points_to_pix(self, a):
-        raise Exception("use the taichi version instead")
-        b = np.array([[0.0, 0.0, 1.0]]).repeat(len(a), axis=0)
-        inner_product = (a * b).sum(axis=1)
-        a_norm = np.linalg.norm(a, axis=1)
-        b_norm = np.linalg.norm(b, axis=1)
-        cos = inner_product / (a_norm * b_norm)
+    def project_3d_2d_np(self, a):
+        a = np.asarray(a)
+        if a.ndim == 1:
+            a = a.reshape(1, 3)
+        a_norm = np.linalg.norm(a, axis=1, keepdims=True)
+        a_norm = np.maximum(a_norm, 1e-12)
+        cos = a[:, 2:3] / a_norm.flatten()
+        cos = np.clip(cos, -1.0, 1.0)
         theta = np.arccos(cos)
-        omega = np.arctan2(a[:, 1], a[:, 0]) + np.pi
+        x_normalized = np.where(
+            np.abs(a[:, 0]) < 1e-10,
+            np.where(a[:, 0] >= 0, 1e-10, -1e-10),
+            a[:, 0]
+        )
+        omega = np.arctan2(a[:, 1], x_normalized) + np.pi
         r_x = SYSTEM_PARAMS.fisheye_model.focal_length_x * theta
         r_y = SYSTEM_PARAMS.fisheye_model.focal_length_y * theta
         p = np.zeros((len(a), 2))
-        p[:, 0] = r_x * np.cos(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_x
-        p[:, 1] = r_y * np.sin(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_y
+        p[:, 0] = -r_x * np.cos(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_x
+        p[:, 1] = -r_y * np.sin(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_y
         return p
 
     def project_pix_to_points(self, p, hemisphere_radius):
