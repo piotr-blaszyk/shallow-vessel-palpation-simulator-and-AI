@@ -1203,8 +1203,8 @@ class Contact:
                     os.remove(file_path)
 
     def record_training_data_point(self, training_iteration, ts):
-        w = SYSTEM_PARAMS.fisheye_model.target_image_width
-        h = SYSTEM_PARAMS.fisheye_model.target_image_height
+        w = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
+        h = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
 
         markers_file = SYSTEM_PARAMS.files.training_data_markers.format(training_iteration, ts)
         vein_file = SYSTEM_PARAMS.files.training_data_segmentation_mask.format(training_iteration, ts)
@@ -1225,9 +1225,10 @@ class Contact:
 
         markers = self.sim_markers_deformed_og_resolution.to_numpy()
         markers = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, markers)
+        os.makedirs(os.path.dirname(markers_pickle_file), exist_ok=True)
         with open(markers_pickle_file, 'wb') as f:
             pickle.dump(markers, f)
-        markers_img = np.zeros((w, h), dtype=np.uint8)
+        markers_img = np.zeros((h, w), dtype=np.uint8)
         for point in markers:
             x, y = int(point[0]), int(point[1])
             cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
@@ -1236,10 +1237,12 @@ class Contact:
         nodes = self.vitactip.projection_2d_dome_surface_nodes_deformed.to_numpy()
         contact_mask = self.vitactip.dome_surface_node_contact_mask.to_numpy().astype(bool)
         nodes = nodes[contact_mask]
-        contact_img = np.zeros((w, h), dtype=np.uint8)
-        contour_contact = self.synthetic_image_generator.alpha_shape(nodes, alpha=0.02).astype(np.int32)
-        contour_contact_cv = contour_contact.reshape((-1, 1, 2))
-        cv2.fillPoly(contact_img, [contour_contact_cv], color=255)
+        contact_img = np.zeros((h, w), dtype=np.uint8)
+        if len(nodes) >= 4:
+            contour_contact = self.synthetic_image_generator.alpha_shape(nodes, alpha=0.02).astype(np.int32)
+            if len(contour_contact) > 0:
+                contour_contact_cv = contour_contact.reshape((-1, 1, 2))
+                cv2.fillPoly(contact_img, [contour_contact_cv], color=255)
         cv2.imwrite(contact_file, contact_img)
         
         vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
@@ -1250,9 +1253,10 @@ class Contact:
             if 0 <= x < w and 0 <= y < h and contact_img[y, x] > 0:
                 vein_points_filtered.append(point)
         vein = np.array(vein_points_filtered)
+        os.makedirs(os.path.dirname(vein_pickle_file), exist_ok=True)
         with open(vein_pickle_file, 'wb') as f:
             pickle.dump(vein, f)
-        vein_img = np.zeros((w, h), dtype=np.uint8)
+        vein_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
             contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
             contour_vein_cv = contour_vein.reshape((-1, 1, 2))

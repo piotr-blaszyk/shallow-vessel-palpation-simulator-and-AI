@@ -300,7 +300,6 @@
         "vein_slide_across_segmentation_mask_folder_full_hd": "difftactile/output/vein_slide_across/segmentation_mask_full_hd",
         "segmentation_model_weights": "saved_models/final_segmentation_model.pt",
         "vein_slide_across_predicted_aggregated_segmentation_mask": "difftactile/output/vein_slide_across/segmentation_mask_predicted_aggregated.png",
-
         "training_data_markers": "difftactile/output/training_data/images/image_{:04d}_{:04d}.png",
         "training_data_segmentation_mask": "difftactile/output/training_data/labels/image_{:04d}_{:04d}.png",
         "training_data_contact": "difftactile/output/training_data/contact/image_{:04d}_{:04d}.png",
