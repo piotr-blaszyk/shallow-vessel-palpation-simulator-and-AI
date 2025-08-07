@@ -13,7 +13,7 @@
         "single_material": {
             "density": 1.100e+03,
             "poissons_ratio": 4.990e-01,
-            "youngs_modulus": 1.200e+03
+            "youngs_modulus": 2.400e+04
         },
         "collision_search_distance": 2.500e+00,
         "keypoint_search_z_threshold": 2.500e-03,
@@ -40,7 +40,7 @@
         "silicone": {
             "density": 900,
             "poissons_ratio": 4.600e-01,
-            "youngs_modulus": 1.200e+03
+            "youngs_modulus": 2.400e+04
         },
         "hard_plastic": {
             "density": 1150,
@@ -55,14 +55,14 @@
     },
     "contact": {
         "dt": 1.270e-06,
-        "normal_stiffness": 1.260e+02,
-        "tangential_stiffness": 8.800e+01,
-        "normal_damping": 1.680e+00,
-        "coulomb_friction_coeff": 5.000e-01,
+        "normal_stiffness": 1.880e+02,
+        "tangential_stiffness": 1.320e+02,
+        "normal_damping": 2.780e+00,
+        "coulomb_friction_coeff": 8.500e-01,
         "num_sub_frames": 125,
         "num_opt_steps": 10,
         "num_training_trajectories": 100,
-        "pid_max_speed_translation": 2.500e-02,
+        "pid_max_speed_translation": 2.500e-01,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,
         "pid_ki": 0.000e+00,
@@ -79,7 +79,7 @@
         "press_depth": 6.000e-02,
         "slide_distance": 1.250e-01,
         "press_depth_0": 2.500e-02,
-        "press_depth_1": 7.500e-03,
+        "press_depth_1": 1.000e-02,
         "press_depth_2": 1.500e-02,
         "press_depth_3": 2.000e-02,
         "press_depth_offset_0": 2.500e-03,
@@ -132,7 +132,7 @@
         "press_depth_1": 4.000e-03
     },
     "meta": {
-        "target_courant_number": 1.000e-01,
+        "target_courant_number": 2.000e-01,
         "enable_tactile_map": 1,
         "enable_pid_controller": 1,
         "distance_scaling_factor": 2.500e+00,

@@ -9,13 +9,13 @@
         "keypoint_search_xy_threshold": 0.010
     },
     "contact": {
-        "pid_max_speed_translation": 0.010,
+        "pid_max_speed_translation": 0.100,
         "pid_position_tolerance": 0.001,
         "tangential_velocity_detection_threshold": 1e-6
     },
     "trajectory": {
         "press_depth_0": 0.010,
-        "press_depth_1": 0.003,
+        "press_depth_1": 0.004,
         "press_depth_2": 0.006,
         "press_depth_3": 0.008,
         "slide_distance": 0.050,

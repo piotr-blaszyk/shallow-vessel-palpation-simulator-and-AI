@@ -1,4 +1,5 @@
 import numpy as np
+import json
 from difftactile.main.constants import *
 
 
@@ -125,30 +126,31 @@ def calculate_contact_parameters():
         print("System is underdamped - faster response but with oscillations")
     else:
         print("System is critically damped - fastest response without oscillations")
-    return {
-        "estimated": {
-            "normal_stiffness": k_n_estimated,
-            "tangential_stiffness": k_t_estimated,
-            "critical_damping": c_critical_estimated,
-            "normal_damping": c_recommended,
-            "damping_ratio": damping_ratio_estimated,
-            "friction_coefficient": mu_estimated,
-        },
-        "current": {
-            "normal_stiffness": k_n_current,
-            "tangential_stiffness": k_t_current,
-            "normal_damping": c_current,
-            "critical_damping": c_critical_current,
-            "damping_ratio": damping_ratio_current,
-            "friction_coefficient": mu_current,
-        },
-    }
+
+    # Load the current system parameters
+    system_params_file = "difftactile/system_params/system-params.json"
+    with open(system_params_file, 'r') as f:
+        system_params = json.load(f)
+
+    # Update the contact parameters with computed values
+    system_params['contact']['normal_stiffness'] = float(k_n_estimated)
+    system_params['contact']['tangential_stiffness'] = float(k_t_estimated)
+    system_params['contact']['normal_damping'] = float(c_recommended)
+    system_params['contact']['coulomb_friction_coeff'] = float(mu_estimated)
+
+    # Write the updated parameters back to file
+    with open(system_params_file, 'w') as f:
+        json.dump(system_params, f, indent=4)
+
+    print("\nSystem parameters file updated with computed contact parameters.")
 
 
 def main():
     calculate_cfl_timestep(
         phantom_healthy_youngs_modulus=SYSTEM_PARAMS.phantom.silicone.youngs_modulus,
+        phantom_tumour_youngs_modulus=SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus,
         vitactip_youngs_modulus=SYSTEM_PARAMS.vitactip.single_material.youngs_modulus,
+        courant_number=SYSTEM_PARAMS.meta.target_courant_number,
         verbose=True,
     )
     calculate_contact_parameters()
