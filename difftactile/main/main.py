@@ -1585,7 +1585,7 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y+SYSTEM_PARAMS.visualisation.camera_offset, z)
+        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
         self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
@@ -2072,7 +2072,7 @@ class Contact:
         for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
             print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
             # for i in range(contact_model.trajectories_np.shape[0]):
-            for i in range(0, 4):
+            for i in range(1, 2):
                 print(f'trajectory {i}: {self.trajectory_names[i]}')
                 self.trajectory_ix[None] = i
                 self.set_up_initial_positions_state_and_trajectory()
@@ -2108,6 +2108,7 @@ class Contact:
                 self.clear_grad()
                 self.prev_loss[None] = 0.0
                 self.trajectory_loss[None] = 0.0
+                continue
                 print("backward")
                 passes = 0
                 ts = total_ts-1
@@ -2271,4 +2272,4 @@ def main():
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
     contact_model.set_up_torch_params()
-    contact_model.collect_training_data()
+    contact_model.domain_adaptation()

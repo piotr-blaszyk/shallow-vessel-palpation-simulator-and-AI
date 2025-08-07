@@ -9,13 +9,13 @@
         "keypoint_search_xy_threshold": 0.010
     },
     "contact": {
-        "pid_max_speed_translation": 0.100,
+        "pid_max_speed_translation": 0.010,
         "pid_position_tolerance": 0.001,
         "tangential_velocity_detection_threshold": 1e-6
     },
     "trajectory": {
         "press_depth_0": 0.010,
-        "press_depth_1": 0.004,
+        "press_depth_1": 0.003,
         "press_depth_2": 0.006,
         "press_depth_3": 0.008,
         "slide_distance": 0.050,
@@ -36,7 +36,7 @@
     "geometry": {
         "gap": 0.001,
         "high_dist": 1.000,
-        "phantom_z_length": 0.022,
+        "phantom_z_length": 0.007,
         "phantom_x_length": 0.080,
         "phantom_y_length": 0.040,
         "distance_from_camera_lens_to_outer_shell_surface": 0.020,
