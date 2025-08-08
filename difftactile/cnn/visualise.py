@@ -37,45 +37,30 @@ def create_confusion_matrix_overlay(ground_truth, prediction):
 
 
 def visualize_predictions(model_path, num_samples):
-    full_dataset = SegmentationDataset(
-        SYSTEM_PARAMS.files.training_data_markers_folder,
-        SYSTEM_PARAMS.files.training_data_segmentation_mask_folder,
+    full_dataset = MyDataset(
+        data_dir=SYSTEM_PARAMS.files.dataset_root
     )
-    _, _, test_dataset = SegmentationDataset.create_splits(full_dataset)
-    test_transforms = A.Compose([ToTensorV2()])
-    test_dataset = TransformDataset(test_dataset, test_transforms)
+    train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
+        full_dataset, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42
+    )
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
     model = SegmentationModel()
-    if model_path:
-        model.load_state_dict(torch.load(model_path))
-    else:
-        checkpoint_dir = "lightning_logs"
-        versions = [d for d in os.listdir(checkpoint_dir) if d.startswith("version_")]
-        if versions:
-            latest_version = max(versions, key=lambda x: int(x.split("_")[1]))
-            checkpoints_dir = os.path.join(
-                checkpoint_dir, latest_version, "checkpoints"
-            )
-            checkpoint_files = os.listdir(checkpoints_dir)
-            if checkpoint_files:
-                model_path = os.path.join(checkpoints_dir, checkpoint_files[0])
-                model.load_state_dict(torch.load(model_path))
-                print(f"Loaded model from {model_path}")
+    model.load_state_dict(torch.load(model_path))
     model.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     
     fig, axes = plt.subplots(num_samples, 2, figsize=(10, 5 * num_samples))
     plt.tight_layout(pad=3.0)
-    
+
     with torch.no_grad():
         for i, (image, mask) in enumerate(test_loader):
             if i >= num_samples:
                 break
             image = image.to(device)
-            pred = model(image)
-            pred = torch.sigmoid(pred)
-            pred = (pred > 0.5).float()
+            logits = model(image)
+            probs = torch.sigmoid(logits)
+            pred = (probs > 0.5).float()
             
             image = image.cpu().numpy().squeeze()
             mask = mask.cpu().numpy().squeeze()
