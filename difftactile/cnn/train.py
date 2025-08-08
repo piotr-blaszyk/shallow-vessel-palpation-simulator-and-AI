@@ -13,28 +13,18 @@ from difftactile.main.constants import *
 
 
 def main():
-    BATCH_SIZE = 32
+    BATCH_SIZE = 8
     NUM_EPOCHS = 25
     NUM_WORKERS = 16
     LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="segmentation_model")
-    full_dataset = SegmentationDataset(
-        SYSTEM_PARAMS.files.training_data_markers_pickle_folder,
-        SYSTEM_PARAMS.files.training_data_segmentation_mask_pickle_folder
+    full_dataset = MyDataset(
+        data_dir=SYSTEM_PARAMS.files.dataset_root
     )
-    train_dataset, val_dataset, test_dataset = SegmentationDataset.create_splits(
+    train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
         full_dataset, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42
     )
-    train_transforms = A.Compose([
-        ToTensorV2()
-    ])
-    eval_transforms = A.Compose([
-        ToTensorV2()
-    ])
-    train_dataset = TransformDataset(train_dataset, train_transforms)
-    val_dataset = TransformDataset(val_dataset, eval_transforms)
-    test_dataset = TransformDataset(test_dataset, eval_transforms)
     train_loader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
     )

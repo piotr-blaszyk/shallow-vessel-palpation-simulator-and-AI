@@ -17,182 +17,16 @@ from difftactile.main.main import SyntheticImageGenerator
 from difftactile.sensor_model.fisheye_model import *
 
 
-class SegmentationDataset(Dataset):
-    def __init__(self, markers_pickle_dir, vein_pickle_dir):
-        self.synthetic_image_generator = SyntheticImageGenerator()
-        self.markers_pickle_dir = markers_pickle_dir
-        self.vein_pickle_dir = vein_pickle_dir
-        self.pickle_files = sorted([f for f in os.listdir(markers_pickle_dir) if f.endswith('.pickle')])[:1_000]
-        
-        self.target_size = SYSTEM_PARAMS.cnn.target_size
-        self.pad_h = self.target_size - SYSTEM_PARAMS.cnn.input_size
-        self.pad_w = self.target_size - SYSTEM_PARAMS.cnn.input_size
-        self.pad_top = self.pad_h // 2
-        self.pad_bottom = self.pad_h - self.pad_top
-        self.pad_left = self.pad_w // 2
-        self.pad_right = self.pad_w - self.pad_left
-
-    def __len__(self):
-        return len(self.pickle_files)
-
-    def split_files(self):
-        random.seed(42)
-        xs = [
-            'markers',
-            'segmentation_mask'
-        ]
-        for x in xs:
-            root = SYSTEM_PARAMS.files.dataset_root
-            cur_dir = f'{root}/pickle/{x}'
-            trajectory_dirs = sorted(os.listdir(cur_dir))
-            random.shuffle(trajectory_dirs)
-
-            n = len(trajectory_dirs)
-            train_split = int(0.8 * n)
-            val_split = int(0.9 * n)
-
-            splits = {
-                'train': trajectory_dirs[:train_split],
-                'val': trajectory_dirs[train_split:val_split],
-                'test': trajectory_dirs[val_split:]
-            }
-
-            for split, trajs in splits.items():
-                os.makedirs(f'dataset/{split}', exist_ok=True)
-                for traj in trajs:
-                    shutil.copy(f'all_trajectories/{traj}', f'dataset/{split}/{traj}')
-
-    def generate_image_from_points(self, points, w, h):
-        if len(points) == 0:
-            return np.zeros((h, w), dtype=np.uint8)
-        points = points.copy()
-        points = points.astype(np.float32)
-        img = np.zeros((h, w), dtype=np.uint8)
-        if points.shape[0] > 3:
-            try:
-                contour = self.synthetic_image_generator.alpha_shape(points, alpha=0.02).astype(np.int32)
-                contour_cv = contour.reshape((-1, 1, 2))
-                cv2.fillPoly(img, [contour_cv], color=255)
-            except:
-                for point in points:
-                    x, y = int(point[0]), int(point[1])
-                    if 0 <= x < w and 0 <= y < h:
-                        cv2.circle(img, (x, y), radius=1, color=255, thickness=-1)
-        else:
-            for point in points:
-                x, y = int(point[0]), int(point[1])
-                if 0 <= x < w and 0 <= y < h:
-                    cv2.circle(img, (x, y), radius=1, color=255, thickness=-1)
-        return img
-
-    def __getitem__(self, idx):
-        pickle_file = self.pickle_files[idx]
-        markers_path = os.path.join(self.markers_pickle_dir, pickle_file)
-        with open(markers_path, 'rb') as f:
-            markers_data = pickle.load(f)
-        vein_path = os.path.join(self.vein_pickle_dir, pickle_file)
-        with open(vein_path, 'rb') as f:
-            vein_data = pickle.load(f)
-        markers = markers_data[-1] if markers_data else np.array([])
-        vein = vein_data[-1] if vein_data else np.array([])
-        w = h = SYSTEM_PARAMS.cnn.input_size
-        markers_img = self.generate_image_from_points(markers, w, h)
-        vein_img = self.generate_image_from_points(vein, w, h)
-        markers_img = cv2.copyMakeBorder(
-            markers_img,
-            self.pad_top, self.pad_bottom, self.pad_left, self.pad_right,
-            cv2.BORDER_REPLICATE
-        )
-        vein_img = cv2.copyMakeBorder(
-            vein_img,
-            self.pad_top, self.pad_bottom, self.pad_left, self.pad_right,
-            cv2.BORDER_REPLICATE
-        )
-        markers_img = markers_img.astype(np.float32) / 255.0
-        vein_img = (vein_img > 127).astype(np.float32)
-        return markers_img, vein_img
-
-    @staticmethod
-    def create_splits(
-        dataset, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42
-    ):
-        assert abs(train_size + val_size + test_size - 1.0) < 1e-10, (
-            "Split proportions must sum to 1"
-        )
-        indices = np.arange(len(dataset))
-        train_idx, temp_idx = train_test_split(
-            indices, train_size=train_size, random_state=random_state
-        )
-        relative_val_size = val_size / (val_size + test_size)
-        val_idx, test_idx = train_test_split(
-            temp_idx, train_size=relative_val_size, random_state=random_state
-        )
-        return (
-            Subset(dataset, train_idx),
-            Subset(dataset, val_idx),
-            Subset(dataset, test_idx),
-        )
-
-class TransformDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset, transforms):
-        self.dataset = dataset
-        self.transforms = transforms
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, idx):
-        image, mask = self.dataset[idx]
-        if self.transforms:
-            augmented = self.transforms(image=image, mask=mask)
-            image = augmented["image"]
-            mask = augmented["mask"]
-        return image, mask
-
-class MarkerTrajectoryDataset(Dataset):
-    def __init__(self, data_dir, clip_len=16, transform=None):
-        self.data_dir = data_dir
-        self.clip_len = clip_len
-        self.transform = transform
-        self.files = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith('.pkl')]
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, idx):
-        with open(self.files[idx], 'rb') as f:
-            data = pickle.load(f)
-
-        markers = data["marker_positions"]  # shape: (T, N, 2)
-        total_frames = markers.shape[0]
-
-        if total_frames < self.clip_len:
-            raise ValueError(f"Clip too short: {total_frames} < {self.clip_len}")
-
-        # Random temporal cropping
-        start = random.randint(0, total_frames - self.clip_len)
-        clip = markers[start:start + self.clip_len]  # shape: (clip_len, N, 2)
-
-        # Optional: convert to tensor
-        clip = torch.tensor(clip, dtype=torch.float32)  # shape: (T, N, 2)
-
-        # Optional: apply transform
-        if self.transform:
-            clip = self.transform(clip)
-
-        return clip
-
-
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir, mode, clip_len=16, apply_augmentation=False, clips_per_trajectory=8):
+    def __init__(self, data_dir, mode=None, clip_len=16, apply_augmentation=True, clips_per_trajectory=4):
         super().__init__()
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.fisheye_model = FisheyeModel()
         self.data_dir = data_dir
         self.clip_len = clip_len
-        self.mode = mode
         self.apply_augmentation = apply_augmentation
         self.clips_per_trajectory = clips_per_trajectory
+        self.mode = mode
         self.files = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith('.pkl')]
         
         self.w = SYSTEM_PARAMS.fisheye_model.crop_width
@@ -203,33 +37,40 @@ class MyDataset(torch.utils.data.Dataset):
 
         # Pre-compute valid clips for each trajectory
         self.clips = []
+        # Possible dilation factors
+        dilations = [1, 2, 3]
+        
         for file_path in self.files:
             with open(file_path, 'rb') as f:
                 data = pickle.load(f)
             total_frames = data["markers"].shape[0]
             
-            if total_frames >= self.clip_len:
-                if mode != 'train':
-                    # Deterministic, evenly spaced clips for val/test
-                    stride = max(1, (total_frames - self.clip_len) // self.clips_per_trajectory)
-                    start_indices = list(range(0, total_frames - self.clip_len + 1, stride))[:self.clips_per_trajectory]
-                else:
-                    # For training, pre-compute more start indices than needed
-                    # This maintains randomness while allowing reproducible splits
-                    num_possible_starts = total_frames - self.clip_len + 1
-                    start_indices = sorted(random.sample(
-                        range(num_possible_starts), 
-                        min(self.clips_per_trajectory, num_possible_starts)
-                    ))
+            # For each dilation factor
+            for dilation in dilations:
+                # Calculate required clip length for this dilation
+                dilated_clip_len = self.clip_len * dilation
                 
-                for start_idx in start_indices:
-                    self.clips.append((file_path, start_idx))
+                if total_frames >= dilated_clip_len:
+                    if self.mode != 'train':
+                        # Deterministic, evenly spaced clips for val/test
+                        stride = max(1, (total_frames - dilated_clip_len) // self.clips_per_trajectory)
+                        start_indices = list(range(0, total_frames - dilated_clip_len + 1, stride))[:self.clips_per_trajectory]
+                    else:
+                        # For training, pre-compute more start indices than needed
+                        num_possible_starts = total_frames - dilated_clip_len + 1
+                        start_indices = sorted(random.sample(
+                            range(num_possible_starts), 
+                            min(self.clips_per_trajectory, num_possible_starts)
+                        ))
+                    
+                    for start_idx in start_indices:
+                        self.clips.append((file_path, start_idx, dilation))
 
     def __len__(self):
         return len(self.clips)
 
     def __getitem__(self, idx):
-        file_path, start = self.clips[idx]
+        file_path, start, dilation = self.clips[idx]
         
         with open(file_path, 'rb') as f:
             data = pickle.load(f)
@@ -237,10 +78,12 @@ class MyDataset(torch.utils.data.Dataset):
         images_all = data["markers"]  # shape: (T, N, 2)
         labels_all = data["labels"]  # shape: (T, N, 2)
         
-        images = images_all[start:start + self.clip_len]  # shape: (clip_len, N, 2)
-        labels = labels_all[start:start + self.clip_len]  # shape: (clip_len, N, 2)
+        # Extract longer sequence and apply dilation
+        dilated_clip_len = self.clip_len * dilation
+        images = images_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        labels = labels_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         
-        if self.apply_augmentation:
+        if self.mode == 'train' and self.apply_augmentation:
             images = self.augmentation_rotation(images)
             labels = self.augmentation_rotation(labels)
             images = self.shift_radial(images)
@@ -254,11 +97,16 @@ class MyDataset(torch.utils.data.Dataset):
         images = self.downscale('markers', images)
         labels = self.downscale('vein', labels)
         
-        images = self.generate_markers_image(images)
-        labels = self.generate_vein_image(labels)
+        images = self.generate_markers_image(images)  # shape: (T, H, W)
+        labels = self.generate_vein_image(labels)     # shape: (T, H, W)
 
-        images = torch.tensor(images, dtype=torch.float32)
-        labels = torch.tensor(labels, dtype=torch.float32)
+        # Convert to float and normalize
+        images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
+        labels = torch.tensor(labels, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
+        
+        # Add channel dimension: (T, H, W) -> (C, T, H, W)
+        images = images.unsqueeze(0)
+        labels = labels.unsqueeze(0)
         
         return images, labels
 
@@ -273,7 +121,7 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Group indices by trajectory
         trajectory_to_indices = {}
-        for i, (file_path, _) in enumerate(dataset.clips):
+        for i, (file_path, _, _) in enumerate(dataset.clips):
             trajectory_to_indices.setdefault(file_path, []).append(i)
         
         # Split trajectories
@@ -294,11 +142,15 @@ class MyDataset(torch.utils.data.Dataset):
         val_indices = [i for traj in val_trajectories for i in trajectory_to_indices[traj]]
         test_indices = [i for traj in test_trajectories for i in trajectory_to_indices[traj]]
         
-        return (
+        res = (
             Subset(dataset, train_indices),
             Subset(dataset, val_indices),
             Subset(dataset, test_indices),
         )
+        res[0].dataset.mode = 'train'
+        res[1].dataset.mode = 'val'
+        res[2].dataset.mode = 'test'
+        return res
 
     def generate_markers_image(self, points):
         if points.shape[1] == 0:  # Check if there are any points
