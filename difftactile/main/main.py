@@ -1589,12 +1589,10 @@ class Contact:
         points = self.sim_markers_deformed_filtered.to_numpy()
         zs = self.sim_markers_deformed_filtered_z.to_numpy()
         x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
-        disp_c = 0.5
-        
-        # Get line equation coefficients
+        disp_c = 0.3
         a, b, c = self.line_equation()
 
-        zs_no_minus_1 = zs[zs > -1]
+        # zs_no_minus_1 = zs[zs > -1]
         # print(f'z_min: {zs_no_minus_1.min()}; z_max: {zs_no_minus_1.max()}')
 
         mean_point = np.mean(points, axis=0)
@@ -1602,41 +1600,21 @@ class Contact:
         cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
         r = SYSTEM_PARAMS.fisheye_model.circle_radius
         centre = np.array([cx, cy])
-        mean_displacement = mean_point - centre
-        mean_displacement_normalised = mean_displacement / np.linalg.norm(mean_displacement)
         
-        # Process each point
         for i in range(len(points)):
             z = zs[i]
             if abs(z - (-1)) > 1e-6:
-                # Get vector from line to point
                 vec = self.vector_line_to_point(a, b, c, points[i])
-                
-                # Calculate distance from point to line
                 x = np.linalg.norm(vec)
-                
-                # Calculate displacement magnitude based on distance
                 displacement = 0.0
                 if 0 < x < x_0:
                     displacement = x
                 elif x_0 <= x < 2 * x_0:
-                    displacement = x_0 - (x - x_0)  # Linear decrease from x_0 to 0
-                    
-                # If displacement is non-zero, apply it in direction of vector
+                    displacement = x_0 - (x - x_0)
                 if z <= SYSTEM_PARAMS_COMPUTED.phantom_top_surface_z and displacement > 0:
-                    # Calculate vector from centre to point and its projection ratio
-                    point_vector = points[i] - centre
-                    projection = np.dot(point_vector, mean_displacement_normalised) * mean_displacement_normalised
-                    projection_ratio = np.linalg.norm(projection) / r
-                    projection_ratio *= 3
-                    projection_ratio = min(projection_ratio, 1)
-                    projection_ratio = max(projection_ratio, 0)
-                    
-                    # Normalize vector and scale by displacement and projection ratio
                     vec_normalized = vec / x
-                    points[i] = points[i] + vec_normalized * displacement * disp_c * projection_ratio
+                    points[i] = points[i] + vec_normalized * displacement * disp_c
         
-        # Update the taichi field with modified points
         self.sim_markers_deformed_filtered.from_numpy(points)
         self.move_ti_resolution()
 
