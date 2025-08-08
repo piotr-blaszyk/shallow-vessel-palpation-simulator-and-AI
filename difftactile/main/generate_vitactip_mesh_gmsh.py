@@ -65,7 +65,6 @@ class MeshGenerator:
         gmsh.option.setNumber("Mesh.Optimize", 1)
         gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
         gmsh.option.setNumber("Mesh.Algorithm", 6)
-        gmsh.option.setNumber("Geometry.BooleanOptimizeTopology", 1)
         gmsh.option.setNumber(
             "Mesh.CharacteristicLengthFactor",
             SYSTEM_PARAMS.gmsh_mm.characteristic_length_factor,

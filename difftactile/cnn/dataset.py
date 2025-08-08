@@ -43,7 +43,7 @@ class MyDataset(torch.utils.data.Dataset):
         for file_path in self.files:
             with open(file_path, 'rb') as f:
                 data = pickle.load(f)
-            total_frames = data["markers"].shape[0]
+            total_frames = len(data["markers"])
             
             # For each dilation factor
             for dilation in dilations:
@@ -83,6 +83,7 @@ class MyDataset(torch.utils.data.Dataset):
         images = images_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         labels = labels_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         
+        print(f'self.mode: {self.mode}')
         if self.mode == 'train' and self.apply_augmentation:
             images = self.augmentation_rotation(images)
             labels = self.augmentation_rotation(labels)
@@ -150,6 +151,7 @@ class MyDataset(torch.utils.data.Dataset):
         res[0].dataset.mode = 'train'
         res[1].dataset.mode = 'val'
         res[2].dataset.mode = 'test'
+        print(f'split len: {[len(x) for x in res]}')
         return res
 
     def generate_markers_image(self, points):

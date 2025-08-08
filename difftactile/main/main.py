@@ -760,7 +760,8 @@ class Contact:
             'r': SYSTEM_PARAMS.geometry.vein.r
         }
         self.state_dicts[1] = state_dict
-        self.artificial_vein_displacement_coefficient = np.random.uniform(0.1, 0.4)
+        self.artificial_vein_displacement_coefficient = np.random.uniform(0.2, 0.4)
+        print(f'self.artificial_vein_displacement_coefficient: {self.artificial_vein_displacement_coefficient}')
 
     def set_up_initial_positions_state_and_trajectory(self):
         state_dict = self.state_dicts[self.trajectory_ix[None]]
@@ -1233,7 +1234,6 @@ class Contact:
         for point in markers:
             x, y = int(point[0]), int(point[1])
             cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
-        cv2.imwrite(markers_file, markers_img)
         
         nodes = self.vitactip.projection_2d_dome_surface_nodes_deformed.to_numpy()
         contact_mask = self.vitactip.dome_surface_node_contact_mask.to_numpy().astype(bool)
@@ -1244,7 +1244,6 @@ class Contact:
             if len(contour_contact) > 0:
                 contour_contact_cv = contour_contact.reshape((-1, 1, 2))
                 cv2.fillPoly(contact_img, [contour_contact_cv], color=255)
-        cv2.imwrite(contact_file, contact_img)
         
         vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
         vein = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, vein)
@@ -1260,7 +1259,11 @@ class Contact:
             contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
             contour_vein_cv = contour_vein.reshape((-1, 1, 2))
             cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
-        cv2.imwrite(vein_file, vein_img)
+
+        if False:
+            cv2.imwrite(contact_file, contact_img)
+            cv2.imwrite(markers_file, markers_img)
+            cv2.imwrite(vein_file, vein_img)
 
     def write_training_data_to_file(self, training_iteration):
         directory = SYSTEM_PARAMS.files.dataset_root
@@ -1270,8 +1273,8 @@ class Contact:
         path = f'{directory}/{file}'
 
         res = {
-            'markers': np.array(self.marker_data),
-            'labels': np.array(self.vein_data)
+            'markers': self.marker_data,
+            'labels': self.vein_data
         }
 
         with open(path, 'wb') as f:
@@ -1402,7 +1405,7 @@ class Contact:
             dtype=float, shape=(self.marker_position_exp.shape[0],), needs_grad=False
         )
         self.sim_markers_deformed_z = ti.field(
-            dtype=float, shape=(self.marker_position_exp.shape[0],), needs_grad=False
+            dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
         self.sim_marker_offsets = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
@@ -2313,6 +2316,7 @@ class Contact:
                     self.visualisation_update_gui(ts)
                     self.record_training_data_point(j, ts)
                     ts += 1
+                self.write_training_data_to_file(j)
                 
                 self.reset_loss()
                 self.batch_loss.fill(0.0)
@@ -2348,4 +2352,4 @@ def main():
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
     contact_model.set_up_torch_params()
-    contact_model.domain_adaptation()
+    contact_model.collect_training_data()

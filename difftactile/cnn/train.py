@@ -23,7 +23,7 @@ def main():
         data_dir=SYSTEM_PARAMS.files.dataset_root
     )
     train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
-        full_dataset, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42
+        full_dataset, train_size=0.34, val_size=0.33, test_size=0.33, random_state=42
     )
     train_loader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
