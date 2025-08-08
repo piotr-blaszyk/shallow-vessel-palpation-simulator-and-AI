@@ -1376,7 +1376,7 @@ class Contact:
             shape=(self.phantom.actual_total_num_particles,),
             needs_grad=False,
         )
-        self.tumour_2d_projections = ti.Vector.field(
+        self.vein_endpoints_2d_projection = ti.Vector.field(
             2,
             dtype=float,
             shape=(2,),
@@ -1449,7 +1449,7 @@ class Contact:
     def visualisation_reset_scene_1(self):
         self.healthy_tissue_points.fill(0)
         self.tumour_points.fill(0)
-        self.tumour_2d_projections.fill(-1)
+        self.vein_endpoints_2d_projection.fill(-1)
         self.vein_all_indices.fill(-1)
         self.vein_all_2d_projection.fill(-1)
     
@@ -1486,7 +1486,7 @@ class Contact:
                 ]
                 projection_2d = self.vitactip.project_A_point_2d(point)
                 projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
-                self.tumour_2d_projections[i] = projection_2d / self.tactile_image_resolution[None]
+                self.vein_endpoints_2d_projection[i] = projection_2d / self.tactile_image_resolution[None]
 
     @ti.kernel
     def visualisation_project_2d_vein_all(self):
@@ -1518,6 +1518,18 @@ class Contact:
             exp_ix = self.sim_to_exp_markers[i]
             if exp_ix != -1:
                 self.sim_markers_deformed_filtered[exp_ix] = deformed
+    
+    @ti.kernel
+    def sim_markers_deformed_filtered_og_resolution(self):
+        for i in range(self.sim_markers_deformed_filtered.shape[0]):
+            if abs(self.sim_markers_deformed_filtered[i] - (-1.0)) > 1e-6:
+                self.sim_markers_deformed_filtered[i] *= self.tactile_image_resolution[None]
+
+    @ti.kernel
+    def sim_markers_deformed_filtered_ti_resolution(self):
+        for i in range(self.sim_markers_deformed_filtered.shape[0]):
+            if abs(self.sim_markers_deformed_filtered[i] - (-1.0)) > 1e-6:
+                self.sim_markers_deformed_filtered[i] /= self.tactile_image_resolution[None]
 
     @ti.kernel
     def visualisation_prepare_tactile_readout_data_bp(self):
@@ -1536,6 +1548,66 @@ class Contact:
             point[1] = self.tactile_image_resolution[None][1] - point[1]
             self.clock_arm_points[i] = point / self.tactile_image_resolution[None]
 
+    def line_equation(self):
+        points = self.vein_endpoints_2d_projection.to_numpy()
+        x1, y1 = points[0]
+        x2, y2 = points[1]
+        
+        # Calculate the coefficients of the line equation ax + by + c = 0
+        a = y2 - y1
+        b = x1 - x2
+        c = x2*y1 - x1*y2
+        
+        return a, b, c
+
+    def vector_line_to_point(self, a, b, c, p):
+        # Convert inputs to numpy if they aren't already
+        p = np.array(p)
+        
+        # Compute the signed distance from point to line
+        numerator = a * p[0] + b * p[1] + c
+        denominator = np.sqrt(a * a + b * b)
+        
+        # Compute the unit normal vector of the line
+        normal = np.array([a, b]) / denominator
+        
+        # Return the vector from line to point (negative of point to line)
+        return -normal * numerator / denominator
+
+    def move_points_away_from_vein(self):
+        self.sim_markers_deformed_filtered_og_resolution()
+        points = self.sim_markers_deformed_filtered.to_numpy()
+        x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
+        disp_c = 1.0
+        
+        # Get line equation coefficients
+        a, b, c = self.line_equation()
+        
+        # Process each point
+        for i in range(len(points)):
+            # Get vector from line to point
+            vec = self.vector_line_to_point(a, b, c, points[i])
+            
+            # Calculate distance from point to line
+            x = np.linalg.norm(vec)
+            
+            # Calculate displacement magnitude based on distance
+            displacement = 0.0
+            if 0 < x < x_0:
+                displacement = x
+            elif x_0 <= x < 2 * x_0:
+                displacement = x_0 - (x - x_0)  # Linear decrease from x_0 to 0
+                
+            # If displacement is non-zero, apply it in direction of vector
+            if displacement > 0:
+                # Normalize vector and scale by displacement
+                vec_normalized = vec / x
+                points[i] = points[i] + vec_normalized * displacement * disp_c
+        
+        # Update the taichi field with modified points
+        self.sim_markers_deformed_filtered.from_numpy(points)
+        self.sim_markers_deformed_filtered_ti_resolution()
+
     def visualisation_draw_tactile_readout(self):
         self.visualisation_project_2d_vein_endpoints()
         self.visualisation_project_2d_vein_all()
@@ -1547,9 +1619,6 @@ class Contact:
             self.fp_bp[None] == 0
             or SYSTEM_PARAMS.visualisation.visualise_exp_markers_during_bp == 0
         ):
-            self.tactile_canvas.circles(
-                self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
-            )
             if False:
                 self.tactile_canvas.lines(
                     self.arrow_line_vertices, color=(0, 1, 0), width=0.01
@@ -1557,18 +1626,19 @@ class Contact:
         else:
             self.visualisation_prepare_tactile_readout_data_bp()
             self.tactile_canvas.circles(
-                self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
-            )
-            self.tactile_canvas.circles(
                 self.exp_marker_points, radius=0.01, color=(0, 1, 0)
             )
+        self.move_points_away_from_vein()
+        self.tactile_canvas.circles(
+            self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
+        )
         self.tactile_canvas.circles(
             self.clock_arm_points,
             radius=0.02,
             per_vertex_color=self.clock_arm_points_per_vertex_color,
         )
         self.tactile_canvas.circles(
-            self.tumour_2d_projections,
+            self.vein_endpoints_2d_projection,
             radius=1e-2,
             color=(1, 1, 0),
         )
