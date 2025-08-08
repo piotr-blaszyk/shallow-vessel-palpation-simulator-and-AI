@@ -1571,17 +1571,10 @@ class Contact:
         return a, b, c
 
     def vector_line_to_point(self, a, b, c, p):
-        # Convert inputs to numpy if they aren't already
         p = np.array(p)
-        
-        # Compute the signed distance from point to line
         numerator = a * p[0] + b * p[1] + c
         denominator = np.sqrt(a * a + b * b)
-        
-        # Compute the unit normal vector of the line
         normal = np.array([a, b]) / denominator
-        
-        # Return the vector from line to point (negative of point to line)
         return -normal * numerator / denominator
 
     def move_points_away_from_vein(self):
