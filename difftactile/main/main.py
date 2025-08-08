@@ -1222,9 +1222,7 @@ class Contact:
 
         markers = self.sim_markers_deformed_og_resolution.to_numpy()
         markers = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, markers)
-        os.makedirs(os.path.dirname(markers_pickle_file), exist_ok=True)
-        with open(markers_pickle_file, 'wb') as f:
-            pickle.dump(markers, f)
+        self.marker_data.append(markers)
         markers_img = np.zeros((h, w), dtype=np.uint8)
         for point in markers:
             x, y = int(point[0]), int(point[1])
@@ -1250,9 +1248,7 @@ class Contact:
             if 0 <= x < w and 0 <= y < h and contact_img[y, x] > 0:
                 vein_points_filtered.append(point)
         vein = np.array(vein_points_filtered)
-        os.makedirs(os.path.dirname(vein_pickle_file), exist_ok=True)
-        with open(vein_pickle_file, 'wb') as f:
-            pickle.dump(vein, f)
+        self.vein_data.append(vein)
         vein_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
             contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
@@ -1260,44 +1256,20 @@ class Contact:
             cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
         cv2.imwrite(vein_file, vein_img)
 
-        if False:
-            k = 4
-            w_scaled = int(w / k)
-            h_scaled = int(h / k)
-
-            markers = self.synthetic_image_generator.crop(markers)
-            markers /= k
-            markers_img = np.zeros((w_scaled, h_scaled), dtype=np.uint8)
-            for point in markers:
-                x, y = int(point[0]), int(point[1])
-                cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
-            cv2.imwrite(markers_file, markers_img)
-
-            # nodes = self.synthetic_image_generator.crop(nodes)
-            # nodes /= k
-            cv2.imwrite(contact_file, contact_img)
-
-            # vein = self.synthetic_image_generator.crop(vein)
-            vein /= k
-            vein_img = np.zeros((w_scaled, h_scaled), dtype=np.uint8)
-            if len(vein) > 0:
-                contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
-                contour_vein_cv = contour_vein.reshape((-1, 1, 2))
-                cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
-            cv2.imwrite(vein_file, vein_img)
-
     def write_training_data_to_file(self, training_iteration):
-        markers_pickle_file = SYSTEM_PARAMS.files.training_data_markers_pickle.format(
+        directory = SYSTEM_PARAMS.files.dataset_root
+        file = SYSTEM_PARAMS.files.dataset_data_point.format(
             training_iteration
         )
-        vein_pickle_file = SYSTEM_PARAMS.files.training_data_segmentation_mask_pickle.format(
-            training_iteration
-        )
+        path = f'{directory}/{file}'
 
-        with open(markers_pickle_file, 'wb') as f:
-            pickle.dump(np.array(self.marker_data), f)
-        with open(vein_pickle_file, 'wb') as f:
-            pickle.dump(np.array(self.vein_data), f)
+        res = {
+            'markers': np.array(self.marker_data),
+            'labels': np.array(self.vein_data)
+        }
+
+        with open(path, 'wb') as f:
+            pickle.dump(res, f)
         
         self.marker_data = []
         self.vein_data = []
