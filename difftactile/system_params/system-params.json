@@ -137,7 +137,7 @@
         "enable_pid_controller": 1,
         "distance_scaling_factor": 2.500e+00,
         "youngs_modulus_scaling_factor": 1.000e+00,
-        "px_dist_adjacent_markers": 38.118237105091836
+        "px_dist_adjacent_markers": 3.812e+01
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,

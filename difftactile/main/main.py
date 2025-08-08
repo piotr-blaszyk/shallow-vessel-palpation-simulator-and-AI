@@ -1411,8 +1411,8 @@ class Contact:
         self.sim_markers_deformed_filtered = ti.Vector.field(
             2, dtype=float, shape=(self.marker_position_exp.shape[0],), needs_grad=False
         )
-        self.sim_markers_deformed_filtered_z = ti.Vector.field(
-            2, dtype=float, shape=(self.marker_position_exp.shape[0],), needs_grad=False
+        self.sim_markers_deformed_filtered_z = ti.field(
+            dtype=float, shape=(self.marker_position_exp.shape[0],), needs_grad=False
         )
         self.sim_marker_offsets = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
@@ -1528,13 +1528,13 @@ class Contact:
     @ti.kernel
     def sim_markers_deformed_filtered_og_resolution(self):
         for i in range(self.sim_markers_deformed_filtered.shape[0]):
-            if abs(self.sim_markers_deformed_filtered[i] - (-1.0)) > 1e-6:
+            if abs(self.sim_markers_deformed_filtered[i][0] - (-1.0)) > 1e-6:
                 self.sim_markers_deformed_filtered[i] *= self.tactile_image_resolution[None]
 
     @ti.kernel
     def sim_markers_deformed_filtered_ti_resolution(self):
         for i in range(self.sim_markers_deformed_filtered.shape[0]):
-            if abs(self.sim_markers_deformed_filtered[i] - (-1.0)) > 1e-6:
+            if abs(self.sim_markers_deformed_filtered[i][0] - (-1.0)) > 1e-6:
                 self.sim_markers_deformed_filtered[i] /= self.tactile_image_resolution[None]
 
     @ti.kernel

@@ -150,8 +150,8 @@ class ViTacTip:
         self.projection_2d_dome_surface_nodes_undeformed = ti.Vector.field(
             2, float, self.dome_surface_node_tags.shape[0], needs_grad=False
         )
-        self.projection_2d_dome_surface_nodes_deformed_z = ti.Vector.field(
-            2, float, self.dome_surface_node_tags.shape[0], needs_grad=True
+        self.projection_2d_dome_surface_nodes_deformed_z = ti.field(
+            float, self.dome_surface_node_tags.shape[0], needs_grad=True
         )
         self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=False)
         self.projection_2d_clock_arms = ti.Vector.field(
@@ -276,8 +276,8 @@ class ViTacTip:
         self.undeformed_markers = ti.Vector.field(
             2, float, self.num_markers, needs_grad=False
         )
-        self.deformed_markers_z = ti.Vector.field(
-            2, float, self.num_markers, needs_grad=False
+        self.deformed_markers_z = ti.field(
+            float, self.num_markers, needs_grad=False
         )
         self.initial_markers_unused = ti.Vector.field(
             2, float, self.num_markers, needs_grad=False
@@ -520,7 +520,7 @@ class ViTacTip:
             interpolation_weights = self.marker_interpolation_weights[i]
             interpolated_deformed_pos_2d = ti.Vector([0.0, 0.0])
             interpolated_undeformed_pos_2d = ti.Vector([0.0, 0.0])
-            interpolated_deformed_pos_2d_z = ti.Vector([0.0, 0.0])
+            interpolated_deformed_pos_2d_z = 0.0
             for neighbor_idx in range(self.marker_interpolation_knn_k):
                 interpolated_deformed_pos_2d += (
                     interpolation_weights[neighbor_idx]
