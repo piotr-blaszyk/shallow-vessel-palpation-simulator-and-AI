@@ -250,8 +250,9 @@ class Phantom:
     @ti.kernel
     def fix_vein(self):
         for i in range(self.actual_total_num_particles):
-            if self.titles[i] == 1:
-                self.is_fixed[i] = 1
+            if False:
+                if self.titles[i] == 1:
+                    self.is_fixed[i] = 1
 
     def set_state_from_outside(
         self, pos, ori, vel, state_dict

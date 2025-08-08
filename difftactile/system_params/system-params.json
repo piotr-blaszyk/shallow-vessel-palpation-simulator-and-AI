@@ -13,7 +13,7 @@
         "single_material": {
             "density": 1.100e+03,
             "poissons_ratio": 4.990e-01,
-            "youngs_modulus": 2.400e+04
+            "youngs_modulus": 2.400e+05
         },
         "collision_search_distance": 2.500e+00,
         "keypoint_search_z_threshold": 2.500e-03,
@@ -40,12 +40,12 @@
         "silicone": {
             "density": 900,
             "poissons_ratio": 4.600e-01,
-            "youngs_modulus": 2.400e+04
+            "youngs_modulus": 2.400e+05
         },
         "hard_plastic": {
             "density": 1150,
             "poissons_ratio": 2.700e-01,
-            "youngs_modulus": 8.000e+03
+            "youngs_modulus": 2.400e+05
         },
         "fixed_points_z_ratio": 2.500e-01,
         "fix_bottom_points": 1,

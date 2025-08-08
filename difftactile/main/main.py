@@ -1526,16 +1526,20 @@ class Contact:
                 self.sim_markers_deformed_filtered_z[exp_ix] = deformed_z
     
     @ti.kernel
-    def sim_markers_deformed_filtered_og_resolution(self):
+    def move_og_resolution(self):
         for i in range(self.sim_markers_deformed_filtered.shape[0]):
             if abs(self.sim_markers_deformed_filtered[i][0] - (-1.0)) > 1e-6:
                 self.sim_markers_deformed_filtered[i] *= self.tactile_image_resolution[None]
+        for i in range(self.vein_endpoints_2d_projection.shape[0]):
+            self.vein_endpoints_2d_projection[i] *= self.tactile_image_resolution[None]
 
     @ti.kernel
-    def sim_markers_deformed_filtered_ti_resolution(self):
+    def move_ti_resolution(self):
         for i in range(self.sim_markers_deformed_filtered.shape[0]):
             if abs(self.sim_markers_deformed_filtered[i][0] - (-1.0)) > 1e-6:
                 self.sim_markers_deformed_filtered[i] /= self.tactile_image_resolution[None]
+        for i in range(self.vein_endpoints_2d_projection.shape[0]):
+            self.vein_endpoints_2d_projection[i] /= self.tactile_image_resolution[None]
 
     @ti.kernel
     def visualisation_prepare_tactile_readout_data_bp(self):
@@ -1581,40 +1585,60 @@ class Contact:
         return -normal * numerator / denominator
 
     def move_points_away_from_vein(self):
-        self.sim_markers_deformed_filtered_og_resolution()
+        self.move_og_resolution()
         points = self.sim_markers_deformed_filtered.to_numpy()
         zs = self.sim_markers_deformed_filtered_z.to_numpy()
         x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
-        disp_c = 1.0
+        disp_c = 0.5
         
         # Get line equation coefficients
         a, b, c = self.line_equation()
+
+        zs_no_minus_1 = zs[zs > -1]
+        # print(f'z_min: {zs_no_minus_1.min()}; z_max: {zs_no_minus_1.max()}')
+
+        mean_point = np.mean(points, axis=0)
+        cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
+        cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
+        r = SYSTEM_PARAMS.fisheye_model.circle_radius
+        centre = np.array([cx, cy])
+        mean_displacement = mean_point - centre
+        mean_displacement_normalised = mean_displacement / np.linalg.norm(mean_displacement)
         
         # Process each point
         for i in range(len(points)):
             z = zs[i]
-            # Get vector from line to point
-            vec = self.vector_line_to_point(a, b, c, points[i])
-            
-            # Calculate distance from point to line
-            x = np.linalg.norm(vec)
-            
-            # Calculate displacement magnitude based on distance
-            displacement = 0.0
-            if 0 < x < x_0:
-                displacement = x
-            elif x_0 <= x < 2 * x_0:
-                displacement = x_0 - (x - x_0)  # Linear decrease from x_0 to 0
+            if abs(z - (-1)) > 1e-6:
+                # Get vector from line to point
+                vec = self.vector_line_to_point(a, b, c, points[i])
                 
-            # If displacement is non-zero, apply it in direction of vector
-            if z <= SYSTEM_PARAMS_COMPUTED.phantom_top_surface_z and displacement > 0:
-                # Normalize vector and scale by displacement
-                vec_normalized = vec / x
-                points[i] = points[i] + vec_normalized * displacement * disp_c
+                # Calculate distance from point to line
+                x = np.linalg.norm(vec)
+                
+                # Calculate displacement magnitude based on distance
+                displacement = 0.0
+                if 0 < x < x_0:
+                    displacement = x
+                elif x_0 <= x < 2 * x_0:
+                    displacement = x_0 - (x - x_0)  # Linear decrease from x_0 to 0
+                    
+                # If displacement is non-zero, apply it in direction of vector
+                if z <= SYSTEM_PARAMS_COMPUTED.phantom_top_surface_z and displacement > 0:
+                    # Calculate vector from centre to point and its projection ratio
+                    point_vector = points[i] - centre
+                    projection = np.dot(point_vector, mean_displacement_normalised) * mean_displacement_normalised
+                    projection_ratio = np.linalg.norm(projection) / r
+                    projection_ratio *= 3
+                    projection_ratio = min(projection_ratio, 1)
+                    projection_ratio = max(projection_ratio, 0)
+                    
+                    # Normalize vector and scale by displacement and projection ratio
+                    vec_normalized = vec / x
+                    points[i] = points[i] + vec_normalized * displacement * disp_c * projection_ratio
         
         # Update the taichi field with modified points
         self.sim_markers_deformed_filtered.from_numpy(points)
-        self.sim_markers_deformed_filtered_ti_resolution()
+        self.move_ti_resolution()
 
     def visualisation_draw_tactile_readout(self):
         self.visualisation_project_2d_vein_endpoints()
