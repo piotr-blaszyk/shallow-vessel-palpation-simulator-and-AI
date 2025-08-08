@@ -779,6 +779,7 @@ class Contact:
         self.exp_to_sim_markers.fill(-1)
         self.exp_marker_points.fill(-1)
         self.sim_markers_deformed_filtered.fill(-1)
+        self.sim_markers_deformed_filtered_z.fill(-1)
         self.cur_exp_frame.fill(-1)
         self.vein_ix_base.fill(-1)
         self.vein_ix_offset.fill(-1)
@@ -1410,6 +1411,9 @@ class Contact:
         self.sim_markers_deformed_filtered = ti.Vector.field(
             2, dtype=float, shape=(self.marker_position_exp.shape[0],), needs_grad=False
         )
+        self.sim_markers_deformed_filtered_z = ti.Vector.field(
+            2, dtype=float, shape=(self.marker_position_exp.shape[0],), needs_grad=False
+        )
         self.sim_marker_offsets = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
@@ -1504,6 +1508,7 @@ class Contact:
         for i in range(self.vitactip.num_markers):
             undeformed = self.vitactip.undeformed_markers[i]
             deformed = self.vitactip.deformed_markers[i]
+            deformed_z = self.vitactip.deformed_markers_z[i]
             self.sim_markers_deformed_og_resolution[i] = deformed
             undeformed[1] = self.tactile_image_resolution[None][1] - undeformed[1]
             deformed[1] = self.tactile_image_resolution[None][1] - deformed[1]
@@ -1518,6 +1523,7 @@ class Contact:
             exp_ix = self.sim_to_exp_markers[i]
             if exp_ix != -1:
                 self.sim_markers_deformed_filtered[exp_ix] = deformed
+                self.sim_markers_deformed_filtered_z[exp_ix] = deformed_z
     
     @ti.kernel
     def sim_markers_deformed_filtered_og_resolution(self):
@@ -1577,6 +1583,7 @@ class Contact:
     def move_points_away_from_vein(self):
         self.sim_markers_deformed_filtered_og_resolution()
         points = self.sim_markers_deformed_filtered.to_numpy()
+        zs = self.sim_markers_deformed_filtered_z.to_numpy()
         x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
         disp_c = 1.0
         
@@ -1585,6 +1592,7 @@ class Contact:
         
         # Process each point
         for i in range(len(points)):
+            z = zs[i]
             # Get vector from line to point
             vec = self.vector_line_to_point(a, b, c, points[i])
             
@@ -1599,7 +1607,7 @@ class Contact:
                 displacement = x_0 - (x - x_0)  # Linear decrease from x_0 to 0
                 
             # If displacement is non-zero, apply it in direction of vector
-            if displacement > 0:
+            if z <= SYSTEM_PARAMS_COMPUTED.phantom_top_surface_z and displacement > 0:
                 # Normalize vector and scale by displacement
                 vec_normalized = vec / x
                 points[i] = points[i] + vec_normalized * displacement * disp_c
