@@ -36,7 +36,7 @@
     "geometry": {
         "gap": 0.001,
         "high_dist": 1.000,
-        "phantom_z_length": 0.022,
+        "phantom_z_length": 0.007,
         "phantom_x_length": 0.080,
         "phantom_y_length": 0.040,
         "distance_from_camera_lens_to_outer_shell_surface": 0.020,

@@ -784,6 +784,7 @@ class Contact:
         self.exp_to_sim_markers.fill(-1)
         self.exp_marker_points.fill(-1)
         self.sim_markers_deformed_filtered.fill(-1)
+        self.sim_markers_deformed_filtered_z.fill(-1)
         self.cur_exp_frame.fill(-1)
         self.vein_ix_base.fill(-1)
         self.vein_ix_offset.fill(-1)
@@ -1208,8 +1209,8 @@ class Contact:
                     os.remove(file_path)
 
     def record_training_data_point(self, training_iteration, ts):
-        w = SYSTEM_PARAMS.fisheye_model.target_image_width
-        h = SYSTEM_PARAMS.fisheye_model.target_image_height
+        w = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
+        h = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
 
         markers_file = SYSTEM_PARAMS.files.training_data_markers.format(training_iteration, ts)
         vein_file = SYSTEM_PARAMS.files.training_data_segmentation_mask.format(training_iteration, ts)
@@ -1221,8 +1222,10 @@ class Contact:
 
         markers = self.sim_markers_deformed_og_resolution.to_numpy()
         markers = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, markers)
-        self.marker_data.append(markers)
-        markers_img = np.zeros((w, h), dtype=np.uint8)
+        os.makedirs(os.path.dirname(markers_pickle_file), exist_ok=True)
+        with open(markers_pickle_file, 'wb') as f:
+            pickle.dump(markers, f)
+        markers_img = np.zeros((h, w), dtype=np.uint8)
         for point in markers:
             x, y = int(point[0]), int(point[1])
             cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
@@ -1231,10 +1234,12 @@ class Contact:
         nodes = self.vitactip.projection_2d_dome_surface_nodes_deformed.to_numpy()
         contact_mask = self.vitactip.dome_surface_node_contact_mask.to_numpy().astype(bool)
         nodes = nodes[contact_mask]
-        contact_img = np.zeros((w, h), dtype=np.uint8)
-        contour_contact = self.synthetic_image_generator.alpha_shape(nodes, alpha=0.02).astype(np.int32)
-        contour_contact_cv = contour_contact.reshape((-1, 1, 2))
-        cv2.fillPoly(contact_img, [contour_contact_cv], color=255)
+        contact_img = np.zeros((h, w), dtype=np.uint8)
+        if len(nodes) >= 4:
+            contour_contact = self.synthetic_image_generator.alpha_shape(nodes, alpha=0.02).astype(np.int32)
+            if len(contour_contact) > 0:
+                contour_contact_cv = contour_contact.reshape((-1, 1, 2))
+                cv2.fillPoly(contact_img, [contour_contact_cv], color=255)
         cv2.imwrite(contact_file, contact_img)
         
         vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
@@ -1245,8 +1250,10 @@ class Contact:
             if 0 <= x < w and 0 <= y < h and contact_img[y, x] > 0:
                 vein_points_filtered.append(point)
         vein = np.array(vein_points_filtered)
-        self.vein_data.append(vein)
-        vein_img = np.zeros((w, h), dtype=np.uint8)
+        os.makedirs(os.path.dirname(vein_pickle_file), exist_ok=True)
+        with open(vein_pickle_file, 'wb') as f:
+            pickle.dump(vein, f)
+        vein_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
             contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
             contour_vein_cv = contour_vein.reshape((-1, 1, 2))
@@ -1382,7 +1389,7 @@ class Contact:
             shape=(self.phantom.actual_total_num_particles,),
             needs_grad=False,
         )
-        self.tumour_2d_projections = ti.Vector.field(
+        self.vein_endpoints_2d_projection = ti.Vector.field(
             2,
             dtype=float,
             shape=(2,),
@@ -1415,6 +1422,9 @@ class Contact:
         )
         self.sim_markers_deformed_filtered = ti.Vector.field(
             2, dtype=float, shape=(self.marker_position_exp.shape[0],), needs_grad=False
+        )
+        self.sim_markers_deformed_filtered_z = ti.field(
+            dtype=float, shape=(self.marker_position_exp.shape[0],), needs_grad=False
         )
         self.sim_marker_offsets = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
@@ -1455,7 +1465,7 @@ class Contact:
     def visualisation_reset_scene_1(self):
         self.healthy_tissue_points.fill(0)
         self.tumour_points.fill(0)
-        self.tumour_2d_projections.fill(-1)
+        self.vein_endpoints_2d_projection.fill(-1)
         self.vein_all_indices.fill(-1)
         self.vein_all_2d_projection.fill(-1)
     
@@ -1492,7 +1502,7 @@ class Contact:
                 ]
                 projection_2d = self.vitactip.project_A_point_2d(point)
                 projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
-                self.tumour_2d_projections[i] = projection_2d / self.tactile_image_resolution[None]
+                self.vein_endpoints_2d_projection[i] = projection_2d / self.tactile_image_resolution[None]
 
     @ti.kernel
     def visualisation_project_2d_vein_all(self):
@@ -1510,6 +1520,7 @@ class Contact:
         for i in range(self.vitactip.num_markers):
             undeformed = self.vitactip.undeformed_markers[i]
             deformed = self.vitactip.deformed_markers[i]
+            deformed_z = self.vitactip.deformed_markers_z[i]
             self.sim_markers_deformed_og_resolution[i] = deformed
             undeformed[1] = self.tactile_image_resolution[None][1] - undeformed[1]
             deformed[1] = self.tactile_image_resolution[None][1] - deformed[1]
@@ -1524,6 +1535,23 @@ class Contact:
             exp_ix = self.sim_to_exp_markers[i]
             if exp_ix != -1:
                 self.sim_markers_deformed_filtered[exp_ix] = deformed
+                self.sim_markers_deformed_filtered_z[exp_ix] = deformed_z
+    
+    @ti.kernel
+    def move_og_resolution(self):
+        for i in range(self.sim_markers_deformed_filtered.shape[0]):
+            if abs(self.sim_markers_deformed_filtered[i][0] - (-1.0)) > 1e-6:
+                self.sim_markers_deformed_filtered[i] *= self.tactile_image_resolution[None]
+        for i in range(self.vein_endpoints_2d_projection.shape[0]):
+            self.vein_endpoints_2d_projection[i] *= self.tactile_image_resolution[None]
+
+    @ti.kernel
+    def move_ti_resolution(self):
+        for i in range(self.sim_markers_deformed_filtered.shape[0]):
+            if abs(self.sim_markers_deformed_filtered[i][0] - (-1.0)) > 1e-6:
+                self.sim_markers_deformed_filtered[i] /= self.tactile_image_resolution[None]
+        for i in range(self.vein_endpoints_2d_projection.shape[0]):
+            self.vein_endpoints_2d_projection[i] /= self.tactile_image_resolution[None]
 
     @ti.kernel
     def visualisation_prepare_tactile_readout_data_bp(self):
@@ -1542,6 +1570,59 @@ class Contact:
             point[1] = self.tactile_image_resolution[None][1] - point[1]
             self.clock_arm_points[i] = point / self.tactile_image_resolution[None]
 
+    def line_equation(self):
+        points = self.vein_endpoints_2d_projection.to_numpy()
+        x1, y1 = points[0]
+        x2, y2 = points[1]
+        
+        # Calculate the coefficients of the line equation ax + by + c = 0
+        a = y2 - y1
+        b = x1 - x2
+        c = x2*y1 - x1*y2
+        
+        return a, b, c
+
+    def vector_line_to_point(self, a, b, c, p):
+        p = np.array(p)
+        numerator = a * p[0] + b * p[1] + c
+        denominator = np.sqrt(a * a + b * b)
+        normal = np.array([a, b]) / denominator
+        return -normal * numerator / denominator
+
+    def move_points_away_from_vein(self):
+        self.move_og_resolution()
+        points = self.sim_markers_deformed_filtered.to_numpy()
+        zs = self.sim_markers_deformed_filtered_z.to_numpy()
+        x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
+        disp_c = 0.3
+        a, b, c = self.line_equation()
+
+        # zs_no_minus_1 = zs[zs > -1]
+        # print(f'z_min: {zs_no_minus_1.min()}; z_max: {zs_no_minus_1.max()}')
+
+        mean_point = np.mean(points, axis=0)
+        cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
+        cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
+        r = SYSTEM_PARAMS.fisheye_model.circle_radius
+        centre = np.array([cx, cy])
+        
+        for i in range(len(points)):
+            z = zs[i]
+            if abs(z - (-1)) > 1e-6:
+                vec = self.vector_line_to_point(a, b, c, points[i])
+                x = np.linalg.norm(vec)
+                displacement = 0.0
+                if 0 < x < x_0:
+                    displacement = x
+                elif x_0 <= x < 2 * x_0:
+                    displacement = x_0 - (x - x_0)
+                if z <= SYSTEM_PARAMS_COMPUTED.phantom_top_surface_z and displacement > 0:
+                    vec_normalized = vec / x
+                    points[i] = points[i] + vec_normalized * displacement * disp_c
+        
+        self.sim_markers_deformed_filtered.from_numpy(points)
+        self.move_ti_resolution()
+
     def visualisation_draw_tactile_readout(self):
         self.visualisation_project_2d_vein_endpoints()
         self.visualisation_project_2d_vein_all()
@@ -1553,9 +1634,6 @@ class Contact:
             self.fp_bp[None] == 0
             or SYSTEM_PARAMS.visualisation.visualise_exp_markers_during_bp == 0
         ):
-            self.tactile_canvas.circles(
-                self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
-            )
             if False:
                 self.tactile_canvas.lines(
                     self.arrow_line_vertices, color=(0, 1, 0), width=0.01
@@ -1563,18 +1641,19 @@ class Contact:
         else:
             self.visualisation_prepare_tactile_readout_data_bp()
             self.tactile_canvas.circles(
-                self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
-            )
-            self.tactile_canvas.circles(
                 self.exp_marker_points, radius=0.01, color=(0, 1, 0)
             )
+        self.move_points_away_from_vein()
+        self.tactile_canvas.circles(
+            self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
+        )
         self.tactile_canvas.circles(
             self.clock_arm_points,
             radius=0.02,
             per_vertex_color=self.clock_arm_points_per_vertex_color,
         )
         self.tactile_canvas.circles(
-            self.tumour_2d_projections,
+            self.vein_endpoints_2d_projection,
             radius=1e-2,
             color=(1, 1, 0),
         )
@@ -1591,7 +1670,7 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y+SYSTEM_PARAMS.visualisation.camera_offset, z)
+        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
         self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(6)
@@ -2078,7 +2157,7 @@ class Contact:
         for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
             print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
             # for i in range(contact_model.trajectories_np.shape[0]):
-            for i in range(0, 4):
+            for i in range(1, 2):
                 print(f'trajectory {i}: {self.trajectory_names[i]}')
                 self.trajectory_ix[None] = i
                 self.set_up_initial_positions_state_and_trajectory()
@@ -2114,6 +2193,7 @@ class Contact:
                 self.clear_grad()
                 self.prev_loss[None] = 0.0
                 self.trajectory_loss[None] = 0.0
+                continue
                 print("backward")
                 passes = 0
                 ts = total_ts-1
@@ -2277,4 +2357,4 @@ def main():
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
     contact_model.set_up_torch_params()
-    contact_model.collect_training_data()
+    contact_model.domain_adaptation()

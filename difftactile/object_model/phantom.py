@@ -61,6 +61,7 @@ class Phantom:
             z_max - z_min
         )
         is_fixed_np = z_coords <= z_threshold
+        # is_fixed_np = np.ones_like(z_coords, dtype=bool)
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
         self.initial_particle_volume = (
             SYSTEM_PARAMS_COMPUTED.phantom_volume / self.actual_total_num_particles
@@ -246,6 +247,13 @@ class Phantom:
         self.cylinder_h = ti.field(dtype=float, shape=(), needs_grad=False)
         self.cylinder_r = ti.field(dtype=float, shape=(), needs_grad=False)
 
+    @ti.kernel
+    def fix_vein(self):
+        for i in range(self.actual_total_num_particles):
+            if False:
+                if self.titles[i] == 1:
+                    self.is_fixed[i] = 1
+
     def set_state_from_outside(
         self, pos, ori, vel, state_dict
     ):
@@ -258,6 +266,7 @@ class Phantom:
             self.group_cardinality[0] = self.actual_total_num_particles
             self.group_cardinality[1] = 0
             self.titles.fill(0)
+        self.fix_vein()
         print(
             f"tumour_present: {state_dict['tumour_present']}, healthy: {self.group_cardinality[0]}, tumour: {self.group_cardinality[1]}"
         )
@@ -612,7 +621,7 @@ class Phantom:
                     * weight
                     * grid_node_velocity.outer_product(grid_relative_offset)
                 )
-            if SYSTEM_PARAMS.phantom.fix_bottom_points == 1:
+            if SYSTEM_PARAMS.phantom.fix_bottom_points == 1 and self.is_fixed[particle_id] == 1:
                 self.velocities_A[frame + 1, particle_id] = ti.Vector(
                     [0.0, 0.0, 0.0]
                 )
