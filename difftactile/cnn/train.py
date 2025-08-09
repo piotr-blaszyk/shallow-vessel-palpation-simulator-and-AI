@@ -17,7 +17,7 @@ from difftactile.main.constants import *
 
 def main():
     start_time = time.perf_counter()
-    BATCH_SIZE = 8
+    BATCH_SIZE = 1024
     NUM_EPOCHS = 10
     NUM_WORKERS = 16
     LR = 1e-3

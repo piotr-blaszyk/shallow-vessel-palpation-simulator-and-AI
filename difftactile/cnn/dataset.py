@@ -191,8 +191,9 @@ class MyDataset(torch.utils.data.Dataset):
             valid_points = points[t][points_mask[t]]
             if len(valid_points) > 0:
                 contour_vein = self.synthetic_image_generator.alpha_shape(valid_points, alpha=0.02).astype(np.int32)
-                contour_vein_cv = contour_vein.reshape((-1, 1, 2))
-                cv2.fillPoly(images[t], [contour_vein_cv], color=255)
+                if len(contour_vein) > 0:
+                    contour_vein_cv = contour_vein.reshape((-1, 1, 2))
+                    cv2.fillPoly(images[t], [contour_vein_cv], color=255)
                 
         return images
 

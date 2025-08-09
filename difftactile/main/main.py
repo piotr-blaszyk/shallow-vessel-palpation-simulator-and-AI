@@ -46,7 +46,7 @@ class SyntheticImageGenerator:
 
     def alpha_shape(self, points, alpha):
         if len(points) < 4:
-            return points
+            return np.array([])
 
         tri = Delaunay(points)
         edges = set()
@@ -67,6 +67,9 @@ class SyntheticImageGenerator:
         m = MultiLineString(edge_segments)
         triangles = list(polygonize(m))
         concave = unary_union(triangles)
+
+        if len(edge_segments) == 0:
+            return np.array()
 
         if isinstance(concave, Polygon):
             return np.array(concave.exterior.coords)
@@ -1203,10 +1206,7 @@ class Contact:
 
     def clear_training_data_folders(self):
         folders = [
-            SYSTEM_PARAMS.files.training_data_markers_folder,
-            SYSTEM_PARAMS.files.training_data_segmentation_mask_folder,
-            SYSTEM_PARAMS.files.training_data_markers_pickle_folder,
-            SYSTEM_PARAMS.files.training_data_segmentation_mask_pickle_folder
+            SYSTEM_PARAMS.files.dataset_root
         ]
         for folder in folders:
             for file in os.listdir(folder):
@@ -1258,8 +1258,9 @@ class Contact:
         vein_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
             contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
-            contour_vein_cv = contour_vein.reshape((-1, 1, 2))
-            cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
+            if len(contour_vein) > 0:
+                contour_vein_cv = contour_vein.reshape((-1, 1, 2))
+                cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
 
         if False:
             cv2.imwrite(contact_file, contact_img)
@@ -2337,4 +2338,4 @@ def main():
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
     contact_model.set_up_torch_params()
-    contact_model.domain_adaptation()
+    contact_model.collect_training_data()
