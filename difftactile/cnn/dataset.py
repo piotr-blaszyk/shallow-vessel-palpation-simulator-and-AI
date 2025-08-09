@@ -130,7 +130,6 @@ class MyDataset(torch.utils.data.Dataset):
         images_mask = images_mask_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         labels_mask = labels_mask_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         
-        print(f'self.mode: {self.mode}')
         if self.mode == 'train' and self.apply_augmentation:
             images = self.augmentation_rotation(images)
             labels = self.augmentation_rotation(labels)
@@ -142,8 +141,11 @@ class MyDataset(torch.utils.data.Dataset):
             labels = self.rotate_xy(labels)
             images = self.randomly_remove(images)
         
-        images = self.downscale('markers', images)
-        labels = self.downscale('vein', labels)
+        images, images_crop_mask = self.downscale(images)
+        labels, labels_crop_mask = self.downscale(labels)
+
+        images_mask &= images_crop_mask
+        labels_mask &= labels_crop_mask
         
         images = self.generate_markers_image(images, images_mask)  # shape: (T, H, W)
         labels = self.generate_vein_image(labels, labels_mask)     # shape: (T, H, W)
@@ -175,7 +177,7 @@ class MyDataset(torch.utils.data.Dataset):
                 
         return images
 
-    def generate_vein_image(self, points):
+    def generate_vein_image(self, points, points_mask):
         if points.shape[1] == 0:  # Check if there are any points
             return np.zeros((points.shape[0], self.w_scaled, self.h_scaled), dtype=np.uint8)
             
@@ -184,8 +186,10 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Generate image for each frame
         for t in range(points.shape[0]):
-            if len(points[t]) > 0:
-                contour_vein = self.synthetic_image_generator.alpha_shape(points[t], alpha=0.02).astype(np.int32)
+            # Get only valid points according to mask
+            valid_points = points[t][points_mask[t]]
+            if len(valid_points) > 0:
+                contour_vein = self.synthetic_image_generator.alpha_shape(valid_points, alpha=0.02).astype(np.int32)
                 contour_vein_cv = contour_vein.reshape((-1, 1, 2))
                 cv2.fillPoly(images[t], [contour_vein_cv], color=255)
                 
@@ -334,43 +338,11 @@ class MyDataset(torch.utils.data.Dataset):
         # The mask is automatically broadcast across the time dimension
         return points[:, mask, :]
 
-    def downscale(self, mode, points):
+    def downscale(self, points):
         if points.shape[1] == 0:  # Check if there are any points
             # Return empty images for all frames
             return np.zeros((points.shape[0], self.w_scaled, self.h_scaled), dtype=np.uint8)
             
-        # Process all frames
-        if mode == 'markers':
-            # Crop and scale all points
-            markers = self.synthetic_image_generator.crop(points.reshape(-1, 2)).reshape(points.shape)
-            markers = markers / self.k
-            
-            # Initialize output array for all frames
-            markers_imgs = np.zeros((points.shape[0], self.w_scaled, self.h_scaled), dtype=np.uint8)
-            
-            # Generate image for each frame
-            for t in range(points.shape[0]):
-                for point in markers[t]:
-                    x, y = int(point[0]), int(point[1])
-                    cv2.circle(markers_imgs[t], (x, y), radius=1, color=255, thickness=-1)
-            return markers_imgs
-            
-        elif mode == 'vein':
-            # Crop and scale all points
-            vein = self.synthetic_image_generator.crop(points.reshape(-1, 2)).reshape(points.shape)
-            vein = vein / self.k
-            
-            # Initialize output array for all frames
-            vein_imgs = np.zeros((points.shape[0], self.w_scaled, self.h_scaled), dtype=np.uint8)
-            
-            # Generate image for each frame
-            for t in range(points.shape[0]):
-                if len(vein[t]) > 0:
-                    contour_vein = self.synthetic_image_generator.alpha_shape(vein[t], alpha=0.02).astype(np.int32)
-                    contour_vein_cv = contour_vein.reshape((-1, 1, 2))
-                    cv2.fillPoly(vein_imgs[t], [contour_vein_cv], color=255)
-            return vein_imgs
-            
-        else:
-            raise Exception("Invalid mode")
-
+        points, mask = self.synthetic_image_generator.crop(points)
+        points = points / self.k
+        return points, mask

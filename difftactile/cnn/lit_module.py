@@ -15,6 +15,11 @@ class SegmentationModel(pl.LightningModule):
             channels=(16, 32, 64),
             strides=(2, 2),
             num_res_units=2,
+            act='PRELU',
+            norm='INSTANCE',
+            dropout=0.0,
+            bias=True,
+            adn_ordering='NDA',
         )
         self.loss_fn = DiceLoss(sigmoid=True, batch=True)
         self.lr = lr
