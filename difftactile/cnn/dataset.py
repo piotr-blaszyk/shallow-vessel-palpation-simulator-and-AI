@@ -28,7 +28,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.apply_augmentation = apply_augmentation
         self.clips_per_trajectory = clips_per_trajectory
         self.mode = mode
-        self.files = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith('.pkl')]
+        self.files = [os.path.join(data_dir, f) for f in os.listdir(data_dir)]
         
         self.w = SYSTEM_PARAMS.fisheye_model.crop_width
         self.h = SYSTEM_PARAMS.fisheye_model.crop_height
@@ -44,8 +44,7 @@ class MyDataset(torch.utils.data.Dataset):
         dilations = [1, 2, 3]
         
         for file_path in self.files:
-            with open(file_path, 'rb') as f:
-                data = pickle.load(f)
+            data = np.load(file_path)
             total_frames = len(data["markers"])
             
             # For each dilation factor
@@ -89,7 +88,7 @@ class MyDataset(torch.utils.data.Dataset):
         # Split trajectories
         trajectories = list(trajectory_to_indices.keys())
         random.seed(random_state)
-        # random.shuffle(trajectories)
+        random.shuffle(trajectories)
         
         n = len(trajectories)
         train_split = int(n * train_size)
@@ -118,20 +117,19 @@ class MyDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         file_path, start, dilation = self.clips[idx]
 
-        with open(file_path, 'rb') as f:
-            data = pickle.load(f)
-        
-        images_all = data["markers"]  # shape: (T, N, 2)
-        labels_all = data["labels"]  # shape: (T, N, 2)
-        images_mask_all = data["markers_mask"]
-        labels_mask_all = data["labels_mask"]
+        data = np.load(file_path)
+        # np.load returns a dict-like object whose keys we can access directly
+        markers = data['markers']
+        markers_mask = data['markers_mask']
+        labels = data['labels']
+        labels_mask = data['labels_mask']
         
         # Extract longer sequence and apply dilation
         dilated_clip_len = self.clip_len * dilation
-        images = images_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        labels = labels_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        images_mask = images_mask_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        labels_mask = labels_mask_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        images = markers[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        labels = labels[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        images_mask = markers_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        labels_mask = labels_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         
         if self.mode == 'train' and self.apply_augmentation:
             images = self.augmentation_rotation(images)

@@ -1277,15 +1277,13 @@ class Contact:
         markers_array, markers_mask = Contact.create_padded_array_with_mask(self.marker_data)
         veins_array, veins_mask = Contact.create_padded_array_with_mask(self.vein_data)
 
-        res = {
-            'markers': markers_array,
-            'markers_mask': markers_mask,
-            'labels': veins_array,
-            'labels_mask': veins_mask
-        }
-
-        with open(path, 'wb') as f:
-            pickle.dump(res, f)
+        np.savez(
+            path,
+            markers=markers_array,
+            markers_mask=markers_mask,
+            labels=veins_array,
+            labels_mask=veins_mask
+        )
         
         self.marker_data = []
         self.vein_data = []
