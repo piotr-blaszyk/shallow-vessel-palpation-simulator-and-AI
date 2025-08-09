@@ -46,7 +46,6 @@ def visualize_predictions(model_path, num_samples):
         shuffle=True,
         num_workers=test_data['num_workers']
     )
-    test_loader.dataset.dataset.mode = 'train'
     
     model = SegmentationModel()
     model.load_state_dict(torch.load(model_path))

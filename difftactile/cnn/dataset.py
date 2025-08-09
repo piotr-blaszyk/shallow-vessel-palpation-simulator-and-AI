@@ -19,13 +19,12 @@ from difftactile.sensor_model.fisheye_model import *
 
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir, mode=None, clip_len=16, apply_augmentation=True, clips_per_trajectory=4):
+    def __init__(self, data_dir, mode=None, clip_len=16, clips_per_trajectory=4):
         super().__init__()
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.fisheye_model = FisheyeModel()
         self.data_dir = data_dir
         self.clip_len = clip_len
-        self.apply_augmentation = apply_augmentation
         self.clips_per_trajectory = clips_per_trajectory
         self.mode = mode
         self.files = [os.path.join(data_dir, f) for f in os.listdir(data_dir)]
@@ -103,14 +102,17 @@ class MyDataset(torch.utils.data.Dataset):
         val_indices = [i for traj in val_trajectories for i in trajectory_to_indices[traj]]
         test_indices = [i for traj in test_trajectories for i in trajectory_to_indices[traj]]
         
-        res = (
-            Subset(dataset, train_indices),
-            Subset(dataset, val_indices),
-            Subset(dataset, test_indices),
-        )
-        res[0].dataset.mode = 'train'
-        res[1].dataset.mode = 'val'
-        res[2].dataset.mode = 'test'
+        # Create new dataset instances for each split
+        train_dataset = MyDataset(dataset.data_dir, mode='train')
+        train_dataset.clips = [dataset.clips[i] for i in train_indices]
+        
+        val_dataset = MyDataset(dataset.data_dir, mode='val')
+        val_dataset.clips = [dataset.clips[i] for i in val_indices]
+        
+        test_dataset = MyDataset(dataset.data_dir, mode='test')
+        test_dataset.clips = [dataset.clips[i] for i in test_indices]
+        
+        res = (train_dataset, val_dataset, test_dataset)
         print(f'split len: {[len(x) for x in res]}')
         return res
 
@@ -131,8 +133,9 @@ class MyDataset(torch.utils.data.Dataset):
         images_mask = markers_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         labels_mask = labels_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         
-        if self.mode == 'train' and self.apply_augmentation:
-            print('augmenting')
+        # print(f'self.mode: {self.mode}')
+        if self.mode == 'train':
+            # print('augmenting')
             images = self.augmentation_rotation(images)
             labels = self.augmentation_rotation(labels)
             images = self.shift_radial(images)
