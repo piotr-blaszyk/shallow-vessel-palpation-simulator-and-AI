@@ -11,6 +11,7 @@ import shutil
 import random
 import math
 from pathlib import Path
+import time
 
 from difftactile.main.constants import *
 from difftactile.main.main import SyntheticImageGenerator
@@ -34,6 +35,8 @@ class MyDataset(torch.utils.data.Dataset):
         self.k = 4
         self.w_scaled = int(self.w / self.k)
         self.h_scaled = int(self.h / self.k)
+        self.avg_call_time = 0.0
+        self.num_calls = 0
 
         # Pre-compute valid clips for each trajectory
         self.clips = []
@@ -114,7 +117,7 @@ class MyDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         file_path, start, dilation = self.clips[idx]
-        
+
         with open(file_path, 'rb') as f:
             data = pickle.load(f)
         

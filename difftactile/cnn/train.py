@@ -6,6 +6,8 @@ from albumentations.pytorch import ToTensorV2
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
+from lightning.pytorch.profilers import PyTorchProfiler, PassThroughProfiler
+import time
 import pickle
 
 from difftactile.cnn.dataset import *
@@ -14,8 +16,9 @@ from difftactile.main.constants import *
 
 
 def main():
+    start_time = time.perf_counter()
     BATCH_SIZE = 8
-    NUM_EPOCHS = 25
+    NUM_EPOCHS = 10
     NUM_WORKERS = 16
     LR = 1e-3
 
@@ -56,9 +59,12 @@ def main():
         callbacks=[checkpoint_cb],
         logger=logger,
         log_every_n_steps=1,
+        # profiler="pytorch"
     )
     trainer.fit(model, train_loader, val_loader)
     trainer.test(model, test_loader)
+    total_time = time.perf_counter() - start_time
+    print(f'total execution time: {total_time}')
 
     os.makedirs("saved_models", exist_ok=True)
     torch.save(model.state_dict(), "saved_models/final_segmentation_model.pt")
