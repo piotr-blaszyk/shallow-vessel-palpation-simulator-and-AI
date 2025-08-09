@@ -107,7 +107,7 @@ class Contact:
     def training_data_collection_initialise(self):
         self.marker_data = []
         self.vein_data = []
-        self.artificial_vein_displacement_coefficient = None
+        self.artificial_vein_displacement_coefficient = 0.25
 
     @ti.kernel
     def fp(self):
@@ -547,7 +547,7 @@ class Contact:
             [-1, -1, 0, 47, 93],
             [-1, -1, 0, 23, 230],
             [-1, -1, 0, 30, 95],
-            [-1, 0, 39, 133, 173]
+            [-1, -1, 0, 39, 133]
         ], dtype=int)
         self.exp_keypoints = ti.Vector.field(
             5, dtype=int, shape=(self.exp_keypoints_np.shape[0],), needs_grad=False
@@ -666,12 +666,11 @@ class Contact:
             ],
             [
                 [x, y, z, *og_r.as_quat()],
+                [x, y, z, *og_r.as_quat()],
                 [x, y, z - press_depth_surface, *og_r.as_quat()],
 
                 [x, y, z - press_depth_3, *og_r.as_quat()],
                 [x, y, z - press_depth_3, *twist_2.as_quat()],
-
-                [x, y, z - press_depth_surface, *twist_2.as_quat()],
             ]
         ])
         self.trajectories.from_numpy(self.trajectories_np)
@@ -1591,6 +1590,10 @@ class Contact:
         p = np.array(p)
         numerator = a * p[0] + b * p[1] + c
         denominator = np.sqrt(a * a + b * b)
+        
+        if abs(denominator) < 1e-10:
+            return np.zeros(2)
+            
         normal = np.array([a, b]) / denominator
         return -normal * numerator / denominator
 
@@ -1987,9 +1990,9 @@ class Contact:
             self.optimiser = optim.Adam(self.torch_params, lr=1e-1, betas=(0.9, 0.999), eps=1e-8)
 
         self.optimiser = optim.Adam([
-            {'params': [self.vitactip_youngs_modulus_torch]},
-            {'params': [self.phantom_youngs_modulus_0_torch]},
-            {'params': [self.phantom_youngs_modulus_1_torch]},
+            {'params': [self.vitactip_youngs_modulus_torch], 'lr': 0},
+            {'params': [self.phantom_youngs_modulus_0_torch], 'lr': 0},
+            {'params': [self.phantom_youngs_modulus_1_torch], 'lr': 0},
             {'params': [self.vitactip_poissons_ratio_torch], 'lr': 0},
             {'params': [self.phantom_poissons_ratio_0_torch], 'lr': 0},
             {'params': [self.phantom_poissons_ratio_1_torch], 'lr': 0},
@@ -1999,7 +2002,7 @@ class Contact:
             {'params': [self.normal_damping_torch]}
         ], lr=1e-1, betas=(0.9, 0.999), eps=1e-8)
 
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimiser, step_size=1, gamma=0.5)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimiser, step_size=1, gamma=0.1)
     
     def update_params(self, ts):
         try:
@@ -2058,48 +2061,6 @@ class Contact:
         self.normal_stiffness[None] += ti.exp(self.normal_stiffness_log[None])
         self.tangential_stiffness[None] += ti.exp(self.tangential_stiffness_log[None])
         self.normal_damping[None] += ti.exp(self.normal_damping_log[None])
-    
-    def update_param_none(self, ti_var, keys):
-        min_val = SYSTEM_PARAMS.optimisation.min_values
-        max_val = SYSTEM_PARAMS.optimisation.max_values
-        learning_rate = SYSTEM_PARAMS.optimisation.learning_rates
-        for i in range(len(keys)):
-            min_val = min_val[keys[i]]
-            max_val = max_val[keys[i]]
-            learning_rate = learning_rate[keys[i]]
-
-        update = - (
-            ti_var.grad[None]
-            * learning_rate
-        )
-        ti_var[None] += update
-        ti_var[None] = ti.min(max_val, ti.max(min_val, ti_var[None]))
-        
-        param_name = '.'.join(keys)
-        if False:
-            print(f'{param_name}: {ti_var[None]}')
-            print(f'{param_name}.update: {update}')
-
-    def update_param_indexed(self, ti_var, keys, idx):
-        min_val = SYSTEM_PARAMS.optimisation.min_values
-        max_val = SYSTEM_PARAMS.optimisation.max_values
-        learning_rate = SYSTEM_PARAMS.optimisation.learning_rates
-        for i in range(len(keys)):
-            min_val = min_val[keys[i]]
-            max_val = max_val[keys[i]]
-            learning_rate = learning_rate[keys[i]]
-
-        update = - (
-            ti_var.grad[idx]
-            * learning_rate
-        )
-        ti_var[idx] += update
-        ti_var[idx] = ti.min(max_val, ti.max(min_val, ti_var[idx]))
-        
-        param_name = '.'.join(keys)
-        if False:
-            print(f'{param_name}[{idx}]: {ti_var[idx]}')
-            print(f'{param_name}.update: {update}')
     
     def save_final_params(self):
         results = {
@@ -2170,8 +2131,8 @@ class Contact:
         losses_per_trajectory = []
         for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
             print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
-            # for i in range(contact_model.trajectories_np.shape[0]):
-            for i in range(1, 2):
+            for i in range(self.trajectories_np.shape[0]):
+            # for i in range(1, 2):
                 print(f'trajectory {i}: {self.trajectory_names[i]}')
                 self.trajectory_ix[None] = i
                 self.set_up_initial_positions_state_and_trajectory()
@@ -2207,7 +2168,7 @@ class Contact:
                 self.clear_grad()
                 self.prev_loss[None] = 0.0
                 self.trajectory_loss[None] = 0.0
-                continue
+                # continue
                 print("backward")
                 passes = 0
                 ts = total_ts-1
@@ -2334,7 +2295,8 @@ class Contact:
                         SYSTEM_PARAMS.contact.num_sub_frames - 1
                     )
                     self.visualisation_update_gui(ts)
-                    self.record_training_data_point(j, ts)
+                    if ts % 2 == 0:
+                        self.record_training_data_point(j, ts)
                     ts += 1
                 self.write_training_data_to_file(j)
                 
@@ -2372,4 +2334,4 @@ def main():
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
     contact_model.set_up_torch_params()
-    contact_model.collect_training_data()
+    contact_model.domain_adaptation()

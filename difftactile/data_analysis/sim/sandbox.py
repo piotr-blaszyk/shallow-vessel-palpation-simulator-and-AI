@@ -1,19 +1,21 @@
+import time
 import numpy as np
-from scipy.spatial import Delaunay
-import matplotlib.pyplot as plt
 
-from difftactile.main.constants import *
+path1 = "difftactile/output/training_data/pickle/trajectory_0000.npz"
+path2 = "difftactile/output/training_data/pickle/trajectory_0001.npz"
+path3 = "difftactile/output/training_data/pickle/trajectory_0002.npz"
 
-# Define a set of points
-points = np.array([
-    [0, 0], [0, 1.1], [1, 0], [1, 1],
-    [0.5, 0.5], [0.2, 0.8], [0.8, 0.2]
-])
+# Cold read (after flushing cache)
+start = time.perf_counter()
+data = np.load(path1)
+cold_time = time.perf_counter() - start
+print(f"Cold read: {cold_time:.6f} s")
 
-# Create the Delaunay triangulation object
-tri = Delaunay(points)
+data = np.load(path2)
+data = np.load(path3)
 
-# Accessing triangulation information
-print("Points:\n", points)
-print("\nSimplices (triangles):\n", tri.simplices) # Indices of points forming each triangle
-print("\nNeighbors of first simplex:\n", tri.neighbors[0]) # Indices of neighboring simplices
+# Hot read (file should now be in cache)
+start = time.perf_counter()
+data = np.load(path1)
+hot_time = time.perf_counter() - start
+print(f"Hot read: {hot_time:.6f} s")
