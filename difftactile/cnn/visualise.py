@@ -46,6 +46,7 @@ def visualize_predictions(model_path, num_samples):
         shuffle=True,
         num_workers=test_data['num_workers']
     )
+    test_loader.dataset.dataset.mode = 'train'
     
     model = SegmentationModel()
     model.load_state_dict(torch.load(model_path))
@@ -89,8 +90,12 @@ def visualize_predictions(model_path, num_samples):
     plt.show()
 
 
-if __name__ == "__main__":
+def main():
     visualize_predictions(
         model_path=SYSTEM_PARAMS.files.segmentation_model_weights,
         num_samples=5
     )
+
+
+if __name__ == "__main__":
+    main()

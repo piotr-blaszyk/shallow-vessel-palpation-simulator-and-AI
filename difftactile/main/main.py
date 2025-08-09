@@ -69,7 +69,7 @@ class SyntheticImageGenerator:
         concave = unary_union(triangles)
 
         if len(edge_segments) == 0:
-            return np.array()
+            return np.array([])
 
         if isinstance(concave, Polygon):
             return np.array(concave.exterior.coords)

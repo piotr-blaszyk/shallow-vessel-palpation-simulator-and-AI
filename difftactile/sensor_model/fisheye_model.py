@@ -36,9 +36,9 @@ class FisheyeModel:
         a = np.asarray(a)
         if a.ndim == 1:
             a = a.reshape(1, 3)
-        a_norm = np.linalg.norm(a, axis=1, keepdims=True)
+        a_norm = np.linalg.norm(a, axis=1, keepdims=False)
         a_norm = np.maximum(a_norm, 1e-12)
-        cos = a[:, 2:3] / a_norm.flatten()
+        cos = a[:, 2] / a_norm
         cos = np.clip(cos, -1.0, 1.0)
         theta = np.arccos(cos)
         x_normalized = np.where(
@@ -346,4 +346,16 @@ class FisheyeModel:
 
 def main():
     fisheye_model = FisheyeModel()
-    fisheye_model.generate_marker_3d_projection()
+    points = np.array([
+        [10, 0, 20],
+        [0, 10, 20],
+        [-10, 0, 20],
+        [0, -10, 20],
+    ], dtype=float)
+    points /= 1_000
+    res = fisheye_model.project_3d_2d_np(points)
+    print(res)
+
+
+if __name__ == '__main__':
+    main()

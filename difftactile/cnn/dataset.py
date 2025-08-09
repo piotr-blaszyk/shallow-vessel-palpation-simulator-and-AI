@@ -132,6 +132,7 @@ class MyDataset(torch.utils.data.Dataset):
         labels_mask = labels_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         
         if self.mode == 'train' and self.apply_augmentation:
+            print('augmenting')
             images = self.augmentation_rotation(images)
             labels = self.augmentation_rotation(labels)
             images = self.shift_radial(images)
@@ -140,11 +141,13 @@ class MyDataset(torch.utils.data.Dataset):
             labels = self.uniform_shift(labels)
             images = self.rotate_xy(images)
             labels = self.rotate_xy(labels)
-            images = self.randomly_remove(images)
+            images_random_remove_mask = self.randomly_remove(images)
+            images_mask &= images_random_remove_mask
         
         images, images_crop_mask = self.downscale(images)
         labels, labels_crop_mask = self.downscale(labels)
 
+        # print(f'images_mask.shape: {images_mask.shape}; images_crop_mask.shape: {images_crop_mask.shape}')
         images_mask &= images_crop_mask
         labels_mask &= labels_crop_mask
         
@@ -322,12 +325,12 @@ class MyDataset(torch.utils.data.Dataset):
     
     def randomly_remove(self, points):
         if points.shape[1] == 0:  # Check if there are any points
-            return points
+            return np.ones((points.shape[0], 0), dtype=bool)  # Return empty mask matching input shape
             
         # Determine number of points to remove (same for all frames)
-        k = random.randint(0, min(20, points.shape[1]))
+        k = random.randint(0, min(13, points.shape[1]))
         if k == 0:
-            return points
+            return np.ones((points.shape[0], points.shape[1]), dtype=bool)  # Return all True mask
             
         # Select which points to remove (same indices across all frames)
         indices_to_remove = random.sample(range(points.shape[1]), k)
@@ -336,14 +339,13 @@ class MyDataset(torch.utils.data.Dataset):
         mask = np.ones(points.shape[1], dtype=bool)
         mask[indices_to_remove] = False
         
-        # Apply mask to all frames at once using broadcasting
-        # The mask is automatically broadcast across the time dimension
-        return points[:, mask, :]
+        # Expand mask to match batch dimension
+        # The mask will be the same for all frames in the sequence
+        return np.tile(mask, (points.shape[0], 1))  # Shape: (n, num_points)
 
     def downscale(self, points):
         if points.shape[1] == 0:  # Check if there are any points
-            # Return empty images for all frames
-            return np.zeros((points.shape[0], self.w_scaled, self.h_scaled), dtype=np.uint8)
+            raise Exception("should not happen")
             
         points, mask = self.synthetic_image_generator.crop(points)
         points = points / self.k

@@ -17,7 +17,7 @@ from difftactile.main.constants import *
 
 def main():
     start_time = time.perf_counter()
-    BATCH_SIZE = 1024
+    BATCH_SIZE = 32
     NUM_EPOCHS = 10
     NUM_WORKERS = 16
     LR = 1e-3
@@ -27,7 +27,7 @@ def main():
         data_dir=SYSTEM_PARAMS.files.dataset_root
     )
     train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
-        full_dataset, train_size=0.34, val_size=0.33, test_size=0.33
+        full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
     )
     train_loader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
