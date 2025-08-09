@@ -1859,30 +1859,31 @@ class Contact:
             )
             print()
 
-            base_gradient_data = {
-                "loss": self.loss.grad[None],
-                "squared_error_sum_1": self.squared_error_sum_1.grad[None],
-                "squared_error_sum_2": self.squared_error_sum_2.grad[None],
-                "vitactip_mu": self.vitactip.mu.grad[None],
-                "vitactip_lam": self.vitactip.lam.grad[None],
-                "vitactip_youngs_modulus": self.vitactip.youngs_modulus.grad[None],
-                "normal_stiffness": self.normal_stiffness.grad[None],
-                "normal_damping": self.normal_damping.grad[None],
-                "tangential_stiffness": self.tangential_stiffness.grad[None],
-                "coulomb_friction_coeff": self.coulomb_friction_coeff.grad[None],
-                "phantom_mu_0": self.phantom.mu.grad[0],
-                "phantom_mu_1": self.phantom.mu.grad[1],
-                "phantom_lam_0": self.phantom.lam.grad[0],
-                "phantom_lam_1": self.phantom.lam.grad[1],
-                "phantom_youngs_modulus_0": self.phantom.youngs_modulus.grad[0],
-                "phantom_youngs_modulus_1": self.phantom.youngs_modulus.grad[1]
-            }
-            
-            gradient_data = {k: float(v) for k, v in base_gradient_data.items()}
+            if False:
+                base_gradient_data = {
+                    "loss": self.loss.grad[None],
+                    "squared_error_sum_1": self.squared_error_sum_1.grad[None],
+                    "squared_error_sum_2": self.squared_error_sum_2.grad[None],
+                    "vitactip_mu": self.vitactip.mu.grad[None],
+                    "vitactip_lam": self.vitactip.lam.grad[None],
+                    "vitactip_youngs_modulus": self.vitactip.youngs_modulus.grad[None],
+                    "normal_stiffness": self.normal_stiffness.grad[None],
+                    "normal_damping": self.normal_damping.grad[None],
+                    "tangential_stiffness": self.tangential_stiffness.grad[None],
+                    "coulomb_friction_coeff": self.coulomb_friction_coeff.grad[None],
+                    "phantom_mu_0": self.phantom.mu.grad[0],
+                    "phantom_mu_1": self.phantom.mu.grad[1],
+                    "phantom_lam_0": self.phantom.lam.grad[0],
+                    "phantom_lam_1": self.phantom.lam.grad[1],
+                    "phantom_youngs_modulus_0": self.phantom.youngs_modulus.grad[0],
+                    "phantom_youngs_modulus_1": self.phantom.youngs_modulus.grad[1]
+                }
+                
+                gradient_data = {k: float(v) for k, v in base_gradient_data.items()}
 
-            if SYSTEM_PARAMS.optimisation.calibrate_learning_rates == 1:
-                with open(SYSTEM_PARAMS.files.optimisation_loop_calibration, 'w') as f:
-                    json.dump(gradient_data, f, indent=4)
+                if SYSTEM_PARAMS.optimisation.calibrate_learning_rates == 1:
+                    with open(SYSTEM_PARAMS.files.optimisation_loop_calibration, 'w') as f:
+                        json.dump(gradient_data, f, indent=4)
 
             self.gradients_printed = True
 
@@ -2213,7 +2214,8 @@ class Contact:
                         print(f'mini batch loss: {self.batch_loss[None]:0.3e}')
                         print(f'mini batch loss 1: {self.batch_loss_1[None]:0.3e}')
                         print(f'mini batch loss 2: {self.batch_loss_2[None]:0.3e}')
-                        self.update_params(ts)
+                        if opts > 0:
+                            self.update_params(ts)
                         if self.retry:
                             break
                         self.reset_state()
@@ -2229,9 +2231,10 @@ class Contact:
                     else:
                         self.retry = False
                 losses_per_trajectory.append(float(self.trajectory_loss[None]))
-            previous_lr = self.optimiser.param_groups[0]['lr']
-            self.scheduler.step()
-            current_lr = self.optimiser.param_groups[0]['lr']
+            previous_lr = self.optimiser.param_groups[-1]['lr']
+            if opts > 0:
+                self.scheduler.step()
+            current_lr = self.optimiser.param_groups[-1]['lr']
             print(f"lr: {previous_lr:0.3e} -> {current_lr:0.3e}")
             print(
                 f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
