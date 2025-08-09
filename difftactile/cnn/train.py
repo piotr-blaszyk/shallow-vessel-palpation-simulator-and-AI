@@ -6,6 +6,7 @@ from albumentations.pytorch import ToTensorV2
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
+import pickle
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.lit_module import *
@@ -23,7 +24,7 @@ def main():
         data_dir=SYSTEM_PARAMS.files.dataset_root
     )
     train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
-        full_dataset, train_size=0.34, val_size=0.33, test_size=0.33, random_state=42
+        full_dataset, train_size=0.34, val_size=0.33, test_size=0.33
     )
     train_loader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
@@ -34,6 +35,14 @@ def main():
     test_loader = DataLoader(
         test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
     )
+
+    test_data = {
+        'dataset': test_dataset,
+        'num_workers': NUM_WORKERS
+    }
+    with open(SYSTEM_PARAMS.files.test_loader, 'wb') as f:
+        pickle.dump(test_data, f)
+
     model = SegmentationModel(lr=LR)
     checkpoint_cb = ModelCheckpoint(
         monitor="val_iou",

@@ -71,7 +71,7 @@ class MyDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def create_splits(
-        dataset, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42
+        dataset, train_size, val_size, test_size, random_state=42
     ):
         """Split dataset while ensuring all clips from the same trajectory stay together"""
         assert abs(train_size + val_size + test_size - 1.0) < 1e-10, (
@@ -86,7 +86,7 @@ class MyDataset(torch.utils.data.Dataset):
         # Split trajectories
         trajectories = list(trajectory_to_indices.keys())
         random.seed(random_state)
-        random.shuffle(trajectories)
+        # random.shuffle(trajectories)
         
         n = len(trajectories)
         train_split = int(n * train_size)

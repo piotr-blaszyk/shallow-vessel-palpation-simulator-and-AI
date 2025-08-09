@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 from difftactile.cnn.train import *
 import matplotlib.colors as mcolors
+import pickle
 
 
 def calculate_iou(ground_truth, prediction):
@@ -37,13 +38,15 @@ def create_confusion_matrix_overlay(ground_truth, prediction):
 
 
 def visualize_predictions(model_path, num_samples):
-    full_dataset = MyDataset(
-        data_dir=SYSTEM_PARAMS.files.dataset_root
+    with open(SYSTEM_PARAMS.files.test_loader, 'rb') as f:
+        test_data = pickle.load(f)
+    test_loader = DataLoader(
+        test_data['dataset'],
+        batch_size=1,
+        shuffle=True,
+        num_workers=test_data['num_workers']
     )
-    train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
-        full_dataset, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42
-    )
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+    
     model = SegmentationModel()
     model.load_state_dict(torch.load(model_path))
     model.eval()
@@ -65,6 +68,11 @@ def visualize_predictions(model_path, num_samples):
             image = image.cpu().numpy().squeeze()
             mask = mask.cpu().numpy().squeeze()
             pred = pred.cpu().numpy().squeeze()
+
+            n = image.shape[0]
+            image = image[n // 2, :, :]
+            mask = mask[n // 2, :, :]
+            pred = pred[n // 2, :, :]
             
             iou_score = calculate_iou(mask, pred)
             
