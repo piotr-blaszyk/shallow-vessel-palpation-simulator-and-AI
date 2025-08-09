@@ -1272,9 +1272,27 @@ class Contact:
         )
         path = f'{directory}/{file}'
 
+        def create_padded_array_with_mask(data_list):
+            if not data_list:
+                return np.array([]), np.array([])
+            n = len(data_list)
+            num_points_max = max(arr.shape[0] for arr in data_list)
+            padded_array = np.zeros((n, num_points_max, 2), dtype=data_list[0].dtype)
+            mask = np.zeros((n, num_points_max), dtype=bool)
+            for i, arr in enumerate(data_list):
+                num_points = arr.shape[0]
+                padded_array[i, :num_points, :] = arr
+                mask[i, :num_points] = True
+            return padded_array, mask
+
+        markers_array, markers_mask = create_padded_array_with_mask(self.marker_data)
+        veins_array, veins_mask = create_padded_array_with_mask(self.vein_data)
+
         res = {
-            'markers': self.marker_data,
-            'labels': self.vein_data
+            'markers': markers_array,
+            'markers_mask': markers_mask,
+            'labels': veins_array,
+            'labels_mask': veins_mask
         }
 
         with open(path, 'wb') as f:

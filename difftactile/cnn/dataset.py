@@ -69,48 +69,6 @@ class MyDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.clips)
 
-    def __getitem__(self, idx):
-        file_path, start, dilation = self.clips[idx]
-        
-        with open(file_path, 'rb') as f:
-            data = pickle.load(f)
-        
-        images_all = data["markers"]  # shape: (T, N, 2)
-        labels_all = data["labels"]  # shape: (T, N, 2)
-        
-        # Extract longer sequence and apply dilation
-        dilated_clip_len = self.clip_len * dilation
-        images = images_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        labels = labels_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        
-        print(f'self.mode: {self.mode}')
-        if self.mode == 'train' and self.apply_augmentation:
-            images = self.augmentation_rotation(images)
-            labels = self.augmentation_rotation(labels)
-            images = self.shift_radial(images)
-            labels = self.shift_radial(labels)
-            images = self.uniform_shift(images)
-            labels = self.uniform_shift(labels)
-            images = self.rotate_xy(images)
-            labels = self.rotate_xy(labels)
-            images = self.randomly_remove(images)
-        
-        images = self.downscale('markers', images)
-        labels = self.downscale('vein', labels)
-        
-        images = self.generate_markers_image(images)  # shape: (T, H, W)
-        labels = self.generate_vein_image(labels)     # shape: (T, H, W)
-
-        # Convert to float and normalize
-        images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
-        labels = torch.tensor(labels, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
-        
-        # Add channel dimension: (T, H, W) -> (C, T, H, W)
-        images = images.unsqueeze(0)
-        labels = labels.unsqueeze(0)
-        
-        return images, labels
-
     @staticmethod
     def create_splits(
         dataset, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42
@@ -154,7 +112,53 @@ class MyDataset(torch.utils.data.Dataset):
         print(f'split len: {[len(x) for x in res]}')
         return res
 
-    def generate_markers_image(self, points):
+    def __getitem__(self, idx):
+        file_path, start, dilation = self.clips[idx]
+        
+        with open(file_path, 'rb') as f:
+            data = pickle.load(f)
+        
+        images_all = data["markers"]  # shape: (T, N, 2)
+        labels_all = data["labels"]  # shape: (T, N, 2)
+        images_mask_all = data["markers_mask"]
+        labels_mask_all = data["labels_mask"]
+        
+        # Extract longer sequence and apply dilation
+        dilated_clip_len = self.clip_len * dilation
+        images = images_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        labels = labels_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        images_mask = images_mask_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        labels_mask = labels_mask_all[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        
+        print(f'self.mode: {self.mode}')
+        if self.mode == 'train' and self.apply_augmentation:
+            images = self.augmentation_rotation(images)
+            labels = self.augmentation_rotation(labels)
+            images = self.shift_radial(images)
+            labels = self.shift_radial(labels)
+            images = self.uniform_shift(images)
+            labels = self.uniform_shift(labels)
+            images = self.rotate_xy(images)
+            labels = self.rotate_xy(labels)
+            images = self.randomly_remove(images)
+        
+        images = self.downscale('markers', images)
+        labels = self.downscale('vein', labels)
+        
+        images = self.generate_markers_image(images, images_mask)  # shape: (T, H, W)
+        labels = self.generate_vein_image(labels, labels_mask)     # shape: (T, H, W)
+
+        # Convert to float and normalize
+        images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
+        labels = torch.tensor(labels, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
+        
+        # Add channel dimension: (T, H, W) -> (C, T, H, W)
+        images = images.unsqueeze(0)
+        labels = labels.unsqueeze(0)
+        
+        return images, labels
+
+    def generate_markers_image(self, points, points_mask):
         if points.shape[1] == 0:  # Check if there are any points
             return np.zeros((points.shape[0], self.w_scaled, self.h_scaled), dtype=np.uint8)
             
@@ -163,9 +167,11 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Generate image for each frame
         for t in range(points.shape[0]):
-            for point in points[t]:
-                x, y = int(point[0]), int(point[1])
-                cv2.circle(images[t], (x, y), radius=1, color=255, thickness=-1)
+            for i, point in enumerate(points[t]):
+                # Only draw circle if the mask indicates this point is valid
+                if points_mask[t, i]:
+                    x, y = int(point[0]), int(point[1])
+                    cv2.circle(images[t], (x, y), radius=1, color=255, thickness=-1)
                 
         return images
 
