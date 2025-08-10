@@ -775,7 +775,7 @@ class Contact:
         ts_dist = self.target_4_ts - self.target_3_ts
         vein_expected_ts = (self.vein_cx_A - x_a) / dist * ts_dist + self.target_3_ts
         self.record_on = int(max(self.target_3_ts, vein_expected_ts))
-        self.record_off = int(min(self.target_4_ts, vein_expected_ts + 0.4 * ts_dist))
+        self.record_off = int(min(self.target_4_ts, vein_expected_ts + 0.3 * ts_dist))
         
         state_dict = {
             'tumour_present': True,
@@ -1266,7 +1266,6 @@ class Contact:
         cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
         cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
         r = SYSTEM_PARAMS.fisheye_model.circle_radius
-        r_small = SYSTEM_PARAMS.fisheye_model.circle_small_radius
 
         self.move_og_resolution()
         markers = self.sim_markers_deformed.to_numpy()
@@ -1278,48 +1277,17 @@ class Contact:
             x, y = int(point[0]), int(point[1])
             cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
         
-        disp = self.mean_marker_displacement
-
-        # Compute unit vector from camera center to displacement point
-        center = np.array([cx, cy])
-        direction = disp - center
-        unit_vector = direction / np.linalg.norm(direction)
+        markers_mask = np.zeros((h, w), dtype=np.uint8)
+        if len(markers) > 0:
+            contour = self.synthetic_image_generator.alpha_shape(markers).astype(np.int32)
+            if len(contour) > 0:
+                contour_cv = contour.reshape((-1, 1, 2))
+                cv2.fillPoly(markers_mask, [contour_cv], color=255)
         
-        # Calculate chord points at r_small * (1/3) distance from center
-        chord_center = center + unit_vector * (r_small * (1/3))
-        # Get perpendicular vector
-        perp_vector = np.array([-unit_vector[1], unit_vector[0]])
-        # Calculate chord endpoints using perpendicular vector
-        chord_half_length = np.sqrt(r_small**2 - (r_small/3)**2)  # Pythagorean theorem
-        chord_point1 = chord_center + perp_vector * chord_half_length
-        chord_point2 = chord_center - perp_vector * chord_half_length
-        
-        # Create circle cap mask
-        cap_mask = np.zeros((h, w), dtype=np.uint8)
-        # Create polygon points for the cap
-        circle_points = []
-        num_points = 32  # Number of points to approximate circle arc
-        angle_start = np.arctan2(chord_point1[1] - cy, chord_point1[0] - cx)
-        angle_end = np.arctan2(chord_point2[1] - cy, chord_point2[0] - cx)
-        # Ensure we take the smaller arc
-        if abs(angle_end - angle_start) > np.pi:
-            if angle_end > angle_start:
-                angle_start += 2 * np.pi
-            else:
-                angle_end += 2 * np.pi
-        angles = np.linspace(angle_start, angle_end, num_points)
-        for angle in angles:
-            x = cx + r_small * np.cos(angle)
-            y = cy + r_small * np.sin(angle)
-            circle_points.append([x, y])
-        # Add chord points to close the polygon
-        circle_points.append(chord_point2)
-        circle_points.append(chord_point1)
-        # Convert to numpy array and correct format for cv2
-        cap_points = np.array(circle_points, dtype=np.int32).reshape((-1, 1, 2))
-        cv2.fillPoly(cap_mask, [cap_points], color=255)
-        
-        vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
+        if self.vein_detectable:
+            vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
+        else:
+            vein = np.array([])
         vein_full_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
             contour_vein = self.synthetic_image_generator.alpha_shape(vein).astype(np.int32)
@@ -1330,12 +1298,8 @@ class Contact:
         vein_points_filtered = []
         for point in vein:
             x, y = int(point[0]), int(point[1])
-            if 0 <= x < w and 0 <= y < h and cap_mask[y, x] > 127:
+            if 0 <= x < w and 0 <= y < h and markers_mask[y, x] > 127:
                 vein_points_filtered.append(point)
-        if self.vein_detectable:
-            vein = np.array(vein_points_filtered)
-        else:
-            vein = np.array([])
         # self.vein_data.append(vein)
         vein_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
@@ -1344,11 +1308,10 @@ class Contact:
                 contour_vein_cv = contour_vein.reshape((-1, 1, 2))
                 cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
 
-        if False:
-            cv2.imwrite(contact_file, cap_mask)
-            cv2.imwrite(markers_file, markers_img)
-            cv2.imwrite(vein_file, vein_img)
-            cv2.imwrite(vein_full_file, vein_full_img)
+        cv2.imwrite(contact_file, markers_mask)
+        cv2.imwrite(markers_file, markers_img)
+        cv2.imwrite(vein_file, vein_img)
+        cv2.imwrite(vein_full_file, vein_full_img)
 
     def write_training_data_to_file(self, training_iteration):
         directory = SYSTEM_PARAMS.files.dataset_root
@@ -1597,6 +1560,7 @@ class Contact:
                 ix
             ]
             projection_2d = self.vitactip.project_A_point_2d(point)
+            projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
             self.vein_all_2d_projection[i] = projection_2d
 
     @ti.kernel
