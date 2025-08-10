@@ -3,26 +3,30 @@ import torch
 import torch.nn.functional as F
 from monai.networks.nets import UNet
 from monai.losses import DiceLoss
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 class SegmentationModel(pl.LightningModule):
-    def __init__(self, lr=1e-3):
+    def __init__(self, lr=1e-3, lr_patience=5, lr_factor=0.1, lr_min=1e-6):
         super().__init__()
         self.model = UNet(
             spatial_dims=3,
             in_channels=1,
             out_channels=1,
-            channels=(16, 32, 64),
-            strides=(2, 2),
-            num_res_units=2,
+            channels=(32, 64, 128, 256),  # Increased number and size of channels
+            strides=(2, 2, 2),  # Added another downsampling level
+            num_res_units=3,    # Increased residual units
             act='PRELU',
             norm='INSTANCE',
-            dropout=0.0,
+            dropout=0.2,        # Added some dropout for regularization
             bias=True,
             adn_ordering='NDA',
         )
         self.loss_fn = DiceLoss(sigmoid=True, batch=True)
         self.lr = lr
+        self.lr_patience = lr_patience
+        self.lr_factor = lr_factor
+        self.lr_min = lr_min
 
     def forward(self, x):
         return self.model(x)
@@ -50,7 +54,21 @@ class SegmentationModel(pl.LightningModule):
         return self.shared_step(batch, "test")
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        scheduler = {
+            "scheduler": ReduceLROnPlateau(
+                optimizer,
+                mode="max",
+                factor=self.lr_factor,
+                patience=self.lr_patience,
+                min_lr=self.lr_min,
+                verbose=True
+            ),
+            "monitor": "val_iou",
+            "interval": "epoch",
+            "frequency": 1
+        }
+        return {"optimizer": optimizer, "lr_scheduler": scheduler}
 
     def iou_score(self, preds, targets, eps=1e-6):
         intersection = (preds * targets).sum(dim=(1, 2, 3))
