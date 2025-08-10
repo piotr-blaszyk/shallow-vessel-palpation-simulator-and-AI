@@ -789,6 +789,7 @@ class Contact:
         # self.artificial_vein_displacement_coefficient = np.random.uniform(0.2, 0.4)
         self.artificial_vein_displacement_coefficient = 1.0
         print(f'self.artificial_vein_displacement_coefficient: {self.artificial_vein_displacement_coefficient}')
+        self.vein_detectable = False
 
     def set_up_initial_positions_state_and_trajectory(self):
         state_dict = self.state_dicts[self.trajectory_ix[None]]
@@ -1648,7 +1649,7 @@ class Contact:
         
         return a, b, c
 
-    def vector_line_to_point(self, a, b, c, p):
+    def vector_point_to_line(self, a, b, c, p):
         p = np.array(p)
         numerator = a * p[0] + b * p[1] + c
         denominator = np.sqrt(a * a + b * b)
@@ -1668,43 +1669,30 @@ class Contact:
     def move_points_away_from_vein(self):
         self.move_og_resolution()
         points = self.sim_markers_deformed_filtered.to_numpy()
-        zs = self.sim_markers_deformed_filtered_z.to_numpy()
-        points = self.move_points_away_from_vein_helper(points, zs)
+        points = self.move_points_away_from_vein_helper(points)
         self.sim_markers_deformed_filtered.from_numpy(points)
 
         points = self.sim_markers_deformed.to_numpy()
-        zs = self.sim_markers_deformed_z.to_numpy()
-        points = self.move_points_away_from_vein_helper(points, zs)
+        points = self.move_points_away_from_vein_helper(points)
         self.sim_markers_deformed.from_numpy(points)
         self.move_ti_resolution()
 
-    def move_points_away_from_vein_helper(self, points, zs):
+    def move_points_away_from_vein_helper(self, points):
         x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
         disp_c = self.artificial_vein_displacement_coefficient
         a, b, c = self.line_equation()
-
-        # zs_no_minus_1 = zs[zs > -1]
-        # print(f'z_min: {zs_no_minus_1.min()}; z_max: {zs_no_minus_1.max()}')
-
-        mean_point = np.mean(points, axis=0)
-        cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
-        cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
-        r = SYSTEM_PARAMS.fisheye_model.circle_radius
-        centre = np.array([cx, cy])
         
         for i in range(len(points)):
-            z = zs[i]
-            if abs(z - (-1)) > 1e-6:
-                vec = self.vector_line_to_point(a, b, c, points[i])
-                x = np.linalg.norm(vec)
-                displacement = 0.0
-                if 0 < x < x_0:
-                    displacement = x
-                elif x_0 <= x < 2 * x_0:
-                    displacement = x_0 - (x - x_0)
-                if z <= SYSTEM_PARAMS_COMPUTED.phantom_top_surface_z and displacement > 0:
-                    vec_normalized = vec / x
-                    points[i] = points[i] + vec_normalized * displacement * disp_c
+            vec = self.vector_point_to_line(a, b, c, points[i])
+            x = np.linalg.norm(vec)
+            displacement = 0.0
+            if 0 < x < x_0:
+                displacement = x
+            elif x_0 <= x < 2 * x_0:
+                displacement = x_0 - (x - x_0)
+            if displacement > 0:
+                vec_normalized = vec / x
+                points[i] = points[i] + vec_normalized * displacement * disp_c
 
         return points
 
