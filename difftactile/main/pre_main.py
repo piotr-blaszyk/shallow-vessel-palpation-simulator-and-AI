@@ -133,7 +133,7 @@ def main():
     phantom_difftactile_position = phantom_closest_vertex + phantom_scaled_spans
 
     vitactip_tip_position = np.array([
-        phantom_difftactile_position[0] - SYSTEM_PARAMS.geometry.sensor_xy_radius,
+        phantom_difftactile_position[0] - phantom_scaled_spans[0] + SYSTEM_PARAMS.geometry.sensor_xy_radius,
         phantom_difftactile_position[1],
         phantom_difftactile_position[2] + phantom_dimensions[2] / 2 + SYSTEM_PARAMS.geometry.gap,
     ])

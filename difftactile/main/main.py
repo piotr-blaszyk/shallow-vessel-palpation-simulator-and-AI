@@ -111,6 +111,11 @@ class Contact:
         self.marker_data = []
         self.vein_data = []
         self.artificial_vein_displacement_coefficient = 0.25
+        self.vein_cx_A = None
+        self.mean_marker_displacement = None
+        self.vein_detectable = False
+        self.target_3_ts = 12
+        self.target_4_ts = 226
 
     @ti.kernel
     def fp(self):
@@ -739,9 +744,9 @@ class Contact:
             k_1 = SYSTEM_PARAMS.trajectory.press_depth_offset_1
             press_depth_rand = np.random.uniform(-k_0, k_1)
             press_depth_1 = press_depth_1 + press_depth_rand
-        slide_dist = SYSTEM_PARAMS.trajectory.slide_distance
+        slide_dist = SYSTEM_PARAMS.trajectory.slide_distance_long
 
-        self.trajectories_np[1] = np.array([
+        trajectory = np.array([
             [x, y, z, *slide_r.as_quat()],
             [x, y, z, *slide_r.as_quat()],
             [x, y, z - press_depth_surface, *slide_r.as_quat()],
@@ -749,14 +754,31 @@ class Contact:
             [x, y, z - press_depth_1, *slide_r.as_quat()],
             [x + slide_dist, y, z - press_depth_1, *slide_r.as_quat()],
         ])
+        self.trajectories_np[1] = trajectory
+        self.trajectories_np[2] = trajectory
         self.trajectories.from_numpy(self.trajectories_np)
 
-        theta_rand = np.random.uniform(-90, 90)
+        # theta_rand = np.random.uniform(-90, 90)
+        theta_rand = 0
 
         cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
+        cx_0 = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[0]
+        start = trajectory[3][0] - cx_0
+        end = trajectory[4][0] - cx_0
+
+        cx = np.random.uniform(start/2, end/2)
+        self.vein_cx_A = cx_0 + cx
+        x_a = trajectory[3][0]
+        x_b = trajectory[4][0]
+        dist = x_b - x_a
+        ts_dist = self.target_4_ts - self.target_3_ts
+        vein_expected_ts = (self.vein_cx_A - x_a) / dist * ts_dist + self.target_3_ts
+        self.record_on = int(max(self.target_3_ts, vein_expected_ts))
+        self.record_off = int(min(self.target_4_ts, vein_expected_ts + 0.4 * ts_dist))
+        
         state_dict = {
             'tumour_present': True,
-            'cx': 0,
+            'cx': cx,
             'cy': 0,
             'cz': cz_offset,
             'theta': SYSTEM_PARAMS.geometry.vein.theta + theta_rand,
@@ -764,7 +786,8 @@ class Contact:
             'r': SYSTEM_PARAMS.geometry.vein.r
         }
         self.state_dicts[1] = state_dict
-        self.artificial_vein_displacement_coefficient = np.random.uniform(0.2, 0.4)
+        # self.artificial_vein_displacement_coefficient = np.random.uniform(0.2, 0.4)
+        self.artificial_vein_displacement_coefficient = 1.0
         print(f'self.artificial_vein_displacement_coefficient: {self.artificial_vein_displacement_coefficient}')
 
     def set_up_initial_positions_state_and_trajectory(self):
@@ -1215,6 +1238,9 @@ class Contact:
                     os.remove(file_path)
 
     def record_training_data_point(self, training_iteration, ts):
+        if self.mean_marker_displacement is None:
+            return
+
         w = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
         h = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
 
@@ -1225,6 +1251,7 @@ class Contact:
         cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
         cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
         r = SYSTEM_PARAMS.fisheye_model.circle_radius
+        r_small = SYSTEM_PARAMS.fisheye_model.circle_small_radius
 
         self.move_og_resolution()
         markers = self.sim_markers_deformed.to_numpy()
@@ -1236,24 +1263,58 @@ class Contact:
             x, y = int(point[0]), int(point[1])
             cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
         
-        nodes = self.vitactip.projection_2d_dome_surface_nodes_deformed.to_numpy()
-        contact_mask = self.vitactip.dome_surface_node_contact_mask.to_numpy().astype(bool)
-        nodes = nodes[contact_mask]
-        contact_img = np.zeros((h, w), dtype=np.uint8)
-        if len(nodes) >= 4:
-            contour_contact = self.synthetic_image_generator.alpha_shape(nodes, alpha=0.02).astype(np.int32)
-            if len(contour_contact) > 0:
-                contour_contact_cv = contour_contact.reshape((-1, 1, 2))
-                cv2.fillPoly(contact_img, [contour_contact_cv], color=255)
+        disp = self.mean_marker_displacement
+
+        # Compute unit vector from camera center to displacement point
+        center = np.array([cx, cy])
+        direction = disp - center
+        unit_vector = direction / np.linalg.norm(direction)
+        
+        # Calculate chord points at r_small * (1/3) distance from center
+        chord_center = center + unit_vector * (r_small * (1/3))
+        # Get perpendicular vector
+        perp_vector = np.array([-unit_vector[1], unit_vector[0]])
+        # Calculate chord endpoints using perpendicular vector
+        chord_half_length = np.sqrt(r_small**2 - (r_small/3)**2)  # Pythagorean theorem
+        chord_point1 = chord_center + perp_vector * chord_half_length
+        chord_point2 = chord_center - perp_vector * chord_half_length
+        
+        # Create circle cap mask
+        cap_mask = np.zeros((h, w), dtype=np.uint8)
+        # Create polygon points for the cap
+        circle_points = []
+        num_points = 32  # Number of points to approximate circle arc
+        angle_start = np.arctan2(chord_point1[1] - cy, chord_point1[0] - cx)
+        angle_end = np.arctan2(chord_point2[1] - cy, chord_point2[0] - cx)
+        # Ensure we take the smaller arc
+        if abs(angle_end - angle_start) > np.pi:
+            if angle_end > angle_start:
+                angle_start += 2 * np.pi
+            else:
+                angle_end += 2 * np.pi
+        angles = np.linspace(angle_start, angle_end, num_points)
+        for angle in angles:
+            x = cx + r_small * np.cos(angle)
+            y = cy + r_small * np.sin(angle)
+            circle_points.append([x, y])
+        # Add chord points to close the polygon
+        circle_points.append(chord_point2)
+        circle_points.append(chord_point1)
+        # Convert to numpy array and correct format for cv2
+        cap_points = np.array(circle_points, dtype=np.int32).reshape((-1, 1, 2))
+        cv2.fillPoly(cap_mask, [cap_points], color=255)
         
         vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
         vein = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, vein)
         vein_points_filtered = []
         for point in vein:
             x, y = int(point[0]), int(point[1])
-            if 0 <= x < w and 0 <= y < h and contact_img[y, x] > 0:
+            if 0 <= x < w and 0 <= y < h and cap_mask[y, x] > 127:
                 vein_points_filtered.append(point)
-        vein = np.array(vein_points_filtered)
+        if self.vein_detectable:
+            vein = np.array(vein_points_filtered)
+        else:
+            vein = np.array([])
         self.vein_data.append(vein)
         vein_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
@@ -1598,6 +1659,12 @@ class Contact:
         normal = np.array([a, b]) / denominator
         return -normal * numerator / denominator
 
+    def compute_mean_displacement_vector(self):
+        self.move_og_resolution()
+        points = self.sim_markers_deformed.to_numpy()
+        self.mean_marker_displacement = np.mean(points, axis=0)
+        self.move_ti_resolution()
+
     def move_points_away_from_vein(self):
         self.move_og_resolution()
         points = self.sim_markers_deformed_filtered.to_numpy()
@@ -1661,7 +1728,17 @@ class Contact:
             self.tactile_canvas.circles(
                 self.exp_marker_points, radius=0.01, color=(0, 1, 0)
             )
-        self.move_points_away_from_vein()
+        vitactip_bottom_x = self.vitactip.get_keypoint_coordinates(
+            0, self.keypoint_indices[0].reshape((1,))
+        )[0][0]
+        vitactip_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        self.compute_mean_displacement_vector()
+        if self.vein_cx_A is not None and vitactip_bottom_x >= self.vein_cx_A + vitactip_r * (1/2):
+            self.vein_detectable = True
+        else:
+            self.vein_detectable = False
+        if self.vein_detectable:
+            self.move_points_away_from_vein()
         self.tactile_canvas.circles(
             self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
         )
@@ -1687,11 +1764,11 @@ class Contact:
         self.scene = ti.ui.Scene()
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
-        x, y, z = self.vitactip_tip_pose[:3]
-        self.camera.position(x, y-SYSTEM_PARAMS.visualisation.camera_offset, z)
-        self.camera.up(0, 0, 1)
+        x, y, z = self.phantom_centroid_pose[:3]
+        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
+        self.camera.up(0, 1, 0)
         self.camera.lookat(x, y, z)
-        self.camera.fov(6)
+        self.camera.fov(10)
         self.tactile_window = ti.ui.Window("tactile readout", (
             int(SYSTEM_PARAMS.visualisation.tactile_readout_width),
             int(SYSTEM_PARAMS.visualisation.tactile_readout_height)
@@ -2299,8 +2376,22 @@ class Contact:
                         SYSTEM_PARAMS.contact.num_sub_frames - 1
                     )
                     self.visualisation_update_gui(ts)
-                    if ts % 2 == 0:
+                    if (
+                        self.current_target_idx[None] == 4 
+                        and ts % 2 == 0
+                        and (
+                            i == 2
+                            or (
+                                ts >= self.record_on
+                                and ts <= self.record_off
+                            )
+                        )
+                    ):
                         self.record_training_data_point(j, ts)
+                    if ts == self.record_on:
+                        print(f'ts: {ts}; record on')
+                    if ts == self.record_off:
+                        print(f'ts: {ts}; record off')
                     ts += 1
                 self.write_training_data_to_file(j)
                 

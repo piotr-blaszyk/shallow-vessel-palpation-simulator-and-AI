@@ -3,13 +3,13 @@ import numpy as np
 
 from difftactile.main.constants import *
 
-image_path = SYSTEM_PARAMS.files.vitactip_photo_default_state
+image_path = SYSTEM_PARAMS.files.max_deformation_exp
 img = cv2.imread(image_path)
 if img is None:
     raise ValueError(f"Failed to load image from {image_path}")
 
 center = (1035, 580)
-radius = 370
+radius = 300
 color = (0, 255, 0)
 thickness = 2
 cv2.circle(img, center, radius, color, thickness)

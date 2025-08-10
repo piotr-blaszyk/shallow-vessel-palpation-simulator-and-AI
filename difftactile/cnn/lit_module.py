@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 class SegmentationModel(pl.LightningModule):
-    def __init__(self, lr=1e-3, lr_patience=5, lr_factor=0.1, lr_min=1e-6):
+    def __init__(self, lr=1e-3, lr_patience=5, lr_factor=0.1, lr_min=1e-6, dice_weight=0.5, bce_weight=0.5):
         super().__init__()
         self.model = UNet(
             spatial_dims=3,
@@ -22,7 +22,12 @@ class SegmentationModel(pl.LightningModule):
             bias=True,
             adn_ordering='NDA',
         )
-        self.loss_fn = DiceLoss(sigmoid=True, batch=True)
+        # Initialize both loss functions
+        self.dice_loss = DiceLoss(sigmoid=True, batch=True)
+        self.bce_loss = torch.nn.BCEWithLogitsLoss()
+        self.dice_weight = dice_weight
+        self.bce_weight = bce_weight
+        
         self.lr = lr
         self.lr_patience = lr_patience
         self.lr_factor = lr_factor
@@ -34,13 +39,24 @@ class SegmentationModel(pl.LightningModule):
     def shared_step(self, batch, stage):
         x, y = batch
         logits = self(x)
-        loss = self.loss_fn(logits, y)
+        
+        # Calculate both losses
+        dice_loss = self.dice_loss(logits, y)
+        bce_loss = self.bce_loss(logits, y)
+        
+        # Combine losses using weights
+        loss = self.dice_weight * dice_loss + self.bce_weight * bce_loss
+        
         probs = torch.sigmoid(logits)
         preds = (probs > 0.5).float()
         preds = preds.squeeze(1)
         y = y.squeeze(1)
         iou = self.iou_score(preds, y)
-        self.log(f"{stage}_loss", loss, prog_bar=True, on_epoch=True)
+        
+        # Log both individual losses and combined loss
+        self.log(f"{stage}_dice_loss", dice_loss, prog_bar=True, on_epoch=True)
+        self.log(f"{stage}_bce_loss", bce_loss, prog_bar=True, on_epoch=True)
+        self.log(f"{stage}_combined_loss", loss, prog_bar=True, on_epoch=True)
         self.log(f"{stage}_iou", iou, prog_bar=True, on_epoch=True)
         return loss
 

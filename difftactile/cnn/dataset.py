@@ -134,7 +134,7 @@ class MyDataset(torch.utils.data.Dataset):
         labels_mask = labels_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         
         # print(f'self.mode: {self.mode}')
-        if self.mode == 'train':
+        if False and self.mode == 'train':
             # print('augmenting')
             images = self.augmentation_rotation(images)
             labels = self.augmentation_rotation(labels)

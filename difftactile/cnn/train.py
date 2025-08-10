@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
 from lightning.pytorch.profilers import PyTorchProfiler, PassThroughProfiler
 import time
@@ -53,10 +53,17 @@ def main():
         save_top_k=1,
         filename="best-model",
     )
+    early_stopping = EarlyStopping(
+        monitor="val_iou",
+        mode="max",
+        patience=10,  # Number of epochs with no improvement after which training will be stopped
+        min_delta=1e-4,  # Minimum change in monitored quantity to qualify as an improvement
+        verbose=True
+    )
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
         accelerator="auto",
-        callbacks=[checkpoint_cb],
+        callbacks=[checkpoint_cb, early_stopping],
         logger=logger,
         log_every_n_steps=1,
         # profiler="pytorch"
