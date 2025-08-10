@@ -54,20 +54,28 @@ class MyDataset(torch.utils.data.Dataset):
                 dilated_clip_len = self.clip_len * dilation
                 
                 if total_frames >= dilated_clip_len:
-                    if self.mode != 'train':
-                        # Deterministic, evenly spaced clips for val/test
-                        stride = max(1, (total_frames - dilated_clip_len) // self.clips_per_trajectory)
-                        start_indices = list(range(0, total_frames - dilated_clip_len + 1, stride))[:self.clips_per_trajectory]
-                    else:
-                        # For training, pre-compute more start indices than needed
-                        num_possible_starts = total_frames - dilated_clip_len + 1
+                    num_possible_starts = total_frames - dilated_clip_len + 1
+                    
+                    if not self.file_contains_vein(file_path):
+                        # For files without veins, keep original random sampling
                         start_indices = sorted(random.sample(
                             range(num_possible_starts), 
                             min(self.clips_per_trajectory, num_possible_starts)
                         ))
-                    
-                    for start_idx in start_indices:
-                        self.clips.append((file_path, start_idx, dilation))
+                        for start_idx in start_indices:
+                            self.clips.append((file_path, start_idx, dilation))
+                    else:
+                        # For files with veins, keep sampling until we find clips with veins
+                        clips_found = 0
+                        max_attempts = num_possible_starts * 2  # Prevent infinite loop
+                        attempts = 0
+                        
+                        while clips_found < self.clips_per_trajectory and attempts < max_attempts:
+                            start_idx = random.randrange(num_possible_starts)
+                            if self.clip_contains_vein(file_path, start_idx, dilation):
+                                self.clips.append((file_path, start_idx, dilation))
+                                clips_found += 1
+                            attempts += 1
 
     def __len__(self):
         return len(self.clips)
@@ -118,8 +126,33 @@ class MyDataset(torch.utils.data.Dataset):
         print(f'split len: {[len(x) for x in res]}')
         return res
 
+    def file_contains_vein(self, file_path):
+        # Extract the file name from the path
+        file_name = os.path.basename(file_path)
+        
+        # Extract the trajectory number from the file name
+        # Format is "trajectory_XXXX.npz" where XXXX is a 4-digit number
+        trajectory_num = int(file_name.split('_')[1][:4])
+        
+        # Return True if the number is even, False if odd
+        return trajectory_num % 2 == 0
+
+    def clip_contains_vein(self, file_path, start, dilation):
+        data = np.load(file_path)
+        # np.load returns a dict-like object whose keys we can access directly
+        labels = data['labels']
+        
+        # Extract longer sequence and apply dilation
+        dilated_clip_len = self.clip_len * dilation
+        labels = labels[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+
+        return labels.shape[1] > 0
+
     def __getitem__(self, idx):
         file_path, start, dilation = self.clips[idx]
+
+        file_vein = self.file_contains_vein(file_path)
+        print(f'file contains vein: {file_vein}')
 
         data = np.load(file_path)
         # np.load returns a dict-like object whose keys we can access directly

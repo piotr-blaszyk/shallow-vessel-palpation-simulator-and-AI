@@ -114,6 +114,7 @@ class Visualisation:
         )
         data_loader = train_loader
         data_iter = iter(data_loader)
+        i = 0
         while True:  # Main loop for continuous data loading
             try:
                 image, label = next(data_iter)
@@ -171,8 +172,8 @@ class Visualisation:
                 cv2.putText(current_label, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
 
                 # Create display windows
-                cv2.imshow('Input Image', current_image)
-                cv2.imshow('Ground Truth Label', current_label)
+                cv2.imshow(f'Input Image {i}', current_image)
+                cv2.imshow(f'Ground Truth Label {i}', current_label)
 
                 # Handle keyboard input
                 key = cv2.waitKey(0) & 0xFF
@@ -185,6 +186,7 @@ class Visualisation:
                 elif key == ord('j'):  # Previous frame
                     current_frame = (current_frame - 1) % total_frames
                 elif key == ord('c'):  # Close current sequence and load next
+                    i += 1
                     cv2.destroyAllWindows()
                     break
 
