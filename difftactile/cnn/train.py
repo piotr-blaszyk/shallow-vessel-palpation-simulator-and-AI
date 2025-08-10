@@ -26,17 +26,28 @@ def main():
     full_dataset = MyDataset(
         data_dir=SYSTEM_PARAMS.files.dataset_root
     )
-    train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
-        full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
-    )
+    # train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
+    #     full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
+    # )
+    # train_loader = DataLoader(
+    #     train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+    # )
+    # val_loader = DataLoader(
+    #     val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
+    # )
+    # test_loader = DataLoader(
+    #     test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
+    # )
+    test_dataset = full_dataset
+
     train_loader = DataLoader(
-        train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+        full_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
     )
     val_loader = DataLoader(
-        val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
+        full_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
     )
     test_loader = DataLoader(
-        test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
+        full_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
     )
 
     test_data = {
@@ -74,7 +85,7 @@ def main():
     print(f'total execution time: {total_time}')
 
     os.makedirs("saved_models", exist_ok=True)
-    torch.save(model.state_dict(), "saved_models/final_segmentation_model.pt")
+    torch.save(model.state_dict(), SYSTEM_PARAMS.files.segmentation_model_weights)
     if checkpoint_cb.best_model_path:
         best_model_save_path = "saved_models/best_segmentation_model.pt"
         torch.save(torch.load(checkpoint_cb.best_model_path)["state_dict"], best_model_save_path)

@@ -53,10 +53,10 @@ class SegmentationModel(pl.LightningModule):
         y = y.squeeze(1)
         iou = self.iou_score(preds, y)
         
-        # Log both individual losses and combined loss
-        self.log(f"{stage}_dice_loss", dice_loss, prog_bar=True, on_epoch=True)
-        self.log(f"{stage}_bce_loss", bce_loss, prog_bar=True, on_epoch=True)
-        self.log(f"{stage}_combined_loss", loss, prog_bar=True, on_epoch=True)
+        # Only log IoU metric
+        self.log(f"{stage}_dice_loss", dice_loss, prog_bar=False, on_epoch=True)
+        self.log(f"{stage}_bce_loss", bce_loss, prog_bar=False, on_epoch=True)
+        self.log(f"{stage}_combined_loss", loss, prog_bar=False, on_epoch=True)
         self.log(f"{stage}_iou", iou, prog_bar=True, on_epoch=True)
         return loss
 
@@ -72,15 +72,16 @@ class SegmentationModel(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = {
-            "scheduler": ReduceLROnPlateau(
+            "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer,
-                mode="max",
-                factor=self.lr_factor,
-                patience=self.lr_patience,
-                min_lr=self.lr_min,
-                verbose=True
+                mode='min',           # Minimize the monitored quantity (validation loss)
+                factor=0.5,          # Multiply LR by this factor when reducing
+                patience=3,          # Number of epochs with no improvement after which LR will be reduced
+                verbose=True,        # Print message when LR is reduced
+                min_lr=1e-6,        # Don't reduce LR below this value
+                cooldown=1,         # Number of epochs to wait before resuming normal operation after LR has been reduced
             ),
-            "monitor": "val_iou",
+            "monitor": "val_iou",   # Quantity to monitor
             "interval": "epoch",
             "frequency": 1
         }

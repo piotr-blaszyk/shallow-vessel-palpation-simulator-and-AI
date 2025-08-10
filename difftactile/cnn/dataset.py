@@ -151,8 +151,8 @@ class MyDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         file_path, start, dilation = self.clips[idx]
 
-        file_vein = self.file_contains_vein(file_path)
-        print(f'file contains vein: {file_vein}')
+        # file_vein = self.file_contains_vein(file_path)
+        # print(f'file contains vein: {file_vein}')
 
         data = np.load(file_path)
         # np.load returns a dict-like object whose keys we can access directly

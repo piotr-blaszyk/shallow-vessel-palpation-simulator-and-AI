@@ -40,81 +40,46 @@ class Visualisation:
         
         return overlay
 
-    def visualize_predictions(self):
-        model_path = SYSTEM_PARAMS.files.segmentation_model_weights
-        num_samples = 5
-        with open(SYSTEM_PARAMS.files.test_loader, 'rb') as f:
-            test_data = pickle.load(f)
-        test_loader = DataLoader(
-            test_data['dataset'],
-            batch_size=1,
-            shuffle=True,
-            num_workers=test_data['num_workers']
-        )
+    def visualize(self, mode='dataset'):
+        """
+        Unified visualization method that can show either dataset samples or model predictions.
+        Args:
+            mode: Either 'dataset' or 'predictions'
+        """
+        BATCH_SIZE = 1
+        NUM_WORKERS = 1
 
-        if False:
+        if mode == 'predictions':
+            model_path = SYSTEM_PARAMS.files.segmentation_model_weights
+            with open(SYSTEM_PARAMS.files.test_loader, 'rb') as f:
+                test_data = pickle.load(f)
+            data_loader = DataLoader(
+                test_data['dataset'],
+                batch_size=BATCH_SIZE,
+                shuffle=True,
+                num_workers=test_data['num_workers']
+            )
+            
+            # Initialize model
             model = SegmentationModel()
             model.load_state_dict(torch.load(model_path))
             model.eval()
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model = model.to(device)
+        else:  # dataset mode
+            full_dataset = MyDataset(
+                data_dir=SYSTEM_PARAMS.files.dataset_root
+            )
+            train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
+                full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
+            )
+            data_loader = DataLoader(
+                train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+            )
 
-            fig, axes = plt.subplots(num_samples, 2, figsize=(10, 5 * num_samples))
-            plt.tight_layout(pad=3.0)
-
-            with torch.no_grad():
-                for i, (image, mask) in enumerate(test_loader):
-                    if i >= num_samples:
-                        break
-                    image = image.to(device)
-                    logits = model(image)
-                    probs = torch.sigmoid(logits)
-                    pred = (probs > 0.5).float()
-                    
-                    image = image.cpu().numpy().squeeze()
-                    mask = mask.cpu().numpy().squeeze()
-                    pred = pred.cpu().numpy().squeeze()
-
-                    n = image.shape[0]
-                    image = image[n // 2, :, :]
-                    mask = mask[n // 2, :, :]
-                    pred = pred[n // 2, :, :]
-                    
-                    iou_score = self.calculate_iou(mask, pred)
-                    
-                    confusion_overlay = self.create_confusion_matrix_overlay(mask, pred)
-                    
-                    axes[i, 0].imshow(image, cmap="gray")
-                    axes[i, 0].set_title(f"sample {i+1}")
-                    axes[i, 0].axis("off")
-                    
-                    axes[i, 1].imshow(confusion_overlay)
-                    axes[i, 1].set_title(f"IoU: {iou_score:.3f}")
-                    axes[i, 1].axis("off")
-                    
-            plt.show()
-
-    def visualize_dataset(self):
-        BATCH_SIZE = 1
-        NUM_WORKERS = 1
-        full_dataset = MyDataset(
-            data_dir=SYSTEM_PARAMS.files.dataset_root
-        )
-        train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
-            full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
-        )
-        train_loader = DataLoader(
-            train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
-        )
-        val_loader = DataLoader(
-            val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
-        )
-        test_loader = DataLoader(
-            test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
-        )
-        data_loader = train_loader
         data_iter = iter(data_loader)
         i = 0
+        
         while True:  # Main loop for continuous data loading
             try:
                 image, label = next(data_iter)
@@ -123,9 +88,20 @@ class Visualisation:
                 data_iter = iter(data_loader)
                 continue
 
+            # Handle predictions if in prediction mode
+            if mode == 'predictions':
+                with torch.no_grad():
+                    image_input = image.to(device)
+                    logits = model(image_input)
+                    probs = torch.sigmoid(logits)
+                    pred = (probs > 0.5).float()
+                    pred = pred.cpu()
+
             # Convert tensors to numpy arrays
             image_seq = image.numpy().squeeze()  # Shape: (T, H, W)
             label_seq = label.numpy().squeeze()  # Shape: (T, H, W)
+            if mode == 'predictions':
+                pred_seq = pred.numpy().squeeze()  # Shape: (T, H, W)
 
             current_frame = 0
             total_frames = image_seq.shape[0]
@@ -134,18 +110,29 @@ class Visualisation:
                 # Prepare the current frame
                 current_image = image_seq[current_frame]
                 current_label = label_seq[current_frame]
+                if mode == 'predictions':
+                    current_pred = pred_seq[current_frame]
+                    current_overlay = self.create_confusion_matrix_overlay(current_label, current_pred)
+                    iou_score = self.calculate_iou(current_label, current_pred)
                 
-                # Normalize images for display (they are already in range [0,1])
+                # Normalize images for display
                 current_image = (current_image * 255).astype(np.uint8)
-                current_label = (current_label * 255).astype(np.uint8)
+                if mode == 'dataset':
+                    current_right = (current_label * 255).astype(np.uint8)
+                else:  # predictions mode
+                    # Convert overlay from float [0,1] to uint8 [0,255]
+                    current_right = (current_overlay * 255).astype(np.uint8)
 
                 # Scale up images by 4x using NEAREST neighbor interpolation
                 scale_factor = 4
                 current_image = cv2.resize(current_image, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
-                current_label = cv2.resize(current_label, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
+                current_right = cv2.resize(current_right, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
 
-                # Add frame counter text
+                # Add frame counter text and other information
                 frame_text = f"Frame: {current_frame + 1}/{total_frames}"
+                if mode == 'predictions':
+                    frame_text += f" | IoU: {iou_score:.3f}"
+                
                 font = cv2.FONT_HERSHEY_SIMPLEX
                 font_scale = 1
                 font_thickness = 2
@@ -162,18 +149,19 @@ class Visualisation:
                             (text_x - padding, text_y - text_size[1] - padding),
                             (text_x + text_size[0] + padding, text_y + padding),
                             (0, 0, 0), -1)
-                cv2.rectangle(current_label, 
+                cv2.rectangle(current_right, 
                             (text_x - padding, text_y - text_size[1] - padding),
                             (text_x + text_size[0] + padding, text_y + padding),
                             (0, 0, 0), -1)
                 
                 # Add text to both images
                 cv2.putText(current_image, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
-                cv2.putText(current_label, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
+                cv2.putText(current_right, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
 
                 # Create display windows
                 cv2.imshow(f'Input Image {i}', current_image)
-                cv2.imshow(f'Ground Truth Label {i}', current_label)
+                right_window_title = 'Ground Truth Label' if mode == 'dataset' else 'Prediction Overlay'
+                cv2.imshow(f'{right_window_title} {i}', current_right)
 
                 # Handle keyboard input
                 key = cv2.waitKey(0) & 0xFF
@@ -190,9 +178,11 @@ class Visualisation:
                     cv2.destroyAllWindows()
                     break
 
+
 def main():
     v = Visualisation()
-    v.visualize_dataset()
+    # Change this to 'predictions' to visualize model predictions
+    v.visualize(mode='predictions')
 
 
 if __name__ == "__main__":
