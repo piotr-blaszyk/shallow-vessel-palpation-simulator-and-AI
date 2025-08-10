@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 class SegmentationModel(pl.LightningModule):
-    def __init__(self, lr=1e-3, lr_patience=5, lr_factor=0.1, lr_min=1e-6, dice_weight=0.5, bce_weight=0.5):
+    def __init__(self, lr=1e-3, lr_patience=5, lr_factor=0.5, lr_min=1e-6, dice_weight=0.5, bce_weight=0.5):
         super().__init__()
         self.model = UNet(
             spatial_dims=3,

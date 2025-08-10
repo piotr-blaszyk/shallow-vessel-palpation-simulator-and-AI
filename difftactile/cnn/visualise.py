@@ -40,7 +40,9 @@ class Visualisation:
         
         return overlay
 
-    def visualize_predictions(self, model_path, num_samples):
+    def visualize_predictions(self):
+        model_path = SYSTEM_PARAMS.files.segmentation_model_weights
+        num_samples = 5
         with open(SYSTEM_PARAMS.files.test_loader, 'rb') as f:
             test_data = pickle.load(f)
         test_loader = DataLoader(
@@ -49,67 +51,80 @@ class Visualisation:
             shuffle=True,
             num_workers=test_data['num_workers']
         )
-        
-        model = SegmentationModel()
-        model.load_state_dict(torch.load(model_path))
-        model.eval()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(device)
 
-        fig, axes = plt.subplots(num_samples, 2, figsize=(10, 5 * num_samples))
-        plt.tight_layout(pad=3.0)
+        if False:
+            model = SegmentationModel()
+            model.load_state_dict(torch.load(model_path))
+            model.eval()
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model = model.to(device)
 
-        with torch.no_grad():
-            for i, (image, mask) in enumerate(test_loader):
-                if i >= num_samples:
-                    break
-                image = image.to(device)
-                logits = model(image)
-                probs = torch.sigmoid(logits)
-                pred = (probs > 0.5).float()
-                
-                image = image.cpu().numpy().squeeze()
-                mask = mask.cpu().numpy().squeeze()
-                pred = pred.cpu().numpy().squeeze()
+            fig, axes = plt.subplots(num_samples, 2, figsize=(10, 5 * num_samples))
+            plt.tight_layout(pad=3.0)
 
-                n = image.shape[0]
-                image = image[n // 2, :, :]
-                mask = mask[n // 2, :, :]
-                pred = pred[n // 2, :, :]
-                
-                iou_score = self.calculate_iou(mask, pred)
-                
-                confusion_overlay = self.create_confusion_matrix_overlay(mask, pred)
-                
-                axes[i, 0].imshow(image, cmap="gray")
-                axes[i, 0].set_title(f"sample {i+1}")
-                axes[i, 0].axis("off")
-                
-                axes[i, 1].imshow(confusion_overlay)
-                axes[i, 1].set_title(f"IoU: {iou_score:.3f}")
-                axes[i, 1].axis("off")
-                
-        plt.show()
+            with torch.no_grad():
+                for i, (image, mask) in enumerate(test_loader):
+                    if i >= num_samples:
+                        break
+                    image = image.to(device)
+                    logits = model(image)
+                    probs = torch.sigmoid(logits)
+                    pred = (probs > 0.5).float()
+                    
+                    image = image.cpu().numpy().squeeze()
+                    mask = mask.cpu().numpy().squeeze()
+                    pred = pred.cpu().numpy().squeeze()
 
-        data_iter = iter(test_loader)
+                    n = image.shape[0]
+                    image = image[n // 2, :, :]
+                    mask = mask[n // 2, :, :]
+                    pred = pred[n // 2, :, :]
+                    
+                    iou_score = self.calculate_iou(mask, pred)
+                    
+                    confusion_overlay = self.create_confusion_matrix_overlay(mask, pred)
+                    
+                    axes[i, 0].imshow(image, cmap="gray")
+                    axes[i, 0].set_title(f"sample {i+1}")
+                    axes[i, 0].axis("off")
+                    
+                    axes[i, 1].imshow(confusion_overlay)
+                    axes[i, 1].set_title(f"IoU: {iou_score:.3f}")
+                    axes[i, 1].axis("off")
+                    
+            plt.show()
+
+    def visualize_dataset(self):
+        BATCH_SIZE = 1
+        NUM_WORKERS = 1
+        full_dataset = MyDataset(
+            data_dir=SYSTEM_PARAMS.files.dataset_root
+        )
+        train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
+            full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
+        )
+        train_loader = DataLoader(
+            train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+        )
+        val_loader = DataLoader(
+            val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
+        )
+        test_loader = DataLoader(
+            test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
+        )
+        data_loader = train_loader
+        data_iter = iter(data_loader)
         while True:  # Main loop for continuous data loading
             try:
-                image, mask = next(data_iter)
+                image, label = next(data_iter)
             except StopIteration:
                 print("End of dataset reached. Restarting...")
-                data_iter = iter(test_loader)
+                data_iter = iter(data_loader)
                 continue
 
-            image = image.to(device)
-            with torch.no_grad():
-                logits = model(image)
-                probs = torch.sigmoid(logits)
-                pred = (probs > 0.5).float()
-
             # Convert tensors to numpy arrays
-            image_seq = image.cpu().numpy().squeeze()
-            mask_seq = mask.cpu().numpy().squeeze()
-            pred_seq = pred.cpu().numpy().squeeze()
+            image_seq = image.numpy().squeeze()  # Shape: (T, H, W)
+            label_seq = label.numpy().squeeze()  # Shape: (T, H, W)
 
             current_frame = 0
             total_frames = image_seq.shape[0]
@@ -117,21 +132,16 @@ class Visualisation:
             while True:
                 # Prepare the current frame
                 current_image = image_seq[current_frame]
-                current_mask = mask_seq[current_frame]
-                current_pred = pred_seq[current_frame]
+                current_label = label_seq[current_frame]
                 
-                # Normalize image for display
-                current_image = ((current_image - current_image.min()) / 
-                            (current_image.max() - current_image.min()) * 255).astype(np.uint8)
-                
-                # Create confusion matrix overlay
-                confusion_overlay = self.create_confusion_matrix_overlay(current_mask, current_pred)
-                confusion_overlay = (confusion_overlay * 255).astype(np.uint8)
+                # Normalize images for display (they are already in range [0,1])
+                current_image = (current_image * 255).astype(np.uint8)
+                current_label = (current_label * 255).astype(np.uint8)
 
                 # Scale up images by 4x using NEAREST neighbor interpolation
                 scale_factor = 4
                 current_image = cv2.resize(current_image, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
-                confusion_overlay = cv2.resize(confusion_overlay, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
+                current_label = cv2.resize(current_label, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
 
                 # Add frame counter text
                 frame_text = f"Frame: {current_frame + 1}/{total_frames}"
@@ -151,18 +161,18 @@ class Visualisation:
                             (text_x - padding, text_y - text_size[1] - padding),
                             (text_x + text_size[0] + padding, text_y + padding),
                             (0, 0, 0), -1)
-                cv2.rectangle(confusion_overlay, 
+                cv2.rectangle(current_label, 
                             (text_x - padding, text_y - text_size[1] - padding),
                             (text_x + text_size[0] + padding, text_y + padding),
                             (0, 0, 0), -1)
                 
                 # Add text to both images
                 cv2.putText(current_image, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
-                cv2.putText(confusion_overlay, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
+                cv2.putText(current_label, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
 
                 # Create display windows
                 cv2.imshow('Input Image', current_image)
-                cv2.imshow('Prediction Overlay', confusion_overlay)
+                cv2.imshow('Ground Truth Label', current_label)
 
                 # Handle keyboard input
                 key = cv2.waitKey(0) & 0xFF
@@ -170,9 +180,9 @@ class Visualisation:
                 if key == ord('q'):  # Quit visualization
                     cv2.destroyAllWindows()
                     return
-                elif key == ord('n'):  # Next frame
+                elif key == ord('k'):  # Next frame
                     current_frame = (current_frame + 1) % total_frames
-                elif key == ord('p'):  # Previous frame
+                elif key == ord('j'):  # Previous frame
                     current_frame = (current_frame - 1) % total_frames
                 elif key == ord('c'):  # Close current sequence and load next
                     cv2.destroyAllWindows()
@@ -180,10 +190,7 @@ class Visualisation:
 
 def main():
     v = Visualisation()
-    v.visualize_predictions(
-        model_path=SYSTEM_PARAMS.files.segmentation_model_weights,
-        num_samples=5
-    )
+    v.visualize_dataset()
 
 
 if __name__ == "__main__":

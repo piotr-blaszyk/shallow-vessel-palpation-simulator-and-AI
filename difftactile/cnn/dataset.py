@@ -34,6 +34,8 @@ class MyDataset(torch.utils.data.Dataset):
         self.k = 4
         self.w_scaled = int(self.w / self.k)
         self.h_scaled = int(self.h / self.k)
+        # self.w_scaled = 1920
+        # self.h_scaled = 1080
         self.avg_call_time = 0.0
         self.num_calls = 0
 
@@ -86,8 +88,8 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Split trajectories
         trajectories = list(trajectory_to_indices.keys())
-        random.seed(random_state)
-        random.shuffle(trajectories)
+        # random.seed(random_state)
+        # random.shuffle(trajectories)
         
         n = len(trajectories)
         train_split = int(n * train_size)
@@ -135,17 +137,17 @@ class MyDataset(torch.utils.data.Dataset):
         
         # print(f'self.mode: {self.mode}')
         if False and self.mode == 'train':
-            # print('augmenting')
             images = self.augmentation_rotation(images)
             labels = self.augmentation_rotation(labels)
-            images = self.shift_radial(images)
-            labels = self.shift_radial(labels)
-            images = self.uniform_shift(images)
-            labels = self.uniform_shift(labels)
-            images = self.rotate_xy(images)
-            labels = self.rotate_xy(labels)
-            images_random_remove_mask = self.randomly_remove(images)
-            images_mask &= images_random_remove_mask
+            if False:
+                images = self.shift_radial(images)
+                labels = self.shift_radial(labels)
+                images = self.uniform_shift(images)
+                labels = self.uniform_shift(labels)
+                images = self.rotate_xy(images)
+                labels = self.rotate_xy(labels)
+                images_random_remove_mask = self.randomly_remove(images)
+                images_mask &= images_random_remove_mask
         
         images, images_crop_mask = self.downscale(images)
         labels, labels_crop_mask = self.downscale(labels)
@@ -169,27 +171,42 @@ class MyDataset(torch.utils.data.Dataset):
 
     def generate_markers_image(self, points, points_mask):
         if points.shape[1] == 0:  # Check if there are any points
-            return np.zeros((points.shape[0], self.w_scaled, self.h_scaled), dtype=np.uint8)
+            return np.zeros((points.shape[0], self.h_scaled, self.w_scaled), dtype=np.uint8)
             
         # Initialize output array for all frames
-        images = np.zeros((points.shape[0], self.w_scaled, self.h_scaled), dtype=np.uint8)
+        images = np.zeros((points.shape[0], self.h_scaled, self.w_scaled), dtype=np.uint8)
         
         # Generate image for each frame
         for t in range(points.shape[0]):
             for i, point in enumerate(points[t]):
-                # Only draw circle if the mask indicates this point is valid
+                # Only set pixel if the mask indicates this point is valid
                 if points_mask[t, i]:
-                    x, y = int(point[0]), int(point[1])
-                    cv2.circle(images[t], (x, y), radius=1, color=255, thickness=-1)
+                    x, y = point[0], point[1]
+                    x0, y0 = int(np.floor(x)), int(np.floor(y))
+                    x1, y1 = x0 + 1, y0 + 1
+                    
+                    # Calculate weights for bilinear interpolation
+                    wx1, wx0 = x - x0, x1 - x
+                    wy1, wy0 = y - y0, y1 - y
+                    
+                    # Ensure we don't write outside the image bounds
+                    if 0 <= x0 < self.w_scaled and 0 <= y0 < self.h_scaled:
+                        images[t, y0, x0] = min(255, images[t, y0, x0] + int(255 * wx0 * wy0))
+                    if 0 <= x1 < self.w_scaled and 0 <= y0 < self.h_scaled:
+                        images[t, y0, x1] = min(255, images[t, y0, x1] + int(255 * wx1 * wy0))
+                    if 0 <= x0 < self.w_scaled and 0 <= y1 < self.h_scaled:
+                        images[t, y1, x0] = min(255, images[t, y1, x0] + int(255 * wx0 * wy1))
+                    if 0 <= x1 < self.w_scaled and 0 <= y1 < self.h_scaled:
+                        images[t, y1, x1] = min(255, images[t, y1, x1] + int(255 * wx1 * wy1))
                 
         return images
 
     def generate_vein_image(self, points, points_mask):
         if points.shape[1] == 0:  # Check if there are any points
-            return np.zeros((points.shape[0], self.w_scaled, self.h_scaled), dtype=np.uint8)
+            return np.zeros((points.shape[0], self.h_scaled, self.w_scaled), dtype=np.uint8)
             
         # Initialize output array for all frames
-        images = np.zeros((points.shape[0], self.w_scaled, self.h_scaled), dtype=np.uint8)
+        images = np.zeros((points.shape[0], self.h_scaled, self.w_scaled), dtype=np.uint8)
         
         # Generate image for each frame
         for t in range(points.shape[0]):
@@ -348,7 +365,7 @@ class MyDataset(torch.utils.data.Dataset):
 
     def downscale(self, points):
         if points.shape[1] == 0:  # Check if there are any points
-            raise Exception("should not happen")
+            return points, np.ones((points.shape[0], 0), dtype=bool)  # Return empty mask matching input shape
             
         points, mask = self.synthetic_image_generator.crop(points)
         points = points / self.k
