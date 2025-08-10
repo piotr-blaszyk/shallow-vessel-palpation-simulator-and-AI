@@ -787,7 +787,7 @@ class Contact:
         }
         self.state_dicts[1] = state_dict
         # self.artificial_vein_displacement_coefficient = np.random.uniform(0.2, 0.4)
-        self.artificial_vein_displacement_coefficient = 1.0
+        self.artificial_vein_displacement_coefficient = 0.5
         print(f'self.artificial_vein_displacement_coefficient: {self.artificial_vein_displacement_coefficient}')
         self.vein_detectable = False
 
@@ -2336,7 +2336,7 @@ class Contact:
             self.clear_training_data_folders()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
-            for i in range(1, 2):
+            for i in range(1, 3):
                 self.trajectory_ix[None] = i
                 self.randomise()
                 self.set_up_initial_positions_state_and_trajectory()
@@ -2381,7 +2381,7 @@ class Contact:
                     if ts == self.record_off:
                         print(f'ts: {ts}; record off')
                     ts += 1
-                self.write_training_data_to_file(j)
+                self.write_training_data_to_file(j*2 + (i-1))
                 
                 self.reset_loss()
                 self.batch_loss.fill(0.0)
