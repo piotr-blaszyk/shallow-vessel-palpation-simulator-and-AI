@@ -44,7 +44,8 @@ class SyntheticImageGenerator:
         
         return cropped_points, mask
 
-    def alpha_shape(self, points, alpha):
+    def alpha_shape(self, points):
+        alpha=1e-10
         if len(points) < 4:
             return np.array([])
 
@@ -1228,10 +1229,22 @@ class Contact:
             R.from_quat(self.vitactip.R_A_quat.to_numpy()).as_matrix().reshape(3,3)
         )
 
-    def clear_training_data_folders(self):
+    def clear_temp_images(self):
+        folders = [
+            SYSTEM_PARAMS.files.training_data_vein_full_folder,
+            SYSTEM_PARAMS.files.training_data_contact_folder,
+            SYSTEM_PARAMS.files.training_data_markers_folder,
+            SYSTEM_PARAMS.files.training_data_segmentation_mask_folder,
+        ]
+        self.clear_training_data_folders_helper(folders)
+
+    def clear_npz(self):
         folders = [
             SYSTEM_PARAMS.files.dataset_root
         ]
+        self.clear_training_data_folders_helper(folders)
+
+    def clear_training_data_folders_helper(self, folders):
         for folder in folders:
             for file in os.listdir(folder):
                 file_path = os.path.join(folder, file)
@@ -1247,6 +1260,7 @@ class Contact:
 
         markers_file = SYSTEM_PARAMS.files.training_data_markers.format(training_iteration, ts)
         vein_file = SYSTEM_PARAMS.files.training_data_segmentation_mask.format(training_iteration, ts)
+        vein_full_file = SYSTEM_PARAMS.files.training_data_vein_full.format(training_iteration, ts)
         contact_file = SYSTEM_PARAMS.files.training_data_contact.format(training_iteration, ts)
 
         cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
@@ -1258,7 +1272,7 @@ class Contact:
         markers = self.sim_markers_deformed.to_numpy()
         self.move_ti_resolution()
         markers = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, markers)
-        self.marker_data.append(markers)
+        # self.marker_data.append(markers)
         markers_img = np.zeros((h, w), dtype=np.uint8)
         for point in markers:
             x, y = int(point[0]), int(point[1])
@@ -1306,6 +1320,12 @@ class Contact:
         cv2.fillPoly(cap_mask, [cap_points], color=255)
         
         vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
+        vein_full_img = np.zeros((h, w), dtype=np.uint8)
+        if len(vein) > 0:
+            contour_vein = self.synthetic_image_generator.alpha_shape(vein).astype(np.int32)
+            if len(contour_vein) > 0:
+                contour_vein_cv = contour_vein.reshape((-1, 1, 2))
+                cv2.fillPoly(vein_full_img, [contour_vein_cv], color=255)
         vein = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, vein)
         vein_points_filtered = []
         for point in vein:
@@ -1316,18 +1336,19 @@ class Contact:
             vein = np.array(vein_points_filtered)
         else:
             vein = np.array([])
-        self.vein_data.append(vein)
+        # self.vein_data.append(vein)
         vein_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
-            contour_vein = self.synthetic_image_generator.alpha_shape(vein, alpha=0.02).astype(np.int32)
+            contour_vein = self.synthetic_image_generator.alpha_shape(vein).astype(np.int32)
             if len(contour_vein) > 0:
                 contour_vein_cv = contour_vein.reshape((-1, 1, 2))
                 cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
 
         if False:
-            cv2.imwrite(contact_file, contact_img)
+            cv2.imwrite(contact_file, cap_mask)
             cv2.imwrite(markers_file, markers_img)
             cv2.imwrite(vein_file, vein_img)
+            cv2.imwrite(vein_full_file, vein_full_img)
 
     def write_training_data_to_file(self, training_iteration):
         directory = SYSTEM_PARAMS.files.dataset_root
@@ -2332,11 +2353,10 @@ class Contact:
         print("all done")
 
     def collect_training_data(self):
-        if False:
-            self.clear_training_data_folders()
+        self.clear_temp_images()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
-            for i in range(1, 3):
+            for i in range(1, 2):
                 self.trajectory_ix[None] = i
                 self.randomise()
                 self.set_up_initial_positions_state_and_trajectory()
@@ -2381,7 +2401,7 @@ class Contact:
                     if ts == self.record_off:
                         print(f'ts: {ts}; record off')
                     ts += 1
-                self.write_training_data_to_file(j*2 + (i-1))
+                # self.write_training_data_to_file(j*2 + (i-1))
                 
                 self.reset_loss()
                 self.batch_loss.fill(0.0)
