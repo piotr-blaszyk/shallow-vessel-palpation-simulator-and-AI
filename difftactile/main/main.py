@@ -1004,8 +1004,8 @@ class Contact:
         if (
             self.interpolation_valid[None] == 1
         ):
-            self.loss[None] += self.loss_1[None]
-            self.loss[None] += self.loss_2[None]
+            self.loss[None] += -self.loss_1[None]
+            self.loss[None] += -self.loss_2[None]
 
     @ti.func
     def calculate_contact_force(
