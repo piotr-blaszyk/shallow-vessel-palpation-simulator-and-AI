@@ -78,7 +78,7 @@ class HeatmapGenerator:
         self.max_y = self.min_y + 180
         self.bins = np.zeros(shape=(2, 105, 180), dtype=int)
 
-    def linear_interpolation(self):
+    def compute_all_3d_positions(self):
         cap = cv2.VideoCapture(str(SYSTEM_PARAMS.files.vein_slide_across))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
@@ -130,7 +130,7 @@ class HeatmapGenerator:
             image_tensor = image_tensor.unsqueeze(0).to(self.device)
             pred = self.model(image_tensor)
             pred = torch.sigmoid(pred)
-            pred = (pred > 0.5).float()
+            pred = (pred > 0.4).float()
             pred = pred.cpu().numpy().squeeze()
             pred = (pred * 255).astype(np.uint8)
             cv2.imwrite(segmentation_file, pred)
@@ -331,7 +331,7 @@ class HeatmapGenerator:
         plt.close()
         
     def go(self):
-        self.linear_interpolation()
+        self.compute_all_3d_positions()
         print(f"interpolated positions length: {len(self.all_positions)}")
         # self.marker_tracker.extract_frames(
         #     SYSTEM_PARAMS.files.vein_slide_across
