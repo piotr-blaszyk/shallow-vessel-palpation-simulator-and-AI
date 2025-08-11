@@ -172,6 +172,8 @@ class MyDataset(torch.utils.data.Dataset):
         vein_endpoints = vein_endpoints[start:start + dilated_clip_len:dilation]
         vein_endpoints_mask = vein_endpoints_mask[start:start + dilated_clip_len:dilation]
         
+        vein_rotation_angle = random.uniform(0, 360)
+        vein_endpoints = self.augmentation_rotation(vein_endpoints, vein_rotation_angle)
         images, labels_signal_mask = self.augmentation_artificial_vein_signal(
             images, vein_endpoints, vein_endpoints_mask
         )
@@ -433,6 +435,9 @@ class MyDataset(torch.utils.data.Dataset):
 
     def augmentation_artificial_vein_signal(self, clip_points, clip_vein_endpoints, clip_vein_endpoints_mask):
         valid_frames_mask = np.all(clip_vein_endpoints_mask, axis=1)
+
+        if not np.any(valid_frames_mask):
+            return clip_points, np.ones(clip_points.shape[0], dtype=bool)
         
         # Find runs of True values
         # Add sentinel values to handle edge cases

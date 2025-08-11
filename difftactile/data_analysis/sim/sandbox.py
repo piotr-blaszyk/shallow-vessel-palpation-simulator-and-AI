@@ -1,15 +1,8 @@
 import numpy as np
 
 valid_frames_mask = np.array([
-    True,
-    False,
-    True,
-    True,
-    True,
     False,
     False,
-    True,
-    True,
     False
 ])
         
