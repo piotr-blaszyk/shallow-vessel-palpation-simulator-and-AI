@@ -14,7 +14,7 @@ from pathlib import Path
 import time
 
 from difftactile.main.constants import *
-from difftactile.main.main import SyntheticImageGenerator
+from difftactile.main.main import *
 from difftactile.sensor_model.fisheye_model import *
 
 
@@ -423,3 +423,36 @@ class MyDataset(torch.utils.data.Dataset):
         points, mask = SyntheticImageGenerator.crop(points)
         points = points / k
         return points, mask
+
+    def augmentation_artificial_vein_signal(self, clip_points, clip_vein_endpoints):
+        for j in range(clip_points.shape[0]):
+            points = clip_points[j]
+            vein_endpoints = clip_vein_endpoints[j]
+            centre = np.mean(points, axis=0)
+            max_dist = np.max(np.linalg.norm(points - centre, axis=1))
+            x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
+            disp_c = random.uniform(0.01, 0.5)
+            decay_c = random.uniform(0, 1)
+            random_bool = np.random.choice([True, False])
+            if random_bool:
+                decay_c = 0
+            a, b, c = Contact.line_equation(
+                vein_endpoints
+            )
+            
+            for i in range(len(points)):
+                dist_from_centre = np.linalg.norm(centre - points[i])
+                centre_ratio = 1 - decay_c * (dist_from_centre / max_dist)
+                vec = Contact.vector_point_to_line(a, b, c, points[i])
+                x = np.linalg.norm(vec)
+                displacement = 0.0
+                if 0 < x < x_0:
+                    displacement = x
+                elif x_0 <= x < 2 * x_0:
+                    displacement = x_0 - (x - x_0)
+                if displacement > 0:
+                    vec_normalized = vec / x
+                    points[i] = points[i] + vec_normalized * displacement * disp_c * centre_ratio
+
+        return points
+        

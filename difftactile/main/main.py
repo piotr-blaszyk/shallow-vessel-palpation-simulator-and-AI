@@ -113,7 +113,8 @@ class Contact:
     
     def training_data_collection_initialise(self):
         self.marker_data = []
-        self.vein_data = []
+        self.vein_all_points_data = []
+        self.vein_endpoints_data = []
         self.artificial_vein_displacement_coefficient = 0.25
         self.vein_cx_A = None
         self.mean_marker_displacement = None
@@ -1303,13 +1304,29 @@ class Contact:
             x, y = int(point[0]), int(point[1])
             if 0 <= x < w and 0 <= y < h and markers_mask[y, x] > 127:
                 vein_points_filtered.append(point)
-        self.vein_data.append(vein)
+        self.vein_all_points_data.append(vein)
         vein_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
             contour_vein = SyntheticImageGenerator.alpha_shape(vein).astype(np.int32)
             if len(contour_vein) > 0:
                 contour_vein_cv = contour_vein.reshape((-1, 1, 2))
                 cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
+
+        self.move_og_resolution()
+        vein_endpoints = self.vein_endpoints_2d_projection.to_numpy()
+        self.move_ti_resolution()
+        if np.any(np.isclose(vein_endpoints, -1, atol=1e-6)):
+            vein_endpoints = np.array([])
+        vein_endpoints_filtered = []
+        for point in vein_endpoints:
+            x, y = int(point[0]), int(point[1])
+            if 0 <= x < w and 0 <= y < h and markers_mask[y, x] > 127:
+                vein_endpoints_filtered.append(point)
+        vein_endpoints_filtered = np.array(vein_endpoints_filtered)
+        if vein_endpoints_filtered.shape[0] < 2:
+            vein_endpoints_filtered = np.array([])
+
+        self.vein_endpoints_data.append(vein_endpoints)
 
         if training_iteration == 0:
             cv2.imwrite(contact_file, markers_mask)
@@ -1325,18 +1342,22 @@ class Contact:
         path = f'{directory}/{file}'
 
         markers_array, markers_mask = Contact.create_padded_array_with_mask(self.marker_data)
-        veins_array, veins_mask = Contact.create_padded_array_with_mask(self.vein_data)
+        veins_array, veins_mask = Contact.create_padded_array_with_mask(self.vein_all_points_data)
+        vein_endpoints_array, vein_endpoints_mask = Contact.create_padded_array_with_mask(self.vein_endpoints_data)
 
         np.savez(
             path,
             markers=markers_array,
             markers_mask=markers_mask,
             labels=veins_array,
-            labels_mask=veins_mask
+            labels_mask=veins_mask,
+            vein_endpoints=vein_endpoints_array,
+            vein_endpoints_mask=vein_endpoints_mask
         )
         
         self.marker_data = []
-        self.vein_data = []
+        self.vein_all_points_data = []
+        self.vein_endpoints_data = []
 
     @staticmethod
     def create_padded_array_with_mask(data_list):
@@ -1626,8 +1647,8 @@ class Contact:
             point[1] = self.tactile_image_resolution[None][1] - point[1]
             self.clock_arm_points[i] = point / self.tactile_image_resolution[None]
 
-    def line_equation(self):
-        points = self.vein_endpoints_2d_projection.to_numpy()
+    @staticmethod
+    def line_equation(points):
         x1, y1 = points[0]
         x2, y2 = points[1]
         
@@ -1638,7 +1659,8 @@ class Contact:
         
         return a, b, c
 
-    def vector_point_to_line(self, a, b, c, p):
+    @staticmethod
+    def vector_point_to_line(a, b, c, p):
         p = np.array(p)
         numerator = a * p[0] + b * p[1] + c
         denominator = np.sqrt(a * a + b * b)
@@ -1648,12 +1670,6 @@ class Contact:
             
         normal = np.array([a, b]) / denominator
         return -normal * numerator / denominator
-
-    def compute_mean_displacement_vector(self):
-        self.move_og_resolution()
-        points = self.sim_markers_deformed.to_numpy()
-        self.mean_marker_displacement = np.mean(points, axis=0)
-        self.move_ti_resolution()
 
     def move_points_away_from_vein(self):
         self.move_og_resolution()
@@ -1669,10 +1685,12 @@ class Contact:
     def move_points_away_from_vein_helper(self, points):
         x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
         disp_c = self.artificial_vein_displacement_coefficient
-        a, b, c = self.line_equation()
+        a, b, c = Contact.line_equation(
+            self.vein_endpoints_2d_projection.to_numpy()
+        )
         
         for i in range(len(points)):
-            vec = self.vector_point_to_line(a, b, c, points[i])
+            vec = Contact.vector_point_to_line(a, b, c, points[i])
             x = np.linalg.norm(vec)
             displacement = 0.0
             if 0 < x < x_0:
@@ -1709,7 +1727,6 @@ class Contact:
             0, self.keypoint_indices[0].reshape((1,))
         )[0][0]
         vitactip_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
-        self.compute_mean_displacement_vector()
         if self.vein_cx_A is not None and vitactip_bottom_x >= self.vein_cx_A + vitactip_r * (1/2):
             self.vein_detectable = True
         else:
