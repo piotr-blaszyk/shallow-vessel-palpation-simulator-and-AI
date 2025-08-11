@@ -1296,15 +1296,6 @@ class Contact:
         self.move_ti_resolution()
         if np.any(np.isclose(vein_endpoints, -1, atol=1e-6)):
             vein_endpoints = np.array([])
-        vein_endpoints_filtered = []
-        for point in vein_endpoints:
-            x, y = int(point[0]), int(point[1])
-            if 0 <= x < w and 0 <= y < h and markers_mask[y, x] > 127:
-                vein_endpoints_filtered.append(point)
-        vein_endpoints_filtered = np.array(vein_endpoints_filtered)
-        if vein_endpoints_filtered.shape[0] < 2:
-            vein_endpoints_filtered = np.array([])
-
         self.vein_endpoints_data.append(vein_endpoints)
 
         if training_iteration == 0:
