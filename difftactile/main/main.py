@@ -1283,6 +1283,7 @@ class Contact:
             x, y = int(point[0]), int(point[1])
             if 0 <= x < w and 0 <= y < h and markers_mask[y, x] > 127:
                 vein_points_filtered.append(point)
+        vein = np.array(vein_points_filtered)
         self.vein_all_points_data.append(vein)
         vein_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:

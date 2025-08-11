@@ -457,7 +457,7 @@ class MyDataset(torch.utils.data.Dataset):
             end_idx = 0
         
         signal_start = random.randrange(start_idx, end_idx)
-        signal_end = random.randomrange(signal_start+1, end_idx+1)
+        signal_end = random.randrange(signal_start+1, end_idx+1)
 
         vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
         vein_visible_mask[signal_start:signal_end] = True

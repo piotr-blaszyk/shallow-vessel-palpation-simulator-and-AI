@@ -168,7 +168,7 @@ def choose_optimal_threshold():
 
 
 def main():
-    choose_optimal_threshold()
+    train()
 
 
 if __name__ == "__main__":
