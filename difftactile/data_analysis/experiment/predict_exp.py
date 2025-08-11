@@ -221,35 +221,54 @@ class PredictExp:
             # Convert back to float32 in range [0,1]
             transformed_seq[t] = camera_small.astype(np.float32) / 255.0
 
-            for j in range(self.camera_h_small):
-                for k in range(self.camera_w_small):
-                    prob = transformed_seq[t, j, k]
-                    pos_E = self.map_2d_3d[j, k]
-                    pos_E_homogeneous = np.append(pos_E, 1)
-                    pos_A_homogeneous = t_EA @ pos_E_homogeneous
-                    pos_A = pos_A_homogeneous[:3]
-                    x_A = pos_A[0]
-                    y_A = pos_A[1]
-                    x_A -= self.min_x
-                    y_A -= self.min_y
-                    x_A = int(x_A)
-                    y_A = int(y_A)
-                    succ = (
-                        x_A >= 0 and
-                        x_A < 105 and
-                        y_A >= 0 and
-                        y_A < 180
-                    )
-                    if not succ:
-                        continue
-                    self.bin_prob_sum[x_A, y_A] += prob
-                    self.bin_count[x_A, y_A] += 1
+            # Create meshgrid for all pixel coordinates
+            j_coords, k_coords = np.meshgrid(np.arange(self.camera_h_small), np.arange(self.camera_w_small), indexing='ij')
+            
+            # Get probabilities for all pixels
+            probs = transformed_seq[t]
+            
+            # Get positions for all pixels
+            pos_E = self.map_2d_3d[j_coords, k_coords]
+            pos_E_homogeneous = np.pad(pos_E, ((0, 0), (0, 0), (0, 1)), constant_values=1)
+            
+            # Reshape for matrix multiplication
+            pos_E_flat = pos_E_homogeneous.reshape(-1, 4).T
+            pos_A_homogeneous = t_EA @ pos_E_flat
+            pos_A = pos_A_homogeneous[:3].T.reshape(self.camera_h_small, self.camera_w_small, 3)
+            
+            # Calculate x_A and y_A for all points
+            x_A = (pos_A[..., 0] - self.min_x).astype(np.int32)
+            y_A = (pos_A[..., 1] - self.min_y).astype(np.int32)
+            
+            # Create mask for valid positions
+            valid_mask = (x_A >= 0) & (x_A < 105) & (y_A >= 0) & (y_A < 180)
+            
+            # Update bin_prob_sum and bin_count using valid positions
+            np.add.at(self.bin_prob_sum, (x_A[valid_mask], y_A[valid_mask]), probs[valid_mask])
+            np.add.at(self.bin_count, (x_A[valid_mask], y_A[valid_mask]), 1)
 
     def predict_all_clips(self):
         n = self.data['markers'].shape[0]
         for i in tqdm(range(n - self.dilated_clip_len), desc="clip inference"):
             self.predict_clip(i)
         
+        self.write_probs_to_npz()
+    
+    def write_probs_to_npz(self):
+        path = SYSTEM_PARAMS.files.exp_probs_npz
+        np.savez(
+            path,
+            bin_prob_sum=self.bin_prob_sum,
+            bin_count=self.bin_count
+        )
+    
+    def load_probs_from_npz(self):
+        path = SYSTEM_PARAMS.files.exp_probs_npz
+        data = np.load(path)
+        self.bin_prob_sum = data['bin_prob_sum']
+        self.bin_count = data['bin_count']
+    
+    def generate_mask_image(self):
         res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
         res = (res > 0.4).astype(np.int32)
 
@@ -276,6 +295,7 @@ class PredictExp:
         self.load_npz()
         self.compute_all_3d_positions()
         self.predict_all_clips()
+        self.write_probs_to_npz()
 
 
 def main():

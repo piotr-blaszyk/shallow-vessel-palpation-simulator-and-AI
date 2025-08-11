@@ -274,6 +274,7 @@
         "dataset_data_point": "trajectory_{:04d}.npz",
         "test_loader": "difftactile/output/test_loader.pickle",
         "threshold_optimization": "difftactile/output/threshold_optimization.png",
-        "exp_video_npz": "difftactile/output/exp_video.npz"
+        "exp_video_npz": "difftactile/output/exp_video.npz",
+        "exp_probs_npz": "difftactile/output/exp_probs.npz"
     }
 }
