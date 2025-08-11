@@ -160,6 +160,8 @@ class MyDataset(torch.utils.data.Dataset):
         markers_mask = data['markers_mask']
         labels = data['labels']
         labels_mask = data['labels_mask']
+        vein_endpoints = data['vein_endpoints']
+        vein_endpoints_mask = data['vein_endpoints_mask']
         
         # Extract longer sequence and apply dilation
         dilated_clip_len = self.clip_len * dilation
@@ -167,8 +169,13 @@ class MyDataset(torch.utils.data.Dataset):
         labels = labels[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         images_mask = markers_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         labels_mask = labels_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        vein_endpoints = vein_endpoints[start:start + dilated_clip_len:dilation]
+        vein_endpoints_mask = vein_endpoints_mask[start:start + dilated_clip_len:dilation]
         
-        # print(f'self.mode: {self.mode}')
+        images, labels_signal_mask = self.augmentation_artificial_vein_signal(
+            images, vein_endpoints, vein_endpoints_mask
+        )
+        labels_mask &= labels_signal_mask[:, np.newaxis]
         discrete_angles = [0, 60, 120, 180, 240, 300]
         rotation_angle_deg = random.choice(discrete_angles)
         images = self.augmentation_rotation(images, rotation_angle_deg)
@@ -424,8 +431,33 @@ class MyDataset(torch.utils.data.Dataset):
         points = points / k
         return points, mask
 
-    def augmentation_artificial_vein_signal(self, clip_points, clip_vein_endpoints):
-        for j in range(clip_points.shape[0]):
+    def augmentation_artificial_vein_signal(self, clip_points, clip_vein_endpoints, clip_vein_endpoints_mask):
+        valid_frames_mask = np.all(clip_vein_endpoints_mask, axis=1)
+        
+        # Find runs of True values
+        # Add sentinel values to handle edge cases
+        padded = np.concatenate(([False], valid_frames_mask, [False]))
+        runs = np.where(np.diff(padded))[0]
+        
+        # runs[::2] are starts of True runs, runs[1::2] are ends of True runs
+        # Length of each run is end - start
+        run_lengths = runs[1::2] - runs[::2]
+        
+        if len(run_lengths) > 0:
+            longest_run_idx = np.argmax(run_lengths)
+            start_idx = runs[::2][longest_run_idx]
+            end_idx = runs[1::2][longest_run_idx]
+        else:
+            start_idx = 0
+            end_idx = 0
+        
+        signal_start = random.randrange(start_idx, end_idx)
+        signal_end = random.randomrange(signal_start+1, end_idx+1)
+
+        vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
+        vein_visible_mask[signal_start:signal_end] = True
+
+        for j in range(signal_start, signal_end):
             points = clip_points[j]
             vein_endpoints = clip_vein_endpoints[j]
             centre = np.mean(points, axis=0)
@@ -454,5 +486,5 @@ class MyDataset(torch.utils.data.Dataset):
                     vec_normalized = vec / x
                     points[i] = points[i] + vec_normalized * displacement * disp_c * centre_ratio
 
-        return points
+        return points, vein_visible_mask
         
