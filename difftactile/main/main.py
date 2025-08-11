@@ -115,10 +115,7 @@ class Contact:
         self.marker_data = []
         self.vein_all_points_data = []
         self.vein_endpoints_data = []
-        self.artificial_vein_displacement_coefficient = 0.25
         self.vein_cx_A = None
-        self.mean_marker_displacement = None
-        self.vein_detectable = False
         self.target_3_ts = 12
         self.target_4_ts = 226
 
@@ -772,14 +769,6 @@ class Contact:
         end = trajectory[4][0] - cx_0
 
         cx = np.random.uniform(start/2, end/2)
-        self.vein_cx_A = cx_0 + cx
-        x_a = trajectory[3][0]
-        x_b = trajectory[4][0]
-        dist = x_b - x_a
-        ts_dist = self.target_4_ts - self.target_3_ts
-        vein_expected_ts = (self.vein_cx_A - x_a) / dist * ts_dist + self.target_3_ts
-        self.record_on = int(max(self.target_3_ts, vein_expected_ts))
-        self.record_off = int(min(self.target_4_ts, vein_expected_ts + 0.3 * ts_dist))
         
         state_dict = {
             'tumour_present': True,
@@ -791,10 +780,6 @@ class Contact:
             'r': SYSTEM_PARAMS.geometry.vein.r
         }
         self.state_dicts[1] = state_dict
-        # self.artificial_vein_displacement_coefficient = np.random.uniform(0.2, 0.4)
-        self.artificial_vein_displacement_coefficient = 0.5
-        print(f'self.artificial_vein_displacement_coefficient: {self.artificial_vein_displacement_coefficient}')
-        self.vein_detectable = False
 
     def set_up_initial_positions_state_and_trajectory(self):
         state_dict = self.state_dicts[self.trajectory_ix[None]]
@@ -1256,9 +1241,6 @@ class Contact:
                     os.remove(file_path)
 
     def record_training_data_point(self, training_iteration, ts):
-        if self.mean_marker_displacement is None:
-            return
-
         w = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
         h = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
 
@@ -1288,10 +1270,7 @@ class Contact:
                 contour_cv = contour.reshape((-1, 1, 2))
                 cv2.fillPoly(markers_mask, [contour_cv], color=255)
         
-        if self.vein_detectable:
-            vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
-        else:
-            vein = np.array([])
+        vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
         vein_full_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
             contour_vein = SyntheticImageGenerator.alpha_shape(vein).astype(np.int32)
@@ -1671,38 +1650,6 @@ class Contact:
         normal = np.array([a, b]) / denominator
         return -normal * numerator / denominator
 
-    def move_points_away_from_vein(self):
-        self.move_og_resolution()
-        points = self.sim_markers_deformed_filtered.to_numpy()
-        points = self.move_points_away_from_vein_helper(points)
-        self.sim_markers_deformed_filtered.from_numpy(points)
-
-        points = self.sim_markers_deformed.to_numpy()
-        points = self.move_points_away_from_vein_helper(points)
-        self.sim_markers_deformed.from_numpy(points)
-        self.move_ti_resolution()
-
-    def move_points_away_from_vein_helper(self, points):
-        x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
-        disp_c = self.artificial_vein_displacement_coefficient
-        a, b, c = Contact.line_equation(
-            self.vein_endpoints_2d_projection.to_numpy()
-        )
-        
-        for i in range(len(points)):
-            vec = Contact.vector_point_to_line(a, b, c, points[i])
-            x = np.linalg.norm(vec)
-            displacement = 0.0
-            if 0 < x < x_0:
-                displacement = x
-            elif x_0 <= x < 2 * x_0:
-                displacement = x_0 - (x - x_0)
-            if displacement > 0:
-                vec_normalized = vec / x
-                points[i] = points[i] + vec_normalized * displacement * disp_c
-
-        return points
-
     def visualisation_draw_tactile_readout(self):
         self.visualisation_project_2d_vein_endpoints()
         self.visualisation_project_2d_vein_all()
@@ -1723,16 +1670,6 @@ class Contact:
             self.tactile_canvas.circles(
                 self.exp_marker_points, radius=0.01, color=(0, 1, 0)
             )
-        vitactip_bottom_x = self.vitactip.get_keypoint_coordinates(
-            0, self.keypoint_indices[0].reshape((1,))
-        )[0][0]
-        vitactip_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
-        if self.vein_cx_A is not None and vitactip_bottom_x >= self.vein_cx_A + vitactip_r * (1/2):
-            self.vein_detectable = True
-        else:
-            self.vein_detectable = False
-        if self.vein_detectable:
-            self.move_points_away_from_vein()
         self.tactile_canvas.circles(
             self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
         )
@@ -2373,19 +2310,8 @@ class Contact:
                     if (
                         self.current_target_idx[None] == 4 
                         and ts % 2 == 0
-                        and (
-                            i == 2
-                            or (
-                                ts >= self.record_on
-                                and ts <= self.record_off
-                            )
-                        )
                     ):
                         self.record_training_data_point(j, ts)
-                    if ts == self.record_on:
-                        print(f'ts: {ts}; record on')
-                    if ts == self.record_off:
-                        print(f'ts: {ts}; record off')
                     ts += 1
                 # self.write_training_data_to_file(j*2 + (i-1))
                 
