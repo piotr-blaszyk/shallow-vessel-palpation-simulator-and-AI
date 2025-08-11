@@ -102,8 +102,9 @@ class HeatmapGenerator:
                 all_positions[start_frame + j] = interpolated_pos
         
         self.all_positions = all_positions
+        print(f"interpolated positions length: {len(self.all_positions)}")
 
-    def generate_synthetic_image_and_segmentation_mask(self, ix, markers):
+    def predict_and_save_to_file(self, ix, markers):
         w = SYSTEM_PARAMS.fisheye_model.crop_width
         h = SYSTEM_PARAMS.fisheye_model.crop_height
         cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x - SYSTEM_PARAMS.fisheye_model.crop_x
@@ -135,7 +136,7 @@ class HeatmapGenerator:
             pred = (pred * 255).astype(np.uint8)
             cv2.imwrite(segmentation_file, pred)
 
-    def upsample(self):
+    def upsample_and_downsample(self):
         crop_x = SYSTEM_PARAMS.fisheye_model.crop_x
         crop_y = SYSTEM_PARAMS.fisheye_model.crop_y
         crop_width = SYSTEM_PARAMS.fisheye_model.crop_width
@@ -174,7 +175,7 @@ class HeatmapGenerator:
             cv2.imwrite(output_path, downsampled_img)
         print(f"Upsampled {len(image_files)} images to {output_folder}")
     
-    def aggregate_segmentation_mask(self):
+    def predict_all_and_write_to_file(self):
         image_files = sorted(glob.glob(os.path.join(SYSTEM_PARAMS.files.vein_slide_across_segmentation_mask_folder_full_hd, '*')))
         if not image_files:
             raise ValueError(f"No images found in {SYSTEM_PARAMS.files.vein_slide_across_segmentation_mask_folder_full_hd}")
@@ -268,7 +269,7 @@ class HeatmapGenerator:
         T[:3, 3:] = t
         return T
 
-    def evaluate(self):
+    def evaluate_from_file(self):
         ground_truth = cv2.imread(SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask, cv2.IMREAD_GRAYSCALE)
         prediction = cv2.imread(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, cv2.IMREAD_GRAYSCALE)
         if ground_truth is None:
@@ -332,26 +333,25 @@ class HeatmapGenerator:
         
     def go(self):
         self.compute_all_3d_positions()
-        print(f"interpolated positions length: {len(self.all_positions)}")
-        # self.marker_tracker.extract_frames(
-        #     SYSTEM_PARAMS.files.vein_slide_across
-        # )
-        # print(f"marker tracker num of extracted frames: {len(self.marker_tracker.frame_markers)}")
-        # self.marker_tracker.create_visualization(
-        #     out_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers,
-        #     mode="unpaired-markers",
-        #     base_from_file=False
-        # )
-        # player = VideoPlayer(
-        #     in_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers
-        # )
-        # player.run()
-        # for i in range(len(self.marker_tracker.frame_markers)):
-        #     markers = self.marker_tracker.frame_markers[i]
-        #     self.generate_synthetic_image_and_segmentation_mask(i, markers)
-        # self.upsample()
-        # self.aggregate_segmentation_mask()
-        self.evaluate()
+        if False:
+            self.marker_tracker.extract_frames(
+                SYSTEM_PARAMS.files.vein_slide_across
+            )
+            self.marker_tracker.create_visualization(
+                out_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers,
+                mode="unpaired-markers",
+                base_from_file=False
+            )
+            player = VideoPlayer(
+                in_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers
+            )
+            player.run()
+            for i in range(len(self.marker_tracker.frame_markers)):
+                markers = self.marker_tracker.frame_markers[i]
+                self.predict_and_save_to_file(i, markers)
+            self.upsample_and_downsample()
+            self.predict_all_and_write_to_file()
+        self.evaluate_from_file()
 
 
 def main():

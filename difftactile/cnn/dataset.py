@@ -194,8 +194,8 @@ class MyDataset(torch.utils.data.Dataset):
         images_mask &= images_crop_mask
         labels_mask &= labels_crop_mask
         
-        images = self.generate_markers_image(images, images_mask)  # shape: (T, H, W)
-        labels = self.generate_vein_image(labels, labels_mask)     # shape: (T, H, W)
+        images = MyDataset.generate_markers_image(self.h_scaled, self.w_scaled, images, images_mask)  # shape: (T, H, W)
+        labels = MyDataset.generate_vein_image(self.h_scaled, self.w_scaled, labels, labels_mask)     # shape: (T, H, W)
 
         # Convert to float and normalize
         images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
@@ -207,12 +207,13 @@ class MyDataset(torch.utils.data.Dataset):
         
         return images, labels
 
-    def generate_markers_image(self, points, points_mask):
+    @staticmethod
+    def generate_markers_image(h, w, points, points_mask):
         if points.shape[1] == 0:  # Check if there are any points
-            return np.zeros((points.shape[0], self.h_scaled, self.w_scaled), dtype=np.uint8)
+            return np.zeros((points.shape[0], h, w), dtype=np.uint8)
             
         # Initialize output array for all frames
-        images = np.zeros((points.shape[0], self.h_scaled, self.w_scaled), dtype=np.uint8)
+        images = np.zeros((points.shape[0], h, w), dtype=np.uint8)
         
         # Generate image for each frame
         for t in range(points.shape[0]):
@@ -228,23 +229,24 @@ class MyDataset(torch.utils.data.Dataset):
                     wy1, wy0 = y - y0, y1 - y
                     
                     # Ensure we don't write outside the image bounds
-                    if 0 <= x0 < self.w_scaled and 0 <= y0 < self.h_scaled:
+                    if 0 <= x0 < w and 0 <= y0 < h:
                         images[t, y0, x0] = min(255, images[t, y0, x0] + int(255 * wx0 * wy0))
-                    if 0 <= x1 < self.w_scaled and 0 <= y0 < self.h_scaled:
+                    if 0 <= x1 < w and 0 <= y0 < h:
                         images[t, y0, x1] = min(255, images[t, y0, x1] + int(255 * wx1 * wy0))
-                    if 0 <= x0 < self.w_scaled and 0 <= y1 < self.h_scaled:
+                    if 0 <= x0 < w and 0 <= y1 < h:
                         images[t, y1, x0] = min(255, images[t, y1, x0] + int(255 * wx0 * wy1))
-                    if 0 <= x1 < self.w_scaled and 0 <= y1 < self.h_scaled:
+                    if 0 <= x1 < w and 0 <= y1 < h:
                         images[t, y1, x1] = min(255, images[t, y1, x1] + int(255 * wx1 * wy1))
                 
         return images
 
-    def generate_vein_image(self, points, points_mask):
+    @staticmethod
+    def generate_vein_image(h, w, points, points_mask):
         if points.shape[1] == 0:  # Check if there are any points
-            return np.zeros((points.shape[0], self.h_scaled, self.w_scaled), dtype=np.uint8)
+            return np.zeros((points.shape[0], h, w), dtype=np.uint8)
             
         # Initialize output array for all frames
-        images = np.zeros((points.shape[0], self.h_scaled, self.w_scaled), dtype=np.uint8)
+        images = np.zeros((points.shape[0], h, w), dtype=np.uint8)
         
         # Generate image for each frame
         for t in range(points.shape[0]):

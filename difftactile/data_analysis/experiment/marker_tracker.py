@@ -45,6 +45,7 @@ class MarkerTracker:
                 frame_idx += 1
             frame_count += 1
         cap.release()
+        print(f"marker tracker: extracted {len(self.marker_tracker.frame_markers)} frames")
 
     def match_consecutive_frames(self):
         for i in range(len(self.frame_markers) - 1):
