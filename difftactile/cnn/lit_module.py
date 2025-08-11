@@ -23,7 +23,7 @@ class SegmentationModel(pl.LightningModule):
             adn_ordering='NDA',
         )
         # Initialize both loss functions
-        self.dice_loss = DiceLoss(sigmoid=True, batch=True)
+        self.dice_loss = DiceLoss(sigmoid=True, batch=False)
         self.bce_loss = torch.nn.BCEWithLogitsLoss()
         self.dice_weight = dice_weight
         self.bce_weight = bce_weight
@@ -88,7 +88,9 @@ class SegmentationModel(pl.LightningModule):
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
 
     def iou_score(self, preds, targets, eps=1e-6):
-        intersection = (preds * targets).sum(dim=(1, 2, 3))
-        union = (preds + targets).sum(dim=(1, 2, 3)) - intersection
+        # Sum over spatial dimensions only (width and height)
+        intersection = (preds * targets).sum(dim=(2, 3))
+        union = (preds + targets).sum(dim=(2, 3)) - intersection
         iou = (intersection + eps) / (union + eps)
+        # Take mean over batch and frames
         return iou.mean()

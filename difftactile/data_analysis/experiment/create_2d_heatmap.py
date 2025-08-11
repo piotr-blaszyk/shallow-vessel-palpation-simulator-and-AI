@@ -22,7 +22,7 @@ class HeatmapGenerator:
         self.marker_tracker = MarkerTracker()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = SegmentationModel()
-        self.model.load_state_dict(torch.load(SYSTEM_PARAMS.files.segmentation_model_weights))
+        self.model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model))
         self.model = self.model.to(self.device)
         self.model.eval()
         self.transforms = A.Compose([ToTensorV2()])

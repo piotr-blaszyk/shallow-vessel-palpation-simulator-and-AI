@@ -257,7 +257,8 @@
         "vein_slide_across_segmentation_mask_folder": "difftactile/output/vein_slide_across/segmentation_mask",
         "vein_slide_across_segmentation_mask_full_hd": "difftactile/output/vein_slide_across/segmentation_mask_full_hd/frame_{:04d}.png",
         "vein_slide_across_segmentation_mask_folder_full_hd": "difftactile/output/vein_slide_across/segmentation_mask_full_hd",
-        "segmentation_model_weights": "saved_models/final_segmentation_model.pt",
+        "final_segmentation_model": "saved_models/final_segmentation_model.pt",
+        "best_segmentation_model": "saved_models/best_segmentation_model.pt",
         "vein_slide_across_predicted_aggregated_segmentation_mask": "difftactile/output/vein_slide_across/segmentation_mask_predicted_aggregated.png",
         "sensor_geometry_step": "difftactile/output/sensor_geometry.step",
         "training_data_markers": "difftactile/output/training_data/markers/image_{:04d}_{:04d}.png",
@@ -270,6 +271,7 @@
         "training_data_segmentation_mask_folder": "difftactile/output/training_data/segmentation_mask",
         "dataset_root": "difftactile/output/training_data/pickle",
         "dataset_data_point": "trajectory_{:04d}.npz",
-        "test_loader": "difftactile/output/test_loader.pickle"
+        "test_loader": "difftactile/output/test_loader.pickle",
+        "threshold_optimization": "difftactile/output/threshold_optimization.png"
     }
 }

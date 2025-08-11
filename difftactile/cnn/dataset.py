@@ -19,13 +19,13 @@ from difftactile.sensor_model.fisheye_model import *
 
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir, mode=None, clip_len=16, clips_per_trajectory=4):
+    def __init__(self, data_dir, mode=None):
         super().__init__()
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.fisheye_model = FisheyeModel()
         self.data_dir = data_dir
-        self.clip_len = clip_len
-        self.clips_per_trajectory = clips_per_trajectory
+        self.clip_len = 16
+        self.clips_per_trajectory = 16
         self.mode = mode
         self.files = [os.path.join(data_dir, f) for f in os.listdir(data_dir)]
         
@@ -151,8 +151,6 @@ class MyDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         file_path, start, dilation = self.clips[idx]
 
-        good = self.file_contains_vein(file_path)
-
         # file_vein = self.file_contains_vein(file_path)
         # print(f'file contains vein: {file_vein}')
 
@@ -169,29 +167,25 @@ class MyDataset(torch.utils.data.Dataset):
         labels = labels[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         images_mask = markers_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         labels_mask = labels_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-
-        if good:
-            foo = 7
         
         # print(f'self.mode: {self.mode}')
-        if self.mode == 'train':
-            discrete_angles = [0, 60, 120, 180, 240, 300]
-            rotation_angle_deg = random.choice(discrete_angles)
-            images = self.augmentation_rotation(images, rotation_angle_deg)
-            labels = self.augmentation_rotation(labels, rotation_angle_deg)
-            radial_shift = random.uniform(-10, 10)
-            images = self.shift_radial(images, radial_shift)
-            labels = self.shift_radial(labels, radial_shift)
-            angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
-            magnitude = random.uniform(0, 20)
-            images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
-            labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
-            angle_x = math.radians(random.uniform(-10, 10))
-            angle_y = math.radians(random.uniform(-10, 10))
-            images = self.rotate_xy(images, angle_x, angle_y)
-            labels = self.rotate_xy(labels, angle_x, angle_y)
-            images_random_remove_mask = self.randomly_remove(images)
-            images_mask &= images_random_remove_mask
+        discrete_angles = [0, 60, 120, 180, 240, 300]
+        rotation_angle_deg = random.choice(discrete_angles)
+        images = self.augmentation_rotation(images, rotation_angle_deg)
+        labels = self.augmentation_rotation(labels, rotation_angle_deg)
+        radial_shift = random.uniform(-10, 10)
+        images = self.shift_radial(images, radial_shift)
+        labels = self.shift_radial(labels, radial_shift)
+        angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+        magnitude = random.uniform(0, 20)
+        images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+        labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+        angle_x = math.radians(random.uniform(-10, 10))
+        angle_y = math.radians(random.uniform(-10, 10))
+        images = self.rotate_xy(images, angle_x, angle_y)
+        labels = self.rotate_xy(labels, angle_x, angle_y)
+        images_random_remove_mask = self.randomly_remove(images)
+        images_mask &= images_random_remove_mask
         
         images, images_crop_mask = self.downscale(images)
         labels, labels_crop_mask = self.downscale(labels)

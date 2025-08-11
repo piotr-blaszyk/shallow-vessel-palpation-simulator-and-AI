@@ -50,14 +50,14 @@ class Visualisation:
         NUM_WORKERS = 1
 
         if mode == 'predictions':
-            model_path = SYSTEM_PARAMS.files.segmentation_model_weights
+            model_path = SYSTEM_PARAMS.files.final_segmentation_model
             with open(SYSTEM_PARAMS.files.test_loader, 'rb') as f:
                 test_data = pickle.load(f)
             data_loader = DataLoader(
                 test_data['dataset'],
                 batch_size=BATCH_SIZE,
                 shuffle=True,
-                num_workers=test_data['num_workers']
+                num_workers=NUM_WORKERS
             )
             
             # Initialize model
@@ -94,8 +94,10 @@ class Visualisation:
                     image_input = image.to(device)
                     logits = model(image_input)
                     probs = torch.sigmoid(logits)
-                    pred = (probs > 0.5).float()
+                    pred = (probs > 0.4).float()
                     pred = pred.cpu()
+                    if label.sum() == 0:
+                        continue
 
             # Convert tensors to numpy arrays
             image_seq = image.numpy().squeeze()  # Shape: (T, H, W)
@@ -189,7 +191,7 @@ class Visualisation:
 def main():
     v = Visualisation()
     # Change this to 'predictions' to visualize model predictions
-    v.visualize(mode='dataset')
+    v.visualize(mode='predictions')
 
 
 if __name__ == "__main__":
