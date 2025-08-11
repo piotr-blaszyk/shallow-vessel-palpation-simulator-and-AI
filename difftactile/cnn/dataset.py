@@ -31,7 +31,7 @@ class MyDataset(torch.utils.data.Dataset):
         
         self.w = SYSTEM_PARAMS.fisheye_model.crop_width
         self.h = SYSTEM_PARAMS.fisheye_model.crop_height
-        self.k = 4
+        self.k = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
         self.w_scaled = int(self.w / self.k)
         self.h_scaled = int(self.h / self.k)
         # self.w_scaled = 1920
@@ -208,7 +208,7 @@ class MyDataset(torch.utils.data.Dataset):
         return images, labels
 
     @staticmethod
-    def get_clip(h, w, data, clip_len, dilation, start_ix):
+    def get_clip(h, w, k, data, clip_len, dilation, start_ix):
         markers = data['markers']
         markers_mask = data['markers_mask']
 
@@ -216,16 +216,18 @@ class MyDataset(torch.utils.data.Dataset):
         images = markers[start_ix:start_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
         images_mask = markers_mask[start_ix:start_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
         
-        images, images_crop_mask = MyDataset.downscale(images)
+        images, images_crop_mask = MyDataset.downscale(k, images)
         images_mask &= images_crop_mask
         
-        images = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
+        h_scaled = h // k
+        w_scaled = w // k
+        images = MyDataset.generate_markers_image(h_scaled, w_scaled, images, images_mask)  # shape: (T, H, W)
 
         # Convert to float and normalize
         images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
         
         # Add channel dimension: (T, H, W) -> (C, T, H, W)
-        images = images.unsqueeze(0)
+        images = images.unsqueeze(0).unsqueeze(0)
         
         return images
 

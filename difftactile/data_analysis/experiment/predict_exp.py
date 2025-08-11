@@ -16,7 +16,7 @@ from difftactile.cnn.lit_module import SegmentationModel
 from difftactile.cnn.visualise import *
 from difftactile.main.main import *
 
-class HeatmapGenerator:
+class PredictExp:
     def __init__(self):
         self.fisheye_model = FisheyeModel()
         self.synthetic_image_generator = SyntheticImageGenerator()
@@ -182,7 +182,8 @@ class HeatmapGenerator:
     def predict_clip(self, i):
         w = SYSTEM_PARAMS.fisheye_model.crop_width
         h = SYSTEM_PARAMS.fisheye_model.crop_height
-        clip = MyDataset.get_clip(h, w, self.data, self.clip_len, self.dilation, start_ix=i)
+        k = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
+        clip = MyDataset.get_clip(h, w, k, self.data, self.clip_len, self.dilation, start_ix=i)
         with torch.no_grad():
             clip_input = clip.to(self.device)
             logits = self.model(clip_input)
@@ -246,7 +247,7 @@ class HeatmapGenerator:
 
     def predict_all_clips(self):
         n = self.data['markers'].shape[0]
-        for i in range(n - self.dilated_clip_len):
+        for i in tqdm(range(n - self.dilated_clip_len), desc="clip inference"):
             self.predict_clip(i)
         
         res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
@@ -278,5 +279,5 @@ class HeatmapGenerator:
 
 
 def main():
-    heatmap_generator = HeatmapGenerator()
-    heatmap_generator.go()
+    predict_exp = PredictExp()
+    predict_exp.go()

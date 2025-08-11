@@ -46,7 +46,7 @@ class Visualisation:
         Args:
             mode: Either 'dataset' or 'predictions'
         """
-        BATCH_SIZE = 1
+        BATCH_SIZE = 2
         NUM_WORKERS = 1
 
         if mode == 'predictions':
