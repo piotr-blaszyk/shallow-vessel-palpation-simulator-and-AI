@@ -151,6 +151,8 @@ class MyDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         file_path, start, dilation = self.clips[idx]
 
+        good = self.file_contains_vein(file_path)
+
         # file_vein = self.file_contains_vein(file_path)
         # print(f'file contains vein: {file_vein}')
 
@@ -167,20 +169,29 @@ class MyDataset(torch.utils.data.Dataset):
         labels = labels[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         images_mask = markers_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         labels_mask = labels_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+
+        if good:
+            foo = 7
         
         # print(f'self.mode: {self.mode}')
-        if False and self.mode == 'train':
-            images = self.augmentation_rotation(images)
-            labels = self.augmentation_rotation(labels)
-            if False:
-                images = self.shift_radial(images)
-                labels = self.shift_radial(labels)
-                images = self.uniform_shift(images)
-                labels = self.uniform_shift(labels)
-                images = self.rotate_xy(images)
-                labels = self.rotate_xy(labels)
-                images_random_remove_mask = self.randomly_remove(images)
-                images_mask &= images_random_remove_mask
+        if self.mode == 'train':
+            discrete_angles = [0, 60, 120, 180, 240, 300]
+            rotation_angle_deg = random.choice(discrete_angles)
+            images = self.augmentation_rotation(images, rotation_angle_deg)
+            labels = self.augmentation_rotation(labels, rotation_angle_deg)
+            radial_shift = random.uniform(-10, 10)
+            images = self.shift_radial(images, radial_shift)
+            labels = self.shift_radial(labels, radial_shift)
+            angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+            magnitude = random.uniform(0, 20)
+            images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+            labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+            angle_x = math.radians(random.uniform(-10, 10))
+            angle_y = math.radians(random.uniform(-10, 10))
+            images = self.rotate_xy(images, angle_x, angle_y)
+            labels = self.rotate_xy(labels, angle_x, angle_y)
+            images_random_remove_mask = self.randomly_remove(images)
+            images_mask &= images_random_remove_mask
         
         images, images_crop_mask = self.downscale(images)
         labels, labels_crop_mask = self.downscale(labels)
@@ -253,9 +264,7 @@ class MyDataset(torch.utils.data.Dataset):
                 
         return images
 
-    def augmentation_rotation(self, points):
-        discrete_angles = [0, 60, 120, 180, 240, 300]
-        angle_degrees = random.choice(discrete_angles)
+    def augmentation_rotation(self, points, angle_degrees):
         cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
         cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
         
@@ -281,13 +290,10 @@ class MyDataset(torch.utils.data.Dataset):
 
         return rotated_points
 
-    def uniform_shift(self, points):
+    def uniform_shift(self, points, angle_rad, magnitude):
         if points.shape[1] == 0:  # Check if there are any points
             return points
             
-        # Generate random shift parameters - same for all frames
-        angle_rad = random.uniform(0, 2 * math.pi)
-        magnitude = random.uniform(0, 20)
         shift_x = magnitude * math.cos(angle_rad)
         shift_y = magnitude * math.sin(angle_rad)
         
@@ -296,15 +302,12 @@ class MyDataset(torch.utils.data.Dataset):
         
         return shifted_points
 
-    def shift_radial(self, points):
+    def shift_radial(self, points, radial_shift):
         if points.shape[1] == 0:  # Check if there are any points
             return points
             
         cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
         cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
-        
-        # Same radial shift for all frames
-        radial_shift = random.uniform(-10, 10)
         
         # Calculate distances and unit vectors for all points at once
         dx = points[..., 0] - cx  # Broadcasting handles all frames
@@ -329,7 +332,7 @@ class MyDataset(torch.utils.data.Dataset):
         
         return shifted_points
 
-    def rotate_xy(self, points):
+    def rotate_xy(self, points, angle_x, angle_y):
         if points.shape[1] == 0:  # Check if there are any points
             return points
             
@@ -337,10 +340,6 @@ class MyDataset(torch.utils.data.Dataset):
         points_3d = self.fisheye_model.project_pix_to_points_3d_plane(points.reshape(-1, 2)).reshape(points.shape[0], points.shape[1], 3)
         z_coord = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1
         assert np.allclose(points_3d[..., 2], z_coord, atol=1e-6), f"All z-coordinates must be equal to {z_coord}"
-        
-        # Same rotation angles for all frames
-        angle_x = math.radians(random.uniform(-10, 10))
-        angle_y = math.radians(random.uniform(-10, 10))
         
         # Rotation matrices around axes through origin
         cos_x, sin_x = math.cos(angle_x), math.sin(angle_x)
@@ -381,7 +380,7 @@ class MyDataset(torch.utils.data.Dataset):
             return np.ones((points.shape[0], 0), dtype=bool)  # Return empty mask matching input shape
             
         # Determine number of points to remove (same for all frames)
-        k = random.randint(0, min(13, points.shape[1]))
+        k = random.randint(0, min(26, points.shape[1]))
         if k == 0:
             return np.ones((points.shape[0], points.shape[1]), dtype=bool)  # Return all True mask
             

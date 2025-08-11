@@ -40,7 +40,7 @@ class Visualisation:
         
         return overlay
 
-    def visualize(self, mode='dataset'):
+    def visualize(self, mode):
         """
         Unified visualization method that can show either dataset samples or model predictions.
         Args:
@@ -163,6 +163,13 @@ class Visualisation:
                 right_window_title = 'Ground Truth Label' if mode == 'dataset' else 'Prediction Overlay'
                 cv2.imshow(f'{right_window_title} {i}', current_right)
 
+                # Get screen dimensions using cv2
+                window_width = current_image.shape[0]
+                
+                # Position windows - left window at (0,0), right window at (screen_width - window_width, 0)
+                cv2.moveWindow(f'Input Image {i}', 0, 0)
+                cv2.moveWindow(f'{right_window_title} {i}',window_width + 25, 0)
+
                 # Handle keyboard input
                 key = cv2.waitKey(0) & 0xFF
                 
@@ -182,7 +189,7 @@ class Visualisation:
 def main():
     v = Visualisation()
     # Change this to 'predictions' to visualize model predictions
-    v.visualize(mode='predictions')
+    v.visualize(mode='dataset')
 
 
 if __name__ == "__main__":
