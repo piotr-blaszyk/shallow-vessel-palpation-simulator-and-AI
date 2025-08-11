@@ -194,46 +194,42 @@ class PredictExp:
 
         # Transform each frame in the sequence
         num_frames = pred_seq.shape[0]
-        transformed_seq = np.zeros((num_frames, self.camera_h_small, self.camera_w_small), dtype=np.float32)
         
+        # Create meshgrid for all pixel coordinates once
+        j_coords, k_coords = np.meshgrid(np.arange(self.camera_h_small), np.arange(self.camera_w_small), indexing='ij')
+        
+        # Process all frames at once for resizing operations
+        frames = (pred_seq * 255).astype(np.uint8)  # Shape: (T, H, W)
+        
+        # Resize all crops from small to big
+        crops_big = np.array([cv2.resize(frame, (self.crop_w_big, self.crop_h_big), interpolation=cv2.INTER_NEAREST) 
+                             for frame in frames])
+        
+        # Place all in full camera frames
+        cameras_big = np.zeros((num_frames, self.camera_h_big, self.camera_w_big), dtype=np.uint8)
+        cameras_big[:, self.crop_y:self.crop_y + self.crop_h_big, 
+                      self.crop_x:self.crop_x + self.crop_w_big] = crops_big
+        
+        # Resize all to final small camera frames
+        transformed_seq = np.array([cv2.resize(frame, (self.camera_w_small, self.camera_h_small), 
+                                             interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0 
+                                  for frame in cameras_big])
+        
+        # Get positions for all pixels (same for all frames)
+        pos_E = self.map_2d_3d[j_coords, k_coords]  # Shape: (H, W, 2)
+        pos_E_homogeneous = np.pad(pos_E, ((0, 0), (0, 0), (0, 1)), constant_values=1)  # Shape: (H, W, 3)
+        pos_E_flat = pos_E_homogeneous.reshape(-1, 4).T  # Shape: (4, H*W)
+        
+        # Process each frame's transformation matrix and accumulate results
         for t in range(num_frames):
             x, y, z = self.all_positions[i + t]
             t_EA = self.get_T_EA(
                 np.deg2rad(SYSTEM_PARAMS.geometry.camera_rotation_angle),
-                x,
-                y,
-                z
+                x, y, z
             )
-
-            # Convert to uint8 for cv2 operations (scale from [0,1] to [0,255])
-            frame = (pred_seq[t] * 255).astype(np.uint8)
             
-            # Resize crop from small to big
-            crop_big = cv2.resize(frame, (self.crop_w_big, self.crop_h_big), interpolation=cv2.INTER_NEAREST)
-            
-            # Place in full camera frame
-            camera_big = np.zeros((self.camera_h_big, self.camera_w_big), dtype=np.uint8)
-            camera_big[self.crop_y:self.crop_y + self.crop_h_big, self.crop_x:self.crop_x + self.crop_w_big] = crop_big
-            
-            # Resize to final small camera frame
-            camera_small = cv2.resize(camera_big, (self.camera_w_small, self.camera_h_small), interpolation=cv2.INTER_AREA)
-            
-            # Convert back to float32 in range [0,1]
-            transformed_seq[t] = camera_small.astype(np.float32) / 255.0
-
-            # Create meshgrid for all pixel coordinates
-            j_coords, k_coords = np.meshgrid(np.arange(self.camera_h_small), np.arange(self.camera_w_small), indexing='ij')
-            
-            # Get probabilities for all pixels
-            probs = transformed_seq[t]
-            
-            # Get positions for all pixels
-            pos_E = self.map_2d_3d[j_coords, k_coords]
-            pos_E_homogeneous = np.pad(pos_E, ((0, 0), (0, 0), (0, 1)), constant_values=1)
-            
-            # Reshape for matrix multiplication
-            pos_E_flat = pos_E_homogeneous.reshape(-1, 4).T
-            pos_A_homogeneous = t_EA @ pos_E_flat
+            # Transform all points for this frame
+            pos_A_homogeneous = t_EA @ pos_E_flat  # Shape: (4, H*W)
             pos_A = pos_A_homogeneous[:3].T.reshape(self.camera_h_small, self.camera_w_small, 3)
             
             # Calculate x_A and y_A for all points
@@ -244,12 +240,12 @@ class PredictExp:
             valid_mask = (x_A >= 0) & (x_A < 105) & (y_A >= 0) & (y_A < 180)
             
             # Update bin_prob_sum and bin_count using valid positions
-            np.add.at(self.bin_prob_sum, (x_A[valid_mask], y_A[valid_mask]), probs[valid_mask])
+            np.add.at(self.bin_prob_sum, (x_A[valid_mask], y_A[valid_mask]), transformed_seq[t][valid_mask])
             np.add.at(self.bin_count, (x_A[valid_mask], y_A[valid_mask]), 1)
 
     def predict_all_clips(self):
         n = self.data['markers'].shape[0]
-        for i in tqdm(range(n - self.dilated_clip_len), desc="clip inference"):
+        for i in tqdm(range(0, n - self.dilated_clip_len, self.clip_len), desc="clip inference"):
             self.predict_clip(i)
         
         self.write_probs_to_npz()
@@ -270,9 +266,10 @@ class PredictExp:
     
     def generate_mask_image(self):
         res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
-        res = (res > 0.4).astype(np.int32)
+        threshold = np.percentile(res, 90)
+        res_binary = (res > threshold).astype(np.int32)
 
-        img = (res * 255).astype(np.uint8)
+        img = (res_binary * 255).astype(np.uint8)
         img = np.flip(np.flip(img, axis=0), axis=1)
         cv2.imwrite(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, img)
     
@@ -292,10 +289,12 @@ class PredictExp:
         self.write_video_to_npz_file()
 
     def go(self):
-        self.load_npz()
-        self.compute_all_3d_positions()
-        self.predict_all_clips()
-        self.write_probs_to_npz()
+        # self.load_npz()
+        # self.compute_all_3d_positions()
+        # self.predict_all_clips()
+        # self.write_probs_to_npz()
+        self.load_probs_from_npz()
+        self.generate_mask_image()
 
 
 def main():

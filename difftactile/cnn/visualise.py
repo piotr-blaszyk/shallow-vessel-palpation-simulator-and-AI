@@ -40,15 +40,126 @@ class Visualisation:
         
         return overlay
 
+    def load_exp_npz(self):
+        path = SYSTEM_PARAMS.files.exp_video_npz
+        self.exp_data = np.load(path)
+    
+    def visualize_experiment(self, frame_num=None):
+        self.load_exp_npz()
+        
+        # Initialize model
+        model_path = SYSTEM_PARAMS.files.final_segmentation_model
+        model = SegmentationModel()
+        model.load_state_dict(torch.load(model_path))
+        model.eval()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+
+        # Get parameters needed for clip extraction
+        w = SYSTEM_PARAMS.fisheye_model.crop_width
+        h = SYSTEM_PARAMS.fisheye_model.crop_height
+        k = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
+        clip_len = SYSTEM_PARAMS.cnn.clip_len
+        dilation = 1
+        dilated_clip_len = clip_len * dilation
+        n = self.exp_data['markers'].shape[0]
+
+        while True:
+            # Randomly select start index
+            start_ix = np.random.randint(0, n - dilated_clip_len)
+            if frame_num is not None:
+                start_ix = frame_num
+            
+            # Get and process clip
+            clip = MyDataset.get_clip(h, w, k, self.exp_data, clip_len, dilation, start_ix=start_ix)
+            
+            with torch.no_grad():
+                clip_input = clip.to(device)
+                logits = model(clip_input)
+                probs = torch.sigmoid(logits)
+                pred = (probs > 0.4).float()
+                pred = pred.cpu()
+            
+            # Convert tensors to numpy arrays
+            image_seq = clip.numpy().squeeze()  # Shape: (T, H, W)
+            pred_seq = pred.numpy().squeeze()  # Shape: (T, H, W)
+
+            current_frame = 0
+            total_frames = image_seq.shape[0]
+
+            while True:
+                # Prepare the current frame
+                current_image = image_seq[current_frame]
+                current_pred = pred_seq[current_frame]
+                
+                # Normalize images for display
+                current_image = (current_image * 255).astype(np.uint8)
+                current_pred = (current_pred * 255).astype(np.uint8)
+
+                # Scale up images by 4x using NEAREST neighbor interpolation
+                scale_factor = 4
+                current_image = cv2.resize(current_image, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
+                current_pred = cv2.resize(current_pred, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
+
+                # Add frame counter text
+                frame_text = f"Frame: {current_frame + 1}/{total_frames} | Start Index: {start_ix}"
+                
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 1
+                font_thickness = 2
+                text_color = (255, 255, 255)  # White text
+                
+                # Get text size to position it at the bottom
+                text_size = cv2.getTextSize(frame_text, font, font_scale, font_thickness)[0]
+                text_x = 10
+                text_y = current_image.shape[0] - 20  # 20 pixels from bottom
+                
+                # Add black background for text visibility
+                padding = 5
+                cv2.rectangle(current_image, 
+                            (text_x - padding, text_y - text_size[1] - padding),
+                            (text_x + text_size[0] + padding, text_y + padding),
+                            (0, 0, 0), -1)
+                cv2.rectangle(current_pred, 
+                            (text_x - padding, text_y - text_size[1] - padding),
+                            (text_x + text_size[0] + padding, text_y + padding),
+                            (0, 0, 0), -1)
+                
+                # Add text to both images
+                cv2.putText(current_image, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
+                cv2.putText(current_pred, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
+
+                # Create display windows
+                cv2.imshow('Input Image', current_image)
+                cv2.imshow('Predicted Image', current_pred)
+
+                # Position windows side by side
+                window_width = current_image.shape[0]
+                cv2.moveWindow('Input Image', 0, 0)
+                cv2.moveWindow('Predicted Image', window_width + 25, 0)
+
+                # Handle keyboard input
+                key = cv2.waitKey(0) & 0xFF
+                
+                if key == ord('q'):  # Quit visualization
+                    cv2.destroyAllWindows()
+                    return
+                elif key == ord('k'):  # Next frame
+                    current_frame = (current_frame + 1) % total_frames
+                elif key == ord('j'):  # Previous frame
+                    current_frame = (current_frame - 1) % total_frames
+                elif key == ord('c'):  # Close current sequence and load next
+                    cv2.destroyAllWindows()
+                    break
+
     def visualize(self, mode):
         """
-        Unified visualization method that can show either dataset samples or model predictions.
+        Unified visualization method that can show either dataset samples or model predictions
         Args:
             mode: Either 'dataset' or 'predictions'
         """
         BATCH_SIZE = 2
         NUM_WORKERS = 1
-
         if mode == 'predictions':
             model_path = SYSTEM_PARAMS.files.final_segmentation_model
             with open(SYSTEM_PARAMS.files.test_loader, 'rb') as f:
@@ -190,8 +301,7 @@ class Visualisation:
 
 def main():
     v = Visualisation()
-    # Change this to 'predictions' to visualize model predictions
-    v.visualize(mode='predictions')
+    v.visualize_experiment(144)
 
 
 if __name__ == "__main__":
