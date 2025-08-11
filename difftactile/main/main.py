@@ -30,7 +30,8 @@ class SyntheticImageGenerator:
     def __init__(self):
         pass
 
-    def crop(self, points):
+    @staticmethod
+    def crop(points):
         # Create a copy and apply the offset to all points at once
         cropped_points = points.copy()
         cropped_points[..., 0] = points[..., 0] - SYSTEM_PARAMS.fisheye_model.crop_x
@@ -44,7 +45,8 @@ class SyntheticImageGenerator:
         
         return cropped_points, mask
 
-    def alpha_shape(self, points):
+    @staticmethod
+    def alpha_shape(points):
         alpha=1e-10
         if len(points) < 4:
             return np.array([])
@@ -77,7 +79,8 @@ class SyntheticImageGenerator:
         else:
             return np.array(concave.geoms[0].exterior.coords)
     
-    def filter_points(self, w, h, cx, cy, r, points):
+    @staticmethod
+    def filter_points(w, h, cx, cy, r, points):
         points_filtered = []
         for point in points:
             x, y = point
@@ -1270,7 +1273,7 @@ class Contact:
         self.move_og_resolution()
         markers = self.sim_markers_deformed.to_numpy()
         self.move_ti_resolution()
-        markers = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, markers)
+        markers = SyntheticImageGenerator.filter_points(w, h, cx, cy, r, markers)
         self.marker_data.append(markers)
         markers_img = np.zeros((h, w), dtype=np.uint8)
         for point in markers:
@@ -1279,7 +1282,7 @@ class Contact:
         
         markers_mask = np.zeros((h, w), dtype=np.uint8)
         if len(markers) > 0:
-            contour = self.synthetic_image_generator.alpha_shape(markers).astype(np.int32)
+            contour = SyntheticImageGenerator.alpha_shape(markers).astype(np.int32)
             if len(contour) > 0:
                 contour_cv = contour.reshape((-1, 1, 2))
                 cv2.fillPoly(markers_mask, [contour_cv], color=255)
@@ -1290,11 +1293,11 @@ class Contact:
             vein = np.array([])
         vein_full_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
-            contour_vein = self.synthetic_image_generator.alpha_shape(vein).astype(np.int32)
+            contour_vein = SyntheticImageGenerator.alpha_shape(vein).astype(np.int32)
             if len(contour_vein) > 0:
                 contour_vein_cv = contour_vein.reshape((-1, 1, 2))
                 cv2.fillPoly(vein_full_img, [contour_vein_cv], color=255)
-        vein = self.synthetic_image_generator.filter_points(w, h, cx, cy, r, vein)
+        vein = SyntheticImageGenerator.filter_points(w, h, cx, cy, r, vein)
         vein_points_filtered = []
         for point in vein:
             x, y = int(point[0]), int(point[1])
@@ -1303,7 +1306,7 @@ class Contact:
         self.vein_data.append(vein)
         vein_img = np.zeros((h, w), dtype=np.uint8)
         if len(vein) > 0:
-            contour_vein = self.synthetic_image_generator.alpha_shape(vein).astype(np.int32)
+            contour_vein = SyntheticImageGenerator.alpha_shape(vein).astype(np.int32)
             if len(contour_vein) > 0:
                 contour_vein_cv = contour_vein.reshape((-1, 1, 2))
                 cv2.fillPoly(vein_img, [contour_vein_cv], color=255)

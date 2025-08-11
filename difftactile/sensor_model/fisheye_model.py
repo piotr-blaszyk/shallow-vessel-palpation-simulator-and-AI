@@ -81,6 +81,10 @@ class FisheyeModel:
             dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
             resolution_down_scaling_factor=None
         ):
+        # Store original shape and reshape input
+        original_shape = ps.shape[:-1]  # all dimensions except the last one
+        ps_reshaped = ps.reshape(-1, 2)
+        
         cx = SYSTEM_PARAMS.fisheye_model.principal_point_x
         cy = SYSTEM_PARAMS.fisheye_model.principal_point_y
         fx = SYSTEM_PARAMS.fisheye_model.focal_length_x
@@ -91,21 +95,23 @@ class FisheyeModel:
             fx /= resolution_down_scaling_factor
             fy /= resolution_down_scaling_factor
         x_norm = (
-            ps[:, 0] - cx
+            ps_reshaped[:, 0] - cx
         ) / fx
         y_norm = (
-            ps[:, 1] - cy
+            ps_reshaped[:, 1] - cy
         ) / fy
         r = np.sqrt(x_norm**2 + y_norm**2)
         theta = r
         phi = np.arctan2(y_norm, x_norm)
         z = dist_lens_to_plane
         r_plane = z * np.tan(theta)
-        ps = np.zeros((len(ps), 3))
-        ps[:, 0] = r_plane * np.cos(phi)
-        ps[:, 1] = r_plane * np.sin(phi)
-        ps[:, 2] = z
-        return ps
+        ps_3d = np.zeros((len(ps_reshaped), 3))
+        ps_3d[:, 0] = r_plane * np.cos(phi)
+        ps_3d[:, 1] = r_plane * np.sin(phi)
+        ps_3d[:, 2] = z
+        
+        # Reshape output to match input shape + extra dimension for 3D coordinates
+        return ps_3d.reshape(*original_shape, 3)
 
     def get_marker_image(self, img):
         if len(img.shape) == 3:

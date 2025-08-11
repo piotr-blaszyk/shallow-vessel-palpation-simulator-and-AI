@@ -24,7 +24,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.fisheye_model = FisheyeModel()
         self.data_dir = data_dir
-        self.clip_len = 16
+        self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         self.clips_per_trajectory = 16
         self.mode = mode
         self.files = [os.path.join(data_dir, f) for f in os.listdir(data_dir)]
@@ -187,8 +187,8 @@ class MyDataset(torch.utils.data.Dataset):
         images_random_remove_mask = self.randomly_remove(images)
         images_mask &= images_random_remove_mask
         
-        images, images_crop_mask = self.downscale(images)
-        labels, labels_crop_mask = self.downscale(labels)
+        images, images_crop_mask = MyDataset.downscale(self.k, images)
+        labels, labels_crop_mask = MyDataset.downscale(self.k, labels)
 
         # print(f'images_mask.shape: {images_mask.shape}; images_crop_mask.shape: {images_crop_mask.shape}')
         images_mask &= images_crop_mask
@@ -206,6 +206,28 @@ class MyDataset(torch.utils.data.Dataset):
         labels = labels.unsqueeze(0)
         
         return images, labels
+
+    @staticmethod
+    def get_clip(h, w, data, clip_len, dilation, start_ix):
+        markers = data['markers']
+        markers_mask = data['markers_mask']
+
+        dilated_clip_len = clip_len * dilation
+        images = markers[start_ix:start_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
+        images_mask = markers_mask[start_ix:start_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
+        
+        images, images_crop_mask = MyDataset.downscale(images)
+        images_mask &= images_crop_mask
+        
+        images = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
+
+        # Convert to float and normalize
+        images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
+        
+        # Add channel dimension: (T, H, W) -> (C, T, H, W)
+        images = images.unsqueeze(0)
+        
+        return images
 
     @staticmethod
     def generate_markers_image(h, w, points, points_mask):
@@ -253,7 +275,7 @@ class MyDataset(torch.utils.data.Dataset):
             # Get only valid points according to mask
             valid_points = points[t][points_mask[t]]
             if len(valid_points) > 0:
-                contour_vein = self.synthetic_image_generator.alpha_shape(valid_points).astype(np.int32)
+                contour_vein = SyntheticImageGenerator.alpha_shape(valid_points).astype(np.int32)
                 if len(contour_vein) > 0:
                     contour_vein_cv = contour_vein.reshape((-1, 1, 2))
                     cv2.fillPoly(images[t], [contour_vein_cv], color=255)
@@ -391,10 +413,11 @@ class MyDataset(torch.utils.data.Dataset):
         # The mask will be the same for all frames in the sequence
         return np.tile(mask, (points.shape[0], 1))  # Shape: (n, num_points)
 
-    def downscale(self, points):
+    @staticmethod
+    def downscale(k, points):
         if points.shape[1] == 0:  # Check if there are any points
             return points, np.ones((points.shape[0], 0), dtype=bool)  # Return empty mask matching input shape
             
-        points, mask = self.synthetic_image_generator.crop(points)
-        points = points / self.k
+        points, mask = SyntheticImageGenerator.crop(points)
+        points = points / k
         return points, mask

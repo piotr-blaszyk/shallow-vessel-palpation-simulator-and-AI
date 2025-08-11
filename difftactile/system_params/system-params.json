@@ -184,7 +184,8 @@
     },
     "cnn": {
         "input_size": 186,
-        "target_size": 192
+        "target_size": 192,
+        "clip_len": 16
     },
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",
@@ -272,6 +273,7 @@
         "dataset_root": "difftactile/output/training_data/pickle",
         "dataset_data_point": "trajectory_{:04d}.npz",
         "test_loader": "difftactile/output/test_loader.pickle",
-        "threshold_optimization": "difftactile/output/threshold_optimization.png"
+        "threshold_optimization": "difftactile/output/threshold_optimization.png",
+        "exp_video_npz": "difftactile/output/exp_video.npz"
     }
 }
