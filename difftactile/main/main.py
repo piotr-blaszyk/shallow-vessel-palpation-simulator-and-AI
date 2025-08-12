@@ -742,7 +742,7 @@ class Contact:
 
         press_depth_surface = SYSTEM_PARAMS.geometry.gap
         press_depth_1 = press_depth_surface + SYSTEM_PARAMS.trajectory.press_depth_1
-        if False:
+        if True:
             k_0 = SYSTEM_PARAMS.trajectory.press_depth_offset_0
             k_1 = SYSTEM_PARAMS.trajectory.press_depth_offset_1
             press_depth_rand = np.random.uniform(-k_0, k_1)

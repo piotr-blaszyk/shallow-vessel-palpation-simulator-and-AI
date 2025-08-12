@@ -36,6 +36,61 @@ class SegmentationModel(pl.LightningModule):
     def forward(self, x):
         return self.model(x)
 
+    def iou_score(self, preds, targets, eps=1e-6):
+        """
+        Compute class-wise IoU scores for binary segmentation.
+        
+        Args:
+            preds: Binary predictions (B, T, H, W)
+            targets: Binary ground truth (B, T, H, W)
+            eps: Small constant to avoid division by zero
+            
+        Returns:
+            Dictionary containing various IoU metrics
+        """
+        # Compute frame-wise ground truth presence (B, T)
+        gt_presence = targets.sum(dim=(2, 3)) > 0
+        pred_presence = preds.sum(dim=(2, 3)) > 0
+        
+        # Split frames based on ground truth presence
+        has_gt_mask = gt_presence
+        no_gt_mask = ~gt_presence
+        
+        # Initialize metrics
+        metrics = {
+            'fg_iou': torch.tensor(0.0, device=preds.device),
+            'bg_iou': torch.tensor(0.0, device=preds.device),
+            'macro_iou': torch.tensor(0.0, device=preds.device),
+            'detection_rate': torch.tensor(0.0, device=preds.device)
+        }
+        
+        # Compute IoU for frames with foreground presence
+        if has_gt_mask.sum() > 0:
+            # Foreground IoU (class 1)
+            fg_intersection = (preds[has_gt_mask] * targets[has_gt_mask]).sum(dim=(1, 2))
+            fg_union = (preds[has_gt_mask] + targets[has_gt_mask]).sum(dim=(1, 2)) - fg_intersection
+            fg_iou = (fg_intersection + eps) / (fg_union + eps)
+            metrics['fg_iou'] = fg_iou.mean()
+            
+            # Background IoU (class 0)
+            bg_preds = 1 - preds[has_gt_mask]
+            bg_targets = 1 - targets[has_gt_mask]
+            bg_intersection = (bg_preds * bg_targets).sum(dim=(1, 2))
+            bg_union = (bg_preds + bg_targets).sum(dim=(1, 2)) - bg_intersection
+            bg_iou = (bg_intersection + eps) / (bg_union + eps)
+            metrics['bg_iou'] = bg_iou.mean()
+            
+            # Macro IoU (mean of class IoUs)
+            metrics['macro_iou'] = (metrics['fg_iou'] + metrics['bg_iou']) / 2
+        
+        # Compute detection rate for empty frames
+        if no_gt_mask.sum() > 0:
+            # For empty GT frames: IoU=1 if prediction also empty, 0 if not empty
+            correct_empty = (~pred_presence[no_gt_mask]).float()
+            metrics['detection_rate'] = correct_empty.mean()
+        
+        return metrics
+
     def shared_step(self, batch, stage):
         x, y = batch
         logits = self(x)
@@ -51,13 +106,17 @@ class SegmentationModel(pl.LightningModule):
         preds = (probs > 0.5).float()
         preds = preds.squeeze(1)
         y = y.squeeze(1)
-        iou = self.iou_score(preds, y)
+        metrics = self.iou_score(preds, y)
         
-        # Only log IoU metric
+        # Log all metrics
         self.log(f"{stage}_dice_loss", dice_loss, prog_bar=False, on_epoch=True)
         self.log(f"{stage}_bce_loss", bce_loss, prog_bar=False, on_epoch=True)
         self.log(f"{stage}_combined_loss", loss, prog_bar=False, on_epoch=True)
-        self.log(f"{stage}_iou", iou, prog_bar=True, on_epoch=True)
+        self.log(f"{stage}_fg_iou", metrics['fg_iou'], prog_bar=True, on_epoch=True)
+        self.log(f"{stage}_bg_iou", metrics['bg_iou'], prog_bar=True, on_epoch=True)
+        self.log(f"{stage}_macro_iou", metrics['macro_iou'], prog_bar=True, on_epoch=True)
+        self.log(f"{stage}_detection_rate", metrics['detection_rate'], prog_bar=True, on_epoch=True)
+        
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -86,11 +145,3 @@ class SegmentationModel(pl.LightningModule):
             "frequency": 1
         }
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
-
-    def iou_score(self, preds, targets, eps=1e-6):
-        # Sum over spatial dimensions only (width and height)
-        intersection = (preds * targets).sum(dim=(2, 3))
-        union = (preds + targets).sum(dim=(2, 3)) - intersection
-        iou = (intersection + eps) / (union + eps)
-        # Take mean over batch and frames
-        return iou.mean()

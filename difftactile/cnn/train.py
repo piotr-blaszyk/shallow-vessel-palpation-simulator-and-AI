@@ -21,7 +21,7 @@ def train():
     start_time = time.perf_counter()
     BATCH_SIZE = 16
     NUM_EPOCHS = 20
-    NUM_WORKERS = 16
+    NUM_WORKERS = 1
     LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="segmentation_model")
@@ -50,13 +50,13 @@ def train():
 
     model = SegmentationModel(lr=LR)
     checkpoint_cb = ModelCheckpoint(
-        monitor="val_iou",
+        monitor="val_fg_iou",  # Changed from val_iou to val_fg_iou
         mode="max",
         save_top_k=1,
         filename="best-model",
     )
     early_stopping = EarlyStopping(
-        monitor="val_iou",
+        monitor="val_fg_iou",  # Changed from val_iou to val_fg_iou
         mode="max",
         patience=10,  # Number of epochs with no improvement after which training will be stopped
         min_delta=1e-4,  # Minimum change in monitored quantity to qualify as an improvement
@@ -112,8 +112,14 @@ def choose_optimal_threshold():
     
     with torch.no_grad():
         for threshold in thresholds:
-            total_iou = 0.0
-            num_batches = 0
+            metrics_sum = {
+                'fg_iou': 0.0,
+                'bg_iou': 0.0,
+                'macro_iou': 0.0,
+                'detection_rate': 0.0,
+                'num_fg_frames': 0,
+                'num_empty_frames': 0
+            }
             
             for batch in test_loader:
                 x, y = batch
@@ -125,38 +131,87 @@ def choose_optimal_threshold():
                 probs = torch.sigmoid(logits)
                 preds = (probs > threshold).float()
                 
-                # Calculate IoU score
-                preds = preds.squeeze(1)  # Remove channel dimension
-                y = y.squeeze(1)  # Remove channel dimension
+                # Remove channel dimension
+                preds = preds.squeeze(1)
+                y = y.squeeze(1)
                 
-                # Calculate IoU per frame and take mean
-                intersection = (preds * y).sum(dim=(1, 2))  # Sum over spatial dimensions
-                union = (preds + y).sum(dim=(1, 2)) - intersection
-                iou = (intersection + 1e-6) / (union + 1e-6)  # Add epsilon to avoid division by zero
-                batch_iou = iou.mean().item()
+                # Compute frame-wise ground truth presence
+                gt_presence = y.sum(dim=(1, 2)) > 0
+                pred_presence = preds.sum(dim=(1, 2)) > 0
                 
-                total_iou += batch_iou
-                num_batches += 1
+                # Handle frames with foreground
+                has_fg_mask = gt_presence
+                if has_fg_mask.sum() > 0:
+                    # Foreground IoU
+                    fg_intersection = (preds[has_fg_mask] * y[has_fg_mask]).sum(dim=(1, 2))
+                    fg_union = (preds[has_fg_mask] + y[has_fg_mask]).sum(dim=(1, 2)) - fg_intersection
+                    fg_iou = (fg_intersection + 1e-6) / (fg_union + 1e-6)
+                    
+                    # Background IoU
+                    bg_preds = 1 - preds[has_fg_mask]
+                    bg_targets = 1 - y[has_fg_mask]
+                    bg_intersection = (bg_preds * bg_targets).sum(dim=(1, 2))
+                    bg_union = (bg_preds + bg_targets).sum(dim=(1, 2)) - bg_intersection
+                    bg_iou = (bg_intersection + 1e-6) / (bg_union + 1e-6)
+                    
+                    metrics_sum['fg_iou'] += fg_iou.sum().item()
+                    metrics_sum['bg_iou'] += bg_iou.sum().item()
+                    metrics_sum['num_fg_frames'] += has_fg_mask.sum().item()
+                
+                # Handle empty frames
+                empty_mask = ~gt_presence
+                if empty_mask.sum() > 0:
+                    correct_empty = (~pred_presence[empty_mask]).float()
+                    metrics_sum['detection_rate'] += correct_empty.sum().item()
+                    metrics_sum['num_empty_frames'] += empty_mask.sum().item()
             
-            avg_iou = total_iou / num_batches
-            threshold_scores[threshold] = avg_iou
-            print(f"Threshold {threshold:.2f}: Average IoU = {avg_iou:.4f}")
+            # Compute averages
+            avg_metrics = {}
+            if metrics_sum['num_fg_frames'] > 0:
+                avg_metrics['fg_iou'] = metrics_sum['fg_iou'] / metrics_sum['num_fg_frames']
+                avg_metrics['bg_iou'] = metrics_sum['bg_iou'] / metrics_sum['num_fg_frames']
+                avg_metrics['macro_iou'] = (avg_metrics['fg_iou'] + avg_metrics['bg_iou']) / 2
+            else:
+                avg_metrics['fg_iou'] = 0.0
+                avg_metrics['bg_iou'] = 0.0
+                avg_metrics['macro_iou'] = 0.0
+            
+            if metrics_sum['num_empty_frames'] > 0:
+                avg_metrics['detection_rate'] = metrics_sum['detection_rate'] / metrics_sum['num_empty_frames']
+            else:
+                avg_metrics['detection_rate'] = 0.0
+            
+            # Store results
+            threshold_scores[threshold] = avg_metrics
+            print(f"Threshold {threshold:.2f}:")
+            print(f"  Foreground IoU: {avg_metrics['fg_iou']:.4f}")
+            print(f"  Background IoU: {avg_metrics['bg_iou']:.4f}")
+            print(f"  Macro IoU: {avg_metrics['macro_iou']:.4f}")
+            print(f"  Detection Rate: {avg_metrics['detection_rate']:.4f}")
     
-    # Find best threshold
-    best_threshold = max(threshold_scores.items(), key=lambda x: x[1])
-    print(f"\nBest threshold: {best_threshold[0]:.2f} with IoU: {best_threshold[1]:.4f}")
+    # Find best threshold based on foreground IoU
+    best_threshold = max(threshold_scores.items(), key=lambda x: x[1]['fg_iou'])
+    print(f"\nBest threshold: {best_threshold[0]:.2f}")
+    print(f"  Foreground IoU: {best_threshold[1]['fg_iou']:.4f}")
+    print(f"  Background IoU: {best_threshold[1]['bg_iou']:.4f}")
+    print(f"  Macro IoU: {best_threshold[1]['macro_iou']:.4f}")
+    print(f"  Detection Rate: {best_threshold[1]['detection_rate']:.4f}")
     
     # Plot results
-    thresholds = list(threshold_scores.keys())
-    scores = list(threshold_scores.values())
+    plt.figure(figsize=(12, 8))
     
-    plt.figure(figsize=(10, 6))
-    plt.plot(thresholds, scores, 'b-', marker='o')
-    plt.axvline(x=best_threshold[0], color='r', linestyle='--', label=f'Best threshold: {best_threshold[0]:.2f}')
+    # Plot all metrics
+    thresholds_list = list(threshold_scores.keys())
+    plt.plot(thresholds_list, [scores['fg_iou'] for scores in threshold_scores.values()], 'b-', marker='o', label='Foreground IoU')
+    plt.plot(thresholds_list, [scores['bg_iou'] for scores in threshold_scores.values()], 'g-', marker='o', label='Background IoU')
+    plt.plot(thresholds_list, [scores['macro_iou'] for scores in threshold_scores.values()], 'r-', marker='o', label='Macro IoU')
+    plt.plot(thresholds_list, [scores['detection_rate'] for scores in threshold_scores.values()], 'y-', marker='o', label='Detection Rate')
+    
+    plt.axvline(x=best_threshold[0], color='k', linestyle='--', label=f'Best threshold: {best_threshold[0]:.2f}')
     plt.grid(True)
     plt.xlabel('Threshold')
-    plt.ylabel('IoU Score')
-    plt.title('IoU Score vs. Threshold Value')
+    plt.ylabel('Score')
+    plt.title('Segmentation Metrics vs. Threshold Value')
     plt.legend()
     
     # Save plot
