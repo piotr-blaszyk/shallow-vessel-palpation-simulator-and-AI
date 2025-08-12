@@ -494,19 +494,34 @@ class MyDataset(torch.utils.data.Dataset):
                 vein_endpoints
             )
             
-            for i in range(len(points)):
-                dist_from_centre = np.linalg.norm(centre - points[i])
-                centre_ratio = 1 - decay_c * (dist_from_centre / max_dist)
-                vec = Contact.vector_point_to_line(a, b, c, points[i])
-                x = np.linalg.norm(vec)
-                displacement = 0.0
-                if 0 < x < x_0:
-                    displacement = x
-                elif x_0 <= x < 2 * x_0:
-                    displacement = x_0 - (x - x_0)
-                if displacement > 0:
-                    vec_normalized = vec / x
-                    points[i] = points[i] + vec_normalized * displacement * disp_c * centre_ratio
+            # Vectorized operations for all points in the current frame
+            dists_from_centre = np.linalg.norm(points - centre, axis=1)  # Shape: (num_points,)
+            centre_ratios = 1 - decay_c * (dists_from_centre / max_dist)  # Shape: (num_points,)
+            
+            # Calculate vectors from points to line
+            dot_products = a * points[..., 0] + b * points[..., 1] + c  # Shape: (num_points,)
+            denominator = a**2 + b**2
+            
+            # Calculate perpendicular vectors for all points
+            vecs = np.zeros_like(points)  # Shape: (num_points, 2)
+            vecs[..., 0] = -a * dot_products / denominator
+            vecs[..., 1] = -b * dot_products / denominator
+            
+            # Calculate distances and displacement
+            x = np.linalg.norm(vecs, axis=1)  # Shape: (num_points,)
+            displacement = np.zeros_like(x)
+            mask1 = (0 < x) & (x < x_0)
+            mask2 = (x_0 <= x) & (x < 2 * x_0)
+            displacement[mask1] = x[mask1]
+            displacement[mask2] = x_0 - (x[mask2] - x_0)
+            
+            # Normalize vectors where displacement > 0
+            displacement_mask = displacement > 0
+            vec_normalized = np.zeros_like(vecs)
+            vec_normalized[displacement_mask] = vecs[displacement_mask] / x[displacement_mask, np.newaxis]
+            
+            # Apply final displacement
+            points = points + vec_normalized * displacement[:, np.newaxis] * disp_c * centre_ratios[:, np.newaxis]
             clip_points[j] = points
 
         return clip_points, vein_visible_mask
