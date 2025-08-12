@@ -41,6 +41,7 @@ class MyDataset(torch.utils.data.Dataset):
         # self.h_scaled = 1080
         self.avg_call_time = 0.0
         self.num_calls = 0
+        self.difficulty_level = 0
 
         # Pre-compute valid clips for each trajectory
         self.clips = []
@@ -82,6 +83,9 @@ class MyDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.clips)
+
+    def set_difficulty_level(self, level):
+        self.difficulty_level = level
 
     @staticmethod
     def create_splits(
@@ -142,9 +146,41 @@ class MyDataset(torch.utils.data.Dataset):
 
     def clip_contains_vein(self, file_path, start, dilation):
         data = np.load(file_path)
+        markers = data['markers']
+        markers_mask = data['markers_mask']
         labels = data['labels']
+        labels_mask = data['labels_mask']
 
-        return labels.sum() > 0
+        centre = MyDataset.compute_mean_marker_position(markers, markers_mask)
+        
+        dilated_clip_len = self.clip_len * dilation
+        labels = labels[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        labels_mask = labels_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+
+        cx = centre[0]
+        cy = centre[1]
+        r = SYSTEM_PARAMS.fisheye_model.circle_radius / 3
+        mask2 = SyntheticImageGenerator.filter_points_vectorised(cx, cy, r, labels)
+        labels_mask &= mask2
+
+        res = labels[labels_mask].sum() > 0
+        return res
+
+    @staticmethod
+    def compute_mean_marker_position(markers, markers_mask):
+        # Compute mean for each frame using only valid markers
+        frame_means = []
+        for frame_idx in range(markers.shape[0]):
+            valid_markers = markers[frame_idx][markers_mask[frame_idx]]
+            if len(valid_markers) > 0:  # Only compute mean if we have valid markers
+                frame_mean = np.mean(valid_markers, axis=0)
+                frame_means.append(frame_mean)
+        
+        # Compute overall mean across all frame means
+        if frame_means:  # Check if we have any valid frames
+            return np.mean(frame_means, axis=0)
+        else:
+            return np.array([-1., -1.])  # Return invalid marker position if no valid data
 
     def __getitem__(self, idx):
         file_path, start, dilation = self.clips[idx]
@@ -467,17 +503,18 @@ class MyDataset(torch.utils.data.Dataset):
         # start_idx = 5
         # indices = 5, 6, 7, 8, 9
         # end_idx = 10
-        max_length = end_idx - start_idx
-        if max_length < 3:
-            length = 0
-        else:
-            length = random.randint(3, max_length)
-        end_idx -= length
-        start_idx = random.randint(start_idx, end_idx)
-        end_idx = start_idx + length
+        if False:
+            max_length = end_idx - start_idx
+            if max_length < 3:
+                length = 0
+            else:
+                length = random.randint(3, max_length)
+            end_idx -= length
+            start_idx = random.randint(start_idx, end_idx)
+            end_idx = start_idx + length
 
-        vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
-        vein_visible_mask[start_idx:end_idx] = True
+            vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
+            vein_visible_mask[start_idx:end_idx] = True
 
         disp_c = random.uniform(0.2, 0.5)
         # disp_c = 0.5
@@ -499,21 +536,28 @@ class MyDataset(torch.utils.data.Dataset):
                 a, b, c, centre
             )
 
-            for i in range(len(points)):
-                vec_vein_trajectory = Contact.vector_point_to_line(a2, b2, c2, points[i])
-                dist_from_vein_trajectory = np.linalg.norm(vec_vein_trajectory)
-                centre_ratio = max(0, 1 - decay_c * (dist_from_vein_trajectory / max_dist))
-                vec = Contact.vector_point_to_line(a, b, c, points[i])
-                x = np.linalg.norm(vec)
-                displacement = 0.0
-                if 0 < x < x_0:
-                    displacement = x
-                elif x_0 <= x < 2 * x_0:
-                    displacement = x_0 - (x - x_0)
-                if displacement > 0:
-                    vec_normalized = vec / x
-                    points[i] = points[i] + vec_normalized * displacement * disp_c * centre_ratio
+            # Vectorized computation of distances and vectors for all points
+            vec_vein_trajectory = Contact.vector_point_to_line(a2, b2, c2, points)  # Shape: (N, 2)
+            dist_from_vein_trajectory = np.linalg.norm(vec_vein_trajectory, axis=1)  # Shape: (N,)
+            centre_ratio = np.maximum(0, 1 - decay_c * (dist_from_vein_trajectory / max_dist))  # Shape: (N,)
+            
+            vec = Contact.vector_point_to_line(a, b, c, points)  # Shape: (N, 2)
+            x = np.linalg.norm(vec, axis=1)  # Shape: (N,)
+            
+            # Calculate displacement using vectorized operations
+            displacement = np.zeros_like(x)
+            mask1 = (0 < x) & (x < x_0)
+            mask2 = (x_0 <= x) & (x < 2 * x_0)
+            displacement[mask1] = x[mask1]
+            displacement[mask2] = x_0 - (x[mask2] - x_0)
+            
+            # Apply displacement where needed
+            mask = displacement > 0
+            if np.any(mask):
+                vec_normalized = vec[mask] / x[mask, np.newaxis]
+                points[mask] = points[mask] + vec_normalized * displacement[mask, np.newaxis] * disp_c * centre_ratio[mask, np.newaxis]
+            
             clip_points[j] = points
 
-        return clip_points, vein_visible_mask
+        return clip_points, np.ones(clip_points.shape[0], dtype=bool)
         

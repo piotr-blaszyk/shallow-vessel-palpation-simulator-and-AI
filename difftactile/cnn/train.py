@@ -17,10 +17,20 @@ from difftactile.cnn.lit_module import *
 from difftactile.main.constants import *
 
 
+class CurriculumCallback(pl.Callback):
+    def __init__(self, dataset):
+        self.dataset = dataset
+
+    def on_train_epoch_start(self, trainer, pl_module):
+        epoch = trainer.current_epoch
+        if epoch == 5:
+            self.dataset.set_difficulty_level(1)
+
+
 def train():
     start_time = time.perf_counter()
-    BATCH_SIZE = 16
-    NUM_EPOCHS = 20
+    BATCH_SIZE = 32
+    NUM_EPOCHS = 10
     NUM_WORKERS = 16
     LR = 1e-3
 
@@ -65,7 +75,7 @@ def train():
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
         accelerator="auto",
-        callbacks=[checkpoint_cb, early_stopping],
+        callbacks=[checkpoint_cb, early_stopping, CurriculumCallback(train_dataset)],
         logger=logger,
         log_every_n_steps=1,
         # profiler="pytorch"
@@ -105,20 +115,18 @@ def choose_optimal_threshold():
     model = model.to(device)
     
     # Define threshold range for grid search
-    thresholds = np.linspace(0.1, 0.9, 17)  # [0.1, 0.15, 0.2, ..., 0.85, 0.9]
+    thresholds = np.linspace(0.3, 0.7, 5)  # [0.1, 0.15, 0.2, ..., 0.85, 0.9]
     threshold_scores = {}
     
     print("Starting grid search for optimal threshold...")
     
     with torch.no_grad():
         for threshold in thresholds:
-            metrics_sum = {
-                'fg_iou': 0.0,
-                'bg_iou': 0.0,
-                'macro_iou': 0.0,
-                'detection_rate': 0.0,
-                'num_fg_frames': 0,
-                'num_empty_frames': 0
+            batch_metrics = {
+                'fg_iou': [],
+                'bg_iou': [],
+                'macro_iou': [],
+                'detection_rate': []
             }
             
             for batch in test_loader:
@@ -127,59 +135,25 @@ def choose_optimal_threshold():
                 y = y.to(device)
                 
                 # Get model predictions
-                logits = model(x)
+                logits = model(x)  # Shape: [B, 1, T, H, W]
                 probs = torch.sigmoid(logits)
                 preds = (probs > threshold).float()
                 
-                # Remove channel dimension
-                preds = preds.squeeze(1)
-                y = y.squeeze(1)
+                # Compute metrics using the classmethod
+                metrics = SegmentationModel.iou_score(preds, y)  # Now handles 5D tensors properly
                 
-                # Compute frame-wise ground truth presence
-                gt_presence = y.sum(dim=(1, 2)) > 0
-                pred_presence = preds.sum(dim=(1, 2)) > 0
-                
-                # Handle frames with foreground
-                has_fg_mask = gt_presence
-                if has_fg_mask.sum() > 0:
-                    # Foreground IoU
-                    fg_intersection = (preds[has_fg_mask] * y[has_fg_mask]).sum(dim=(1, 2))
-                    fg_union = (preds[has_fg_mask] + y[has_fg_mask]).sum(dim=(1, 2)) - fg_intersection
-                    fg_iou = (fg_intersection + 1e-6) / (fg_union + 1e-6)
-                    
-                    # Background IoU
-                    bg_preds = 1 - preds[has_fg_mask]
-                    bg_targets = 1 - y[has_fg_mask]
-                    bg_intersection = (bg_preds * bg_targets).sum(dim=(1, 2))
-                    bg_union = (bg_preds + bg_targets).sum(dim=(1, 2)) - bg_intersection
-                    bg_iou = (bg_intersection + 1e-6) / (bg_union + 1e-6)
-                    
-                    metrics_sum['fg_iou'] += fg_iou.sum().item()
-                    metrics_sum['bg_iou'] += bg_iou.sum().item()
-                    metrics_sum['num_fg_frames'] += has_fg_mask.sum().item()
-                
-                # Handle empty frames
-                empty_mask = ~gt_presence
-                if empty_mask.sum() > 0:
-                    correct_empty = (~pred_presence[empty_mask]).float()
-                    metrics_sum['detection_rate'] += correct_empty.sum().item()
-                    metrics_sum['num_empty_frames'] += empty_mask.sum().item()
+                # Store batch metrics
+                for key in batch_metrics:
+                    if torch.is_tensor(metrics[key]):
+                        batch_metrics[key].append(metrics[key].item())
+                    else:
+                        batch_metrics[key].append(metrics[key])
             
-            # Compute averages
-            avg_metrics = {}
-            if metrics_sum['num_fg_frames'] > 0:
-                avg_metrics['fg_iou'] = metrics_sum['fg_iou'] / metrics_sum['num_fg_frames']
-                avg_metrics['bg_iou'] = metrics_sum['bg_iou'] / metrics_sum['num_fg_frames']
-                avg_metrics['macro_iou'] = (avg_metrics['fg_iou'] + avg_metrics['bg_iou']) / 2
-            else:
-                avg_metrics['fg_iou'] = 0.0
-                avg_metrics['bg_iou'] = 0.0
-                avg_metrics['macro_iou'] = 0.0
-            
-            if metrics_sum['num_empty_frames'] > 0:
-                avg_metrics['detection_rate'] = metrics_sum['detection_rate'] / metrics_sum['num_empty_frames']
-            else:
-                avg_metrics['detection_rate'] = 0.0
+            # Compute averages across batches
+            avg_metrics = {
+                key: np.mean(values) if values else 0.0 
+                for key, values in batch_metrics.items()
+            }
             
             # Store results
             threshold_scores[threshold] = avg_metrics
@@ -223,7 +197,7 @@ def choose_optimal_threshold():
 
 
 def main():
-    train()
+    choose_optimal_threshold()
 
 
 if __name__ == "__main__":

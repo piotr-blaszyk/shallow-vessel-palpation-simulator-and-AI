@@ -91,6 +91,18 @@ class SyntheticImageGenerator:
                 points_filtered.append([x, y])
         points_filtered = np.array(points_filtered, dtype=float)
         return points_filtered
+    
+    @staticmethod
+    def filter_points_vectorised(cx, cy, r, points):
+        # Extract x and y coordinates from the last dimension
+        x = points[..., 0]
+        y = points[..., 1]
+        
+        # Check circle condition
+        in_circle = ((x - cx) ** 2 + (y - cy) ** 2) <= r ** 2
+        
+        # Combine conditions
+        return in_circle
 
 
 @ti.data_oriented
@@ -1637,14 +1649,24 @@ class Contact:
     @staticmethod
     def vector_point_to_line(a, b, c, p):
         p = np.array(p)
-        numerator = a * p[0] + b * p[1] + c
-        denominator = np.sqrt(a * a + b * b)
-        
-        if abs(denominator) < 1e-10:
-            return np.zeros(2)
+        if len(p.shape) == 1:  # Single point
+            numerator = a * p[0] + b * p[1] + c
+            denominator = np.sqrt(a * a + b * b)
             
-        normal = np.array([a, b]) / denominator
-        return -normal * numerator / denominator
+            if abs(denominator) < 1e-10:
+                return np.zeros(2)
+                
+            normal = np.array([a, b]) / denominator
+            return -normal * numerator / denominator
+        else:  # Multiple points
+            numerator = a * p[..., 0] + b * p[..., 1] + c
+            denominator = np.sqrt(a * a + b * b)
+            
+            if abs(denominator) < 1e-10:
+                return np.zeros(p.shape)
+                
+            normal = np.array([a, b]) / denominator
+            return -normal[None, :] * (numerator / denominator)[..., None]
 
     @staticmethod
     def line_point_to_line_pass_through_point(a, b, c, p):

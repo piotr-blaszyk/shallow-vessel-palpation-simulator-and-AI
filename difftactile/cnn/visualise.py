@@ -61,7 +61,7 @@ class Visualisation:
         h = SYSTEM_PARAMS.fisheye_model.crop_height
         k = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
         clip_len = SYSTEM_PARAMS.cnn.clip_len
-        dilation = 1
+        dilation = 2
         dilated_clip_len = clip_len * dilation
         n = self.exp_data['markers'].shape[0]
 
@@ -78,7 +78,7 @@ class Visualisation:
                 clip_input = clip.to(device)
                 logits = model(clip_input)
                 probs = torch.sigmoid(logits)
-                pred = (probs > 0.4).float()
+                pred = (probs > 0.8).float()
                 pred = pred.cpu()
             
             # Convert tensors to numpy arrays
@@ -208,7 +208,7 @@ class Visualisation:
                     image_input = image.to(device)
                     logits = model(image_input)
                     probs = torch.sigmoid(logits)
-                    pred = (probs > 0.4).float()
+                    pred = (probs > 0.6).float()
                     pred = pred.cpu()
 
             # Convert tensors to numpy arrays
@@ -350,8 +350,8 @@ class Visualisation:
 
 def main():
     v = Visualisation()
-    # v.visualize_experiment(144)
-    v.visualise('dataset')
+    v.visualize_experiment(136)
+    # v.visualise('predictions')
 
 
 if __name__ == "__main__":
