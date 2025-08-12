@@ -35,32 +35,22 @@ class SegmentationModel(pl.LightningModule):
     def forward(self, x):
         return self.model(x)
 
-    @classmethod
-    def iou_score(cls, preds, targets, eps=1e-6):
+    @staticmethod
+    def iou_score(preds, targets, eps=1e-6):
         """
         Compute class-wise IoU scores for binary segmentation.
         
         Args:
-            preds: Binary predictions (B, C, H, W) or (B, C, T, H, W)
-            targets: Binary ground truth (B, C, H, W) or (B, C, T, H, W)
+            preds: Binary predictions (B, T, H, W)
+            targets: Binary ground truth (B, T, H, W)
             eps: Small constant to avoid division by zero
             
         Returns:
             Dictionary containing various IoU metrics
         """
-        # Handle 5D tensors (B, C, T, H, W) -> (B*T, C, H, W)
-        if preds.ndim == 5:
-            B, C, T, H, W = preds.shape
-            preds = preds.transpose(1, 2).reshape(-1, C, H, W)
-            targets = targets.transpose(1, 2).reshape(-1, C, H, W)
-            
-        # Ensure inputs have the right shape (B, H, W)
-        preds = preds.squeeze(1)
-        targets = targets.squeeze(1)
-            
-        # Compute frame-wise ground truth presence (B)
-        gt_presence = targets.sum(dim=(1, 2)) > 0
-        pred_presence = preds.sum(dim=(1, 2)) > 0
+        # Compute frame-wise ground truth presence (B, T)
+        gt_presence = targets.sum(dim=(2, 3)) > 0
+        pred_presence = preds.sum(dim=(2, 3)) > 0
         
         # Split frames based on ground truth presence
         has_gt_mask = gt_presence
@@ -116,7 +106,7 @@ class SegmentationModel(pl.LightningModule):
         preds = (probs > 0.5).float()
         preds = preds.squeeze(1)
         y = y.squeeze(1)
-        metrics = self.iou_score(preds, y)
+        metrics = SegmentationModel.iou_score(preds, y)
         
         # Log all metrics
         self.log(f"{stage}_dice_loss", dice_loss, prog_bar=False, on_epoch=True)

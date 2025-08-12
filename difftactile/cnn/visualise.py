@@ -78,7 +78,7 @@ class Visualisation:
                 clip_input = clip.to(device)
                 logits = model(clip_input)
                 probs = torch.sigmoid(logits)
-                pred = (probs > 0.8).float()
+                pred = (probs > 0.9).float()
                 pred = pred.cpu()
             
             # Convert tensors to numpy arrays
@@ -208,7 +208,7 @@ class Visualisation:
                     image_input = image.to(device)
                     logits = model(image_input)
                     probs = torch.sigmoid(logits)
-                    pred = (probs > 0.6).float()
+                    pred = (probs > 0.9).float()
                     pred = pred.cpu()
 
             # Convert tensors to numpy arrays

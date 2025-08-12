@@ -136,7 +136,7 @@ def choose_optimal_threshold():
     model = model.to(device)
     
     # Define threshold range for grid search
-    thresholds = np.linspace(0.3, 0.7, 5)  # [0.1, 0.15, 0.2, ..., 0.85, 0.9]
+    thresholds = np.linspace(0.7, 0.9, 3)  # [0.1, 0.15, 0.2, ..., 0.85, 0.9]
     threshold_scores = {}
     
     print("Starting grid search for optimal threshold...")
@@ -159,6 +159,10 @@ def choose_optimal_threshold():
                 logits = model(x)  # Shape: [B, 1, T, H, W]
                 probs = torch.sigmoid(logits)
                 preds = (probs > threshold).float()
+                
+                # Remove the channel dimension to match expected shape [B, T, H, W]
+                preds = preds.squeeze(1)
+                y = y.squeeze(1)
                 
                 # Compute metrics using the classmethod
                 metrics = SegmentationModel.iou_score(preds, y)  # Now handles 5D tensors properly
@@ -218,7 +222,7 @@ def choose_optimal_threshold():
 
 
 def main():
-    train()
+    choose_optimal_threshold()
 
 
 if __name__ == "__main__":

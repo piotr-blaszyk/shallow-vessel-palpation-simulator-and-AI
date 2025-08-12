@@ -84,7 +84,7 @@ class PredictExp:
         self.bin_prob_sum = np.zeros(shape=(self.phantom_length_x, self.phantom_length_y), dtype=float)
         self.bin_count = np.zeros(shape=(self.phantom_length_x, self.phantom_length_y), dtype=int)
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
-        self.dilation = 1
+        self.dilation = 2
         self.dilated_clip_len = self.clip_len * self.dilation
         self.init_model()
         self.init_camera_params()
@@ -245,7 +245,7 @@ class PredictExp:
 
     def predict_all_clips(self):
         n = self.data['markers'].shape[0]
-        for i in tqdm(range(0, n - self.dilated_clip_len, self.clip_len), desc="clip inference"):
+        for i in tqdm(range(0, n - self.dilated_clip_len, self.dilated_clip_len // 4), desc="clip inference"):
             self.predict_clip(i)
         
         self.write_probs_to_npz()
@@ -266,7 +266,7 @@ class PredictExp:
     
     def generate_mask_image(self):
         res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
-        threshold = np.percentile(res, 90)
+        threshold = np.percentile(res, 80)
         res_binary = (res > threshold).astype(np.int32)
 
         img = (res_binary * 255).astype(np.uint8)
