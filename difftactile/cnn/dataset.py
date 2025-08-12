@@ -43,6 +43,10 @@ class MyDataset(torch.utils.data.Dataset):
         self.num_calls = 0
         self.difficulty_level = 0
 
+        self.randomly_remove_k = [0, 6, 13]
+        self.avs_disp_c = [0.4, 0.3, 0.2]
+        self.avs_decay_c = [1.5, 2.25, 3.0]
+
         # Pre-compute valid clips for each trajectory
         self.clips = []
         # Possible dilation factors
@@ -86,6 +90,7 @@ class MyDataset(torch.utils.data.Dataset):
 
     def set_difficulty_level(self, level):
         self.difficulty_level = level
+        print(f'new difficulty: {self.difficulty_level}')
 
     @staticmethod
     def create_splits(
@@ -449,7 +454,8 @@ class MyDataset(torch.utils.data.Dataset):
             return np.ones((points.shape[0], 0), dtype=bool)  # Return empty mask matching input shape
             
         # Determine number of points to remove (same for all frames)
-        k = random.randint(0, min(13, points.shape[1]))
+        max_k = self.randomly_remove_k[self.difficulty_level]
+        k = random.randint(0, min(max_k, points.shape[1]))
         if k == 0:
             return np.ones((points.shape[0], points.shape[1]), dtype=bool)  # Return all True mask
             
@@ -503,7 +509,7 @@ class MyDataset(torch.utils.data.Dataset):
         # start_idx = 5
         # indices = 5, 6, 7, 8, 9
         # end_idx = 10
-        if False:
+        if self.difficulty_level == 2:
             max_length = end_idx - start_idx
             if max_length < 3:
                 length = 0
@@ -516,10 +522,10 @@ class MyDataset(torch.utils.data.Dataset):
             vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
             vein_visible_mask[start_idx:end_idx] = True
 
-        disp_c = random.uniform(0.2, 0.5)
-        # disp_c = 0.5
-        decay_c = random.uniform(1, 3)
-        # decay_c = 3.0
+        lower_disp_c = self.avs_disp_c[self.difficulty_level]
+        disp_c = random.uniform(lower_disp_c, 0.5)
+        upper_decay_c = self.avs_decay_c[self.difficulty_level]
+        decay_c = random.uniform(1, upper_decay_c)
 
         for j in range(start_idx, end_idx):
             points = clip_points[j]

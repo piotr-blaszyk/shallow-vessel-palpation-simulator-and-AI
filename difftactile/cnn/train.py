@@ -23,14 +23,30 @@ class CurriculumCallback(pl.Callback):
 
     def on_train_epoch_start(self, trainer, pl_module):
         epoch = trainer.current_epoch
-        if epoch == 5:
+        if epoch == 10:
             self.dataset.set_difficulty_level(1)
+        elif epoch == 20:
+            self.dataset.set_difficulty_level(2)
 
+class LossWeightScheduler(pl.Callback):
+    def __init__(self):
+        self.min_alpha = [0.5, 0.6, 0.7]
+        self.max_alpha = [0.8, 0.85, 0.9]
+
+    def on_train_epoch_start(self, trainer, pl_module):
+        epoch = trainer.current_epoch
+        i = epoch // 10
+        j = epoch % 10
+        min_alpha = self.min_alpha[i]
+        max_alpha = self.max_alpha[i]
+        alpha = min_alpha + (max_alpha - min_alpha) * (j / 9)
+        pl_module.alpha = alpha
+        
 
 def train():
     start_time = time.perf_counter()
     BATCH_SIZE = 32
-    NUM_EPOCHS = 10
+    NUM_EPOCHS = 30
     NUM_WORKERS = 16
     LR = 1e-3
 
@@ -75,7 +91,12 @@ def train():
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
         accelerator="auto",
-        callbacks=[checkpoint_cb, early_stopping, CurriculumCallback(train_dataset)],
+        callbacks=[
+            checkpoint_cb, 
+            early_stopping, 
+            CurriculumCallback(train_dataset),
+            LossWeightScheduler()
+            ],
         logger=logger,
         log_every_n_steps=1,
         # profiler="pytorch"
@@ -197,7 +218,7 @@ def choose_optimal_threshold():
 
 
 def main():
-    choose_optimal_threshold()
+    train()
 
 
 if __name__ == "__main__":

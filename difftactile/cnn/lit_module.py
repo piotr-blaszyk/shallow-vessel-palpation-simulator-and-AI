@@ -25,13 +25,12 @@ class SegmentationModel(pl.LightningModule):
         # Initialize both loss functions
         self.dice_loss = DiceLoss(sigmoid=True, batch=False)
         self.bce_loss = torch.nn.BCEWithLogitsLoss()
-        self.dice_weight = dice_weight
-        self.bce_weight = bce_weight
         
         self.lr = lr
         self.lr_patience = lr_patience
         self.lr_factor = lr_factor
         self.lr_min = lr_min
+        self.alpha = 0.5
 
     def forward(self, x):
         return self.model(x)
@@ -111,7 +110,7 @@ class SegmentationModel(pl.LightningModule):
         bce_loss = self.bce_loss(logits, y)
         
         # Combine losses using weights
-        loss = self.dice_weight * dice_loss + self.bce_weight * bce_loss
+        loss = self.alpha * dice_loss + (1 - self.alpha) * bce_loss
         
         probs = torch.sigmoid(logits)
         preds = (probs > 0.5).float()
