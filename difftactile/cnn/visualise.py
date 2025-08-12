@@ -152,7 +152,7 @@ class Visualisation:
                     cv2.destroyAllWindows()
                     break
 
-    def visualize(self, mode):
+    def visualise(self, mode):
         """
         Unified visualization method that can show either dataset samples or model predictions
         Args:
@@ -179,10 +179,10 @@ class Visualisation:
             model = model.to(device)
         else:  # dataset mode
             full_dataset = MyDataset(
-                data_dir=SYSTEM_PARAMS.files.dataset_root
+                data_dir=SYSTEM_PARAMS.files.dataset_root_test
             )
             train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
-                full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
+                full_dataset, train_size=1.0, val_size=0.0, test_size=0.0
             )
             data_loader = DataLoader(
                 train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
@@ -232,14 +232,25 @@ class Visualisation:
                 current_image = (current_image * 255).astype(np.uint8)
                 if mode == 'dataset':
                     current_right = (current_label * 255).astype(np.uint8)
+                    
+                    # Create binary versions (0 or 255)
+                    binary_left = np.where(current_image > 0, 255, 0).astype(np.uint8)
+                    binary_right = np.where(current_right > 0, 255, 0).astype(np.uint8)
+                    
+                    # Create RGB overlay
+                    overlay_image = np.zeros((current_image.shape[0], current_image.shape[1], 3), dtype=np.uint8)
+                    overlay_image[..., 0] = binary_left  # Red channel for markers
+                    overlay_image[..., 1] = binary_right  # Green channel for ground truth
                 else:  # predictions mode
                     # Convert overlay from float [0,1] to uint8 [0,255]
                     current_right = (current_overlay * 255).astype(np.uint8)
 
                 # Scale up images by 4x using NEAREST neighbor interpolation
-                scale_factor = 4
+                scale_factor = 2
                 current_image = cv2.resize(current_image, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
                 current_right = cv2.resize(current_right, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
+                if mode == 'dataset':
+                    overlay_image = cv2.resize(overlay_image, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
 
                 # Add frame counter text and other information
                 frame_text = f"Frame: {current_frame + 1}/{total_frames}"
@@ -266,22 +277,33 @@ class Visualisation:
                             (text_x - padding, text_y - text_size[1] - padding),
                             (text_x + text_size[0] + padding, text_y + padding),
                             (0, 0, 0), -1)
+                if mode == 'dataset':
+                    cv2.rectangle(overlay_image, 
+                                (text_x - padding, text_y - text_size[1] - padding),
+                                (text_x + text_size[0] + padding, text_y + padding),
+                                (0, 0, 0), -1)
                 
-                # Add text to both images
+                # Add text to images
                 cv2.putText(current_image, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
                 cv2.putText(current_right, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
+                if mode == 'dataset':
+                    cv2.putText(overlay_image, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
 
                 # Create display windows
                 cv2.imshow(f'Input Image {i}', current_image)
                 right_window_title = 'Ground Truth Label' if mode == 'dataset' else 'Prediction Overlay'
                 cv2.imshow(f'{right_window_title} {i}', current_right)
+                if mode == 'dataset':
+                    cv2.imshow(f'Overlay {i}', overlay_image)
 
                 # Get screen dimensions using cv2
                 window_width = current_image.shape[0]
                 
-                # Position windows - left window at (0,0), right window at (screen_width - window_width, 0)
+                # Position windows - left window at (0,0), middle at (window_width + 25, 0), right at (2 * window_width + 50, 0)
                 cv2.moveWindow(f'Input Image {i}', 0, 0)
-                cv2.moveWindow(f'{right_window_title} {i}',window_width + 25, 0)
+                cv2.moveWindow(f'{right_window_title} {i}', window_width + 25, 0)
+                if mode == 'dataset':
+                    cv2.moveWindow(f'Overlay {i}', 2 * window_width + 50, 0)
 
                 # Handle keyboard input
                 key = cv2.waitKey(0) & 0xFF
@@ -302,7 +324,7 @@ class Visualisation:
 def main():
     v = Visualisation()
     # v.visualize_experiment(144)
-    v.visualize('dataset')
+    v.visualise('dataset')
 
 
 if __name__ == "__main__":

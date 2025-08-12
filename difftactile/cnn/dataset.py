@@ -172,27 +172,28 @@ class MyDataset(torch.utils.data.Dataset):
         vein_endpoints = vein_endpoints[start:start + dilated_clip_len:dilation]
         vein_endpoints_mask = vein_endpoints_mask[start:start + dilated_clip_len:dilation]
         
-        images, labels_signal_mask = self.augmentation_artificial_vein_signal(
-            images, vein_endpoints, vein_endpoints_mask
-        )
-        labels_mask &= labels_signal_mask[:, np.newaxis]
-        discrete_angles = [0, 60, 120, 180, 240, 300]
-        rotation_angle_deg = random.choice(discrete_angles)
-        images = self.augmentation_rotation(images, rotation_angle_deg)
-        labels = self.augmentation_rotation(labels, rotation_angle_deg)
-        radial_shift = random.uniform(-10, 10)
-        images = self.shift_radial(images, radial_shift)
-        labels = self.shift_radial(labels, radial_shift)
-        angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
-        magnitude = random.uniform(0, 20)
-        images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
-        labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
-        angle_x = math.radians(random.uniform(-10, 10))
-        angle_y = math.radians(random.uniform(-10, 10))
-        images = self.rotate_xy(images, angle_x, angle_y)
-        labels = self.rotate_xy(labels, angle_x, angle_y)
-        images_random_remove_mask = self.randomly_remove(images)
-        images_mask &= images_random_remove_mask
+        if False:
+            images, labels_signal_mask = self.augmentation_artificial_vein_signal(
+                images, vein_endpoints, vein_endpoints_mask
+            )
+            labels_mask &= labels_signal_mask[:, np.newaxis]
+            discrete_angles = [0, 60, 120, 180, 240, 300]
+            rotation_angle_deg = random.choice(discrete_angles)
+            images = self.augmentation_rotation(images, rotation_angle_deg)
+            labels = self.augmentation_rotation(labels, rotation_angle_deg)
+            radial_shift = random.uniform(-10, 10)
+            images = self.shift_radial(images, radial_shift)
+            labels = self.shift_radial(labels, radial_shift)
+            angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+            magnitude = random.uniform(0, 20)
+            images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+            labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+            angle_x = math.radians(random.uniform(-10, 10))
+            angle_y = math.radians(random.uniform(-10, 10))
+            images = self.rotate_xy(images, angle_x, angle_y)
+            labels = self.rotate_xy(labels, angle_x, angle_y)
+            images_random_remove_mask = self.randomly_remove(images)
+            images_mask &= images_random_remove_mask
         
         images, images_crop_mask = MyDataset.downscale(self.k, images)
         labels, labels_crop_mask = MyDataset.downscale(self.k, labels)
@@ -201,8 +202,9 @@ class MyDataset(torch.utils.data.Dataset):
         images_mask &= images_crop_mask
         labels_mask &= labels_crop_mask
         
-        images = MyDataset.generate_markers_image(self.h_scaled, self.w_scaled, images, images_mask)  # shape: (T, H, W)
+        images, marker_masks = MyDataset.generate_markers_image(self.h_scaled, self.w_scaled, images, images_mask)  # shape: (T, H, W)
         labels = MyDataset.generate_vein_image(self.h_scaled, self.w_scaled, labels, labels_mask)     # shape: (T, H, W)
+        labels[marker_masks != 255] = 0
 
         # Convert to float and normalize
         images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
@@ -211,6 +213,8 @@ class MyDataset(torch.utils.data.Dataset):
         # Add channel dimension: (T, H, W) -> (C, T, H, W)
         images = images.unsqueeze(0)
         labels = labels.unsqueeze(0)
+
+        print('hello')
         
         return images, labels
 
@@ -228,7 +232,7 @@ class MyDataset(torch.utils.data.Dataset):
         
         h_scaled = h // k
         w_scaled = w // k
-        images = MyDataset.generate_markers_image(h_scaled, w_scaled, images, images_mask)  # shape: (T, H, W)
+        images, _ = MyDataset.generate_markers_image(h_scaled, w_scaled, images, images_mask)  # shape: (T, H, W)
 
         # Convert to float and normalize
         images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
@@ -239,18 +243,25 @@ class MyDataset(torch.utils.data.Dataset):
         return images
 
     @staticmethod
+    def numpy_mask_to_python_array(points_np, mask_np):
+        pass
+
+    @staticmethod
     def generate_markers_image(h, w, points, points_mask):
         if points.shape[1] == 0:  # Check if there are any points
             return np.zeros((points.shape[0], h, w), dtype=np.uint8)
             
         # Initialize output array for all frames
         images = np.zeros((points.shape[0], h, w), dtype=np.uint8)
+        marker_masks = np.zeros((points.shape[0], h, w), dtype=np.uint8)
         
         # Generate image for each frame
         for t in range(points.shape[0]):
+            filtered_points = []
             for i, point in enumerate(points[t]):
                 # Only set pixel if the mask indicates this point is valid
                 if points_mask[t, i]:
+                    filtered_points.append(point)
                     x, y = point[0], point[1]
                     x0, y0 = int(np.floor(x)), int(np.floor(y))
                     x1, y1 = x0 + 1, y0 + 1
@@ -268,8 +279,10 @@ class MyDataset(torch.utils.data.Dataset):
                         images[t, y1, x0] = min(255, images[t, y1, x0] + int(255 * wx0 * wy1))
                     if 0 <= x1 < w and 0 <= y1 < h:
                         images[t, y1, x1] = min(255, images[t, y1, x1] + int(255 * wx1 * wy1))
+            markers_mask = Contact.compute_mask(h, w, filtered_points)
+            marker_masks[t, :, :] = markers_mask
                 
-        return images
+        return images, marker_masks
 
     @staticmethod
     def generate_vein_image(h, w, points, points_mask):

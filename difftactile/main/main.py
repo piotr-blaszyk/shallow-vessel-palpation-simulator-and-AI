@@ -1263,34 +1263,14 @@ class Contact:
             x, y = int(point[0]), int(point[1])
             cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
         
-        markers_mask = np.zeros((h, w), dtype=np.uint8)
-        if len(markers) > 0:
-            contour = SyntheticImageGenerator.alpha_shape(markers).astype(np.int32)
-            if len(contour) > 0:
-                contour_cv = contour.reshape((-1, 1, 2))
-                cv2.fillPoly(markers_mask, [contour_cv], color=255)
-        
+        markers_mask = Contact.compute_mask(h, w, markers)
+
         vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
-        vein_full_img = np.zeros((h, w), dtype=np.uint8)
-        if len(vein) > 0:
-            contour_vein = SyntheticImageGenerator.alpha_shape(vein).astype(np.int32)
-            if len(contour_vein) > 0:
-                contour_vein_cv = contour_vein.reshape((-1, 1, 2))
-                cv2.fillPoly(vein_full_img, [contour_vein_cv], color=255)
-        vein = SyntheticImageGenerator.filter_points(w, h, cx, cy, r, vein)
-        vein_points_filtered = []
-        for point in vein:
-            x, y = int(point[0]), int(point[1])
-            if 0 <= x < w and 0 <= y < h and markers_mask[y, x] > 127:
-                vein_points_filtered.append(point)
-        vein = np.array(vein_points_filtered)
         self.vein_all_points_data.append(vein)
-        vein_img = np.zeros((h, w), dtype=np.uint8)
-        if len(vein) > 0:
-            contour_vein = SyntheticImageGenerator.alpha_shape(vein).astype(np.int32)
-            if len(contour_vein) > 0:
-                contour_vein_cv = contour_vein.reshape((-1, 1, 2))
-                cv2.fillPoly(vein_img, [contour_vein_cv], color=255)
+        vein_full_img = Contact.compute_mask(h, w, vein)
+        # vein = SyntheticImageGenerator.filter_points(w, h, cx, cy, r, vein)
+        vein = Contact.filter_using_mask(markers_mask, vein)
+        vein_img = Contact.compute_mask(h, w, vein)
 
         self.move_og_resolution()
         vein_endpoints = self.vein_endpoints_2d_projection.to_numpy()
@@ -1304,9 +1284,30 @@ class Contact:
             cv2.imwrite(markers_file, markers_img)
             cv2.imwrite(vein_file, vein_img)
             cv2.imwrite(vein_full_file, vein_full_img)
+    
+    @staticmethod
+    def compute_mask(h, w, points):
+        res = np.zeros((h, w), dtype=np.uint8)
+        if len(points) > 0:
+            contour_vein = SyntheticImageGenerator.alpha_shape(points).astype(np.int32)
+            if len(contour_vein) > 0:
+                contour_vein_cv = contour_vein.reshape((-1, 1, 2))
+                cv2.fillPoly(res, [contour_vein_cv], color=255)
+        
+        return res
+    
+    @staticmethod
+    def filter_using_mask(mask, points):
+        res = []
+        for point in points:
+            x, y = int(point[0]), int(point[1])
+            if mask[y, x] > 127:
+                res.append(point)
+        res = np.array(res)
+        return res
 
     def write_training_data_to_file(self, training_iteration):
-        directory = SYSTEM_PARAMS.files.dataset_root
+        directory = SYSTEM_PARAMS.files.dataset_root_test
         file = SYSTEM_PARAMS.files.dataset_data_point.format(
             training_iteration
         )
@@ -2268,10 +2269,11 @@ class Contact:
 
     def collect_training_data(self):
         self.clear_temp_images()
-        self.clear_npz()
-        for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
+        # self.clear_npz()
+        # for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
+        for j in range(4):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
-            for i in range(1, 3):
+            for i in range(1, 2):
                 self.trajectory_ix[None] = i
                 self.randomise()
                 self.set_up_initial_positions_state_and_trajectory()
@@ -2306,6 +2308,7 @@ class Contact:
                         self.record_training_data_point(j, ts)
                     ts += 1
                 self.write_training_data_to_file(j*2 + (i-1))
+                # self.write_training_data_to_file(999)
                 
                 self.reset_loss()
                 self.batch_loss.fill(0.0)
