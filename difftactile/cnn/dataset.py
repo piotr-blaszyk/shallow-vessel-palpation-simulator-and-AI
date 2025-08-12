@@ -28,12 +28,15 @@ class MyDataset(torch.utils.data.Dataset):
         self.clips_per_trajectory = 16
         self.mode = mode
         self.files = [os.path.join(data_dir, f) for f in os.listdir(data_dir)]
+
+        self.w_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
+        self.h_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
         
-        self.w = SYSTEM_PARAMS.fisheye_model.crop_width
-        self.h = SYSTEM_PARAMS.fisheye_model.crop_height
+        self.w_crop_big = SYSTEM_PARAMS.fisheye_model.crop_width
+        self.h_crop_big = SYSTEM_PARAMS.fisheye_model.crop_height
         self.k = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
-        self.w_scaled = int(self.w / self.k)
-        self.h_scaled = int(self.h / self.k)
+        self.w_crop_small = int(self.w_crop_big / self.k)
+        self.h_crop_small = int(self.h_crop_big / self.k)
         # self.w_scaled = 1920
         # self.h_scaled = 1080
         self.avg_call_time = 0.0
@@ -139,14 +142,9 @@ class MyDataset(torch.utils.data.Dataset):
 
     def clip_contains_vein(self, file_path, start, dilation):
         data = np.load(file_path)
-        # np.load returns a dict-like object whose keys we can access directly
         labels = data['labels']
-        
-        # Extract longer sequence and apply dilation
-        dilated_clip_len = self.clip_len * dilation
-        labels = labels[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
 
-        return labels.shape[1] > 0
+        return labels.sum() > 0
 
     def __getitem__(self, idx):
         file_path, start, dilation = self.clips[idx]
@@ -172,40 +170,36 @@ class MyDataset(torch.utils.data.Dataset):
         vein_endpoints = vein_endpoints[start:start + dilated_clip_len:dilation]
         vein_endpoints_mask = vein_endpoints_mask[start:start + dilated_clip_len:dilation]
         
-        if False:
-            images, labels_signal_mask = self.augmentation_artificial_vein_signal(
-                images, vein_endpoints, vein_endpoints_mask
-            )
-            labels_mask &= labels_signal_mask[:, np.newaxis]
-            discrete_angles = [0, 60, 120, 180, 240, 300]
-            rotation_angle_deg = random.choice(discrete_angles)
-            images = self.augmentation_rotation(images, rotation_angle_deg)
-            labels = self.augmentation_rotation(labels, rotation_angle_deg)
-            radial_shift = random.uniform(-10, 10)
-            images = self.shift_radial(images, radial_shift)
-            labels = self.shift_radial(labels, radial_shift)
-            angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
-            magnitude = random.uniform(0, 20)
-            images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
-            labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
-            angle_x = math.radians(random.uniform(-10, 10))
-            angle_y = math.radians(random.uniform(-10, 10))
-            images = self.rotate_xy(images, angle_x, angle_y)
-            labels = self.rotate_xy(labels, angle_x, angle_y)
-            images_random_remove_mask = self.randomly_remove(images)
-            images_mask &= images_random_remove_mask
+        images, labels_signal_mask = self.augmentation_artificial_vein_signal(
+            images, vein_endpoints, vein_endpoints_mask
+        )
+        labels_mask &= labels_signal_mask[:, np.newaxis]
+        discrete_angles = [0, 60, 120, 180, 240, 300]
+        rotation_angle_deg = random.choice(discrete_angles)
+        images = self.augmentation_rotation(images, rotation_angle_deg)
+        labels = self.augmentation_rotation(labels, rotation_angle_deg)
+        angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+        magnitude = random.uniform(0, 10)
+        images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+        labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+        angle_x = math.radians(random.uniform(-5, 5))
+        angle_y = math.radians(random.uniform(-5, 5))
+        images = self.rotate_xy(images, angle_x, angle_y)
+        labels = self.rotate_xy(labels, angle_x, angle_y)
+        images_random_remove_mask = self.randomly_remove(images)
+        images_mask &= images_random_remove_mask
+        
         
         images, images_crop_mask = MyDataset.downscale(self.k, images)
         labels, labels_crop_mask = MyDataset.downscale(self.k, labels)
 
-        # print(f'images_mask.shape: {images_mask.shape}; images_crop_mask.shape: {images_crop_mask.shape}')
         images_mask &= images_crop_mask
         labels_mask &= labels_crop_mask
-        
-        images, marker_masks = MyDataset.generate_markers_image(self.h_scaled, self.w_scaled, images, images_mask)  # shape: (T, H, W)
-        labels = MyDataset.generate_vein_image(self.h_scaled, self.w_scaled, labels, labels_mask)     # shape: (T, H, W)
-        labels[marker_masks != 255] = 0
 
+        images, marker_masks = MyDataset.generate_markers_image(self.h_crop_small, self.w_crop_small, images, images_mask)  # shape: (T, H, W)
+        labels = MyDataset.generate_vein_image(self.h_crop_small, self.w_crop_small, labels, labels_mask)     # shape: (T, H, W)
+        labels[marker_masks != 255] = 0
+        
         # Convert to float and normalize
         images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
         labels = torch.tensor(labels, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
@@ -420,7 +414,7 @@ class MyDataset(torch.utils.data.Dataset):
             return np.ones((points.shape[0], 0), dtype=bool)  # Return empty mask matching input shape
             
         # Determine number of points to remove (same for all frames)
-        k = random.randint(0, min(26, points.shape[1]))
+        k = random.randint(0, min(13, points.shape[1]))
         if k == 0:
             return np.ones((points.shape[0], points.shape[1]), dtype=bool)  # Return all True mask
             
@@ -467,13 +461,24 @@ class MyDataset(torch.utils.data.Dataset):
             start_idx = 0
             end_idx = 0
         
-        signal_start = random.randrange(start_idx, end_idx)
-        signal_end = random.randrange(signal_start+1, end_idx+1)
+        # start_idx = 0, end_idx = 10
+        # max_length = 10
+        # length = 5
+        # end_idx = 5
+        # start_idx = 5
+        # indices = 5, 6, 7, 8, 9
+        # end_idx = 10
+        max_length = end_idx - start_idx
+        foo = 0 if max_length < 3 else 3
+        length = random.randint(foo, max_length)
+        end_idx -= length
+        start_idx = random.randint(start_idx, end_idx)
+        end_idx = start_idx + length
 
         vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
-        vein_visible_mask[signal_start:signal_end] = True
+        vein_visible_mask[start_idx:end_idx] = True
 
-        for j in range(signal_start, signal_end):
+        for j in range(start_idx, end_idx):
             points = clip_points[j]
             vein_endpoints = clip_vein_endpoints[j]
             centre = np.mean(points, axis=0)

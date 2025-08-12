@@ -15,6 +15,7 @@ import math
 from shapely.geometry import Polygon, MultiLineString
 from shapely.ops import unary_union, polygonize
 from scipy.spatial import Delaunay
+import random
 
 from difftactile.sensor_model.fisheye_model import *
 from difftactile.sensor_model.vitactip import ViTacTip
