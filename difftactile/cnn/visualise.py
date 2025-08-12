@@ -158,7 +158,7 @@ class Visualisation:
         Args:
             mode: Either 'dataset' or 'predictions'
         """
-        BATCH_SIZE = 2
+        BATCH_SIZE = 1
         NUM_WORKERS = 1
         if mode == 'predictions':
             model_path = SYSTEM_PARAMS.files.final_segmentation_model
@@ -199,6 +199,8 @@ class Visualisation:
                 data_iter = iter(data_loader)
                 continue
 
+            if label.sum() == 0:
+                continue
             # Handle predictions if in prediction mode
             if mode == 'predictions':
                 with torch.no_grad():
@@ -207,8 +209,6 @@ class Visualisation:
                     probs = torch.sigmoid(logits)
                     pred = (probs > 0.4).float()
                     pred = pred.cpu()
-                    if label.sum() == 0:
-                        continue
 
             # Convert tensors to numpy arrays
             image_seq = image.numpy().squeeze()  # Shape: (T, H, W)

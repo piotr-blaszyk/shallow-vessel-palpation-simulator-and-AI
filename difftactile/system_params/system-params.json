@@ -61,7 +61,7 @@
         "coulomb_friction_coeff": 4.000e-01,
         "num_sub_frames": 125,
         "num_opt_steps": 2,
-        "num_training_trajectories": 20,
+        "num_training_trajectories": 21,
         "pid_max_speed_translation": 5.000e-01,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,

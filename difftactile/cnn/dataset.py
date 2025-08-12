@@ -172,8 +172,6 @@ class MyDataset(torch.utils.data.Dataset):
         vein_endpoints = vein_endpoints[start:start + dilated_clip_len:dilation]
         vein_endpoints_mask = vein_endpoints_mask[start:start + dilated_clip_len:dilation]
         
-        vein_rotation_angle = random.uniform(0, 360)
-        vein_endpoints = self.augmentation_rotation(vein_endpoints, vein_rotation_angle)
         images, labels_signal_mask = self.augmentation_artificial_vein_signal(
             images, vein_endpoints, vein_endpoints_mask
         )
@@ -490,6 +488,7 @@ class MyDataset(torch.utils.data.Dataset):
                 if displacement > 0:
                     vec_normalized = vec / x
                     points[i] = points[i] + vec_normalized * displacement * disp_c * centre_ratio
+            clip_points[j] = points
 
-        return points, vein_visible_mask
+        return clip_points, vein_visible_mask
         

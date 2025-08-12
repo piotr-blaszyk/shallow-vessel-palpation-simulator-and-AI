@@ -760,8 +760,8 @@ class Contact:
         self.trajectories_np[2] = trajectory
         self.trajectories.from_numpy(self.trajectories_np)
 
-        # theta_rand = np.random.uniform(-90, 90)
-        theta_rand = 0
+        theta_rand = np.random.uniform(-45, 45)
+        # theta_rand = 0
 
         cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
         cx_0 = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[0]
@@ -1228,9 +1228,13 @@ class Contact:
         self.clear_training_data_folders_helper(folders)
 
     def clear_npz(self):
+        x = SYSTEM_PARAMS.files.dataset_root
         folders = [
-            SYSTEM_PARAMS.files.dataset_root
+            f'{x}/vein',
+            f'{x}/no_vein',
+            x
         ]
+
         self.clear_training_data_folders_helper(folders)
 
     def clear_training_data_folders_helper(self, folders):
@@ -1305,12 +1309,16 @@ class Contact:
             cv2.imwrite(vein_file, vein_img)
             cv2.imwrite(vein_full_file, vein_full_img)
 
-    def write_training_data_to_file(self, training_iteration):
+    def write_training_data_to_file(self, trajectory_ix, training_iteration):
         directory = SYSTEM_PARAMS.files.dataset_root
         file = SYSTEM_PARAMS.files.dataset_data_point.format(
             training_iteration
         )
-        path = f'{directory}/{file}'
+        if trajectory_ix == 2:
+            folder = 'no_vein'
+        else:
+            folder = 'vein'
+        path = f'{directory}/{folder}/{file}'
 
         markers_array, markers_mask = Contact.create_padded_array_with_mask(self.marker_data)
         veins_array, veins_mask = Contact.create_padded_array_with_mask(self.vein_all_points_data)
@@ -2268,7 +2276,7 @@ class Contact:
 
     def collect_training_data(self):
         self.clear_temp_images()
-        # self.clear_npz()
+        self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for i in range(1, 3):
@@ -2305,7 +2313,7 @@ class Contact:
                     ):
                         self.record_training_data_point(j, ts)
                     ts += 1
-                # self.write_training_data_to_file(j*2 + (i-1))
+                self.write_training_data_to_file(i, j)
                 
                 self.reset_loss()
                 self.batch_loss.fill(0.0)
