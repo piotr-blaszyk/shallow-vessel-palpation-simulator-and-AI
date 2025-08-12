@@ -479,61 +479,35 @@ class MyDataset(torch.utils.data.Dataset):
         vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
         vein_visible_mask[start_idx:end_idx] = True
 
-        # Process frames from start_idx to end_idx in a vectorized way
-        points_slice = clip_points[start_idx:end_idx]  # Shape: (num_frames, num_points, 2)
-        vein_endpoints_slice = clip_vein_endpoints[start_idx:end_idx]  # Shape: (num_frames, 2, 2)
-        
-        # Calculate centers and max distances for each frame
-        centres = np.mean(points_slice, axis=1, keepdims=True)  # Shape: (num_frames, 1, 2)
-        dists_from_centre = np.linalg.norm(points_slice - centres, axis=2)  # Shape: (num_frames, num_points)
-        max_dists = np.max(dists_from_centre, axis=1, keepdims=True)  # Shape: (num_frames, 1)
-        
-        # Generate random parameters for each frame
-        x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
-        disp_c = np.random.uniform(0.01, 0.5, size=(end_idx - start_idx, 1))  # Shape: (num_frames, 1)
-        decay_c = np.random.uniform(0, 1, size=(end_idx - start_idx, 1))  # Shape: (num_frames, 1)
-        decay_c[np.random.choice([True, False], size=(end_idx - start_idx, 1))] = 0
-        
-        # Calculate line equations for each frame
-        a, b, c = Contact.line_equation(vein_endpoints_slice)  # Shape: (num_frames,) each
-        
-        # Calculate centre ratios
-        centre_ratios = 1 - decay_c * (dists_from_centre / max_dists)  # Shape: (num_frames, num_points)
-        
-        # Calculate vectors from points to lines
-        # Reshape a, b, c to broadcast correctly
-        a = a[:, np.newaxis]  # Shape: (num_frames, 1)
-        b = b[:, np.newaxis]  # Shape: (num_frames, 1)
-        c = c[:, np.newaxis]  # Shape: (num_frames, 1)
-        
-        # Calculate vectors for all points at once
-        vecs = np.zeros_like(points_slice)  # Shape: (num_frames, num_points, 2)
-        vecs[..., 0] = (-a * (a * points_slice[..., 0] + b * points_slice[..., 1] + c) / (a**2 + b**2))
-        vecs[..., 1] = (-b * (a * points_slice[..., 0] + b * points_slice[..., 1] + c) / (a**2 + b**2))
-        
-        # Calculate distances
-        x = np.linalg.norm(vecs, axis=2)  # Shape: (num_frames, num_points)
-        
-        # Calculate displacement based on conditions
-        displacement = np.zeros_like(x)
-        mask1 = (0 < x) & (x < x_0)
-        mask2 = (x_0 <= x) & (x < 2 * x_0)
-        displacement[mask1] = x[mask1]
-        displacement[mask2] = x_0 - (x[mask2] - x_0)
-        
-        # Normalize vectors where displacement > 0
-        displacement_mask = displacement > 0
-        vec_normalized = np.zeros_like(vecs)
-        vec_normalized[displacement_mask] = vecs[displacement_mask] / x[displacement_mask][..., np.newaxis]
-        
-        # Calculate final displacement
-        final_displacement = vec_normalized * displacement[..., np.newaxis] * disp_c[..., np.newaxis] * centre_ratios[..., np.newaxis]
-        
-        # Apply displacement to points
-        points_slice += final_displacement
-        
-        # Update the original array
-        clip_points[start_idx:end_idx] = points_slice
+        for j in range(start_idx, end_idx):
+            points = clip_points[j]
+            vein_endpoints = clip_vein_endpoints[j]
+            centre = np.mean(points, axis=0)
+            max_dist = np.max(np.linalg.norm(points - centre, axis=1))
+            x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
+            disp_c = random.uniform(0.01, 0.5)
+            decay_c = random.uniform(0, 1)
+            random_bool = np.random.choice([True, False])
+            if random_bool:
+                decay_c = 0
+            a, b, c = Contact.line_equation(
+                vein_endpoints
+            )
+            
+            for i in range(len(points)):
+                dist_from_centre = np.linalg.norm(centre - points[i])
+                centre_ratio = 1 - decay_c * (dist_from_centre / max_dist)
+                vec = Contact.vector_point_to_line(a, b, c, points[i])
+                x = np.linalg.norm(vec)
+                displacement = 0.0
+                if 0 < x < x_0:
+                    displacement = x
+                elif x_0 <= x < 2 * x_0:
+                    displacement = x_0 - (x - x_0)
+                if displacement > 0:
+                    vec_normalized = vec / x
+                    points[i] = points[i] + vec_normalized * displacement * disp_c * centre_ratio
+            clip_points[j] = points
 
         return clip_points, vein_visible_mask
         
