@@ -1646,6 +1646,32 @@ class Contact:
         normal = np.array([a, b]) / denominator
         return -normal * numerator / denominator
 
+    @staticmethod
+    def line_point_to_line_pass_through_point(a, b, c, p):
+        """
+        Compute coefficients (a', b', c') of a line that:
+        1. Passes through point p
+        2. Is perpendicular to line ax + by + c = 0
+        
+        Args:
+            a, b, c: Coefficients of original line ax + by + c = 0
+            p: Point [x, y] that the perpendicular line should pass through
+            
+        Returns:
+            a', b', c': Coefficients of perpendicular line a'x + b'y + c' = 0
+        """
+        # For line ax + by + c = 0, vector (-b, a) is perpendicular to the line
+        # This will be our direction vector for the new line
+        a_new = -b  # Use negative b as new a coefficient
+        b_new = a   # Use a as new b coefficient
+        
+        # For the new line to pass through point p:
+        # a_new * p[0] + b_new * p[1] + c_new = 0
+        # Therefore:
+        c_new = -(a_new * p[0] + b_new * p[1])
+        
+        return a_new, b_new, c_new
+
     def visualisation_draw_tactile_readout(self):
         self.visualisation_project_2d_vein_endpoints()
         self.visualisation_project_2d_vein_all()
