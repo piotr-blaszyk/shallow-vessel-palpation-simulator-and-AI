@@ -27,7 +27,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         self.clips_per_trajectory = 16
         self.mode = mode
-        self.files = [os.path.join(data_dir, f) for f in os.listdir(data_dir)]
+        self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
 
         self.w_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
         self.h_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
@@ -207,8 +207,6 @@ class MyDataset(torch.utils.data.Dataset):
         # Add channel dimension: (T, H, W) -> (C, T, H, W)
         images = images.unsqueeze(0)
         labels = labels.unsqueeze(0)
-
-        print('hello')
         
         return images, labels
 
@@ -291,6 +289,7 @@ class MyDataset(torch.utils.data.Dataset):
             # Get only valid points according to mask
             valid_points = points[t][points_mask[t]]
             if len(valid_points) > 0:
+                # Remove duplicate points
                 contour_vein = SyntheticImageGenerator.alpha_shape(valid_points).astype(np.int32)
                 if len(contour_vein) > 0:
                     contour_vein_cv = contour_vein.reshape((-1, 1, 2))
@@ -469,8 +468,10 @@ class MyDataset(torch.utils.data.Dataset):
         # indices = 5, 6, 7, 8, 9
         # end_idx = 10
         max_length = end_idx - start_idx
-        foo = 0 if max_length < 3 else 3
-        length = random.randint(foo, max_length)
+        if max_length < 3:
+            length = 0
+        else:
+            length = random.randint(3, max_length)
         end_idx -= length
         start_idx = random.randint(start_idx, end_idx)
         end_idx = start_idx + length

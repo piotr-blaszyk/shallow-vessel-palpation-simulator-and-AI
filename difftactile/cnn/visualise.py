@@ -7,6 +7,7 @@ from difftactile.cnn.train import *
 import matplotlib.colors as mcolors
 import pickle
 import cv2
+from tqdm import tqdm
 
 
 class Visualisation:
@@ -320,6 +321,32 @@ class Visualisation:
                     cv2.destroyAllWindows()
                     break
 
+    def test_data_loader(self):
+        BATCH_SIZE = 16
+        NUM_WORKERS = 16
+        full_dataset = MyDataset(
+            data_dir=SYSTEM_PARAMS.files.dataset_root
+        )
+        train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
+            full_dataset, train_size=1.0, val_size=0.0, test_size=0.0
+        )
+        data_loader = DataLoader(
+            train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+        )
+
+        data_iter = iter(data_loader)
+        i = 0
+        pbar = tqdm()
+        while True:
+            try:
+                image, label = next(data_iter)
+            except StopIteration:
+                print("End of dataset reached. Restarting...")
+                break
+            i += 1
+            pbar.update(1)
+            pbar.set_description(f"Processed {i} batches")
+        pbar.close()
 
 def main():
     v = Visualisation()

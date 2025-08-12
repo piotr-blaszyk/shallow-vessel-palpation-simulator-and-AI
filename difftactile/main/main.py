@@ -48,6 +48,7 @@ class SyntheticImageGenerator:
 
     @staticmethod
     def alpha_shape(points):
+        points = np.unique(points, axis=0)
         alpha=1e-10
         if len(points) < 4:
             return np.array([])
@@ -769,7 +770,7 @@ class Contact:
         start = trajectory[3][0] - cx_0
         end = trajectory[4][0] - cx_0
 
-        cx = np.random.uniform(start/2, end/2)
+        cx = np.random.uniform(start/2, end/4)
         
         state_dict = {
             'tumour_present': True,
@@ -781,6 +782,7 @@ class Contact:
             'r': SYSTEM_PARAMS.geometry.vein.r
         }
         self.state_dicts[1] = state_dict
+        self.randomise_contact_params()
 
     def set_up_initial_positions_state_and_trajectory(self):
         state_dict = self.state_dicts[self.trajectory_ix[None]]
@@ -1308,7 +1310,7 @@ class Contact:
         return res
 
     def write_training_data_to_file(self, training_iteration):
-        directory = SYSTEM_PARAMS.files.dataset_root_test
+        directory = SYSTEM_PARAMS.files.dataset_root
         file = SYSTEM_PARAMS.files.dataset_data_point.format(
             training_iteration
         )
@@ -2066,6 +2068,28 @@ class Contact:
         self.tangential_stiffness[None] += ti.exp(self.tangential_stiffness_log[None])
         self.normal_damping[None] += ti.exp(self.normal_damping_log[None])
     
+    def randomise_contact_params(self):
+        ns = SYSTEM_PARAMS.contact.normal_stiffness
+        nd = SYSTEM_PARAMS.contact.normal_damping
+        ts = SYSTEM_PARAMS.contact.tangential_stiffness
+        cfc = SYSTEM_PARAMS.contact.coulomb_friction_coeff
+
+        self.normal_stiffness[None] = random.uniform(ns * 0.5, ns * 1.5)
+        self.normal_damping[None] = random.uniform(nd * 0.5, nd * 1.5)
+        self.tangential_stiffness[None] = random.uniform(ts * 0.5, ts * 1.5)
+        self.coulomb_friction_coeff[None] = random.uniform(cfc * 0.5, cfc * 1.5)
+    
+    def print_contact_params(self):
+        ns = SYSTEM_PARAMS.contact.normal_stiffness
+        nd = SYSTEM_PARAMS.contact.normal_damping
+        ts = SYSTEM_PARAMS.contact.tangential_stiffness
+        cfc = SYSTEM_PARAMS.contact.coulomb_friction_coeff
+
+        print(f"Normal Stiffness: {self.normal_stiffness[None] / ns}")
+        print(f"Normal Damping: {self.normal_damping[None] / nd}")
+        print(f"Tangential Stiffness: {self.tangential_stiffness[None] / ts}")
+        print(f"Coulomb Friction Coefficient: {self.coulomb_friction_coeff[None] / cfc}")
+    
     def save_final_params(self):
         results = {
             "vitactip": {
@@ -2271,10 +2295,9 @@ class Contact:
     def collect_training_data(self):
         self.clear_temp_images()
         # self.clear_npz()
-        # for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
-        for j in range(4):
+        for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
-            for i in range(1, 2):
+            for i in range(1, 3):
                 self.trajectory_ix[None] = i
                 self.randomise()
                 self.set_up_initial_positions_state_and_trajectory()
@@ -2285,6 +2308,7 @@ class Contact:
                 self.compute_mapping_between_experimental_and_sim_markers()
                 self.set_dt(verbose=True)
                 self.fp()
+                self.print_contact_params()
                 ts = 0
                 while self.last_target_reached[None] != 1:
                     self.pid_controller_1()
@@ -2308,7 +2332,7 @@ class Contact:
                     ):
                         self.record_training_data_point(j, ts)
                     ts += 1
-                self.write_training_data_to_file(j*2 + (i-1))
+                # self.write_training_data_to_file(j*2 + (i-1))
                 # self.write_training_data_to_file(999)
                 
                 self.reset_loss()

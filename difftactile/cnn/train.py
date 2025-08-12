@@ -21,7 +21,7 @@ def train():
     start_time = time.perf_counter()
     BATCH_SIZE = 16
     NUM_EPOCHS = 20
-    NUM_WORKERS = 1
+    NUM_WORKERS = 16
     LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="segmentation_model")

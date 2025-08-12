@@ -140,7 +140,7 @@ class SegmentationModel(pl.LightningModule):
                 min_lr=1e-6,        # Don't reduce LR below this value
                 cooldown=1,         # Number of epochs to wait before resuming normal operation after LR has been reduced
             ),
-            "monitor": "val_iou",   # Quantity to monitor
+            "monitor": "val_fg_iou",   # Quantity to monitor
             "interval": "epoch",
             "frequency": 1
         }
