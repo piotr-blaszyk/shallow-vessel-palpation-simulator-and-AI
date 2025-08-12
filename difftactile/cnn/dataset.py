@@ -366,7 +366,7 @@ class MyDataset(torch.utils.data.Dataset):
             return points
             
         # Project all points to 3D at once
-        points_3d = self.fisheye_model.project_pix_to_points_3d_plane(points.reshape(-1, 2)).reshape(points.shape[0], points.shape[1], 3)
+        points_3d = self.fisheye_model.project_pix_to_points_3d_plane(points)
         z_coord = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1
         assert np.allclose(points_3d[..., 2], z_coord, atol=1e-6), f"All z-coordinates must be equal to {z_coord}"
         

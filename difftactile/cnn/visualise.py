@@ -301,7 +301,8 @@ class Visualisation:
 
 def main():
     v = Visualisation()
-    v.visualize_experiment(144)
+    # v.visualize_experiment(144)
+    v.visualize('dataset')
 
 
 if __name__ == "__main__":
