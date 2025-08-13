@@ -15,7 +15,7 @@
             "youngs_modulus": 1.200e+04
         },
         "hard_plastic": {
-            "youngs_modulus": 8.000e+04
+            "youngs_modulus": 1.200e+05
         }
     }
 }
