@@ -1,41 +1,41 @@
 {
   "phantom_closest_vertex": [
-    0.4,
-    0.1,
-    0.037500000000000006
+    0.52496,
+    0.26248,
+    0.09842999999999999
   ],
   "phantom_centroid_pose": [
-    0.8,
-    0.2,
-    0.0925,
+    0.97496,
+    0.52498,
+    0.15342999999999998,
     0,
     0,
     0
   ],
-  "phantom_top_surface_z": 0.14750000000000002,
+  "phantom_top_surface_z": 0.20843,
   "vitactip_tip_position": [
-    0.5,
-    0.2,
-    0.1525
+    0.6249600000000001,
+    0.52498,
+    0.21342999999999998
   ],
   "vitactip_tip_pose": [
-    0.5,
-    0.2,
-    0.1525,
+    0.6249600000000001,
+    0.52498,
+    0.21342999999999998,
     0.0,
     1.0,
     0.0,
     0.0
   ],
-  "phantom_volume": 0.017600000000000005,
-  "min_coord": 0.037500000000000006,
-  "max_coord_x": 1.5625,
-  "max_coord_y": 0.36250000000000004,
-  "max_coord_z": 0.1625,
-  "object_scale": 0.8,
-  "phantom_min_max_particle_spacing": 0.01509433962264151,
+  "phantom_volume": 0.051975,
+  "min_coord": 0.09842999999999999,
+  "max_coord_x": 2.00141,
+  "max_coord_y": 0.95149,
+  "max_coord_z": 0.42652999999999996,
+  "object_scale": 0.9,
+  "phantom_min_max_particle_spacing": 0.016981132075471698,
   "vitactip_min_particle_spacing": {
-    "all": 0.008009567358533434,
+    "all": 0.0016517015289450635,
     "shell": Infinity,
     "gel": Infinity
   },

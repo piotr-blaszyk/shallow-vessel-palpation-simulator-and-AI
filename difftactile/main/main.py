@@ -108,7 +108,7 @@ class SyntheticImageGenerator:
 @ti.data_oriented
 class Contact:
     def __init__(self):
-        self.synthetic_image_generator = SyntheticImageGenerator()
+        self.compute_sensor_bounds()
         self.fisheye_model = FisheyeModel()
         self.set_up_system_params()
         self.load_system_identification_data()
@@ -125,6 +125,35 @@ class Contact:
         self.visualisation_initialise()
         self.training_data_collection_initialise()
     
+    def compute_sensor_bounds(self):
+        _min = SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex[:2]
+        _mid = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[:2]
+        phantom_r = abs(_mid - _min)
+        _max = _min + phantom_r * 2
+        sensor_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        sensor_min = _min + sensor_r
+        sensor_max = _max - sensor_r
+
+        sensor_min_01 = (sensor_min - _mid) / phantom_r
+        sensor_max_01 = (sensor_max - _mid) / phantom_r
+
+        self.sensor_x_range_A = np.array([
+            sensor_min[0],
+            sensor_max[0]
+        ])
+        self.sensor_y_range_A = np.array([
+            sensor_min[1],
+            sensor_max[1]
+        ])
+        self.sensor_x_range_01 = np.array([
+            sensor_min_01[0],
+            sensor_max_01[0]
+        ])
+        self.sensor_y_range_01 = np.array([
+            sensor_min_01[1],
+            sensor_max_01[1]
+        ])
+
     def training_data_collection_initialise(self):
         self.marker_data = []
         self.vein_all_points_data = []
@@ -624,7 +653,8 @@ class Contact:
         self.validation_point_3d_A = ti.Vector.field(
             3, dtype=float, shape=(), needs_grad=False
         )
-        self.trajectories = ti.Vector.field(7, dtype=float, shape=(4, 5), needs_grad=False)
+        self.trajectories = ti.Vector.field(7, dtype=float, shape=(4, 1_000), needs_grad=False)
+        self.trajectory_lengths = ti.field(4, dtype=int, shape=(), needs_grad=False)
 
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate(
@@ -662,7 +692,7 @@ class Contact:
             'twist-y (no vein)',
             'twist-z (no vein)',
         ]
-        self.trajectories_np = np.array([
+        trajectories_python_array = [
             [
                 [x, y, z, *og_r.as_quat()],
                 [x, y, z, *og_r.as_quat()],
@@ -696,51 +726,37 @@ class Contact:
                 [x, y, z - press_depth_3, *og_r.as_quat()],
                 [x, y, z - press_depth_3, *twist_2.as_quat()],
             ]
-        ])
-        self.trajectories.from_numpy(self.trajectories_np)
+        ]
+        self.set_trajectories(trajectories_python_array)
         cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
         self.state_dicts = [
-            {
-                'tumour_present': False,
-                'cx': None,
-                'cy': None,
-                'cz': None,
-                'theta': None,
-                'h': None,
-                'r': None
-            },
-            {
-                'tumour_present': True,
-                'cx': 0,
-                'cy': 0,
-                'cz': cz_offset,
-                'theta': SYSTEM_PARAMS.geometry.vein.theta,
-                'h': SYSTEM_PARAMS.geometry.vein.h,
-                'r': SYSTEM_PARAMS.geometry.vein.r
-            },
-            {
-                'tumour_present': False,
-                'cx': None,
-                'cy': None,
-                'cz': None,
-                'theta': None,
-                'h': None,
-                'r': None
-            },
-            {
-                'tumour_present': False,
-                'cx': None,
-                'cy': None,
-                'cz': None,
-                'theta': None,
-                'h': None,
-                'r': None
-            }
+            [],
+            [
+                {
+                    'cx': 0,
+                    'cy': 0,
+                    'cz': cz_offset,
+                    'theta': SYSTEM_PARAMS.geometry.vein.theta,
+                    'h': SYSTEM_PARAMS.geometry.vein.h,
+                    'r': SYSTEM_PARAMS.geometry.vein.r
+                }
+            ],
+            [],
+            [],
         ]
-        assert(self.trajectories_np.shape[0] == len(self.state_dicts))
+        assert(len(trajectories_python_array) == len(self.state_dicts))
 
-    def randomise(self):
-        x, y, z = self.vitactip_tip_pose[:3]
+    def randomise_train_step(self):
+        trajectories_python_array = [
+            self.get_random_grid_search_trajectory(),
+            self.get_fully_random_trajectory()
+        ]
+        self.set_trajectories(trajectories_python_array)
+
+        self.state_dicts[0] = self.generate_random_state_dicts()
+        self.state_dicts[1] = self.generate_random_state_dicts()
+    
+    def get_random_slide_params(self):
         quat = self.vitactip_tip_pose[3:]
         og_r = R.from_quat(quat)
         _dr = -SYSTEM_PARAMS.geometry.camera_rotation_angle
@@ -752,6 +768,9 @@ class Contact:
         rand_r = R.from_euler(seq="xyz", angles=[0, 0, zr], degrees=True)
         og_r = og_r * rand_r
         slide_r = og_r
+        srq = slide_r.as_quat()
+
+        srq = self.get_random_slide_params()
 
         press_depth_surface = SYSTEM_PARAMS.geometry.gap
         press_depth_1 = press_depth_surface + SYSTEM_PARAMS.trajectory.press_depth_1
@@ -760,51 +779,88 @@ class Contact:
             k_1 = SYSTEM_PARAMS.trajectory.press_depth_offset_1
             press_depth_rand = np.random.uniform(-k_0, k_1)
             press_depth_1 = press_depth_1 + press_depth_rand
-        slide_dist = SYSTEM_PARAMS.trajectory.slide_distance_long
-
-        trajectory = np.array([
-            [x, y, z, *slide_r.as_quat()],
-            [x, y, z, *slide_r.as_quat()],
-            [x, y, z - press_depth_surface, *slide_r.as_quat()],
-
-            [x, y, z - press_depth_1, *slide_r.as_quat()],
-            [x + slide_dist, y, z - press_depth_1, *slide_r.as_quat()],
-        ])
-        self.trajectories_np[1] = trajectory
-        self.trajectories_np[2] = trajectory
-        self.trajectories.from_numpy(self.trajectories_np)
-
-        theta_rand = np.random.uniform(-45, 45)
-        # theta_rand = 0
-
-        cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
-        cx_0 = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[0]
-        start = trajectory[3][0] - cx_0
-        end = trajectory[4][0] - cx_0
-
-        cx = np.random.uniform(start/2, end/4)
         
-        state_dict = {
-            'tumour_present': True,
-            'cx': cx,
-            'cy': 0,
-            'cz': cz_offset,
-            'theta': SYSTEM_PARAMS.geometry.vein.theta + theta_rand,
-            'h': SYSTEM_PARAMS.geometry.vein.h,
-            'r': SYSTEM_PARAMS.geometry.vein.r
-        }
-        self.state_dicts[1] = state_dict
-        self.randomise_contact_params()
+        return (
+            srq,
+            press_depth_surface,
+            press_depth_1
+        )
+
+    def get_random_grid_search_trajectory(self):
+        (
+            srq,
+            press_depth_surface,
+            press_depth_1
+        ) = self.get_random_slide_params()
+        _, _, z = self.vitactip_tip_pose[:3]
+        x = self.sensor_x_range_A[0]
+        y = self.sensor_y_range_A[0]
+        dx = self.sensor_x_range_A[1] - self.sensor_x_range_A[0]
+        dy = self.sensor_y_range_A[1] - self.sensor_y_range_A[0]
+        r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        d_single = random.uniform(0.5 * r, 2 * r)
+        trajectory = [
+            [x, y, z, *srq],
+            [x, y, z - press_depth_surface, *srq],
+            [x, y, z - press_depth_1, *srq],
+        ]
+        xy_dirs = [
+            [0, 1],
+            [1, 0],
+            [0, -1],
+            [1, 0]
+        ]
+        xy_i = 0
+        while True:
+            a, b, c = trajectory[-1][:3]
+            if (
+                a > self.sensor_x_range_A[1]
+                or len(trajectory) == self.trajectories.shape[1]
+            ):
+                break
+            x_dir, y_dir = xy_dirs[xy_i]
+            xy_i += 1
+            xy_i %= 4
+            a2 = a + x_dir * d_single
+            b2 = b + y_dir * dy
+            trajectory.append(
+                [a2, b2, c, *srq]
+            )
+        return trajectory
+
+    def get_fully_random_trajectory(self):
+        (
+            srq,
+            press_depth_surface,
+            press_depth_1
+        ) = self.get_random_slide_params()
+        _, _, z = self.vitactip_tip_pose[:3]
+        x = self.sensor_x_range_A[0]
+        y = self.sensor_y_range_A[0]
+        dx = self.sensor_x_range_A[1] - self.sensor_x_range_A[0]
+        dy = self.sensor_y_range_A[1] - self.sensor_y_range_A[0]
+        r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        trajectory = [
+            [x, y, z, *srq],
+            [x, y, z - press_depth_surface, *srq],
+            [x, y, z - press_depth_1, *srq],
+        ]
+        while len(trajectory) < self.trajectories.shape[1]:
+            a = random.uniform(*self.sensor_x_range_A)
+            b = random.uniform(*self.sensor_y_range_A)
+            trajectory.append(
+                [a, b, z - press_depth_1, *srq]
+            )
+        return trajectory
 
     def set_up_initial_positions_state_and_trajectory(self):
-        state_dict = self.state_dicts[self.trajectory_ix[None]]
-        self.tumour_present_ground_truth_label[None] = state_dict['tumour_present']
+        state_dicts = self.state_dicts[self.trajectory_ix[None]]
 
         self.phantom.set_state_from_outside(
             pos=self.phantom_centroid_pose[:3],
             ori=self.phantom_centroid_pose[3:],
             vel=[0.0, 0.0, 0.0],
-            state_dict=state_dict,
+            state_dicts=state_dicts,
         )
         sensor_dome_tip_initial_pose = self.trajectories[self.trajectory_ix[None], 0].to_numpy()
         self.vitactip.set_up_pose(sensor_dome_tip_initial_pose)
@@ -813,6 +869,52 @@ class Contact:
         )
         self.phantom_initial_position[0] = ti.Vector(self.phantom_centroid_pose[:3])
     
+    def set_trajectories(self, trajectories_python_arr):
+        max_trajectory_length = self.trajectories.shape[1]
+        num_trajectories = len(trajectories_python_arr)
+        
+        # Create a zero-initialized array for padded trajectories
+        trajectories_np = np.zeros((num_trajectories, max_trajectory_length, 7), dtype=np.float32)
+        
+        # Create an array to store the actual length of each trajectory
+        trajectory_lengths = np.zeros(num_trajectories, dtype=np.int32)
+        
+        # Fill in the actual trajectory data
+        for i, trajectory in enumerate(trajectories_python_arr):
+            traj_len = min(len(trajectory), max_trajectory_length)
+            trajectory_lengths[i] = traj_len
+            trajectories_np[i, :traj_len] = np.array(trajectory[:traj_len])
+        
+        self.trajectories.from_numpy(trajectories_np)
+        self.trajectory_lengths.from_numpy(trajectory_lengths)
+    
+    def generate_random_state_dicts(self):
+        state_dicts = []
+        num_veins = random.randint(0, 6)
+        for i in range(num_veins):
+            theta_rand = np.random.uniform(-180, 180)
+            # theta_rand = 0
+
+            cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
+
+            cx = np.random.uniform(*self.sensor_x_range_01)
+            cy = np.random.uniform(*self.sensor_y_range_01)
+            px = SYSTEM_PARAMS.geometry.phantom_x_length
+            py = SYSTEM_PARAMS.geometry.phantom_y_length
+            pd = (px**2 + py**2) ** (1/2)
+            h = np.random.uniform(1/4 * pd, pd)
+            
+            state_dict = {
+                'cx': cx,
+                'cy': cy,
+                'cz': cz_offset,
+                'theta': SYSTEM_PARAMS.geometry.vein.theta + theta_rand,
+                'h': h,
+                'r': SYSTEM_PARAMS.geometry.vein.r
+            }
+            state_dicts.append(state_dict)
+        return state_dicts
+
     @ti.kernel
     def reset_exp_sim_traj(self):
         self.marker_position_exp.fill(-1)
@@ -1199,7 +1301,7 @@ class Contact:
             self.dwell_counter[None] += 1
             if self.dwell_counter[None] >= self.dwell_frames[None]:
                 self.is_dwelling[None] = 0
-                if self.current_target_idx[None] < self.trajectories.shape[1] - 1:
+                if self.current_target_idx[None] < self.trajectory_lengths[self.trajectory_ix[None]] - 1:
                     self.current_target_idx[None] += 1
                     self.pos_error_sum[None] = ti.Vector([0.0, 0.0, 0.0])
                     self.prev_pos_error[None] = ti.Vector([0.0, 0.0, 0.0])
@@ -2168,7 +2270,7 @@ class Contact:
             json.dump(results, f, indent=4, cls=ScientificNotationEncoder)
     
     def set_dt(self, verbose=False):
-        if self.state_dicts[self.trajectory_ix[None]]['tumour_present']:
+        if len(self.state_dicts[self.trajectory_ix[None]]) > 0:
             tumour_modulus = self.phantom.youngs_modulus[1]
         else:
             tumour_modulus = self.phantom.youngs_modulus[0]
@@ -2207,7 +2309,7 @@ class Contact:
         losses_per_trajectory = []
         for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
             print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
-            for i in range(self.trajectories_np.shape[0]):
+            for i in range(self.trajectories.shape[0]):
             # for i in range(1, 2):
                 print(f'trajectory {i}: {self.trajectory_names[i]}')
                 self.trajectory_ix[None] = i
@@ -2345,9 +2447,10 @@ class Contact:
         self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
+            self.randomise_train_step()
             for i in range(1, 3):
+                self.randomise_contact_params()
                 self.trajectory_ix[None] = i
-                self.randomise()
                 self.set_up_initial_positions_state_and_trajectory()
                 self.reset_pid_controller()
                 self.visualisation_reset_scene()

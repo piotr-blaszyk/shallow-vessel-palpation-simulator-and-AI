@@ -249,28 +249,28 @@ class Phantom:
 
     @ti.kernel
     def fix_vein(self):
+        return
         for i in range(self.actual_total_num_particles):
-            if False:
-                if self.titles[i] == 1:
-                    self.is_fixed[i] = 1
+            if self.titles[i] == 1:
+                self.is_fixed[i] = 1
 
     def set_state_from_outside(
-        self, pos, ori, vel, state_dict
+        self, pos, ori, vel, state_dicts
     ):
-        if state_dict['tumour_present']:
-            self.titles.fill(-1)
+        if len(state_dicts) > 0:
+            self.titles.fill(0)
             self.group_cardinality.fill(0)
-            self.set_up_tumour_inclusion(state_dict)
-            self.partition_point_cloud()
+            for state_dict in state_dicts:
+                self.set_up_tumour_inclusion(state_dict)
+                self.partition_point_cloud()
+            self.compute_group_cardinality()
         else:
             self.group_cardinality[0] = self.actual_total_num_particles
             self.group_cardinality[1] = 0
             self.titles.fill(0)
-        self.fix_vein()
         print(
-            f"tumour_present: {state_dict['tumour_present']}, healthy: {self.group_cardinality[0]}, tumour: {self.group_cardinality[1]}"
+            f"tumour_present: {len(state_dicts) > 0}, healthy: {self.group_cardinality[0]}, tumour: {self.group_cardinality[1]}"
         )
-        tumour_particles_absent = self.group_cardinality[1] == 0
         self.set_pose_and_velocity(pos, ori, vel)
         self.initialise_point_cloud()
 
@@ -281,6 +281,14 @@ class Phantom:
         self.cylinder_theta[None] = np.deg2rad(state_dict['theta'])
         self.cylinder_h[None] = state_dict['h']
         self.cylinder_r[None] = state_dict['r']
+
+    @ti.kernel
+    def compute_group_cardinality(self):
+        for i in range(self.actual_total_num_particles):
+            if self.titles[i] == 0:
+                self.group_cardinality[0] += 1
+            elif self.titles[i] == 1:
+                self.group_cardinality[1] += 1
 
     @ti.kernel
     def partition_point_cloud(self):
@@ -300,10 +308,6 @@ class Phantom:
                 <= self.cylinder_r[None] * self.cylinder_r[None]
             ):
                 self.titles[item] = 1
-                self.group_cardinality[1] += 1
-            else:
-                self.titles[item] = 0
-                self.group_cardinality[0] += 1
 
     def set_pose_and_velocity(self, position, orientation, velocity):
         self.initial_position[None] = position
