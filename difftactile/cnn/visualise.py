@@ -14,13 +14,15 @@ class Visualisation:
     def __init__(self):
         pass
 
-    def calculate_iou(self, ground_truth, prediction):
+    @staticmethod
+    def calculate_iou(ground_truth, prediction):
         intersection = np.logical_and(ground_truth, prediction)
         union = np.logical_or(ground_truth, prediction)
         iou_score = np.sum(intersection) / np.sum(union) if np.sum(union) > 0 else 0
         return iou_score
 
-    def create_confusion_matrix_overlay(self, ground_truth, prediction):
+    @staticmethod
+    def create_confusion_matrix_overlay(ground_truth, prediction):
         overlay = np.zeros((*ground_truth.shape, 3))
         
         # True Negative (black)
@@ -56,20 +58,29 @@ class Visualisation:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
 
+        # Initialize video capture
+        video_path = SYSTEM_PARAMS.files.vein_slide_across_extracted_markers
+        video_cap = cv2.VideoCapture(str(video_path))
+        if not video_cap.isOpened():
+            print(f"Error: Could not open video file at {video_path}")
+            return
+
         # Get parameters needed for clip extraction
         w = SYSTEM_PARAMS.fisheye_model.crop_width
         h = SYSTEM_PARAMS.fisheye_model.crop_height
         k = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
         clip_len = SYSTEM_PARAMS.cnn.clip_len
-        dilation = 2
+        dilation = 16
         dilated_clip_len = clip_len * dilation
         n = self.exp_data['markers'].shape[0]
+        m = 0
 
-        while True:
-            # Randomly select start index
-            start_ix = np.random.randint(0, n - dilated_clip_len)
+        while m <= n - dilated_clip_len:
             if frame_num is not None:
                 start_ix = frame_num
+            else:
+                # start_ix = np.random.randint(0, n - dilated_clip_len)
+                start_ix = m
             
             # Get and process clip
             clip = MyDataset.get_clip(h, w, k, self.exp_data, clip_len, dilation, start_ix=start_ix)
@@ -98,7 +109,7 @@ class Visualisation:
                 current_pred = (current_pred * 255).astype(np.uint8)
 
                 # Scale up images by 4x using NEAREST neighbor interpolation
-                scale_factor = 4
+                scale_factor = 2
                 current_image = cv2.resize(current_image, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
                 current_pred = cv2.resize(current_pred, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
 
@@ -106,17 +117,17 @@ class Visualisation:
                 frame_text = f"Frame: {current_frame + 1}/{total_frames} | Start Index: {start_ix}"
                 
                 font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = 1
-                font_thickness = 2
+                font_scale = 0.5  # Reduced from 1.0
+                font_thickness = 1  # Reduced from 2
                 text_color = (255, 255, 255)  # White text
                 
                 # Get text size to position it at the bottom
                 text_size = cv2.getTextSize(frame_text, font, font_scale, font_thickness)[0]
-                text_x = 10
-                text_y = current_image.shape[0] - 20  # 20 pixels from bottom
+                text_x = 5  # Reduced from 10
+                text_y = current_image.shape[0] - 10  # Reduced from 20
                 
                 # Add black background for text visibility
-                padding = 5
+                padding = 3  # Reduced from 5
                 cv2.rectangle(current_image, 
                             (text_x - padding, text_y - text_size[1] - padding),
                             (text_x + text_size[0] + padding, text_y + padding),
@@ -134,16 +145,42 @@ class Visualisation:
                 cv2.imshow('Input Image', current_image)
                 cv2.imshow('Predicted Image', current_pred)
 
+                # Read and display video frame
+                video_cap.set(cv2.CAP_PROP_POS_FRAMES, start_ix + current_frame * dilation)
+                ret, video_frame = video_cap.read()
+                if ret:
+                    # Crop video frame using fisheye model parameters
+                    start_x = SYSTEM_PARAMS.fisheye_model.crop_x
+                    start_y = SYSTEM_PARAMS.fisheye_model.crop_y
+                    crop_width = SYSTEM_PARAMS.fisheye_model.crop_width
+                    crop_height = SYSTEM_PARAMS.fisheye_model.crop_height
+                    
+                    # Crop the frame using the fisheye model parameters
+                    scale_factor = 1/2
+                    video_frame = video_frame[start_y:start_y+crop_height, start_x:start_x+crop_width]
+                    video_frame = cv2.resize(video_frame, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
+                    
+                    # Add the same frame counter text to video frame
+                    cv2.rectangle(video_frame, 
+                                (text_x - padding, text_y - text_size[1] - padding),
+                                (text_x + text_size[0] + padding, text_y + padding),
+                                (0, 0, 0), -1)
+                    cv2.putText(video_frame, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
+                    
+                    cv2.imshow('Video Frame', video_frame)
+
                 # Position windows side by side
-                window_width = current_image.shape[0]
+                window_width = current_image.shape[1]
                 cv2.moveWindow('Input Image', 0, 0)
                 cv2.moveWindow('Predicted Image', window_width + 25, 0)
+                cv2.moveWindow('Video Frame', (window_width + 25) * 2, 0)
 
                 # Handle keyboard input
                 key = cv2.waitKey(0) & 0xFF
                 
                 if key == ord('q'):  # Quit visualization
                     cv2.destroyAllWindows()
+                    video_cap.release()
                     return
                 elif key == ord('k'):  # Next frame
                     current_frame = (current_frame + 1) % total_frames
@@ -152,6 +189,10 @@ class Visualisation:
                 elif key == ord('c'):  # Close current sequence and load next
                     cv2.destroyAllWindows()
                     break
+            m += dilated_clip_len
+        
+        # Clean up
+        video_cap.release()
 
     def visualise(self, mode):
         """
@@ -226,8 +267,8 @@ class Visualisation:
                 current_label = label_seq[current_frame]
                 if mode == 'predictions':
                     current_pred = pred_seq[current_frame]
-                    current_overlay = self.create_confusion_matrix_overlay(current_label, current_pred)
-                    iou_score = self.calculate_iou(current_label, current_pred)
+                    current_overlay = Visualisation.create_confusion_matrix_overlay(current_label, current_pred)
+                    iou_score = Visualisation.calculate_iou(current_label, current_pred)
                 
                 # Normalize images for display
                 current_image = (current_image * 255).astype(np.uint8)
@@ -350,7 +391,7 @@ class Visualisation:
 
 def main():
     v = Visualisation()
-    v.visualize_experiment(136)
+    v.visualize_experiment()
     # v.visualise('predictions')
 
 

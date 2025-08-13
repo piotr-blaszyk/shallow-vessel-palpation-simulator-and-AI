@@ -2342,7 +2342,7 @@ class Contact:
 
     def collect_training_data(self):
         self.clear_temp_images()
-        # self.clear_npz()
+        self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for i in range(1, 3):
@@ -2380,7 +2380,7 @@ class Contact:
                     ):
                         self.record_training_data_point(j, ts)
                     ts += 1
-                # self.write_training_data_to_file(j*2 + (i-1))
+                self.write_training_data_to_file(j*2 + (i-1))
                 # self.write_training_data_to_file(999)
                 
                 self.reset_loss()

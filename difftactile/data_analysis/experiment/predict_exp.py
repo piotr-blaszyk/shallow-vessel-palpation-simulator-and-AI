@@ -266,7 +266,7 @@ class PredictExp:
     
     def generate_mask_image(self):
         res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
-        threshold = np.percentile(res, 80)
+        threshold = np.percentile(res, 90)
         res_binary = (res > threshold).astype(np.int32)
 
         img = (res_binary * 255).astype(np.uint8)
@@ -288,13 +288,76 @@ class PredictExp:
         player.run()
         self.write_video_to_npz_file()
 
+    def evaluate(self):
+        ground_truth = cv2.imread(SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask, cv2.IMREAD_GRAYSCALE)
+        prediction = cv2.imread(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, cv2.IMREAD_GRAYSCALE)
+        if ground_truth is None:
+            raise ValueError(f"Failed to read ground truth mask from {SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask}")
+        if prediction is None:
+            raise ValueError(f"Failed to read prediction mask from {SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask}")
+        ground_truth = (ground_truth == 255).astype(np.uint8)
+        prediction = (prediction == 255).astype(np.uint8)
+        
+        gt_height, gt_width = ground_truth.shape
+        pred_height, pred_width = prediction.shape
+        scale_x = gt_width // pred_width
+        scale_y = gt_height // pred_height
+        scale_factor = min(scale_x, scale_y)
+        scale_factor = max(1, scale_factor)
+        scaled_prediction = cv2.resize(prediction, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
+        scaled_height, scaled_width = scaled_prediction.shape
+        pad_height = gt_height - scaled_height
+        pad_width = gt_width - scaled_width
+        pad_top = pad_height // 2
+        pad_bottom = pad_height - pad_top
+        pad_left = pad_width // 2
+        pad_right = pad_width - pad_left
+        padded_prediction = np.zeros((gt_height, gt_width), dtype=np.uint8)
+        padded_prediction[pad_top:pad_top+scaled_height, pad_left:pad_left+scaled_width] = scaled_prediction
+        prediction = padded_prediction
+
+        # Convert numpy arrays to PyTorch tensors with correct shape [B, T, H, W]
+        prediction_tensor = torch.from_numpy(prediction).float().unsqueeze(0).unsqueeze(0)
+        ground_truth_tensor = torch.from_numpy(ground_truth).float().unsqueeze(0).unsqueeze(0)
+
+        metrics = SegmentationModel.iou_score(prediction_tensor, ground_truth_tensor)
+        confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth, prediction)
+        print(metrics)
+
+        plt.figure(figsize=(15, 5))
+        plt.subplot(131)
+        plt.imshow(ground_truth, cmap='gray')
+        plt.title('Ground Truth')
+        plt.axis('off')
+        plt.subplot(132)
+        plt.imshow(prediction, cmap='gray')
+        plt.title('Prediction (Scaled & Padded)')
+        plt.axis('off')
+        plt.subplot(133)
+        plt.imshow(confusion_overlay)
+        plt.title(f'Overlay')
+        plt.axis('off')
+        
+        legend_elements = [
+            plt.Rectangle((0, 0), 1, 1, fc='black', label='True Negative'),
+            plt.Rectangle((0, 0), 1, 1, fc='white', label='True Positive'),
+            plt.Rectangle((0, 0), 1, 1, fc='red', label='False Positive'),
+            plt.Rectangle((0, 0), 1, 1, fc='blue', label='False Negative')
+        ]
+        plt.figlegend(handles=legend_elements, loc='center right')
+        plt.tight_layout()
+        plt.savefig(SYSTEM_PARAMS.files.exp_overlay)
+        plt.show()
+        plt.close()
+
     def go(self):
         # self.load_npz()
         # self.compute_all_3d_positions()
         # self.predict_all_clips()
         # self.write_probs_to_npz()
-        self.load_probs_from_npz()
-        self.generate_mask_image()
+        # self.load_probs_from_npz()
+        # self.generate_mask_image()
+        self.evaluate()
 
 
 def main():
