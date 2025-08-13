@@ -302,7 +302,8 @@ class Contact:
         ):
             exp_keypoint = -1.0
             if (
-                self.trajectory_ix[None] == 1
+                False
+                and self.trajectory_ix[None] == 1
                 and start_ix >= 3
             ):
                 target = self.phantom.particles_A[
@@ -1566,6 +1567,9 @@ class Contact:
             shape=(self.phantom.actual_total_num_particles,),
             needs_grad=False,
         )
+        self.num_vein_points = ti.field(
+            dtype=int, shape=(), needs_grad=False
+        )
         self.vein_all_2d_projection = ti.Vector.field(
             2,
             dtype=float,
@@ -1635,6 +1639,7 @@ class Contact:
         self.vein_endpoints_indices.from_numpy(self.vein_endpoints_indices_np)
 
         self.vein_all_indices_np = self.phantom.get_vein_all_indices()
+        self.num_vein_points[None] = self.vein_all_indices_np.shape[0]
         self.visualisation_reset_scene_2_helper(self.vein_all_indices_np)
     
     @ti.kernel
@@ -1667,7 +1672,7 @@ class Contact:
 
     @ti.kernel
     def visualisation_project_2d_vein_all(self):
-        for i in range(self.vein_all_indices_np.shape[0]):
+        for i in range(self.num_vein_points[None]):
             ix = self.vein_all_indices[i]
             point = self.phantom.particles_A[
                 SYSTEM_PARAMS.contact.num_sub_frames - 1,

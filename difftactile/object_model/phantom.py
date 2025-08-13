@@ -51,6 +51,9 @@ class Phantom:
         self.titles = ti.field(
             dtype=int, shape=self.actual_total_num_particles, needs_grad=False
         )
+        self.vein_titles = ti.field(
+            dtype=int, shape=self.actual_total_num_particles, needs_grad=False
+        )
         self.is_fixed = ti.field(
             dtype=int, shape=(self.actual_total_num_particles,), needs_grad=False
         )
@@ -257,12 +260,14 @@ class Phantom:
     def set_state_from_outside(
         self, pos, ori, vel, state_dicts
     ):
+        self.vein_titles.fill(-1)
         if len(state_dicts) > 0:
             self.titles.fill(0)
             self.group_cardinality.fill(0)
-            for state_dict in state_dicts:
+            for i in range(len(state_dicts)):
+                state_dict = state_dicts[i]
                 self.set_up_tumour_inclusion(state_dict)
-                self.partition_point_cloud()
+                self.partition_point_cloud(i)
             self.compute_group_cardinality()
         else:
             self.group_cardinality[0] = self.actual_total_num_particles
@@ -291,7 +296,7 @@ class Phantom:
                 self.group_cardinality[1] += 1
 
     @ti.kernel
-    def partition_point_cloud(self):
+    def partition_point_cloud(self, i: ti.i32):
         for item in range(self.actual_total_num_particles):
             pos = self.particles_B[item]
             px = pos[0] - self.cylinder_cx[None]
@@ -308,6 +313,7 @@ class Phantom:
                 <= self.cylinder_r[None] * self.cylinder_r[None]
             ):
                 self.titles[item] = 1
+                self.vein_titles[item] = i
 
     def set_pose_and_velocity(self, position, orientation, velocity):
         self.initial_position[None] = position
@@ -770,24 +776,6 @@ class Phantom:
         positions = self.particles_A.to_numpy()[f]
         coordinates = positions[keypoint_indices]
         return coordinates
-
-    def get_vein_endpoints_indices(self):
-        points_3d = self.particles_A.to_numpy()[0].astype(float)
-        titles = self.titles.to_numpy().astype(int)
-        
-        mask = titles == 1
-        filtered_points = points_3d[mask]
-
-        if filtered_points.shape[0] == 0:
-            return np.array([-1, -1], dtype=int)
-
-        local_max_y_idx = np.argmax(filtered_points[:, 1])
-        local_min_y_idx = np.argmin(filtered_points[:, 1])
-        original_indices = np.where(mask)[0]
-        original_max_y_idx = original_indices[local_max_y_idx]
-        original_min_y_idx = original_indices[local_min_y_idx]
-        
-        return np.array([original_max_y_idx, original_min_y_idx], dtype=int)
     
     def get_vein_all_indices(self):
         titles = self.titles.to_numpy().astype(int)
