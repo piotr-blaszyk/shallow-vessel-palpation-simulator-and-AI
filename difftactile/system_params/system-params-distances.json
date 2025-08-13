@@ -48,7 +48,8 @@
             "h": 1.000
         },
         "clock_arms_z_min_offset": 0.004,
-        "clock_arms_z_max_offset": 0.006
+        "clock_arms_z_max_offset": 0.006,
+        "biomimetic_tip_length": 0.001
     },
     "visualisation": {
         "camera_offset": 1.0,

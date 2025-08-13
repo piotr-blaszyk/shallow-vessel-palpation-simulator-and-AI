@@ -126,7 +126,8 @@
         "camera_rotation_angle": 1.037e+01,
         "high_dist": 5.000e+00,
         "clock_arms_z_min_offset": 2.000e-02,
-        "clock_arms_z_max_offset": 3.000e-02
+        "clock_arms_z_max_offset": 3.000e-02,
+        "biomimetic_tip_length": 5.000e-03
     },
     "scaling_factor_1": {
         "distance_from_camera_lens_to_outer_shell_surface": 2.000e-02,
