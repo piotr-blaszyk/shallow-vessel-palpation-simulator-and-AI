@@ -6,7 +6,9 @@ from difftactile.main.constants import *
 
 class VisualiseMesh:
     def __init__(self):
-        pass
+        self.load_points_E()
+        self.load_validation_point()
+        self.merge()
     
     def load_points_E(self):
         with open(SYSTEM_PARAMS.files.vitactip_points_E, 'rb') as f:
@@ -27,7 +29,7 @@ class VisualiseMesh:
         print(f'number of nan vertices: {np.sum(np.isnan(self.point_coordinates))}')
     
     def load_deformed_points(self):
-        with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(119), 'rb') as f:
+        with open(SYSTEM_PARAMS.files.deformed_node_coordinates.format(43), 'rb') as f:
             self.point_coordinates = pickle.load(f)
         print(f'number of nan vertices: {np.sum(np.isnan(self.point_coordinates))}')
     
@@ -89,13 +91,10 @@ class VisualiseMesh:
         mesh.compute_vertex_normals()
         mesh = mesh.remove_duplicated_triangles()
         o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
-    
-    def go(self):
-        self.load_deformed_points()
-        self.load_tetrahedra()
-        self.visualise_mesh()
 
 
 if __name__ == '__main__':
     visualise_mesh = VisualiseMesh()
-    visualise_mesh.go()
+    # visualise_mesh.use_dome_surface_points()
+    visualise_mesh.visualise_point_cloud()
+    

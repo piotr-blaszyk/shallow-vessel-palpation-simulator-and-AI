@@ -76,7 +76,7 @@ class Visualisation:
         h = SYSTEM_PARAMS.fisheye_model.crop_height
         k = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
         clip_len = SYSTEM_PARAMS.cnn.clip_len
-        dilation = 2
+        dilation = 8
         dilated_clip_len = clip_len * dilation
         n = self.exp_data['markers'].shape[0]
         m = 0
@@ -397,8 +397,8 @@ class Visualisation:
 
 def main():
     v = Visualisation()
-    v.visualize_experiment(mode='curved')
-    # v.visualise('dataset')
+    # v.visualize_experiment(mode='straight')
+    v.visualise('dataset')
 
 
 if __name__ == "__main__":

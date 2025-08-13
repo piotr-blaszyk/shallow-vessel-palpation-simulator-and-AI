@@ -496,12 +496,10 @@ class Contact:
         self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=True)
         self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=True)
         self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=True)
-
         self.normal_stiffness[None] = SYSTEM_PARAMS.contact.normal_stiffness
         self.normal_damping[None] = SYSTEM_PARAMS.contact.normal_damping
         self.tangential_stiffness[None] = SYSTEM_PARAMS.contact.tangential_stiffness
         self.coulomb_friction_coeff[None] = SYSTEM_PARAMS.contact.coulomb_friction_coeff
-
         self.gradients_printed = False
         self.courant_number = SYSTEM_PARAMS.meta.target_courant_number
         self.retry = False
@@ -776,16 +774,15 @@ class Contact:
         self.trajectories_np[2] = trajectory
         self.trajectories.from_numpy(self.trajectories_np)
 
-        # theta_rand = np.random.uniform(-45, 45)
-        theta_rand = 0
+        theta_rand = np.random.uniform(-45, 45)
+        # theta_rand = 0
 
         cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
         cx_0 = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[0]
         start = trajectory[3][0] - cx_0
         end = trajectory[4][0] - cx_0
 
-        # cx = np.random.uniform(start/2, end/4)
-        cx = 0.0
+        cx = np.random.uniform(start/2, end/4)
         
         state_dict = {
             'tumour_present': True,
@@ -797,7 +794,7 @@ class Contact:
             'r': SYSTEM_PARAMS.geometry.vein.r
         }
         self.state_dicts[1] = state_dict
-        # self.randomise_contact_params()
+        self.randomise_contact_params()
 
     def set_up_initial_positions_state_and_trajectory(self):
         state_dict = self.state_dicts[self.trajectory_ix[None]]
@@ -2345,10 +2342,10 @@ class Contact:
 
     def collect_training_data(self):
         self.clear_temp_images()
-        # self.clear_npz()
+        self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
-            for i in range(1, 2):
+            for i in range(1, 3):
                 self.trajectory_ix[None] = i
                 self.randomise()
                 self.set_up_initial_positions_state_and_trajectory()
@@ -2377,13 +2374,13 @@ class Contact:
                         SYSTEM_PARAMS.contact.num_sub_frames - 1
                     )
                     self.visualisation_update_gui(ts)
-                    # if (
-                    #     self.current_target_idx[None] == 4 
-                    #     and ts % 2 == 0
-                    # ):
-                    #     self.record_training_data_point(j, ts)
+                    if (
+                        self.current_target_idx[None] == 4 
+                        and ts % 2 == 0
+                    ):
+                        self.record_training_data_point(j, ts)
                     ts += 1
-                # self.write_training_data_to_file(j*2 + (i-1))
+                self.write_training_data_to_file(j*2 + (i-1))
                 # self.write_training_data_to_file(999)
                 
                 self.reset_loss()

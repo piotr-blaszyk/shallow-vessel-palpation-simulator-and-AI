@@ -38,7 +38,7 @@
         "gap": 0.001,
         "high_dist": 1.000,
         "phantom_z_length": 0.022,
-        "phantom_x_length": 0.080,
+        "phantom_x_length": 0.160,
         "phantom_y_length": 0.040,
         "distance_from_camera_lens_to_outer_shell_surface": 0.020,
         "sensor_xy_radius": 0.020,
@@ -48,8 +48,7 @@
             "h": 1.000
         },
         "clock_arms_z_min_offset": 0.004,
-        "clock_arms_z_max_offset": 0.006,
-        "biomimetic_tip_length": 0.001
+        "clock_arms_z_max_offset": 0.006
     },
     "visualisation": {
         "camera_offset": 1.0,

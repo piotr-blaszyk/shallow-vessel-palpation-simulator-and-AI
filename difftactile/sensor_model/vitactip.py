@@ -279,9 +279,6 @@ class ViTacTip:
         self.deformed_markers_z = ti.field(
             float, self.num_markers, needs_grad=False
         )
-        self.deformed_markers_3d_A = ti.Vector.field(
-            3, float, self.num_markers, needs_grad=True
-        )
         self.initial_markers_unused = ti.Vector.field(
             2, float, self.num_markers, needs_grad=False
         )
@@ -524,37 +521,28 @@ class ViTacTip:
             interpolated_deformed_pos_2d = ti.Vector([0.0, 0.0])
             interpolated_undeformed_pos_2d = ti.Vector([0.0, 0.0])
             interpolated_deformed_pos_2d_z = 0.0
-            interpolated_deformed_pos_3d_A = ti.Vector([0.0, 0.0, 0.0])
             for neighbor_idx in range(self.marker_interpolation_knn_k):
-                ix = nearest_surface_indices[neighbor_idx]
-                w = interpolation_weights[neighbor_idx]
-                node_ix = self.dome_surface_node_tags[ix]
-                deformed_A = self.vertices_deformed_A[frame_idx, node_ix]
                 interpolated_deformed_pos_2d += (
-                    w * self.projection_2d_dome_surface_nodes_deformed[ix]
+                    interpolation_weights[neighbor_idx]
+                    * self.projection_2d_dome_surface_nodes_deformed[
+                        nearest_surface_indices[neighbor_idx]
+                    ]
                 )
                 interpolated_undeformed_pos_2d += (
-                    w * self.projection_2d_dome_surface_nodes_undeformed[ix]
+                    interpolation_weights[neighbor_idx]
+                    * self.projection_2d_dome_surface_nodes_undeformed[
+                        nearest_surface_indices[neighbor_idx]
+                    ]
                 )
                 interpolated_deformed_pos_2d_z += (
-                    w * self.projection_2d_dome_surface_nodes_deformed_z[ix]
-                )
-                interpolated_deformed_pos_3d_A += (
-                    w * deformed_A
+                    interpolation_weights[neighbor_idx]
+                    * self.projection_2d_dome_surface_nodes_deformed_z[
+                        nearest_surface_indices[neighbor_idx]
+                    ]
                 )
             self.deformed_markers[i] += interpolated_deformed_pos_2d
             self.undeformed_markers[i] = interpolated_undeformed_pos_2d
             self.deformed_markers_z[i] = interpolated_deformed_pos_2d_z
-            self.deformed_markers_3d_A[i] += interpolated_deformed_pos_3d_A
-        for i in range(self.deformed_markers_3d_A.shape[0]):
-            point = self.deformed_markers_3d_A[i]
-            triangle_ix = self.find_closest(point, frame_idx)
-            surface_normal = self.compute_unit_surface_normal(
-                frame_idx, triangle_ix
-            )
-            surface_normal *= SYSTEM_PARAMS.geometry.biomimetic_tip_length
-            point += surface_normal
-            self.deformed_markers[i] = self.project_A_point_2d(point)
 
     @ti.kernel
     def extract_clock_arm_2d_projections(self, frame_idx: ti.i32):
@@ -763,29 +751,6 @@ class ViTacTip:
         return cur_min_idx
 
     @ti.func
-    def compute_unit_surface_normal(
-        self,
-        frame,
-        triangle_index
-    ):
-        vertex1_idx, vertex2_idx, vertex3_idx = self.contact_surface[triangle_index]
-        vertex1_pos = self.vertices_deformed_A[frame, vertex1_idx]
-        vertex2_pos = self.vertices_deformed_A[frame, vertex2_idx]
-        vertex3_pos = self.vertices_deformed_A[frame, vertex3_idx]
-        triangle_normal = ti.math.cross(
-            vertex2_pos - vertex1_pos, vertex3_pos - vertex1_pos
-        )
-        triangle_normal = triangle_normal.normalized(SYSTEM_PARAMS.contact.norm_eps)
-        normal_direction = ti.math.sign(
-            triangle_normal.dot(self.sensor_outward_normal[None])
-        )
-        # triangle_normal points out of the sensor
-        triangle_normal = normal_direction * triangle_normal
-        # surface_normal points into the sensor
-        surface_normal = -1 * triangle_normal
-        return surface_normal
-
-    @ti.func
     def find_sdf(
         self,
         point_position,
@@ -960,7 +925,6 @@ class ViTacTip:
         self.contact_forces_on_vertices.fill(0.0)
         self.total_surface_force.fill(0.0)
         self.deformed_markers.fill(0.0)
-        self.deformed_markers_3d_A.fill(0.0)
         self.deformed_markers_z.fill(0.0)
         self.projection_2d_dome_surface_nodes_deformed.fill(0.0)
         self.projection_2d_dome_surface_nodes_deformed_z.fill(0.0)
@@ -973,7 +937,6 @@ class ViTacTip:
     @ti.kernel
     def clear_grad(self):
         self.deformed_markers.grad.fill(0.0)
-        self.deformed_markers_3d_A.grad.fill(0.0)
         self.vertices_deformed_A.grad.fill(0.0)
         self.vertex_velocities.grad.fill(0.0)
         self.contact_forces_on_vertices.grad.fill(0.0)
