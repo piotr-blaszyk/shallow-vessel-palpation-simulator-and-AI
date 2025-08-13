@@ -20,7 +20,6 @@ class PredictExp:
     def __init__(self):
         self.fisheye_model = FisheyeModel()
         self.synthetic_image_generator = SyntheticImageGenerator()
-        self.marker_tracker = MarkerTracker()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = SegmentationModel()
         self.model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model))
@@ -161,10 +160,10 @@ class PredictExp:
         self.all_positions = all_positions
         print(f"interpolated positions length: {len(self.all_positions)}")
 
-    def write_video_to_npz_file(self):
-        path = SYSTEM_PARAMS.files.exp_video_npz
-        n = len(self.marker_tracker.frame_markers)
-        markers_array, markers_mask = Contact.create_padded_array_with_mask(self.marker_tracker.frame_markers)
+    @staticmethod
+    def write_video_to_npz_file(marker_tracker, path):
+        n = len(marker_tracker.frame_markers)
+        markers_array, markers_mask = Contact.create_padded_array_with_mask(marker_tracker.frame_markers)
         vein_data = [np.array([]) for i in range(n)]
         veins_array, veins_mask = Contact.create_padded_array_with_mask(vein_data)
         np.savez(
@@ -274,19 +273,43 @@ class PredictExp:
         cv2.imwrite(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, img)
     
     def compute_npz(self):
-        self.marker_tracker.extract_frames(
-            SYSTEM_PARAMS.files.vein_slide_across
+        PredictExp.compute_npz_helper(
+            video_in=SYSTEM_PARAMS.files.vein_slide_across,
+            video_out=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers,
+            npz_out=SYSTEM_PARAMS.files.exp_video_npz
         )
-        self.marker_tracker.create_visualization(
-            out_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers,
+    
+    @staticmethod
+    def compute_npz_straight():
+        PredictExp.compute_npz_helper(
+            video_in=SYSTEM_PARAMS.files.video_in_straight,
+            video_out=SYSTEM_PARAMS.files.video_out_straight,
+            npz_out=SYSTEM_PARAMS.files.npz_out_straight
+        )
+
+    @staticmethod
+    def compute_npz_helper(
+        video_in,
+        video_out,
+        npz_out
+    ):
+        marker_tracker = MarkerTracker()
+        marker_tracker.extract_frames(
+            video_in
+        )
+        marker_tracker.create_visualization(
+            out_path=video_out,
             mode="unpaired-markers",
             base_from_file=False
         )
         player = VideoPlayer(
-            in_path=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers
+            in_path=video_out
         )
         player.run()
-        self.write_video_to_npz_file()
+        PredictExp.write_video_to_npz_file(
+            marker_tracker=marker_tracker,
+            path=npz_out
+        )
 
     def evaluate(self):
         ground_truth = cv2.imread(SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask, cv2.IMREAD_GRAYSCALE)
@@ -357,7 +380,9 @@ class PredictExp:
         # self.write_probs_to_npz()
         # self.load_probs_from_npz()
         # self.generate_mask_image()
-        self.evaluate()
+        # self.evaluate()
+        # PredictExp.compute_npz_straight()
+        pass
 
 
 def main():

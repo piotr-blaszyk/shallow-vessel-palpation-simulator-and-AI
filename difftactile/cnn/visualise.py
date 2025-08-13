@@ -42,13 +42,20 @@ class Visualisation:
         overlay[fn_mask] = [0, 0, 1]
         
         return overlay
-
-    def load_exp_npz(self):
-        path = SYSTEM_PARAMS.files.exp_video_npz
-        self.exp_data = np.load(path)
     
-    def visualize_experiment(self, frame_num=None):
-        self.load_exp_npz()
+    def visualize_experiment(
+            self,
+            mode,
+            frame_num=None
+        ):
+        if mode == 'curved': 
+            npz_path = SYSTEM_PARAMS.files.exp_video_npz
+            video_path = SYSTEM_PARAMS.files.vein_slide_across_extracted_markers
+        elif mode == 'straight':
+            npz_path = SYSTEM_PARAMS.files.npz_out_straight
+            video_path = SYSTEM_PARAMS.files.video_out_straight
+
+        self.exp_data = np.load(npz_path)
         
         # Initialize model
         model_path = SYSTEM_PARAMS.files.final_segmentation_model
@@ -59,7 +66,6 @@ class Visualisation:
         model = model.to(device)
 
         # Initialize video capture
-        video_path = SYSTEM_PARAMS.files.vein_slide_across_extracted_markers
         video_cap = cv2.VideoCapture(str(video_path))
         if not video_cap.isOpened():
             print(f"Error: Could not open video file at {video_path}")
@@ -70,7 +76,7 @@ class Visualisation:
         h = SYSTEM_PARAMS.fisheye_model.crop_height
         k = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
         clip_len = SYSTEM_PARAMS.cnn.clip_len
-        dilation = 16
+        dilation = 8
         dilated_clip_len = clip_len * dilation
         n = self.exp_data['markers'].shape[0]
         m = 0
@@ -391,7 +397,7 @@ class Visualisation:
 
 def main():
     v = Visualisation()
-    v.visualize_experiment()
+    v.visualize_experiment(mode='straight')
     # v.visualise('predictions')
 
 
