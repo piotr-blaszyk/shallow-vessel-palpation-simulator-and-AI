@@ -453,22 +453,23 @@ class MyDataset(torch.utils.data.Dataset):
         if points.shape[1] == 0:  # Check if there are any points
             return np.ones((points.shape[0], 0), dtype=bool)  # Return empty mask matching input shape
             
-        # Determine number of points to remove (same for all frames)
+        # Get max number of points that can be removed
         max_k = self.randomly_remove_k[self.difficulty_level]
-        k = random.randint(0, min(max_k, points.shape[1]))
-        if k == 0:
-            return np.ones((points.shape[0], points.shape[1]), dtype=bool)  # Return all True mask
+        
+        # Initialize mask array for all frames
+        mask = np.ones(points.shape[:2], dtype=bool)  # Shape: (n, num_points)
+        
+        # For each frame, randomly remove points
+        for frame_idx in range(points.shape[0]):
+            # Determine number of points to remove for this frame
+            k = random.randint(0, min(max_k, points.shape[1]))
             
-        # Select which points to remove (same indices across all frames)
-        indices_to_remove = random.sample(range(points.shape[1]), k)
+            if k > 0:  # Only modify mask if we're removing points
+                # Select which points to remove for this frame
+                indices_to_remove = random.sample(range(points.shape[1]), k)
+                mask[frame_idx, indices_to_remove] = False
         
-        # Create boolean mask for points to keep
-        mask = np.ones(points.shape[1], dtype=bool)
-        mask[indices_to_remove] = False
-        
-        # Expand mask to match batch dimension
-        # The mask will be the same for all frames in the sequence
-        return np.tile(mask, (points.shape[0], 1))  # Shape: (n, num_points)
+        return mask  # Shape: (n, num_points)
 
     @staticmethod
     def downscale(k, points):

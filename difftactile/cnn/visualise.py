@@ -397,8 +397,8 @@ class Visualisation:
 
 def main():
     v = Visualisation()
-    v.visualize_experiment(mode='straight')
-    # v.visualise('predictions')
+    # v.visualize_experiment(mode='straight')
+    v.visualise('dataset')
 
 
 if __name__ == "__main__":
