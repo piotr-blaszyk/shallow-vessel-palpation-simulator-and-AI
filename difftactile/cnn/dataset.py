@@ -214,7 +214,8 @@ class MyDataset(torch.utils.data.Dataset):
         images, labels_signal_mask = self.augmentation_artificial_vein_signal(
             images, vein_endpoints, vein_endpoints_mask
         )
-        labels_mask &= labels_signal_mask[:, np.newaxis]
+        # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
+        labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
         discrete_angles = [0, 60, 120, 180, 240, 300]
         rotation_angle_deg = random.choice(discrete_angles)
         images = self.augmentation_rotation(images, rotation_angle_deg)
@@ -276,12 +277,8 @@ class MyDataset(torch.utils.data.Dataset):
         return images
 
     @staticmethod
-    def numpy_mask_to_python_array(points_np, mask_np):
-        pass
-
-    @staticmethod
     def generate_markers_image(h, w, points, points_mask):
-        if points.shape[1] == 0:  # Check if there are any points
+        if points.shape[-1] == 0:  # Check if there are any points
             return np.zeros((points.shape[0], h, w), dtype=np.uint8)
             
         # Initialize output array for all frames
@@ -319,7 +316,7 @@ class MyDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def generate_vein_image(h, w, points, points_mask):
-        if points.shape[1] == 0:  # Check if there are any points
+        if points.shape[-1] == 0:  # Check if there are any points
             return np.zeros((points.shape[0], h, w), dtype=np.uint8)
             
         # Initialize output array for all frames
@@ -327,14 +324,19 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Generate image for each frame
         for t in range(points.shape[0]):
-            # Get only valid points according to mask
-            valid_points = points[t][points_mask[t]]
-            if len(valid_points) > 0:
-                # Remove duplicate points
-                contour_vein = SyntheticImageGenerator.alpha_shape(valid_points).astype(np.int32)
-                if len(contour_vein) > 0:
-                    contour_vein_cv = contour_vein.reshape((-1, 1, 2))
-                    cv2.fillPoly(images[t], [contour_vein_cv], color=255)
+            # Process each vein separately
+            for v in range(points.shape[1]):
+                # Get only valid points according to mask for this vein
+                vein_points = points[t, v]
+                vein_mask = points_mask[t, v]
+                valid_points = vein_points[vein_mask]
+                
+                if len(valid_points) > 0:
+                    # Remove duplicate points
+                    contour_vein = SyntheticImageGenerator.alpha_shape(valid_points).astype(np.int32)
+                    if len(contour_vein) > 0:
+                        contour_vein_cv = contour_vein.reshape((-1, 1, 2))
+                        cv2.fillPoly(images[t], [contour_vein_cv], color=255)
                 
         return images
 
@@ -342,7 +344,7 @@ class MyDataset(torch.utils.data.Dataset):
         cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
         cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
         
-        if points.shape[1] == 0:  # Check if there are any points
+        if points.shape[-1] == 0:  # Check if there are any points
             return points
             
         angle_rad = math.radians(angle_degrees)
@@ -365,7 +367,7 @@ class MyDataset(torch.utils.data.Dataset):
         return rotated_points
 
     def uniform_shift(self, points, angle_rad, magnitude):
-        if points.shape[1] == 0:  # Check if there are any points
+        if points.shape[-1] == 0:  # Check if there are any points
             return points
             
         shift_x = magnitude * math.cos(angle_rad)
@@ -377,7 +379,7 @@ class MyDataset(torch.utils.data.Dataset):
         return shifted_points
 
     def shift_radial(self, points, radial_shift):
-        if points.shape[1] == 0:  # Check if there are any points
+        if points.shape[-1] == 0:  # Check if there are any points
             return points
             
         cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
@@ -407,7 +409,7 @@ class MyDataset(torch.utils.data.Dataset):
         return shifted_points
 
     def rotate_xy(self, points, angle_x, angle_y):
-        if points.shape[1] == 0:  # Check if there are any points
+        if points.shape[-1] == 0:  # Check if there are any points
             return points
             
         # Project all points to 3D at once
@@ -450,7 +452,7 @@ class MyDataset(torch.utils.data.Dataset):
         return rotated_points_2d
     
     def randomly_remove(self, points):
-        if points.shape[1] == 0:  # Check if there are any points
+        if points.shape[-1] == 0:  # Check if there are any points
             return np.ones((points.shape[0], 0), dtype=bool)  # Return empty mask matching input shape
             
         # Get max number of points that can be removed
@@ -473,7 +475,7 @@ class MyDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def downscale(k, points):
-        if points.shape[1] == 0:  # Check if there are any points
+        if points.shape[-1] == 0:  # Check if there are any points
             return points, np.ones((points.shape[0], 0), dtype=bool)  # Return empty mask matching input shape
             
         points, mask = SyntheticImageGenerator.crop(points)
@@ -481,10 +483,13 @@ class MyDataset(torch.utils.data.Dataset):
         return points, mask
 
     def augmentation_artificial_vein_signal(self, clip_points, clip_vein_endpoints, clip_vein_endpoints_mask):
-        valid_frames_mask = np.all(clip_vein_endpoints_mask, axis=1)
+        # Now clip_vein_endpoints_mask is (num_frames, num_veins, num_endpoints)
+        # We want a frame to be valid if any vein has valid endpoints
+        valid_frames_mask = np.any(np.all(clip_vein_endpoints_mask, axis=2), axis=1)
+        vein_visible_mask = np.ones(clip_points.shape[0], dtype=bool)
 
         if not np.any(valid_frames_mask):
-            return clip_points, np.ones(clip_points.shape[0], dtype=bool)
+            return clip_points, vein_visible_mask
         
         # Find runs of True values
         # Add sentinel values to handle edge cases
@@ -530,41 +535,43 @@ class MyDataset(torch.utils.data.Dataset):
 
         for j in range(start_idx, end_idx):
             points = clip_points[j]
-            vein_endpoints = clip_vein_endpoints[j]
             centre = np.mean(points, axis=0)
             max_dist = np.max(np.linalg.norm(points - centre, axis=1))
             x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
-            
-            a, b, c = Contact.line_equation(
-                vein_endpoints
-            )
+            frame_vein_endpoints = clip_vein_endpoints[j]  # Now shape (num_veins, 2, 2)
+            frame_vein_endpoints_mask = clip_vein_endpoints_mask[j]  # Now shape (num_veins, 2)
 
-            a2, b2, c2 = Contact.line_point_to_line_pass_through_point(
-                a, b, c, centre
-            )
+            # Only process veins that have valid endpoints
+            valid_veins = np.all(frame_vein_endpoints_mask, axis=1)
+            
+            for k in range(frame_vein_endpoints.shape[0]):
+                if not valid_veins[k]:
+                    continue
+                    
+                vein_endpoints = frame_vein_endpoints[k]
+                a, b, c = Contact.line_equation(
+                    vein_endpoints
+                )
+                a2, b2, c2 = Contact.line_point_to_line_pass_through_point(
+                    a, b, c, centre
+                )
 
-            # Vectorized computation of distances and vectors for all points
-            vec_vein_trajectory = Contact.vector_point_to_line(a2, b2, c2, points)  # Shape: (N, 2)
-            dist_from_vein_trajectory = np.linalg.norm(vec_vein_trajectory, axis=1)  # Shape: (N,)
-            centre_ratio = np.maximum(0, 1 - decay_c * (dist_from_vein_trajectory / max_dist))  # Shape: (N,)
-            
-            vec = Contact.vector_point_to_line(a, b, c, points)  # Shape: (N, 2)
-            x = np.linalg.norm(vec, axis=1)  # Shape: (N,)
-            
-            # Calculate displacement using vectorized operations
-            displacement = np.zeros_like(x)
-            mask1 = (0 < x) & (x < x_0)
-            mask2 = (x_0 <= x) & (x < 2 * x_0)
-            displacement[mask1] = x[mask1]
-            displacement[mask2] = x_0 - (x[mask2] - x_0)
-            
-            # Apply displacement where needed
-            mask = displacement > 0
-            if np.any(mask):
-                vec_normalized = vec[mask] / x[mask, np.newaxis]
-                points[mask] = points[mask] + vec_normalized * displacement[mask, np.newaxis] * disp_c * centre_ratio[mask, np.newaxis]
-            
+                for i in range(len(points)):
+                    vec_vein_trajectory = Contact.vector_point_to_line(a2, b2, c2, points[i])
+                    dist_from_vein_trajectory = np.linalg.norm(vec_vein_trajectory)
+                    centre_ratio = max(0, 1 - decay_c * (dist_from_vein_trajectory / max_dist))
+                    vec = Contact.vector_point_to_line(a, b, c, points[i])
+                    x = np.linalg.norm(vec)
+                    displacement = 0.0
+                    if 0 < x < x_0:
+                        displacement = x
+                    elif x_0 <= x < 2 * x_0:
+                        displacement = x_0 - (x - x_0)
+                    if displacement > 0:
+                        vec_normalized = vec / x
+                        points[i] = points[i] + vec_normalized * displacement * disp_c * centre_ratio
             clip_points[j] = points
 
-        return clip_points, np.ones(clip_points.shape[0], dtype=bool)
+        return clip_points, vein_visible_mask
+    
         
