@@ -45,7 +45,7 @@
         "hard_plastic": {
             "density": 1150,
             "poissons_ratio": 2.700e-01,
-            "youngs_modulus": 8.000e+04
+            "youngs_modulus": 1.200e+04
         },
         "fixed_points_z_ratio": 1.000e-01,
         "fix_bottom_points": 1,
@@ -139,7 +139,9 @@
         "distance_scaling_factor": 5.000e+00,
         "youngs_modulus_scaling_factor": 1.000e+00,
         "px_dist_adjacent_markers": 3.812e+01,
-        "max_num_veins": 6
+        "max_num_veins": 6,
+        "num_trajectories": 4,
+        "max_num_trajectory_points": 1000
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,

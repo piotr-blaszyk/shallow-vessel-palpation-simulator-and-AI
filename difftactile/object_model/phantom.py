@@ -324,7 +324,7 @@ class Phantom:
                 self.titles[item] = 1
                 self.vein_titles[item] = i
                 vein_particle_ix = self.vein_counts[i]
-                self.vein_indices[vein_particle_ix] = item
+                self.vein_indices[i, vein_particle_ix] = item
                 self.vein_counts[i] += 1
 
     def set_pose_and_velocity(self, position, orientation, velocity):

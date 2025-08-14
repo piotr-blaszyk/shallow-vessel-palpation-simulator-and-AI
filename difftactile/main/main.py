@@ -126,9 +126,9 @@ class Contact:
         self.training_data_collection_initialise()
     
     def compute_sensor_bounds(self):
-        _min = SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex[:2]
-        _mid = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[:2]
-        phantom_r = abs(_mid - _min)
+        _min = np.array(SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex[:2])
+        _mid = np.array(SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[:2])
+        phantom_r = np.abs(_mid - _min)
         _max = _min + phantom_r * 2
         sensor_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
         sensor_min = _min + sensor_r
@@ -656,8 +656,13 @@ class Contact:
         self.validation_point_3d_A = ti.Vector.field(
             3, dtype=float, shape=(), needs_grad=False
         )
-        self.trajectories = ti.Vector.field(7, dtype=float, shape=(4, 1_000), needs_grad=False)
-        self.trajectory_lengths = ti.field(4, dtype=int, shape=(), needs_grad=False)
+        self.num_trajectories = SYSTEM_PARAMS.meta.num_trajectories
+        self.max_num_trajectory_points = SYSTEM_PARAMS.meta.max_num_trajectory_points
+        self.trajectories = ti.Vector.field(7, dtype=float, shape=(
+            self.num_trajectories,
+            self.max_num_trajectory_points
+        ), needs_grad=False)
+        self.trajectory_lengths = ti.field(dtype=int, shape=(self.num_trajectories,), needs_grad=False)
 
     def set_up_keypoints(self):
         self.keypoint_indices = np.concatenate(
@@ -773,8 +778,6 @@ class Contact:
         slide_r = og_r
         srq = slide_r.as_quat()
 
-        srq = self.get_random_slide_params()
-
         press_depth_surface = SYSTEM_PARAMS.geometry.gap
         press_depth_1 = press_depth_surface + SYSTEM_PARAMS.trajectory.press_depth_1
         if True:
@@ -873,18 +876,15 @@ class Contact:
         self.phantom_initial_position[0] = ti.Vector(self.phantom_centroid_pose[:3])
     
     def set_trajectories(self, trajectories_python_arr):
-        max_trajectory_length = self.trajectories.shape[1]
-        num_trajectories = len(trajectories_python_arr)
-        
         # Create a zero-initialized array for padded trajectories
-        trajectories_np = np.zeros((num_trajectories, max_trajectory_length, 7), dtype=np.float32)
+        trajectories_np = np.zeros((self.num_trajectories, self.max_num_trajectory_points, 7), dtype=np.float32)
         
         # Create an array to store the actual length of each trajectory
-        trajectory_lengths = np.zeros(num_trajectories, dtype=np.int32)
+        trajectory_lengths = np.zeros(self.num_trajectories, dtype=int)
         
         # Fill in the actual trajectory data
         for i, trajectory in enumerate(trajectories_python_arr):
-            traj_len = min(len(trajectory), max_trajectory_length)
+            traj_len = min(len(trajectory), self.max_num_trajectory_points)
             trajectory_lengths[i] = traj_len
             trajectories_np[i, :traj_len] = np.array(trajectory[:traj_len])
         
@@ -1587,7 +1587,7 @@ class Contact:
         self.vein_exp_vis_all = ti.Vector.field(
             3, dtype=float, shape=(self.exp_vein_3d_coords_E_all.shape[0],), needs_grad=False
         )
-        self.num_keypoints = 8
+        self.num_keypoints = 3
         self.key_points = ti.Vector.field(
             3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False
         )
@@ -1869,11 +1869,7 @@ class Contact:
         key_points_per_vertex_color_npy = np.tile(
             [1.0, 0.0, 0.0], (self.num_keypoints, 1)
         )
-        key_points_per_vertex_color_npy[6:8, :] = clock_arm_points_per_vertex_color_npy
-        if False:
-            key_points_per_vertex_color_npy[8, :] = np.array([
-                [0, 1, 1]
-            ], dtype=float)
+        key_points_per_vertex_color_npy[1:3, :] = clock_arm_points_per_vertex_color_npy
         self.key_points_per_vertex_color.from_numpy(key_points_per_vertex_color_npy)
 
     def create_transition_array_vectorized(self, n):
@@ -1910,7 +1906,7 @@ class Contact:
         vein_exp_vis_all = self.vein_exp_vis_all.to_numpy()
         validation_point = self.validation_point_3d_A.to_numpy()
         self.keypoint_coords = np.vstack(
-            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms)
+            (vitactip_bottom, vitactip_clock_arms)
         )
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
