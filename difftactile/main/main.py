@@ -156,8 +156,10 @@ class Contact:
 
     def training_data_collection_initialise(self):
         self.marker_data = []
-        self.vein_all_points_data = []
+        self.vein_data = []
+        self.vein_mask_data = []
         self.vein_endpoints_data = []
+        self.vein_endpoints_mask_data = []
         self.vein_cx_A = None
         self.target_3_ts = 12
         self.target_4_ts = 226
@@ -1383,26 +1385,79 @@ class Contact:
         
         markers_mask = Contact.compute_mask(h, w, markers)
 
-        vein = self.vein_all_2d_projection.to_numpy()[:self.vein_all_indices_np.shape[0]]
-        self.vein_all_points_data.append(vein)
-        vein_full_img = Contact.compute_mask(h, w, vein)
-        # vein = SyntheticImageGenerator.filter_points(w, h, cx, cy, r, vein)
-        vein = Contact.filter_using_mask(markers_mask, vein)
-        vein_img = Contact.compute_mask(h, w, vein)
-
-        self.move_og_resolution()
-        vein_endpoints = self.vein_endpoints_2d_projection.to_numpy()
-        self.move_ti_resolution()
-        if np.any(np.isclose(vein_endpoints, -1, atol=1e-6)):
-            vein_endpoints = np.array([])
-        self.vein_endpoints_data.append(vein_endpoints)
+        vein = self.vein_2d_projection.to_numpy()
+        vein_counts = self.phantom.vein_counts.to_numpy()
+        vein_python_arr = []
+        for i in range(vein.shape[0]):
+            num_points = vein_counts[i]
+            vein_python_arr.append(
+                vein[i, :num_points]
+            )
+        vein = vein_python_arr
+        vein_np, vein_mask = Contact.create_padded_array_with_mask(vein)
+        self.vein_data.append(vein_np)
+        self.vein_mask_data.append(vein_mask)
+        vein_endpoints_python_arr = []
+        for i in range(len(vein)):
+            single_vein = vein[i]
+            single_endpoints = Contact.fit_straight_line_and_return_endpoints(single_vein)
+            vein_endpoints_python_arr.append(single_endpoints)
+        vein_endpoints_np, vein_endpoints_mask = Contact.create_padded_array_with_mask(vein_endpoints_python_arr)
+        self.vein_endpoints_data.append(vein_endpoints_np)
+        self.vein_endpoints_mask_data.append(vein_endpoints_mask)
 
         if training_iteration == 0:
             cv2.imwrite(contact_file, markers_mask)
             cv2.imwrite(markers_file, markers_img)
-            cv2.imwrite(vein_file, vein_img)
-            cv2.imwrite(vein_full_file, vein_full_img)
     
+    @staticmethod
+    def fit_straight_line_and_return_endpoints(points):
+        """
+        Fit a straight line to points and return the endpoints.
+        
+        Args:
+            points: numpy array of shape (num_points, 2)
+            
+        Returns:
+            numpy array of shape (2, 2) containing the two endpoints
+        """
+        if len(points) < 2:
+            foo = -np.ones(shape=(0, 2), dtype=float)
+            return foo
+        
+        # Convert to numpy array if not already
+        points = np.array(points, dtype=np.float64)
+        
+        # Center the points
+        centroid = np.mean(points, axis=0)
+        centered_points = points - centroid
+        
+        # Use PCA to find the best fitting line direction
+        # The first principal component gives us the line direction
+        cov_matrix = np.cov(centered_points.T)
+        eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
+        
+        # The eigenvector corresponding to the largest eigenvalue
+        # gives us the direction of the line
+        line_direction = eigenvectors[:, -1]
+        
+        # Project all points onto the line
+        # For each point, compute the scalar projection onto the line direction
+        projections_scalar = np.dot(centered_points, line_direction)
+        
+        # Find the indices of points with minimum and maximum projections
+        min_idx = np.argmin(projections_scalar)
+        max_idx = np.argmax(projections_scalar)
+        
+        # Compute the actual projected points on the line
+        min_projection = centroid + projections_scalar[min_idx] * line_direction
+        max_projection = centroid + projections_scalar[max_idx] * line_direction
+        
+        # Return the two endpoints
+        endpoints = np.array([min_projection, max_projection])
+        
+        return endpoints
+
     @staticmethod
     def compute_mask(h, w, points):
         res = np.zeros((h, w), dtype=np.uint8)
@@ -1432,8 +1487,10 @@ class Contact:
         path = f'{directory}/{file}'
 
         markers_array, markers_mask = Contact.create_padded_array_with_mask(self.marker_data)
-        veins_array, veins_mask = Contact.create_padded_array_with_mask(self.vein_all_points_data)
-        vein_endpoints_array, vein_endpoints_mask = Contact.create_padded_array_with_mask(self.vein_endpoints_data)
+        veins_array = np.array(self.vein_data)
+        veins_mask = np.array(self.vein_mask_data)
+        vein_endpoints_array = np.array(self.vein_endpoints_data)
+        vein_endpoints_mask = np.array(self.vein_endpoints_mask_data)
 
         np.savez(
             path,
@@ -1446,8 +1503,10 @@ class Contact:
         )
         
         self.marker_data = []
-        self.vein_all_points_data = []
+        self.vein_data = []
+        self.vein_mask_data = []
         self.vein_endpoints_data = []
+        self.vein_endpoints_mask_data = []
 
     @staticmethod
     def create_padded_array_with_mask(data_list):
@@ -1551,17 +1610,6 @@ class Contact:
             shape=(self.phantom.actual_total_num_particles,),
             needs_grad=False,
         )
-        self.vein_endpoints_2d_projection = ti.Vector.field(
-            2,
-            dtype=float,
-            shape=(2,),
-            needs_grad=False,
-        )
-        self.vein_endpoints_indices = ti.field(
-            dtype=int,
-            shape=(2,),
-            needs_grad=False,
-        )
         self.vein_all_indices = ti.field(
             dtype=int,
             shape=(self.phantom.actual_total_num_particles,),
@@ -1570,10 +1618,13 @@ class Contact:
         self.num_vein_points = ti.field(
             dtype=int, shape=(), needs_grad=False
         )
-        self.vein_all_2d_projection = ti.Vector.field(
+        self.vein_2d_projection = ti.Vector.field(
             2,
             dtype=float,
-            shape=(self.phantom.actual_total_num_particles,),
+            shape=(
+                SYSTEM_PARAMS.meta.max_num_veins,
+                self.phantom.actual_total_num_particles
+            ),
             needs_grad=False,
         )
         self.sim_markers_undeformed = ti.Vector.field(
@@ -1632,15 +1683,10 @@ class Contact:
         self.tumour_points.fill(0)
         self.vein_endpoints_2d_projection.fill(-1)
         self.vein_all_indices.fill(-1)
-        self.vein_all_2d_projection.fill(-1)
+        self.vein_2d_projection.fill(-1)
     
     def visualisation_reset_scene_2(self):
-        self.vein_endpoints_indices_np = self.phantom.get_vein_endpoints_indices()
-        self.vein_endpoints_indices.from_numpy(self.vein_endpoints_indices_np)
-
-        self.vein_all_indices_np = self.phantom.get_vein_all_indices()
-        self.num_vein_points[None] = self.vein_all_indices_np.shape[0]
-        self.visualisation_reset_scene_2_helper(self.vein_all_indices_np)
+        pass
     
     @ti.kernel
     def visualisation_reset_scene_2_helper(self, vein_all_indices_np: ti.types.ndarray()):
@@ -1671,16 +1717,18 @@ class Contact:
                 self.vein_endpoints_2d_projection[i] = projection_2d / self.tactile_image_resolution[None]
 
     @ti.kernel
-    def visualisation_project_2d_vein_all(self):
-        for i in range(self.num_vein_points[None]):
-            ix = self.vein_all_indices[i]
-            point = self.phantom.particles_A[
-                SYSTEM_PARAMS.contact.num_sub_frames - 1,
-                ix
-            ]
-            projection_2d = self.vitactip.project_A_point_2d(point)
-            projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
-            self.vein_all_2d_projection[i] = projection_2d
+    def visualisation_project_vein_2d(self):
+        for i in range(self.phantom.vein_counts.shape[0]):
+            num_points = self.phantom.vein_counts[i]
+            for j in range(num_points):
+                vein_ix = self.phantom.vein_indices[i, j]
+                point = self.phantom.particles_A[
+                    SYSTEM_PARAMS.contact.num_sub_frames - 1,
+                    vein_ix
+                ]
+                projection_2d = self.vitactip.project_A_point_2d(point)
+                projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
+                self.vein_2d_projection[i, j] = projection_2d
 
     @ti.kernel
     def visualisation_prepare_tactile_readout_data_fp(self):
@@ -1803,7 +1851,7 @@ class Contact:
 
     def visualisation_draw_tactile_readout(self):
         self.visualisation_project_2d_vein_endpoints()
-        self.visualisation_project_2d_vein_all()
+        self.visualisation_project_vein_2d()
         self.vitactip.extract_clock_arm_2d_projections(SYSTEM_PARAMS.contact.num_sub_frames - 1)
         self.visualisation_prepare_clock_arm_points()
         self.tactile_canvas.set_image(self.bg_image)

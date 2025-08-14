@@ -36,6 +36,7 @@ class Phantom:
         self.youngs_modulus[1] += SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus
         self.poissons_ratio[1] += SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio
         self.set_stiffness()
+        self.max_num_veins = SYSTEM_PARAMS.meta.max_num_veins
 
     def load_obj(self):
         obj_loader = ObjLoader(
@@ -53,6 +54,12 @@ class Phantom:
         )
         self.vein_titles = ti.field(
             dtype=int, shape=self.actual_total_num_particles, needs_grad=False
+        )
+        self.vein_indices = ti.field(
+            dtype=int, shape=(self.max_num_veins, self.actual_total_num_particles), needs_grad=False
+        )
+        self.vein_counts = ti.field(
+            dtype=int, shape=(self.max_num_veins,), needs_grad=False
         )
         self.is_fixed = ti.field(
             dtype=int, shape=(self.actual_total_num_particles,), needs_grad=False
@@ -261,6 +268,8 @@ class Phantom:
         self, pos, ori, vel, state_dicts
     ):
         self.vein_titles.fill(-1)
+        self.vein_indices.fill(-1)
+        self.vein_counts.fill(0)
         if len(state_dicts) > 0:
             self.titles.fill(0)
             self.group_cardinality.fill(0)
@@ -314,6 +323,9 @@ class Phantom:
             ):
                 self.titles[item] = 1
                 self.vein_titles[item] = i
+                vein_particle_ix = self.vein_counts[i]
+                self.vein_indices[vein_particle_ix] = item
+                self.vein_counts[i] += 1
 
     def set_pose_and_velocity(self, position, orientation, velocity):
         self.initial_position[None] = position
@@ -776,8 +788,4 @@ class Phantom:
         positions = self.particles_A.to_numpy()[f]
         coordinates = positions[keypoint_indices]
         return coordinates
-    
-    def get_vein_all_indices(self):
-        titles = self.titles.to_numpy().astype(int)
-        return np.where(titles == 1)[0]
     
