@@ -893,7 +893,7 @@ class Contact:
     
     def generate_random_state_dicts(self):
         state_dicts = []
-        num_veins = random.randint(0, 6)
+        num_veins = random.randint(0, SYSTEM_PARAMS.meta.max_num_veins)
         for i in range(num_veins):
             theta_rand = np.random.uniform(-180, 180)
             # theta_rand = 0
@@ -1382,7 +1382,6 @@ class Contact:
         for point in markers:
             x, y = int(point[0]), int(point[1])
             cv2.circle(markers_img, (x, y), radius=1, color=255, thickness=-1)
-        
         markers_mask = Contact.compute_mask(h, w, markers)
 
         vein = self.vein_2d_projection.to_numpy()
@@ -1588,7 +1587,7 @@ class Contact:
         self.vein_exp_vis_all = ti.Vector.field(
             3, dtype=float, shape=(self.exp_vein_3d_coords_E_all.shape[0],), needs_grad=False
         )
-        self.num_keypoints = 8 + self.vein_exp_vis_all.shape[0]
+        self.num_keypoints = 8
         self.key_points = ti.Vector.field(
             3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False
         )
@@ -1609,14 +1608,6 @@ class Contact:
             dtype=float,
             shape=(self.phantom.actual_total_num_particles,),
             needs_grad=False,
-        )
-        self.vein_all_indices = ti.field(
-            dtype=int,
-            shape=(self.phantom.actual_total_num_particles,),
-            needs_grad=False,
-        )
-        self.num_vein_points = ti.field(
-            dtype=int, shape=(), needs_grad=False
         )
         self.vein_2d_projection = ti.Vector.field(
             2,
@@ -1673,25 +1664,11 @@ class Contact:
         )
         self.interpolation_valid[None] = 1
 
-    def visualisation_reset_scene(self):
-        self.visualisation_reset_scene_1()
-        self.visualisation_reset_scene_2()
-
     @ti.kernel
-    def visualisation_reset_scene_1(self):
+    def visualisation_reset_scene(self):
         self.healthy_tissue_points.fill(0)
         self.tumour_points.fill(0)
-        self.vein_endpoints_2d_projection.fill(-1)
-        self.vein_all_indices.fill(-1)
         self.vein_2d_projection.fill(-1)
-    
-    def visualisation_reset_scene_2(self):
-        pass
-    
-    @ti.kernel
-    def visualisation_reset_scene_2_helper(self, vein_all_indices_np: ti.types.ndarray()):
-        for i in range(vein_all_indices_np.shape[0]):
-            self.vein_all_indices[i] = vein_all_indices_np[i]
 
     @ti.kernel
     def visualisation_draw_3d_scene(self, f: ti.i32):
@@ -1702,19 +1679,6 @@ class Contact:
                 self.tumour_points[p] = self.phantom.particles_A[f, p]
         for p in range(self.vitactip.num_vertices):
             self.sensor_points[p] = self.vitactip.vertices_deformed_A[f, p]
-
-    @ti.kernel
-    def visualisation_project_2d_vein_endpoints(self):
-        for i in range(self.vein_endpoints_indices.shape[0]):
-            ix = self.vein_endpoints_indices[i]
-            if ix != -1:
-                point = self.phantom.particles_A[
-                    SYSTEM_PARAMS.contact.num_sub_frames - 1,
-                    ix
-                ]
-                projection_2d = self.vitactip.project_A_point_2d(point)
-                projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
-                self.vein_endpoints_2d_projection[i] = projection_2d / self.tactile_image_resolution[None]
 
     @ti.kernel
     def visualisation_project_vein_2d(self):
@@ -1759,8 +1723,6 @@ class Contact:
                 self.sim_markers_deformed_filtered[i] *= self.tactile_image_resolution[None]
         for i in range(self.sim_markers_deformed.shape[0]):
             self.sim_markers_deformed[i] *= self.tactile_image_resolution[None]
-        for i in range(self.vein_endpoints_2d_projection.shape[0]):
-            self.vein_endpoints_2d_projection[i] *= self.tactile_image_resolution[None]
 
     @ti.kernel
     def move_ti_resolution(self):
@@ -1769,8 +1731,6 @@ class Contact:
                 self.sim_markers_deformed_filtered[i] /= self.tactile_image_resolution[None]
         for i in range(self.sim_markers_deformed.shape[0]):
             self.sim_markers_deformed[i] /= self.tactile_image_resolution[None]
-        for i in range(self.vein_endpoints_2d_projection.shape[0]):
-            self.vein_endpoints_2d_projection[i] /= self.tactile_image_resolution[None]
 
     @ti.kernel
     def visualisation_prepare_tactile_readout_data_bp(self):
@@ -1850,21 +1810,15 @@ class Contact:
         return a_new, b_new, c_new
 
     def visualisation_draw_tactile_readout(self):
-        self.visualisation_project_2d_vein_endpoints()
         self.visualisation_project_vein_2d()
         self.vitactip.extract_clock_arm_2d_projections(SYSTEM_PARAMS.contact.num_sub_frames - 1)
         self.visualisation_prepare_clock_arm_points()
         self.tactile_canvas.set_image(self.bg_image)
         self.visualisation_prepare_tactile_readout_data_fp()
         if (
-            self.fp_bp[None] == 0
-            or SYSTEM_PARAMS.visualisation.visualise_exp_markers_during_bp == 0
+            self.fp_bp[None] == 1
+            and SYSTEM_PARAMS.visualisation.visualise_exp_markers_during_bp == 1
         ):
-            if False:
-                self.tactile_canvas.lines(
-                    self.arrow_line_vertices, color=(0, 1, 0), width=0.01
-                )
-        else:
             self.visualisation_prepare_tactile_readout_data_bp()
             self.tactile_canvas.circles(
                 self.exp_marker_points, radius=0.01, color=(0, 1, 0)
@@ -1876,11 +1830,6 @@ class Contact:
             self.clock_arm_points,
             radius=0.02,
             per_vertex_color=self.clock_arm_points_per_vertex_color,
-        )
-        self.tactile_canvas.circles(
-            self.vein_endpoints_2d_projection,
-            radius=1e-2,
-            color=(1, 1, 0),
         )
         self.tactile_window.show()
 
@@ -1925,7 +1874,6 @@ class Contact:
             key_points_per_vertex_color_npy[8, :] = np.array([
                 [0, 1, 1]
             ], dtype=float)
-        key_points_per_vertex_color_npy[8:, :] = self.create_transition_array_vectorized(self.vein_exp_vis_all.shape[0])
         self.key_points_per_vertex_color.from_numpy(key_points_per_vertex_color_npy)
 
     def create_transition_array_vectorized(self, n):
@@ -1961,12 +1909,8 @@ class Contact:
         vein_exp_vis = self.vein_exp_vis.to_numpy()
         vein_exp_vis_all = self.vein_exp_vis_all.to_numpy()
         validation_point = self.validation_point_3d_A.to_numpy()
-        vein_point = self.phantom.particles_A[
-            SYSTEM_PARAMS.contact.num_sub_frames - 1,
-            self.vein_endpoints_indices[0]
-        ]
         self.keypoint_coords = np.vstack(
-            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms, vein_exp_vis_all)
+            (vitactip_bottom, trajectory_keypoints, vitactip_clock_arms)
         )
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
