@@ -755,10 +755,9 @@ class Contact:
         assert(len(trajectories_python_array) == len(self.state_dicts))
 
     def randomise_train_step(self):
-        trajectories_python_array = [
-            self.get_random_grid_search_trajectory(),
-            self.get_fully_random_trajectory()
-        ]
+        t1 = self.get_random_grid_search_trajectory()
+        t2 = self.get_fully_random_trajectory()
+        trajectories_python_array = [t1, t2]
         self.set_trajectories(trajectories_python_array)
 
         self.state_dicts[0] = self.generate_random_state_dicts()
@@ -893,7 +892,7 @@ class Contact:
     
     def generate_random_state_dicts(self):
         state_dicts = []
-        num_veins = random.randint(0, SYSTEM_PARAMS.meta.max_num_veins)
+        num_veins = random.randint(4, SYSTEM_PARAMS.meta.max_num_veins)
         for i in range(num_veins):
             theta_rand = np.random.uniform(-180, 180)
             # theta_rand = 0
@@ -2441,7 +2440,7 @@ class Contact:
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             self.randomise_train_step()
-            for i in range(1, 3):
+            for i in range(0, 2):
                 self.randomise_contact_params()
                 self.trajectory_ix[None] = i
                 self.set_up_initial_positions_state_and_trajectory()
@@ -2453,8 +2452,7 @@ class Contact:
                 self.set_dt(verbose=True)
                 self.fp()
                 self.print_contact_params()
-                ts = 0
-                while self.last_target_reached[None] != 1:
+                for ts in range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory):
                     self.pid_controller_1()
                     self.pid_controller_2(ts)
                     self.pid_controller_3()
@@ -2475,7 +2473,6 @@ class Contact:
                         and ts % 2 == 0
                     ):
                         self.record_training_data_point(j, ts)
-                    ts += 1
                 self.write_training_data_to_file(j*2 + (i-1))
                 # self.write_training_data_to_file(999)
                 
