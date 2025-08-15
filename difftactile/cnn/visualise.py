@@ -247,8 +247,8 @@ class Visualisation:
                 data_iter = iter(data_loader)
                 continue
 
-            # if label.sum() == 0:
-            #     continue
+            if label.sum() == 0:
+                continue
             # Handle predictions if in prediction mode
             if mode == 'predictions':
                 with torch.no_grad():

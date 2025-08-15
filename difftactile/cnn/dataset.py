@@ -21,11 +21,10 @@ from difftactile.sensor_model.fisheye_model import *
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, data_dir, mode=None):
         super().__init__()
-        self.synthetic_image_generator = SyntheticImageGenerator()
         self.fisheye_model = FisheyeModel()
         self.data_dir = data_dir
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
-        self.clips_per_trajectory = 16
+        self.clips_per_trajectory = 32
         self.mode = mode
         self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
 
@@ -63,7 +62,7 @@ class MyDataset(torch.utils.data.Dataset):
                 if total_frames >= dilated_clip_len:
                     num_possible_starts = total_frames - dilated_clip_len + 1
                     
-                    if False and not self.file_contains_vein(file_path):
+                    if not self.file_contains_vein(file_path):
                         # For files without veins, keep original random sampling
                         start_indices = sorted(random.sample(
                             range(num_possible_starts), 
@@ -79,7 +78,7 @@ class MyDataset(torch.utils.data.Dataset):
                         
                         while clips_found < self.clips_per_trajectory and attempts < max_attempts:
                             start_idx = random.randrange(num_possible_starts)
-                            if self.clip_contains_vein(file_path, start_idx, dilation):
+                            if self.clip_contains_vein(data, start_idx, dilation):
                                 self.clips.append((file_path, start_idx, dilation))
                                 clips_found += 1
                             attempts += 1
@@ -143,17 +142,15 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Extract the trajectory number from the file name
         # Format is "trajectory_XXXX.npz" where XXXX is a 4-digit number
-        trajectory_num = int(file_name.split('_')[1][:4])
+        file_num = int(file_name.split('_')[1][:4])
         
-        # Return True if the number is even, False if odd
-        return trajectory_num % 2 == 0
+        return (file_num % 4) < 2
 
-    def clip_contains_vein(self, file_path, start, dilation):
-        data = np.load(file_path)
+    def clip_contains_vein(self, data, start, dilation):
         markers = data['markers']
         markers_mask = data['markers_mask']
-        labels = data['labels']
-        labels_mask = data['labels_mask']
+        labels = data['vein_polyline']
+        labels_mask = data['vein_polyline_mask']
 
         centre = MyDataset.compute_mean_marker_position(markers, markers_mask)
         
@@ -230,11 +227,11 @@ class MyDataset(torch.utils.data.Dataset):
         w = self.w_crop_small
 
         images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
-        labels, _ = MyDataset.generate_markers_image(
+        labels = MyDataset.generate_vein_image(
             h, 
             w, 
-            labels.reshape(self.clip_len, -1, 2),
-            labels_mask.reshape(self.clip_len, -1)
+            labels,
+            labels_mask
         )  # shape: (T, H, W)
 
         # Convert to float and normalize
@@ -293,28 +290,59 @@ class MyDataset(torch.utils.data.Dataset):
         return images, marker_masks
 
     @staticmethod
-    def draw_point(images, t, point):
+    def draw_point(images, t, point, n=8):
+        """
+        Draw a point as an nxn square with smooth interpolation at the edges.
+        
+        Args:
+            images: Image array of shape (T, H, W)
+            t: Time index
+            point: (x, y) coordinates
+            n: Size of the square (default=4)
+        """
         _, h, w = images.shape
         x, y = point[0], point[1]
-        x0, y0 = int(np.floor(x)), int(np.floor(y))
-        x1, y1 = x0 + 1, y0 + 1
         
-        # Calculate weights for bilinear interpolation
-        wx1, wx0 = x - x0, x1 - x
-        wy1, wy0 = y - y0, y1 - y
+        # Calculate the center of the nxn square
+        center_x = x
+        center_y = y
         
-        # Ensure we don't write outside the image bounds
-        if 0 <= x0 < w and 0 <= y0 < h:
-            images[t, y0, x0] = min(255, images[t, y0, x0] + int(255 * wx0 * wy0))
-        if 0 <= x1 < w and 0 <= y0 < h:
-            images[t, y0, x1] = min(255, images[t, y0, x1] + int(255 * wx1 * wy0))
-        if 0 <= x0 < w and 0 <= y1 < h:
-            images[t, y1, x0] = min(255, images[t, y1, x0] + int(255 * wx0 * wy1))
-        if 0 <= x1 < w and 0 <= y1 < h:
-            images[t, y1, x1] = min(255, images[t, y1, x1] + int(255 * wx1 * wy1))
+        # Calculate corners of the nxn square
+        half_size = n / 2
+        x0 = int(np.floor(center_x - half_size + 0.5))  # Left edge
+        x_end = x0 + n                                   # Right edge
+        y0 = int(np.floor(center_y - half_size + 0.5))  # Top edge
+        y_end = y0 + n                                   # Bottom edge
+        
+        # Calculate weights for smooth interpolation
+        for yi in range(y0, y_end):
+            for xi in range(x0, x_end):
+                if 0 <= xi < w and 0 <= yi < h:
+                    # Calculate distance from point to center
+                    dx = abs(xi + 0.5 - center_x)
+                    dy = abs(yi + 0.5 - center_y)
+                    
+                    # Bilinear weight calculation (1 at center, 0 at edges)
+                    wx = max(0, 1 - dx/(half_size))
+                    wy = max(0, 1 - dy/(half_size))
+                    weight = wx * wy
+                    
+                    # Update pixel value with anti-aliasing
+                    images[t, yi, xi] = min(255, images[t, yi, xi] + int(255 * weight))
 
     @staticmethod
     def generate_vein_image(h, w, points, points_mask):
+        """
+        Generate vein images by drawing polylines fitted to points.
+        
+        Args:
+            h, w: Height and width of output image
+            points: numpy array of shape (num_video_frames, num_points, 2)
+            points_mask: numpy array of shape (num_video_frames, num_points)
+            
+        Returns:
+            numpy array of shape (num_video_frames, h, w) containing binary images
+        """
         if points.shape[-1] == 0:  # Check if there are any points
             return np.zeros((points.shape[0], h, w), dtype=np.uint8)
 
@@ -323,7 +351,6 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Generate image for each frame
         for t in range(points.shape[0]):
-            # Process each vein separately
             for v in range(points.shape[1]):
                 # Get only valid points according to mask for this vein
                 vein_points = points[t, v]
@@ -331,11 +358,14 @@ class MyDataset(torch.utils.data.Dataset):
                 valid_points = vein_points[vein_mask]
                 
                 if len(valid_points) > 0:
-                    # Remove duplicate points
-                    contour_vein = SyntheticImageGenerator.alpha_shape(valid_points, alpha=1e-1).astype(np.int32)
-                    if len(contour_vein) > 0:
-                        contour_vein_cv = contour_vein.reshape((-1, 1, 2))
-                        cv2.fillPoly(images[t], [contour_vein_cv], color=255)
+                    # Convert points to integer coordinates for drawing
+                    line_points = valid_points.astype(np.int32)
+                    
+                    # Draw lines connecting consecutive points
+                    for i in range(len(line_points) - 1):
+                        pt1 = tuple(line_points[i])
+                        pt2 = tuple(line_points[i + 1])
+                        cv2.line(images[t], pt1, pt2, color=255, thickness=5)
                 
         return images
 

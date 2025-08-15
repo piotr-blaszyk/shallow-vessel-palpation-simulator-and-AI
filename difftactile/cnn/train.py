@@ -46,7 +46,7 @@ class LossWeightScheduler(pl.Callback):
 def train():
     start_time = time.perf_counter()
     BATCH_SIZE = 32
-    NUM_EPOCHS = 30
+    NUM_EPOCHS = 4
     NUM_WORKERS = 16
     LR = 1e-3
 
@@ -222,7 +222,7 @@ def choose_optimal_threshold():
 
 
 def main():
-    choose_optimal_threshold()
+    train()
 
 
 if __name__ == "__main__":

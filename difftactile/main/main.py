@@ -119,7 +119,7 @@ class SyntheticImageGenerator:
         Returns:
             numpy array of shape (k, 2) containing evenly sampled points along the polynomial
         """
-        if len(points) < 2 * (n + 1):
+        if len(points) < 3 * (n + 1):
             return -np.ones(shape=(0, 2))
             
         # Extract x and y coordinates
@@ -248,6 +248,7 @@ class Contact:
         self.target_3_ts = 12
         self.target_4_ts = 226
         self.vein_sparse_to_dense_init()
+        self.generate_tumour = False
 
     @ti.kernel
     def fp(self):
@@ -997,6 +998,9 @@ class Contact:
         self.trajectory_lengths.from_numpy(trajectory_lengths)
     
     def generate_random_state_dicts(self):
+        if not self.generate_tumour:
+            return []
+
         state_dicts = []
         num_veins = SYSTEM_PARAMS.meta.max_num_veins
         placed_cy_values = []
@@ -2542,51 +2546,53 @@ class Contact:
         self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
-            self.randomise_train_step()
-            for i in range(0, 2):
-                # self.randomise_contact_params()
-                self.trajectory_ix[None] = i
-                self.set_up_initial_positions_state_and_trajectory()
-                self.vein_sparse_to_dense()
-                self.reset_pid_controller()
-                self.visualisation_reset_scene()
-                self.reset_exp_sim_traj()
-                self.vitactip.extract_markers(0)
-                self.compute_mapping_between_experimental_and_sim_markers()
-                self.set_dt(verbose=True)
-                self.fp()
-                self.print_contact_params()
-                for ts in range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory):
-                    self.pid_controller_1()
-                    self.pid_controller_2(ts)
-                    self.pid_controller_3()
-                    self.vitactip.set_pose_control_1()
-                    self.vitactip.set_pose_control_2()
-                    self.vitactip.set_pose_control_3()
-                    self.forward_pass_common_part(ts)
-                    self.copy_frame()
-                    self.vitactip.extract_markers(
-                        SYSTEM_PARAMS.contact.num_sub_frames - 1
-                    )
-                    self.vitactip.mark_surface_nodes_in_contact(
-                        SYSTEM_PARAMS.contact.num_sub_frames - 1
-                    )
-                    self.visualisation_update_gui(ts)
-                    if (
-                        self.current_target_idx[None] > 2 
-                        and ts % 2 == 0
-                    ):
-                        self.record_training_data_point(j, ts)
-                    if self.last_target_reached[None] == 1:
-                        break
-                self.write_training_data_to_file(j*2 + i)
-                # self.write_training_data_to_file(999)
-                
-                self.reset_loss()
-                self.batch_loss.fill(0.0)
-                self.clear_grad()
-                self.prev_loss[None] = 0.0
-                self.trajectory_loss[None] = 0.0
+            for k in range(0, 2):
+                self.generate_tumour = k == 0
+                self.randomise_train_step()
+                for i in range(0, 2):
+                    self.randomise_contact_params()
+                    self.trajectory_ix[None] = i
+                    self.set_up_initial_positions_state_and_trajectory()
+                    self.vein_sparse_to_dense()
+                    self.reset_pid_controller()
+                    self.visualisation_reset_scene()
+                    self.reset_exp_sim_traj()
+                    self.vitactip.extract_markers(0)
+                    self.compute_mapping_between_experimental_and_sim_markers()
+                    self.set_dt(verbose=True)
+                    self.fp()
+                    self.print_contact_params()
+                    for ts in range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory):
+                        self.pid_controller_1()
+                        self.pid_controller_2(ts)
+                        self.pid_controller_3()
+                        self.vitactip.set_pose_control_1()
+                        self.vitactip.set_pose_control_2()
+                        self.vitactip.set_pose_control_3()
+                        self.forward_pass_common_part(ts)
+                        self.copy_frame()
+                        self.vitactip.extract_markers(
+                            SYSTEM_PARAMS.contact.num_sub_frames - 1
+                        )
+                        self.vitactip.mark_surface_nodes_in_contact(
+                            SYSTEM_PARAMS.contact.num_sub_frames - 1
+                        )
+                        self.visualisation_update_gui(ts)
+                        if (
+                            self.current_target_idx[None] > 2 
+                            and ts % 2 == 0
+                        ):
+                            self.record_training_data_point(j, ts)
+                        if self.last_target_reached[None] == 1:
+                            break
+                    file_num = j * 4 + k * 2 + i
+                    self.write_training_data_to_file(file_num)
+                    
+                    self.reset_loss()
+                    self.batch_loss.fill(0.0)
+                    self.clear_grad()
+                    self.prev_loss[None] = 0.0
+                    self.trajectory_loss[None] = 0.0
                 
             print(
                 f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1} done"

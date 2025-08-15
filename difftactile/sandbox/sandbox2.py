@@ -1,28 +1,20 @@
-# Import necessary libraries
-import cv2
 import numpy as np
+import time
 
-# Read an image
-img = cv2.imread("difftactile/sandbox/image.png")
+npz_path = 'difftactile/output/training_data/pickle/trajectory_0000.npz'
 
-# Define an array of endpoints of triangle
-points = np.array([[150, 450], [450, 150], [150, 150]])
+# Cold load
+start_time = time.perf_counter()
+data = np.load(npz_path)
+end_time = time.perf_counter()
+cold_load_time = end_time - start_time
+print(f"Cold load time: {cold_load_time:.4f} seconds")
 
-# Use fillPoly() function and give input as
-# image, end points,color of polygon
-# Here color of polygon will blue
-cv2.fillPoly(img, pts=[points], color=(255, 0, 0))
+# Hot load
+start_time = time.perf_counter()
+data = np.load(npz_path)
+end_time = time.perf_counter()
+hot_load_time = end_time - start_time
+print(f"Hot load time: {hot_load_time:.4f} seconds")
 
-# points -= np.array([100, 100])
-
-# cv2.fillPoly(img, pts=[points], color=(0, 255, 0))
-
-# Displaying the image
-cv2.imshow("Triangle", img)
-
-# wait for the user to press any key to 
-# exit window
-cv2.waitKey(0)
-
-# Closing all open windows
-cv2.destroyAllWindows()
+print(f"Hot load was {cold_load_time/hot_load_time:.1f}x faster")

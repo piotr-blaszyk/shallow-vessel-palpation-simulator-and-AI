@@ -1,39 +1,97 @@
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from monai.networks.nets import UNet
-from monai.losses import DiceLoss
+from monai.networks.nets import UnetPlusPlus
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
-class SegmentationModel(pl.LightningModule):
-    def __init__(self, lr=1e-3, lr_patience=5, lr_factor=0.5, lr_min=1e-6, dice_weight=0.5, bce_weight=0.5):
+class TverskyLoss(torch.nn.Module):
+    def __init__(self, alpha=0.7, beta=0.3, smooth=1e-6):
+        """
+        Tversky loss for imbalanced data
+        :param alpha: weight of false negatives (default: 0.7)
+        :param beta: weight of false positives (default: 0.3)
+        :param smooth: smoothing constant
+        """
         super().__init__()
-        self.model = UNet(
+        self.alpha = alpha
+        self.beta = beta
+        self.smooth = smooth
+        
+    def forward(self, inputs, targets):
+        # Sigmoid activation
+        inputs = torch.sigmoid(inputs)
+        
+        # Flatten inputs and targets
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+        
+        # True Positives, False Positives & False Negatives
+        TP = (inputs * targets).sum()
+        FP = ((1-targets) * inputs).sum()
+        FN = (targets * (1-inputs)).sum()
+        
+        # Tversky index
+        tversky = (TP + self.smooth) / (TP + self.alpha*FN + self.beta*FP + self.smooth)
+        
+        return 1 - tversky
+
+
+class FocalLoss(torch.nn.Module):
+    def __init__(self, alpha=0.5, gamma=0.0):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        
+    def forward(self, inputs, targets):
+        bce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
+        pt = torch.exp(-bce_loss)
+        focal_loss = self.alpha * (1-pt)**self.gamma * bce_loss
+        return focal_loss.mean()
+
+
+class SegmentationModel(pl.LightningModule):
+    def __init__(self, lr=1e-3, lr_patience=5, lr_factor=0.5, lr_min=1e-6, 
+                 tversky_weight=0.3, focal_weight=0.7):
+        super().__init__()
+        self.model = UnetPlusPlus(
             spatial_dims=3,
             in_channels=1,
             out_channels=1,
-            channels=(32, 64, 128, 256),  # Increased number and size of channels
-            strides=(2, 2, 2),  # Added another downsampling level
-            num_res_units=3,    # Increased residual units
+            channels=(32, 64, 128, 256),
+            strides=(1, 2, 2),           # First layer uses stride 1
+            kernel_size=3,
+            up_kernel_size=3,
+            num_res_units=3,
             act='PRELU',
             norm='INSTANCE',
-            dropout=0.2,        # Added some dropout for regularization
-            bias=True,
-            adn_ordering='NDA',
+            dropout=0.2,
+            deep_supervision=True,
+            deep_supr_num=3,
+            kernel_dilation=(2, 1, 1),    # Dilated conv in first layer
         )
-        # Initialize both loss functions
-        self.dice_loss = DiceLoss(sigmoid=True, batch=False)
-        self.bce_loss = torch.nn.BCEWithLogitsLoss()
+        # Initialize loss functions
+        self.tversky_loss = TverskyLoss()
+        self.focal_loss = FocalLoss()
         
         self.lr = lr
         self.lr_patience = lr_patience
         self.lr_factor = lr_factor
         self.lr_min = lr_min
-        self.alpha = 0.5
+        
+        # Loss weights
+        self.tversky_weight = tversky_weight
+        self.focal_weight = focal_weight
+        
+        # Save hyperparameters for logging
+        self.save_hyperparameters()
 
     def forward(self, x):
-        return self.model(x)
+        outputs = self.model(x)
+        # If deep supervision is enabled, return only the final output
+        if isinstance(outputs, tuple):
+            return outputs[0]
+        return outputs
 
     @staticmethod
     def iou_score(preds, targets, eps=1e-6):
@@ -95,12 +153,12 @@ class SegmentationModel(pl.LightningModule):
         x, y = batch
         logits = self(x)
         
-        # Calculate both losses
-        dice_loss = self.dice_loss(logits, y)
-        bce_loss = self.bce_loss(logits, y)
+        # Calculate losses
+        tversky_loss = self.tversky_loss(logits, y)
+        focal_loss = self.focal_loss(logits, y)
         
         # Combine losses using weights
-        loss = self.alpha * dice_loss + (1 - self.alpha) * bce_loss
+        loss = self.tversky_weight * tversky_loss + self.focal_weight * focal_loss
         
         probs = torch.sigmoid(logits)
         preds = (probs > 0.5).float()
@@ -109,8 +167,8 @@ class SegmentationModel(pl.LightningModule):
         metrics = SegmentationModel.iou_score(preds, y)
         
         # Log all metrics
-        self.log(f"{stage}_dice_loss", dice_loss, prog_bar=False, on_epoch=True)
-        self.log(f"{stage}_bce_loss", bce_loss, prog_bar=False, on_epoch=True)
+        self.log(f"{stage}_tversky_loss", tversky_loss, prog_bar=False, on_epoch=True)
+        self.log(f"{stage}_focal_loss", focal_loss, prog_bar=False, on_epoch=True)
         self.log(f"{stage}_combined_loss", loss, prog_bar=False, on_epoch=True)
         self.log(f"{stage}_fg_iou", metrics['fg_iou'], prog_bar=True, on_epoch=True)
         self.log(f"{stage}_bg_iou", metrics['bg_iou'], prog_bar=True, on_epoch=True)
