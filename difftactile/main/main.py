@@ -1419,7 +1419,6 @@ class Contact:
         for i in range(vein.shape[0]):
             num_points = vein_counts[i]
             single_vein_points = vein[i, :num_points]
-            single_vein_points = Contact.filter_using_mask(markers_mask, single_vein_points)
             vein_python_arr.append(
                 single_vein_points
             )
@@ -1430,6 +1429,7 @@ class Contact:
         vein_endpoints_python_arr = []
         for i in range(len(vein)):
             single_vein = vein[i]
+            single_vein = Contact.filter_using_mask(markers_mask, single_vein)
             single_endpoints = Contact.get_endpoints(single_vein)
             vein_endpoints_python_arr.append(single_endpoints)
         vein_endpoints_np, vein_endpoints_mask = Contact.create_padded_array_with_mask(vein_endpoints_python_arr, k=2)
@@ -2458,7 +2458,7 @@ class Contact:
                         and ts % 2 == 0
                     ):
                         self.record_training_data_point(j, ts)
-                self.write_training_data_to_file(j*2 + (i-1))
+                self.write_training_data_to_file(j*2 + i)
                 # self.write_training_data_to_file(999)
                 
                 self.reset_loss()

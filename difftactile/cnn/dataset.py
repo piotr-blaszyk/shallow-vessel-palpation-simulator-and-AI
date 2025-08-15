@@ -240,7 +240,7 @@ class MyDataset(torch.utils.data.Dataset):
 
         images, marker_masks = MyDataset.generate_markers_image(self.h_crop_small, self.w_crop_small, images, images_mask)  # shape: (T, H, W)
         labels = MyDataset.generate_vein_image(self.h_crop_small, self.w_crop_small, labels, labels_mask)     # shape: (T, H, W)
-        labels[marker_masks != 255] = 0
+        # labels[marker_masks != 255] = 0
         
         # Convert to float and normalize
         images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
