@@ -5,7 +5,7 @@
         "fixed_layer_distance_from_bottom": 0.020
     },
     "phantom": {
-        "mpm_grid_cube_size": 0.0065625,
+        "mpm_grid_cube_size": 0.004921875,
         "keypoint_search_xy_threshold": 0.010
     },
     "contact": {
@@ -38,7 +38,7 @@
         "gap": 0.001,
         "high_dist": 1.000,
         "phantom_z_length": 0.022,
-        "phantom_x_length": 0.180,
+        "phantom_x_length": 0.105,
         "phantom_y_length": 0.105,
         "distance_from_camera_lens_to_outer_shell_surface": 0.020,
         "sensor_xy_radius": 0.020,
@@ -48,7 +48,8 @@
             "h": 1.000
         },
         "clock_arms_z_min_offset": 0.004,
-        "clock_arms_z_max_offset": 0.006
+        "clock_arms_z_max_offset": 0.006,
+        "min_vein_separation": 0.012
     },
     "visualisation": {
         "camera_offset": 1.0,

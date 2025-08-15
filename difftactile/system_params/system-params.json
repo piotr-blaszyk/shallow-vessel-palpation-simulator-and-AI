@@ -26,12 +26,12 @@
     },
     "phantom": {
         "mass_eps": 1.000e-08,
-        "mpm_grid_cube_size": 3.281e-02,
+        "mpm_grid_cube_size": 2.461e-02,
         "bound": 3,
-        "n_grid_x": 64,
+        "n_grid_x": 32,
         "n_grid_y": 32,
         "n_grid_z": 16,
-        "num_particles_cube_1d": 54,
+        "num_particles_cube_1d": 80,
         "gravity": [
             0.0,
             0.0,
@@ -115,18 +115,19 @@
         "distance_from_camera_lens_to_outer_shell_surface": 1.000e-01,
         "sensor_xy_radius": 1.000e-01,
         "vein": {
-            "theta": 90,
+            "theta": 0,
             "cz_offset": 2.000e-02,
             "r": 1.000e-02,
             "h": 5.000e+00,
             "depth_beneath_surface": 1.500e-02
         },
-        "phantom_x_length": 9.000e-01,
+        "phantom_x_length": 5.250e-01,
         "phantom_y_length": 5.250e-01,
         "camera_rotation_angle": 1.037e+01,
         "high_dist": 5.000e+00,
         "clock_arms_z_min_offset": 2.000e-02,
-        "clock_arms_z_max_offset": 3.000e-02
+        "clock_arms_z_max_offset": 3.000e-02,
+        "min_vein_separation": 6.000e-02
     },
     "scaling_factor_1": {
         "distance_from_camera_lens_to_outer_shell_surface": 2.000e-02,
@@ -142,7 +143,7 @@
         "max_num_veins": 4,
         "num_trajectories": 4,
         "max_num_trajectory_points": 1000,
-        "max_timesteps_per_trajectory": 1000
+        "max_timesteps_per_trajectory": 20
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,

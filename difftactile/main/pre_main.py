@@ -88,8 +88,8 @@ def main():
     print(f'max_coord_z: {max_coord_z}')
 
     phantom_closest_vertex = np.array([
-        SYSTEM_PARAMS.phantom.mpm_grid_cube_size*int(SYSTEM_PARAMS.phantom.n_grid_x * 1/4), 
-        SYSTEM_PARAMS.phantom.mpm_grid_cube_size*int(SYSTEM_PARAMS.phantom.n_grid_y * 1/4), 
+        SYSTEM_PARAMS.phantom.mpm_grid_cube_size*math.floor(SYSTEM_PARAMS.phantom.n_grid_x * 1/4-1), 
+        SYSTEM_PARAMS.phantom.mpm_grid_cube_size*math.floor(SYSTEM_PARAMS.phantom.n_grid_y * 1/4-1), 
         SYSTEM_PARAMS.phantom.mpm_grid_cube_size*3
     ], dtype=float)
 

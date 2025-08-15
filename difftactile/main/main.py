@@ -153,6 +153,7 @@ class Contact:
             sensor_min_01[1],
             sensor_max_01[1]
         ])
+        foo = 7
 
     def training_data_collection_initialise(self):
         self.marker_data = []
@@ -916,18 +917,39 @@ class Contact:
         # num_veins = random.randint(4, SYSTEM_PARAMS.meta.max_num_veins)
         num_veins = SYSTEM_PARAMS.meta.max_num_veins
         x, y, z = self.vitactip_tip_pose[:3]
+
+        # Keep track of placed y-coordinates
+        placed_cy_values = []
+        min_separation = SYSTEM_PARAMS.geometry.min_vein_separation
+
         for i in range(num_veins):
-            theta_rand = np.random.uniform(-5, 5)
+            # theta_rand = np.random.uniform(-5, 5)
             # theta_rand = 0
+            theta_rand = 0
 
             cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
 
-            cx = np.random.uniform(*self.sensor_x_range_01)
-            cy = y
+            cx = self.sensor_x_range_01[0]
             # px = SYSTEM_PARAMS.geometry.phantom_x_length
             # py = SYSTEM_PARAMS.geometry.phantom_y_length
             # pd = (px**2 + py**2) ** (1/2)
             # h = np.random.uniform(1/4 * pd, pd)
+            
+            # Keep trying random y positions until we find one with sufficient separation
+            while True:
+                cy = np.random.uniform(*self.sensor_y_range_01)
+                # Check if this position maintains minimum separation with all previously placed veins
+                valid_position = True
+                for prev_cy in placed_cy_values:
+                    dist_01 = abs(cy - prev_cy)
+                    dist_A = dist_01 * SYSTEM_PARAMS.geometry.phantom_y_length
+                    if dist_A < min_separation:
+                        valid_position = False
+                        break
+                if valid_position:
+                    placed_cy_values.append(cy)
+                    break
+
             h = SYSTEM_PARAMS.geometry.vein.h
             
             state_dict = {
