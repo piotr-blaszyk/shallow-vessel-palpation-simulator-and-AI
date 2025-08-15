@@ -911,10 +911,10 @@ class Contact:
         placed_cy_values = []
         min_separation = SYSTEM_PARAMS.geometry.min_vein_separation
         for i in range(num_veins):
-            theta_rand = 0
+            theta_rand = random.uniform(-5, 5)
             cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
             cx = self.sensor_x_range_phantom[0]
-            
+
             # px = SYSTEM_PARAMS.geometry.phantom_x_length
             # py = SYSTEM_PARAMS.geometry.phantom_y_length
             # pd = (px**2 + py**2) ** (1/2)
@@ -1565,37 +1565,6 @@ class Contact:
     @ti.kernel
     def take_snapshot_2(self, k: ti.i32):
         self.ground_truth_labels[k] = self.tumour_present_ground_truth_label[None]
-
-    def save_marker_data_and_ground_truth_labels_to_file(self):
-        predict_np = self.predict_markers_snapshots.to_numpy()
-        virtual_np = self.virtual_markers_snapshots.to_numpy()
-        labels_np = self.ground_truth_labels.to_numpy()
-        out = {
-            "predict_markers_snapshots": predict_np,
-            "virtual_markers_snapshots": virtual_np,
-            "ground_truth_labels": labels_np,
-        }
-        with open(SYSTEM_PARAMS.files.marker_snapshots_and_labels, "wb") as f:
-            pickle.dump(out, f)
-
-        def save_markers_with_empty_rows(arr, filename):
-            num_steps, num_markers, dim = arr.shape
-            rows = []
-            for step in range(num_steps):
-                rows.append(arr[step])
-                rows.append(np.full((1, dim), np.nan))
-            out_arr = np.vstack(rows)
-            np.savetxt(filename, out_arr, delimiter=",")
-
-        save_markers_with_empty_rows(
-            predict_np, SYSTEM_PARAMS.files.predict_markers_snapshots
-        )
-        save_markers_with_empty_rows(
-            virtual_np, SYSTEM_PARAMS.files.virtual_markers_snapshots
-        )
-        np.savetxt(
-            SYSTEM_PARAMS.files.ground_truth_labels, labels_np, delimiter=",", fmt="%d"
-        )
 
     def maybe_save_tactile_sensor_mesh_to_pickle(self, ts):
         if self.mesh_needs_to_be_saved[None] == 1:
@@ -2470,7 +2439,7 @@ class Contact:
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             self.randomise_train_step()
             for i in range(0, 2):
-                self.randomise_contact_params()
+                # self.randomise_contact_params()
                 self.trajectory_ix[None] = i
                 self.set_up_initial_positions_state_and_trajectory()
                 self.reset_pid_controller()

@@ -31,7 +31,7 @@
         "n_grid_x": 32,
         "n_grid_y": 32,
         "n_grid_z": 16,
-        "num_particles_cube_1d": 80,
+        "num_particles_cube_1d": 50,
         "gravity": [
             0.0,
             0.0,
@@ -61,7 +61,7 @@
         "coulomb_friction_coeff": 4.000e-01,
         "num_sub_frames": 125,
         "num_opt_steps": 2,
-        "num_training_trajectories": 4,
+        "num_training_trajectories": 1,
         "pid_max_speed_translation": 5.000e-01,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,
@@ -143,7 +143,7 @@
         "max_num_veins": 4,
         "num_trajectories": 4,
         "max_num_trajectory_points": 1000,
-        "max_timesteps_per_trajectory": 10
+        "max_timesteps_per_trajectory": 1000
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,

@@ -64,7 +64,7 @@ class MyDataset(torch.utils.data.Dataset):
                 if total_frames >= dilated_clip_len:
                     num_possible_starts = total_frames - dilated_clip_len + 1
                     
-                    if not self.file_contains_vein(file_path):
+                    if False and not self.file_contains_vein(file_path):
                         # For files without veins, keep original random sampling
                         start_indices = sorted(random.sample(
                             range(num_possible_starts), 
