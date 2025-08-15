@@ -199,8 +199,8 @@ class MyDataset(torch.utils.data.Dataset):
         markers_mask = data['markers_mask']
         labels = data['labels']
         labels_mask = data['labels_mask']
-        vein_endpoints = data['vein_endpoints']
-        vein_endpoints_mask = data['vein_endpoints_mask']
+        vein_polyline = data['vein_polyline']
+        vein_polyline_mask = data['vein_polyline_mask']
         
         # Extract longer sequence and apply dilation
         dilated_clip_len = self.clip_len * dilation
@@ -208,11 +208,11 @@ class MyDataset(torch.utils.data.Dataset):
         labels = labels[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         images_mask = markers_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         labels_mask = labels_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        vein_endpoints = vein_endpoints[start:start + dilated_clip_len:dilation]
-        vein_endpoints_mask = vein_endpoints_mask[start:start + dilated_clip_len:dilation]
+        vein_polyline = vein_polyline[start:start + dilated_clip_len:dilation]
+        vein_polyline_mask = vein_polyline_mask[start:start + dilated_clip_len:dilation]
         
         # images, labels_signal_mask = self.augmentation_artificial_vein_signal(
-        #     images, vein_endpoints, vein_endpoints_mask
+        #     images, vein_polyline, vein_polyline_mask
         # )
         # # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
         # labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
@@ -248,7 +248,8 @@ class MyDataset(torch.utils.data.Dataset):
         #     labels.reshape(self.clip_len, -1, 2),
         #     labels_mask.reshape(self.clip_len, -1)
         # )  # shape: (T, H, W)
-        labels = MyDataset.generate_vein_image(h, w, labels, labels_mask)     # shape: (T, H, W)
+        # labels = MyDataset.generate_vein_image(h, w, labels, labels_mask)     # shape: (T, H, W)
+        labels = MyDataset.generate_vein_centerline_image(h, w, labels, labels_mask)     # shape: (T, H, W)
         # labels[marker_masks != 255] = 0
 
         # Convert to float and normalize
@@ -301,27 +302,54 @@ class MyDataset(torch.utils.data.Dataset):
                 # Only set pixel if the mask indicates this point is valid
                 if points_mask[t, i]:
                     filtered_points.append(point)
-                    x, y = point[0], point[1]
-                    x0, y0 = int(np.floor(x)), int(np.floor(y))
-                    x1, y1 = x0 + 1, y0 + 1
-                    
-                    # Calculate weights for bilinear interpolation
-                    wx1, wx0 = x - x0, x1 - x
-                    wy1, wy0 = y - y0, y1 - y
-                    
-                    # Ensure we don't write outside the image bounds
-                    if 0 <= x0 < w and 0 <= y0 < h:
-                        images[t, y0, x0] = min(255, images[t, y0, x0] + int(255 * wx0 * wy0))
-                    if 0 <= x1 < w and 0 <= y0 < h:
-                        images[t, y0, x1] = min(255, images[t, y0, x1] + int(255 * wx1 * wy0))
-                    if 0 <= x0 < w and 0 <= y1 < h:
-                        images[t, y1, x0] = min(255, images[t, y1, x0] + int(255 * wx0 * wy1))
-                    if 0 <= x1 < w and 0 <= y1 < h:
-                        images[t, y1, x1] = min(255, images[t, y1, x1] + int(255 * wx1 * wy1))
+                    MyDataset.draw_point(images, t, point)
             markers_mask = Contact.compute_mask(h, w, filtered_points)
             marker_masks[t, :, :] = markers_mask
                 
         return images, marker_masks
+
+    @staticmethod
+    def generate_vein_centerline_image(h, w, points, points_mask):
+        if points.shape[-1] == 0:  # Check if there are any points
+            return np.zeros((points.shape[0], h, w), dtype=np.uint8)
+
+        # Initialize output array for all frames
+        images = np.zeros((points.shape[0], h, w), dtype=np.uint8)
+        
+        # Generate image for each frame
+        for t in range(points.shape[0]):
+            # Process each vein separately
+            for v in range(points.shape[1]):
+                # Get only valid points according to mask for this vein
+                vein_points = points[t, v]
+                vein_mask = points_mask[t, v]
+                valid_points = vein_points[vein_mask]
+                centerline_points = SyntheticImageGenerator.get_curve_centerline_points(valid_points)
+                for point in centerline_points:
+                    MyDataset.draw_point(images, t, point)
+                
+        return images
+
+    @staticmethod
+    def draw_point(images, t, point):
+        _, h, w = images.shape
+        x, y = point[0], point[1]
+        x0, y0 = int(np.floor(x)), int(np.floor(y))
+        x1, y1 = x0 + 1, y0 + 1
+        
+        # Calculate weights for bilinear interpolation
+        wx1, wx0 = x - x0, x1 - x
+        wy1, wy0 = y - y0, y1 - y
+        
+        # Ensure we don't write outside the image bounds
+        if 0 <= x0 < w and 0 <= y0 < h:
+            images[t, y0, x0] = min(255, images[t, y0, x0] + int(255 * wx0 * wy0))
+        if 0 <= x1 < w and 0 <= y0 < h:
+            images[t, y0, x1] = min(255, images[t, y0, x1] + int(255 * wx1 * wy0))
+        if 0 <= x0 < w and 0 <= y1 < h:
+            images[t, y1, x0] = min(255, images[t, y1, x0] + int(255 * wx0 * wy1))
+        if 0 <= x1 < w and 0 <= y1 < h:
+            images[t, y1, x1] = min(255, images[t, y1, x1] + int(255 * wx1 * wy1))
 
     @staticmethod
     def generate_vein_image(h, w, points, points_mask):
@@ -342,7 +370,7 @@ class MyDataset(torch.utils.data.Dataset):
                 
                 if len(valid_points) > 0:
                     # Remove duplicate points
-                    contour_vein = SyntheticImageGenerator.alpha_shape(valid_points).astype(np.int32)
+                    contour_vein = SyntheticImageGenerator.alpha_shape(valid_points, alpha=1e-1).astype(np.int32)
                     if len(contour_vein) > 0:
                         contour_vein_cv = contour_vein.reshape((-1, 1, 2))
                         cv2.fillPoly(images[t], [contour_vein_cv], color=255)
@@ -512,8 +540,8 @@ class MyDataset(torch.utils.data.Dataset):
         points, mask = SyntheticImageGenerator.crop(points, origin, resolution)
         return points, mask
 
-    def augmentation_artificial_vein_signal(self, clip_points, clip_vein_endpoints, clip_vein_endpoints_mask):
-        valid_frames_mask = np.any(np.all(clip_vein_endpoints_mask, axis=2), axis=1)
+    def augmentation_artificial_vein_signal(self, clip_points, clip_vein_polyline, clip_vein_polyline_mask):
+        valid_frames_mask = np.any(np.all(clip_vein_polyline_mask, axis=2), axis=1)
         vein_visible_mask = np.ones(clip_points.shape[0], dtype=bool)
         if not np.any(valid_frames_mask):
             return clip_points, vein_visible_mask
@@ -544,35 +572,29 @@ class MyDataset(torch.utils.data.Dataset):
         # lower_disp_c = self.avs_disp_c[self.difficulty_level]
         # disp_c = random.uniform(lower_disp_c, 0.5)
         disp_c = 1.0
-        # upper_decay_c = self.avs_decay_c[self.difficulty_level]
-        # decay_c = random.uniform(1, upper_decay_c)
-        decay_c = 0.0
 
         for j in range(start_idx, end_idx):
             points = clip_points[j]
             centre = np.mean(points, axis=0)
             max_dist = np.max(np.linalg.norm(points - centre, axis=1))
             x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
-            frame_vein_endpoints = clip_vein_endpoints[j] 
-            frame_vein_endpoints_mask = clip_vein_endpoints_mask[j]
-            valid_veins = np.all(frame_vein_endpoints_mask, axis=1)
+            frame_vein_polyline = clip_vein_polyline[j] 
+            frame_vein_polyline_mask = clip_vein_polyline_mask[j]
+            valid_veins = np.all(frame_vein_polyline_mask, axis=1)
             
-            for k in range(frame_vein_endpoints.shape[0]):
+            for k in range(frame_vein_polyline.shape[0]):
                 if not valid_veins[k]:
                     continue
-                vein_endpoints = frame_vein_endpoints[k]
-                a, b, c = Contact.line_equation(
-                    vein_endpoints
-                )
-                a2, b2, c2 = Contact.line_point_to_line_pass_through_point(
-                    a, b, c, centre
-                )
+                vein_polyline = frame_vein_polyline[k]
 
                 for i in range(len(points)):
-                    vec_vein_trajectory = Contact.vector_point_to_line(a2, b2, c2, points[i])
-                    dist_from_vein_trajectory = np.linalg.norm(vec_vein_trajectory)
-                    centre_ratio = max(0, 1 - decay_c * (dist_from_vein_trajectory / max_dist))
-                    vec = Contact.vector_point_to_line(a, b, c, points[i])
+                    if self.difficulty_level == 2:
+                        proceed = random.uniform(0, 1)
+                    else:
+                        proceed = 1.0
+                    if proceed < 0.5:
+                        continue
+                    vec = SyntheticImageGenerator.vector_point_to_polynomial(vein_polyline, points[i])
                     x = np.linalg.norm(vec)
                     displacement = 0.0
                     if 0 < x < x_0:
@@ -581,7 +603,7 @@ class MyDataset(torch.utils.data.Dataset):
                         displacement = x_0 - (x - x_0)
                     if displacement > 0:
                         vec_normalized = vec / x
-                        points[i] = points[i] + vec_normalized * displacement * disp_c * centre_ratio
+                        points[i] = points[i] + vec_normalized * displacement * disp_c
 
             clip_points[j] = points
 

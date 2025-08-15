@@ -16,6 +16,8 @@ from shapely.geometry import Polygon, MultiLineString
 from shapely.ops import unary_union, polygonize
 from scipy.spatial import Delaunay
 import random
+from scipy.spatial import Voronoi
+from shapely.geometry import Point
 
 from difftactile.sensor_model.fisheye_model import *
 from difftactile.sensor_model.vitactip import ViTacTip
@@ -104,6 +106,69 @@ class SyntheticImageGenerator:
         # Combine conditions
         return in_circle
 
+    @staticmethod
+    def fit_polynomial(points, n=3, k=100):
+        """
+        Fit a polynomial of order n to 2D points and return evenly sampled points along the curve.
+        
+        Args:
+            n: Order of the polynomial
+            points: numpy array of shape (num_points, 2) containing x,y coordinates
+            k: Number of points to sample along the curve (default: 100)
+            
+        Returns:
+            numpy array of shape (k, 2) containing evenly sampled points along the polynomial
+        """
+        if len(points) < n + 1:
+            return -np.ones(shape=(0, 2))
+            
+        # Extract x and y coordinates
+        x = points[:, 0]
+        y = points[:, 1]
+        
+        # Get x range from input points
+        x_min = np.min(x)
+        x_max = np.max(x)
+        
+        # Fit polynomial using numpy's polyfit
+        coefficients = np.polyfit(x, y, n)
+        
+        # Generate evenly spaced x coordinates
+        x_sampled = np.linspace(x_min, x_max, k)
+        
+        # Evaluate polynomial at sampled points
+        y_sampled = np.polyval(coefficients, x_sampled)
+        
+        # Combine x and y coordinates
+        sampled_points = np.column_stack((x_sampled, y_sampled))
+        
+        return sampled_points
+
+    @staticmethod
+    def vector_point_to_polynomial(polynomial, target):
+        """
+        Compute the shortest vector from a target point to the closest point on a polynomial curve.
+        
+        Args:
+            polynomial: numpy array of shape (num_points, 2) containing points along the polynomial curve
+            target: numpy array of shape (2,) containing the target point coordinates
+            
+        Returns:
+            numpy array of shape (2,) representing the vector from target to closest point
+        """
+        # Compute squared distances from target to all points on polynomial
+        # Using broadcasting: (x1-x2)^2 + (y1-y2)^2 for all points at once
+        distances = np.sum((polynomial - target)**2, axis=1)
+        
+        # Find index of closest point
+        closest_idx = np.argmin(distances)
+        
+        # Get closest point
+        closest_point = polynomial[closest_idx]
+        
+        # Return vector from target to closest point
+        return closest_point - target
+
 
 @ti.data_oriented
 class Contact:
@@ -131,6 +196,7 @@ class Contact:
         self.vein_indices = ti.field(
             int, (self.num_veins, self.phantom.actual_total_num_particles), needs_grad=False
         )
+        self.max_vein_count = ti.field(int, (), needs_grad=False)
     
     def vein_sparse_to_dense(self):
         vein_titles = self.phantom.vein_titles.to_numpy()
@@ -140,6 +206,7 @@ class Contact:
             if vein_ix != -1:
                 vein_counts[vein_ix] = count
         self.vein_counts.from_numpy(vein_counts)
+        self.max_vein_count[None] = np.max(vein_counts)
         vein_counts_temp = np.zeros(shape=(self.num_veins,), dtype=int)
         vein_indices = -np.ones(shape=(self.num_veins, self.phantom.actual_total_num_particles), dtype=int)
         for particle_ix in range(len(vein_titles)):
@@ -177,8 +244,8 @@ class Contact:
         self.marker_data = []
         self.vein_data = []
         self.vein_mask_data = []
-        self.vein_endpoints_data = []
-        self.vein_endpoints_mask_data = []
+        self.vein_polyline_data = []
+        self.vein_polyline_mask_data = []
         self.vein_cx_A = None
         self.target_3_ts = 12
         self.target_4_ts = 226
@@ -1452,15 +1519,15 @@ class Contact:
         vein_np, vein_mask = Contact.create_padded_array_with_mask(vein, k=max_vein_count)
         self.vein_data.append(vein_np)
         self.vein_mask_data.append(vein_mask)
-        vein_endpoints_python_arr = []
+        vein_polyline_python_arr = []
         for i in range(len(vein)):
             single_vein = vein[i]
             single_vein = Contact.filter_using_mask(markers_mask, single_vein)
-            single_endpoints = Contact.get_endpoints(single_vein)
-            vein_endpoints_python_arr.append(single_endpoints)
-        vein_endpoints_np, vein_endpoints_mask = Contact.create_padded_array_with_mask(vein_endpoints_python_arr, k=2)
-        self.vein_endpoints_data.append(vein_endpoints_np)
-        self.vein_endpoints_mask_data.append(vein_endpoints_mask)
+            polyline_points = SyntheticImageGenerator.fit_polynomial(single_vein)
+            vein_polyline_python_arr.append(polyline_points)
+        vein_polyline_np, vein_polyline_mask = Contact.create_padded_array_with_mask(vein_polyline_python_arr)
+        self.vein_polyline_data.append(vein_polyline_np)
+        self.vein_polyline_mask_data.append(vein_polyline_mask)
 
         if training_iteration == 0:
             cv2.imwrite(contact_file, markers_mask)
@@ -1469,13 +1536,13 @@ class Contact:
     @staticmethod
     def get_endpoints(points):
         """
-        Find the two points with maximum distance between them from the input points.
+        Fit a straight line to points and return the endpoints.
         
         Args:
             points: numpy array of shape (num_points, 2)
             
         Returns:
-            numpy array of shape (2, 2) containing the two points with maximum distance
+            numpy array of shape (2, 2) containing the two endpoints
         """
         if len(points) < 2:
             foo = -np.ones(shape=(0, 2), dtype=float)
@@ -1484,14 +1551,33 @@ class Contact:
         # Convert to numpy array if not already
         points = np.array(points, dtype=np.float64)
         
-        # Compute pairwise distances between all points
-        distances = cdist(points, points)
+        # Center the points
+        centroid = np.mean(points, axis=0)
+        centered_points = points - centroid
         
-        # Find the indices of the two points with maximum distance
-        i, j = np.unravel_index(np.argmax(distances), distances.shape)
+        # Use PCA to find the best fitting line direction
+        # The first principal component gives us the line direction
+        cov_matrix = np.cov(centered_points.T)
+        eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
         
-        # Return the two points with maximum distance
-        endpoints = np.array([points[i], points[j]])
+        # The eigenvector corresponding to the largest eigenvalue
+        # gives us the direction of the line
+        line_direction = eigenvectors[:, -1]
+        
+        # Project all points onto the line
+        # For each point, compute the scalar projection onto the line direction
+        projections_scalar = np.dot(centered_points, line_direction)
+        
+        # Find the indices of points with minimum and maximum projections
+        min_idx = np.argmin(projections_scalar)
+        max_idx = np.argmax(projections_scalar)
+        
+        # Compute the actual projected points on the line
+        min_projection = centroid + projections_scalar[min_idx] * line_direction
+        max_projection = centroid + projections_scalar[max_idx] * line_direction
+        
+        # Return the two endpoints
+        endpoints = np.array([min_projection, max_projection])
         
         return endpoints
 
@@ -1526,8 +1612,8 @@ class Contact:
         markers_array, markers_mask = Contact.create_padded_array_with_mask(self.marker_data)
         veins_array = np.array(self.vein_data)
         veins_mask = np.array(self.vein_mask_data)
-        vein_endpoints_array = np.array(self.vein_endpoints_data)
-        vein_endpoints_mask = np.array(self.vein_endpoints_mask_data)
+        vein_polyline_array = np.array(self.vein_polyline_data)
+        vein_polyline_mask = np.array(self.vein_polyline_mask_data)
 
         np.savez(
             path,
@@ -1535,15 +1621,15 @@ class Contact:
             markers_mask=markers_mask,
             labels=veins_array,
             labels_mask=veins_mask,
-            vein_endpoints=vein_endpoints_array,
-            vein_endpoints_mask=vein_endpoints_mask
+            vein_polyline=vein_polyline_array,
+            vein_polyline_mask=vein_polyline_mask
         )
         
         self.marker_data = []
         self.vein_data = []
         self.vein_mask_data = []
-        self.vein_endpoints_data = []
-        self.vein_endpoints_mask_data = []
+        self.vein_polyline_data = []
+        self.vein_polyline_mask_data = []
 
     @staticmethod
     def create_padded_array_with_mask(data_list, k=None):
@@ -1632,7 +1718,7 @@ class Contact:
             2,
             dtype=float,
             shape=(
-                1000
+                4000
             ),
             needs_grad=False,
         )
@@ -1712,7 +1798,7 @@ class Contact:
                 projection_2d = self.vitactip.project_A_point_2d(point)
                 projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
                 self.vein_2d_projection[i, j] = projection_2d
-                self.vein_2d_projection_flat[j] = projection_2d / self.tactile_image_resolution[None]
+                self.vein_2d_projection_flat[i * self.max_vein_count[None] + j] = projection_2d / self.tactile_image_resolution[None]
 
     @ti.kernel
     def visualisation_prepare_tactile_readout_data_fp(self):
@@ -2466,7 +2552,7 @@ class Contact:
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             self.randomise_train_step()
-            for i in range(0, 1):
+            for i in range(0, 2):
                 # self.randomise_contact_params()
                 self.trajectory_ix[None] = i
                 self.set_up_initial_positions_state_and_trajectory()
