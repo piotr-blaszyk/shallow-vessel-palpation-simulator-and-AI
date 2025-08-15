@@ -239,7 +239,14 @@ class MyDataset(torch.utils.data.Dataset):
         labels_mask &= labels_crop_mask
 
         images, marker_masks = MyDataset.generate_markers_image(self.h_crop_small, self.w_crop_small, images, images_mask)  # shape: (T, H, W)
-        labels = MyDataset.generate_vein_image(self.h_crop_small, self.w_crop_small, labels, labels_mask)     # shape: (T, H, W)
+        labels, labels_masks = MyDataset.generate_markers_image(
+            self.h_crop_small, 
+            self.w_crop_small, 
+            labels.reshape(self.clip_len, -1, 2),
+            labels_mask.reshape(self.clip_len, -1, 2)
+        )  # shape: (T, H, W)
+
+        # labels = MyDataset.generate_vein_image(self.h_crop_small, self.w_crop_small, labels, labels_mask)     # shape: (T, H, W)
         # labels[marker_masks != 255] = 0
         
         # Convert to float and normalize
@@ -318,7 +325,7 @@ class MyDataset(torch.utils.data.Dataset):
     def generate_vein_image(h, w, points, points_mask):
         if points.shape[-1] == 0:  # Check if there are any points
             return np.zeros((points.shape[0], h, w), dtype=np.uint8)
-            
+
         # Initialize output array for all frames
         images = np.zeros((points.shape[0], h, w), dtype=np.uint8)
         
