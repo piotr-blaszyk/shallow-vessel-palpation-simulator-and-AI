@@ -227,7 +227,7 @@ class Visualisation:
             model = model.to(device)
         else:  # dataset mode
             full_dataset = MyDataset(
-                data_dir=SYSTEM_PARAMS.files.dataset_root_test
+                data_dir=SYSTEM_PARAMS.files.dataset_root
             )
             train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
                 full_dataset, train_size=1.0, val_size=0.0, test_size=0.0

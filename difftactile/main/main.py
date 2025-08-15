@@ -1414,22 +1414,25 @@ class Contact:
 
         vein = self.vein_2d_projection.to_numpy()
         vein_counts = self.phantom.vein_counts.to_numpy()
+        max_vein_count = np.max(vein_counts)
         vein_python_arr = []
         for i in range(vein.shape[0]):
             num_points = vein_counts[i]
+            single_vein_points = vein[i, :num_points]
+            single_vein_points = Contact.filter_using_mask(markers_mask, single_vein_points)
             vein_python_arr.append(
-                vein[i, :num_points]
+                single_vein_points
             )
         vein = vein_python_arr
-        vein_np, vein_mask = Contact.create_padded_array_with_mask(vein)
+        vein_np, vein_mask = Contact.create_padded_array_with_mask(vein, k=max_vein_count)
         self.vein_data.append(vein_np)
         self.vein_mask_data.append(vein_mask)
         vein_endpoints_python_arr = []
         for i in range(len(vein)):
             single_vein = vein[i]
-            single_endpoints = Contact.fit_straight_line_and_return_endpoints(single_vein)
+            single_endpoints = Contact.get_endpoints(single_vein)
             vein_endpoints_python_arr.append(single_endpoints)
-        vein_endpoints_np, vein_endpoints_mask = Contact.create_padded_array_with_mask(vein_endpoints_python_arr)
+        vein_endpoints_np, vein_endpoints_mask = Contact.create_padded_array_with_mask(vein_endpoints_python_arr, k=2)
         self.vein_endpoints_data.append(vein_endpoints_np)
         self.vein_endpoints_mask_data.append(vein_endpoints_mask)
 
@@ -1438,15 +1441,15 @@ class Contact:
             cv2.imwrite(markers_file, markers_img)
     
     @staticmethod
-    def fit_straight_line_and_return_endpoints(points):
+    def get_endpoints(points):
         """
-        Fit a straight line to points and return the endpoints.
+        Find the two points with maximum distance between them from the input points.
         
         Args:
             points: numpy array of shape (num_points, 2)
             
         Returns:
-            numpy array of shape (2, 2) containing the two endpoints
+            numpy array of shape (2, 2) containing the two points with maximum distance
         """
         if len(points) < 2:
             foo = -np.ones(shape=(0, 2), dtype=float)
@@ -1455,33 +1458,14 @@ class Contact:
         # Convert to numpy array if not already
         points = np.array(points, dtype=np.float64)
         
-        # Center the points
-        centroid = np.mean(points, axis=0)
-        centered_points = points - centroid
+        # Compute pairwise distances between all points
+        distances = cdist(points, points)
         
-        # Use PCA to find the best fitting line direction
-        # The first principal component gives us the line direction
-        cov_matrix = np.cov(centered_points.T)
-        eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
+        # Find the indices of the two points with maximum distance
+        i, j = np.unravel_index(np.argmax(distances), distances.shape)
         
-        # The eigenvector corresponding to the largest eigenvalue
-        # gives us the direction of the line
-        line_direction = eigenvectors[:, -1]
-        
-        # Project all points onto the line
-        # For each point, compute the scalar projection onto the line direction
-        projections_scalar = np.dot(centered_points, line_direction)
-        
-        # Find the indices of points with minimum and maximum projections
-        min_idx = np.argmin(projections_scalar)
-        max_idx = np.argmax(projections_scalar)
-        
-        # Compute the actual projected points on the line
-        min_projection = centroid + projections_scalar[min_idx] * line_direction
-        max_projection = centroid + projections_scalar[max_idx] * line_direction
-        
-        # Return the two endpoints
-        endpoints = np.array([min_projection, max_projection])
+        # Return the two points with maximum distance
+        endpoints = np.array([points[i], points[j]])
         
         return endpoints
 
@@ -1536,11 +1520,14 @@ class Contact:
         self.vein_endpoints_mask_data = []
 
     @staticmethod
-    def create_padded_array_with_mask(data_list):
+    def create_padded_array_with_mask(data_list, k=None):
         if not data_list:
             return np.array([]), np.array([])
         n = len(data_list)
-        num_points_max = max(arr.shape[0] for arr in data_list)
+        if k is not None:
+            num_points_max = k
+        else:
+            num_points_max = max(arr.shape[0] for arr in data_list)
         padded_array = np.zeros((n, num_points_max, 2), dtype=data_list[0].dtype)
         mask = np.zeros((n, num_points_max), dtype=bool)
         for i, arr in enumerate(data_list):
@@ -2467,7 +2454,7 @@ class Contact:
                     )
                     self.visualisation_update_gui(ts)
                     if (
-                        self.current_target_idx[None] == 4 
+                        self.current_target_idx[None] > 2 
                         and ts % 2 == 0
                     ):
                         self.record_training_data_point(j, ts)

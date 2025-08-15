@@ -211,25 +211,25 @@ class MyDataset(torch.utils.data.Dataset):
         vein_endpoints = vein_endpoints[start:start + dilated_clip_len:dilation]
         vein_endpoints_mask = vein_endpoints_mask[start:start + dilated_clip_len:dilation]
         
-        images, labels_signal_mask = self.augmentation_artificial_vein_signal(
-            images, vein_endpoints, vein_endpoints_mask
-        )
-        # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
-        labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
-        discrete_angles = [0, 60, 120, 180, 240, 300]
-        rotation_angle_deg = random.choice(discrete_angles)
-        images = self.augmentation_rotation(images, rotation_angle_deg)
-        labels = self.augmentation_rotation(labels, rotation_angle_deg)
-        angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
-        magnitude = random.uniform(0, 10)
-        images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
-        labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
-        angle_x = math.radians(random.uniform(-5, 5))
-        angle_y = math.radians(random.uniform(-5, 5))
-        images = self.rotate_xy(images, angle_x, angle_y)
-        labels = self.rotate_xy(labels, angle_x, angle_y)
-        images_random_remove_mask = self.randomly_remove(images)
-        images_mask &= images_random_remove_mask
+        # images, labels_signal_mask = self.augmentation_artificial_vein_signal(
+        #     images, vein_endpoints, vein_endpoints_mask
+        # )
+        # # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
+        # labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
+        # discrete_angles = [0, 60, 120, 180, 240, 300]
+        # rotation_angle_deg = random.choice(discrete_angles)
+        # images = self.augmentation_rotation(images, rotation_angle_deg)
+        # labels = self.augmentation_rotation(labels, rotation_angle_deg)
+        # angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+        # magnitude = random.uniform(0, 10)
+        # images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+        # labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+        # angle_x = math.radians(random.uniform(-5, 5))
+        # angle_y = math.radians(random.uniform(-5, 5))
+        # images = self.rotate_xy(images, angle_x, angle_y)
+        # labels = self.rotate_xy(labels, angle_x, angle_y)
+        # images_random_remove_mask = self.randomly_remove(images)
+        # images_mask &= images_random_remove_mask
         
         
         images, images_crop_mask = MyDataset.downscale(self.k, images)
@@ -483,23 +483,14 @@ class MyDataset(torch.utils.data.Dataset):
         return points, mask
 
     def augmentation_artificial_vein_signal(self, clip_points, clip_vein_endpoints, clip_vein_endpoints_mask):
-        # Now clip_vein_endpoints_mask is (num_frames, num_veins, num_endpoints)
-        # We want a frame to be valid if any vein has valid endpoints
         valid_frames_mask = np.any(np.all(clip_vein_endpoints_mask, axis=2), axis=1)
         vein_visible_mask = np.ones(clip_points.shape[0], dtype=bool)
-
         if not np.any(valid_frames_mask):
             return clip_points, vein_visible_mask
         
-        # Find runs of True values
-        # Add sentinel values to handle edge cases
         padded = np.concatenate(([False], valid_frames_mask, [False]))
         runs = np.where(np.diff(padded))[0]
-        
-        # runs[::2] are starts of True runs, runs[1::2] are ends of True runs
-        # Length of each run is end - start
         run_lengths = runs[1::2] - runs[::2]
-        
         if len(run_lengths) > 0:
             longest_run_idx = np.argmax(run_lengths)
             start_idx = runs[::2][longest_run_idx]
@@ -507,14 +498,6 @@ class MyDataset(torch.utils.data.Dataset):
         else:
             start_idx = 0
             end_idx = 0
-        
-        # start_idx = 0, end_idx = 10
-        # max_length = 10
-        # length = 5
-        # end_idx = 5
-        # start_idx = 5
-        # indices = 5, 6, 7, 8, 9
-        # end_idx = 10
         if self.difficulty_level == 2:
             max_length = end_idx - start_idx
             if max_length < 3:
@@ -528,26 +511,25 @@ class MyDataset(torch.utils.data.Dataset):
             vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
             vein_visible_mask[start_idx:end_idx] = True
 
-        lower_disp_c = self.avs_disp_c[self.difficulty_level]
-        disp_c = random.uniform(lower_disp_c, 0.5)
-        upper_decay_c = self.avs_decay_c[self.difficulty_level]
-        decay_c = random.uniform(1, upper_decay_c)
+        # lower_disp_c = self.avs_disp_c[self.difficulty_level]
+        # disp_c = random.uniform(lower_disp_c, 0.5)
+        disp_c = 1.0
+        # upper_decay_c = self.avs_decay_c[self.difficulty_level]
+        # decay_c = random.uniform(1, upper_decay_c)
+        decay_c = 0.0
 
         for j in range(start_idx, end_idx):
             points = clip_points[j]
             centre = np.mean(points, axis=0)
             max_dist = np.max(np.linalg.norm(points - centre, axis=1))
             x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
-            frame_vein_endpoints = clip_vein_endpoints[j]  # Now shape (num_veins, 2, 2)
-            frame_vein_endpoints_mask = clip_vein_endpoints_mask[j]  # Now shape (num_veins, 2)
-
-            # Only process veins that have valid endpoints
+            frame_vein_endpoints = clip_vein_endpoints[j] 
+            frame_vein_endpoints_mask = clip_vein_endpoints_mask[j]
             valid_veins = np.all(frame_vein_endpoints_mask, axis=1)
             
             for k in range(frame_vein_endpoints.shape[0]):
                 if not valid_veins[k]:
                     continue
-                    
                 vein_endpoints = frame_vein_endpoints[k]
                 a, b, c = Contact.line_equation(
                     vein_endpoints
@@ -570,8 +552,8 @@ class MyDataset(torch.utils.data.Dataset):
                     if displacement > 0:
                         vec_normalized = vec / x
                         points[i] = points[i] + vec_normalized * displacement * disp_c * centre_ratio
+
             clip_points[j] = points
 
         return clip_points, vein_visible_mask
     
-        
