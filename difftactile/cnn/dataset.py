@@ -243,7 +243,7 @@ class MyDataset(torch.utils.data.Dataset):
             self.h_crop_small, 
             self.w_crop_small, 
             labels.reshape(self.clip_len, -1, 2),
-            labels_mask.reshape(self.clip_len, -1, 2)
+            labels_mask.reshape(self.clip_len, -1)
         )  # shape: (T, H, W)
 
         # labels = MyDataset.generate_vein_image(self.h_crop_small, self.w_crop_small, labels, labels_mask)     # shape: (T, H, W)
