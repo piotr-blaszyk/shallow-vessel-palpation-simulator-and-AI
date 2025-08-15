@@ -55,12 +55,6 @@ class Phantom:
         self.vein_titles = ti.field(
             dtype=int, shape=self.actual_total_num_particles, needs_grad=False
         )
-        self.vein_indices = ti.field(
-            dtype=int, shape=(self.max_num_veins, self.actual_total_num_particles), needs_grad=False
-        )
-        self.vein_counts = ti.field(
-            dtype=int, shape=(self.max_num_veins,), needs_grad=False
-        )
         self.is_fixed = ti.field(
             dtype=int, shape=(self.actual_total_num_particles,), needs_grad=False
         )
@@ -268,8 +262,6 @@ class Phantom:
         self, pos, ori, vel, state_dicts
     ):
         self.vein_titles.fill(-1)
-        self.vein_indices.fill(-1)
-        self.vein_counts.fill(0)
         if len(state_dicts) > 0:
             self.titles.fill(0)
             self.group_cardinality.fill(0)
@@ -323,9 +315,6 @@ class Phantom:
             ):
                 self.titles[item] = 1
                 self.vein_titles[item] = i
-                vein_particle_ix = self.vein_counts[i]
-                self.vein_indices[i, vein_particle_ix] = item
-                self.vein_counts[i] += 1
 
     def set_pose_and_velocity(self, position, orientation, velocity):
         self.initial_position[None] = position

@@ -6,16 +6,16 @@ import numpy as np
 img = cv2.imread("difftactile/sandbox/image.png")
 
 # Define an array of endpoints of triangle
-points = np.array([[160, 130], [350, 130], [250, 300]])
+points = np.array([[150, 450], [450, 150], [150, 150]])
 
 # Use fillPoly() function and give input as
 # image, end points,color of polygon
 # Here color of polygon will blue
 cv2.fillPoly(img, pts=[points], color=(255, 0, 0))
 
-points -= np.array([100, 100])
+# points -= np.array([100, 100])
 
-cv2.fillPoly(img, pts=[points], color=(0, 255, 0))
+# cv2.fillPoly(img, pts=[points], color=(0, 255, 0))
 
 # Displaying the image
 cv2.imshow("Triangle", img)

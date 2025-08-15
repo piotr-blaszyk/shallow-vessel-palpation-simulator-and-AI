@@ -238,28 +238,19 @@ class MyDataset(torch.utils.data.Dataset):
         # images_mask &= images_crop_mask
         # labels_mask &= labels_crop_mask
 
-        images, images_crop_mask = MyDataset.make_3x3(images)
-        labels, labels_crop_mask = MyDataset.make_3x3(labels)
-
-        images_mask &= images_crop_mask
-        labels_mask &= labels_crop_mask
-
         h = self.h_crop_small
         w = self.w_crop_small
 
-        images, marker_masks = MyDataset.generate_markers_image(3*h, 3*w, images, images_mask)  # shape: (T, H, W)
+        images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
         # labels, labels_masks = MyDataset.generate_markers_image(
         #     h, 
         #     w, 
         #     labels.reshape(self.clip_len, -1, 2),
         #     labels_mask.reshape(self.clip_len, -1)
         # )  # shape: (T, H, W)
-        labels = MyDataset.generate_vein_image(3*h, 3*w, labels, labels_mask)     # shape: (T, H, W)
+        labels = MyDataset.generate_vein_image(h, w, labels, labels_mask)     # shape: (T, H, W)
         # labels[marker_masks != 255] = 0
 
-        images = images[:, h:2*h, w:2*w]
-        labels = labels[:, h:2*h, w:2*w]
-        
         # Convert to float and normalize
         images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
         labels = torch.tensor(labels, dtype=torch.float32) / 255.0  # Normalize to [0, 1]

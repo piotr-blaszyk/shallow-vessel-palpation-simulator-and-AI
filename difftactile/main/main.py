@@ -34,24 +34,22 @@ class SyntheticImageGenerator:
     @staticmethod
     def crop(points, top_left, target_resolution):
         # Create a copy and apply the offset to all points at once
-        cropped_points = points.copy()
-        cropped_points -= top_left
+        points -= top_left
 
         w = target_resolution[0]
         h = target_resolution[1]
         
         # Create mask for valid points using vectorized operations
         mask = (
-            (cropped_points[..., 0] >= 0) & (cropped_points[..., 0] < w)
-            & (cropped_points[..., 1] >= 0) & (cropped_points[..., 1] < h)
+            (points[..., 0] >= 0) & (points[..., 0] < w)
+            & (points[..., 1] >= 0) & (points[..., 1] < h)
         )
         
-        return cropped_points, mask
+        return points, mask
 
     @staticmethod
-    def alpha_shape(points):
+    def alpha_shape(points, alpha=1e-10):
         points = np.unique(points, axis=0)
-        alpha=1e-10
         if len(points) < 4:
             return np.array([])
 
@@ -127,6 +125,31 @@ class Contact:
         self.visualisation_initialise()
         self.training_data_collection_initialise()
     
+    def vein_sparse_to_dense_init(self):
+        self.num_veins = SYSTEM_PARAMS.meta.max_num_veins
+        self.vein_counts = ti.field(int, (self.num_veins,), needs_grad=False)
+        self.vein_indices = ti.field(
+            int, (self.num_veins, self.phantom.actual_total_num_particles), needs_grad=False
+        )
+    
+    def vein_sparse_to_dense(self):
+        vein_titles = self.phantom.vein_titles.to_numpy()
+        unique_titles, counts = np.unique(vein_titles, return_counts=True)
+        vein_counts = np.zeros(shape=(self.num_veins,), dtype=int)
+        for vein_ix, count in zip(unique_titles, counts):
+            if vein_ix != -1:
+                vein_counts[vein_ix] = count
+        self.vein_counts.from_numpy(vein_counts)
+        vein_counts_temp = np.zeros(shape=(self.num_veins,), dtype=int)
+        vein_indices = -np.ones(shape=(self.num_veins, self.phantom.actual_total_num_particles), dtype=int)
+        for particle_ix in range(len(vein_titles)):
+            vein_ix = vein_titles[particle_ix]
+            if vein_ix != -1:
+                vein_particle_ix = vein_counts_temp[vein_ix]
+                vein_indices[vein_ix, vein_particle_ix] = particle_ix
+                vein_counts_temp[vein_ix] += 1
+        self.vein_indices.from_numpy(vein_indices)
+    
     def compute_sensor_bounds(self):
         _min = np.array(SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex[:2])
         _mid = np.array(SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[:2])
@@ -159,6 +182,7 @@ class Contact:
         self.vein_cx_A = None
         self.target_3_ts = 12
         self.target_4_ts = 226
+        self.vein_sparse_to_dense_init()
 
     @ti.kernel
     def fp(self):
@@ -1415,7 +1439,7 @@ class Contact:
         markers_mask = Contact.compute_mask(h, w, markers)
 
         vein = self.vein_2d_projection.to_numpy()
-        vein_counts = self.phantom.vein_counts.to_numpy()
+        vein_counts = self.vein_counts.to_numpy()
         max_vein_count = np.max(vein_counts)
         vein_python_arr = []
         for i in range(vein.shape[0]):
@@ -1604,6 +1628,14 @@ class Contact:
             ),
             needs_grad=False,
         )
+        self.vein_2d_projection_flat = ti.Vector.field(
+            2,
+            dtype=float,
+            shape=(
+                1000
+            ),
+            needs_grad=False,
+        )
         self.sim_markers_undeformed = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
@@ -1655,6 +1687,7 @@ class Contact:
         self.healthy_tissue_points.fill(0)
         self.tumour_points.fill(0)
         self.vein_2d_projection.fill(-1)
+        self.vein_2d_projection_flat.fill(-1)
 
     @ti.kernel
     def visualisation_draw_3d_scene(self, f: ti.i32):
@@ -1668,10 +1701,10 @@ class Contact:
 
     @ti.kernel
     def visualisation_project_vein_2d(self):
-        for i in range(self.phantom.vein_counts.shape[0]):
-            num_points = self.phantom.vein_counts[i]
+        for i in range(self.vein_counts.shape[0]):
+            num_points = self.vein_counts[i]
             for j in range(num_points):
-                vein_ix = self.phantom.vein_indices[i, j]
+                vein_ix = self.vein_indices[i, j]
                 point = self.phantom.particles_A[
                     SYSTEM_PARAMS.contact.num_sub_frames - 1,
                     vein_ix
@@ -1679,6 +1712,7 @@ class Contact:
                 projection_2d = self.vitactip.project_A_point_2d(point)
                 projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
                 self.vein_2d_projection[i, j] = projection_2d
+                self.vein_2d_projection_flat[j] = projection_2d / self.tactile_image_resolution[None]
 
     @ti.kernel
     def visualisation_prepare_tactile_readout_data_fp(self):
@@ -1816,6 +1850,11 @@ class Contact:
             self.clock_arm_points,
             radius=0.02,
             per_vertex_color=self.clock_arm_points_per_vertex_color,
+        )
+        self.tactile_canvas.circles(
+            self.vein_2d_projection_flat,
+            radius=0.01,
+            color=(0, 0, 1)
         )
         self.tactile_window.show()
 
@@ -2427,10 +2466,11 @@ class Contact:
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             self.randomise_train_step()
-            for i in range(0, 2):
+            for i in range(0, 1):
                 # self.randomise_contact_params()
                 self.trajectory_ix[None] = i
                 self.set_up_initial_positions_state_and_trajectory()
+                self.vein_sparse_to_dense()
                 self.reset_pid_controller()
                 self.visualisation_reset_scene()
                 self.reset_exp_sim_traj()
