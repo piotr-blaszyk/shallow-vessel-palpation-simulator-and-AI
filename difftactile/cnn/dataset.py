@@ -235,19 +235,30 @@ class MyDataset(torch.utils.data.Dataset):
         images, images_crop_mask = MyDataset.downscale(self.k, images)
         labels, labels_crop_mask = MyDataset.downscale(self.k, labels)
 
+        # images_mask &= images_crop_mask
+        # labels_mask &= labels_crop_mask
+
+        images, images_crop_mask = MyDataset.make_3x3(images)
+        labels, labels_crop_mask = MyDataset.make_3x3(labels)
+
         images_mask &= images_crop_mask
         labels_mask &= labels_crop_mask
 
-        images, marker_masks = MyDataset.generate_markers_image(self.h_crop_small, self.w_crop_small, images, images_mask)  # shape: (T, H, W)
-        labels, labels_masks = MyDataset.generate_markers_image(
-            self.h_crop_small, 
-            self.w_crop_small, 
-            labels.reshape(self.clip_len, -1, 2),
-            labels_mask.reshape(self.clip_len, -1)
-        )  # shape: (T, H, W)
+        h = self.h_crop_small
+        w = self.w_crop_small
 
-        # labels = MyDataset.generate_vein_image(self.h_crop_small, self.w_crop_small, labels, labels_mask)     # shape: (T, H, W)
+        images, marker_masks = MyDataset.generate_markers_image(3*h, 3*w, images, images_mask)  # shape: (T, H, W)
+        # labels, labels_masks = MyDataset.generate_markers_image(
+        #     h, 
+        #     w, 
+        #     labels.reshape(self.clip_len, -1, 2),
+        #     labels_mask.reshape(self.clip_len, -1)
+        # )  # shape: (T, H, W)
+        labels = MyDataset.generate_vein_image(3*h, 3*w, labels, labels_mask)     # shape: (T, H, W)
         # labels[marker_masks != 255] = 0
+
+        images = images[:, h:2*h, w:2*w]
+        labels = labels[:, h:2*h, w:2*w]
         
         # Convert to float and normalize
         images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
@@ -484,9 +495,30 @@ class MyDataset(torch.utils.data.Dataset):
     def downscale(k, points):
         if points.shape[-1] == 0:  # Check if there are any points
             return points, np.ones((points.shape[0], 0), dtype=bool)  # Return empty mask matching input shape
-            
-        points, mask = SyntheticImageGenerator.crop(points)
+        
+        origin = np.array([
+            SYSTEM_PARAMS.fisheye_model.crop_x,
+            SYSTEM_PARAMS.fisheye_model.crop_y
+        ], dtype=float)
+        resolution = np.array([
+            SYSTEM_PARAMS.fisheye_model.crop_width,
+            SYSTEM_PARAMS.fisheye_model.crop_height
+        ], dtype=float)
+        points, mask = SyntheticImageGenerator.crop(points, origin, resolution)
         points = points / k
+        return points, mask
+
+    @staticmethod
+    def make_3x3(points):
+        origin = np.array([
+            -SYSTEM_PARAMS.fisheye_model.crop_x,
+            -SYSTEM_PARAMS.fisheye_model.crop_y
+        ], dtype=float)
+        resolution = np.array([
+            3*SYSTEM_PARAMS.fisheye_model.crop_width,
+            3*SYSTEM_PARAMS.fisheye_model.crop_height
+        ], dtype=float)
+        points, mask = SyntheticImageGenerator.crop(points, origin, resolution)
         return points, mask
 
     def augmentation_artificial_vein_signal(self, clip_points, clip_vein_endpoints, clip_vein_endpoints_mask):

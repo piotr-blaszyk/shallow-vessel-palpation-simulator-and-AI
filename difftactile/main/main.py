@@ -32,16 +32,18 @@ class SyntheticImageGenerator:
         pass
 
     @staticmethod
-    def crop(points):
+    def crop(points, top_left, target_resolution):
         # Create a copy and apply the offset to all points at once
         cropped_points = points.copy()
-        cropped_points[..., 0] = points[..., 0] - SYSTEM_PARAMS.fisheye_model.crop_x
-        cropped_points[..., 1] = points[..., 1] - SYSTEM_PARAMS.fisheye_model.crop_y
+        cropped_points -= top_left
+
+        w = target_resolution[0]
+        h = target_resolution[1]
         
         # Create mask for valid points using vectorized operations
         mask = (
-            (cropped_points[..., 0] >= 0) & (cropped_points[..., 0] < SYSTEM_PARAMS.fisheye_model.crop_width)
-            & (cropped_points[..., 1] >= 0) & (cropped_points[..., 1] < SYSTEM_PARAMS.fisheye_model.crop_height)
+            (cropped_points[..., 0] >= 0) & (cropped_points[..., 0] < w)
+            & (cropped_points[..., 1] >= 0) & (cropped_points[..., 1] < h)
         )
         
         return cropped_points, mask
