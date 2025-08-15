@@ -107,7 +107,7 @@ class SyntheticImageGenerator:
         return in_circle
 
     @staticmethod
-    def fit_polynomial(points, n=3, k=100):
+    def fit_polynomial(points, n=3, k=SYSTEM_PARAMS.meta.polyline_num):
         """
         Fit a polynomial of order n to 2D points and return evenly sampled points along the curve.
         
@@ -119,7 +119,7 @@ class SyntheticImageGenerator:
         Returns:
             numpy array of shape (k, 2) containing evenly sampled points along the polynomial
         """
-        if len(points) < n + 1:
+        if len(points) < 2 * (n + 1):
             return -np.ones(shape=(0, 2))
             
         # Extract x and y coordinates
@@ -1525,7 +1525,10 @@ class Contact:
             single_vein = Contact.filter_using_mask(markers_mask, single_vein)
             polyline_points = SyntheticImageGenerator.fit_polynomial(single_vein)
             vein_polyline_python_arr.append(polyline_points)
-        vein_polyline_np, vein_polyline_mask = Contact.create_padded_array_with_mask(vein_polyline_python_arr)
+        vein_polyline_np, vein_polyline_mask = Contact.create_padded_array_with_mask(
+            vein_polyline_python_arr, 
+            k=SYSTEM_PARAMS.meta.polyline_num
+        )
         self.vein_polyline_data.append(vein_polyline_np)
         self.vein_polyline_mask_data.append(vein_polyline_mask)
 
@@ -2586,6 +2589,8 @@ class Contact:
                         and ts % 2 == 0
                     ):
                         self.record_training_data_point(j, ts)
+                    if self.last_target_reached[None] == 1:
+                        break
                 self.write_training_data_to_file(j*2 + i)
                 # self.write_training_data_to_file(999)
                 

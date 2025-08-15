@@ -190,9 +190,6 @@ class MyDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         file_path, start, dilation = self.clips[idx]
 
-        # file_vein = self.file_contains_vein(file_path)
-        # print(f'file contains vein: {file_vein}')
-
         data = np.load(file_path)
         # np.load returns a dict-like object whose keys we can access directly
         markers = data['markers']
@@ -234,22 +231,23 @@ class MyDataset(torch.utils.data.Dataset):
         
         images, images_crop_mask = MyDataset.downscale(self.k, images)
         labels, labels_crop_mask = MyDataset.downscale(self.k, labels)
+        vein_polyline, vein_polyline_crop_mask = MyDataset.downscale(self.k, vein_polyline)
 
         # images_mask &= images_crop_mask
         # labels_mask &= labels_crop_mask
+        # vein_polyline_mask &= vein_polyline_crop_mask
 
         h = self.h_crop_small
         w = self.w_crop_small
 
         images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
-        # labels, labels_masks = MyDataset.generate_markers_image(
-        #     h, 
-        #     w, 
-        #     labels.reshape(self.clip_len, -1, 2),
-        #     labels_mask.reshape(self.clip_len, -1)
-        # )  # shape: (T, H, W)
+        labels, _ = MyDataset.generate_markers_image(
+            h, 
+            w, 
+            vein_polyline.reshape(self.clip_len, -1, 2),
+            vein_polyline_mask.reshape(self.clip_len, -1)
+        )  # shape: (T, H, W)
         # labels = MyDataset.generate_vein_image(h, w, labels, labels_mask)     # shape: (T, H, W)
-        labels = MyDataset.generate_vein_centerline_image(h, w, labels, labels_mask)     # shape: (T, H, W)
         # labels[marker_masks != 255] = 0
 
         # Convert to float and normalize
@@ -307,28 +305,6 @@ class MyDataset(torch.utils.data.Dataset):
             marker_masks[t, :, :] = markers_mask
                 
         return images, marker_masks
-
-    @staticmethod
-    def generate_vein_centerline_image(h, w, points, points_mask):
-        if points.shape[-1] == 0:  # Check if there are any points
-            return np.zeros((points.shape[0], h, w), dtype=np.uint8)
-
-        # Initialize output array for all frames
-        images = np.zeros((points.shape[0], h, w), dtype=np.uint8)
-        
-        # Generate image for each frame
-        for t in range(points.shape[0]):
-            # Process each vein separately
-            for v in range(points.shape[1]):
-                # Get only valid points according to mask for this vein
-                vein_points = points[t, v]
-                vein_mask = points_mask[t, v]
-                valid_points = vein_points[vein_mask]
-                centerline_points = SyntheticImageGenerator.get_curve_centerline_points(valid_points)
-                for point in centerline_points:
-                    MyDataset.draw_point(images, t, point)
-                
-        return images
 
     @staticmethod
     def draw_point(images, t, point):
