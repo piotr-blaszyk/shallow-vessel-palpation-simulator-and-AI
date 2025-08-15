@@ -139,7 +139,7 @@
         "distance_scaling_factor": 5.000e+00,
         "youngs_modulus_scaling_factor": 1.000e+00,
         "px_dist_adjacent_markers": 3.812e+01,
-        "max_num_veins": 6,
+        "max_num_veins": 4,
         "num_trajectories": 4,
         "max_num_trajectory_points": 1000,
         "max_timesteps_per_trajectory": 1000

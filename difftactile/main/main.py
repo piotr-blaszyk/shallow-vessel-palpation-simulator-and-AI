@@ -842,20 +842,41 @@ class Contact:
         _, _, z = self.vitactip_tip_pose[:3]
         x = self.sensor_x_range_A[0]
         y = self.sensor_y_range_A[0]
-        dx = self.sensor_x_range_A[1] - self.sensor_x_range_A[0]
-        dy = self.sensor_y_range_A[1] - self.sensor_y_range_A[0]
-        r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        
+        # Initial press-down motion
         trajectory = [
             [x, y, z, *srq],
             [x, y, z - press_depth_surface, *srq],
             [x, y, z - press_depth_1, *srq],
         ]
+        
+        # Calculate maximum possible magnitude based on sensor bounds
+        x_min, x_max = self.sensor_x_range_A
+        y_min, y_max = self.sensor_y_range_A
+        max_dx = x_max - x_min
+        max_dy = y_max - y_min
+        max_magnitude = min(max_dx, max_dy) / 2  # Conservative estimate
+        
+        # Generate remaining trajectory points using polar coordinates
+        current_x, current_y = x, y
         while len(trajectory) < self.trajectories.shape[1]:
-            a = random.uniform(*self.sensor_x_range_A)
-            b = random.uniform(*self.sensor_y_range_A)
-            trajectory.append(
-                [a, b, z - press_depth_1, *srq]
-            )
+            magnitude = random.uniform(0, max_magnitude)
+            
+            # Keep trying angles until we find one that keeps point in bounds
+            while True:
+                angle = random.uniform(0, 2 * math.pi)
+                new_x = current_x + magnitude * math.cos(angle)
+                new_y = current_y + magnitude * math.sin(angle)
+                
+                # Check if new point is within bounds
+                if (x_min <= new_x <= x_max and 
+                    y_min <= new_y <= y_max):
+                    trajectory.append(
+                        [new_x, new_y, z - press_depth_1, *srq]
+                    )
+                    current_x, current_y = new_x, new_y
+                    break
+                    
         return trajectory
 
     def set_up_initial_positions_state_and_trajectory(self):
@@ -892,19 +913,22 @@ class Contact:
     
     def generate_random_state_dicts(self):
         state_dicts = []
-        num_veins = random.randint(4, SYSTEM_PARAMS.meta.max_num_veins)
+        # num_veins = random.randint(4, SYSTEM_PARAMS.meta.max_num_veins)
+        num_veins = SYSTEM_PARAMS.meta.max_num_veins
+        x, y, z = self.vitactip_tip_pose[:3]
         for i in range(num_veins):
-            theta_rand = np.random.uniform(-180, 180)
+            theta_rand = np.random.uniform(-5, 5)
             # theta_rand = 0
 
             cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
 
             cx = np.random.uniform(*self.sensor_x_range_01)
-            cy = np.random.uniform(*self.sensor_y_range_01)
-            px = SYSTEM_PARAMS.geometry.phantom_x_length
-            py = SYSTEM_PARAMS.geometry.phantom_y_length
-            pd = (px**2 + py**2) ** (1/2)
-            h = np.random.uniform(1/4 * pd, pd)
+            cy = y
+            # px = SYSTEM_PARAMS.geometry.phantom_x_length
+            # py = SYSTEM_PARAMS.geometry.phantom_y_length
+            # pd = (px**2 + py**2) ** (1/2)
+            # h = np.random.uniform(1/4 * pd, pd)
+            h = SYSTEM_PARAMS.geometry.vein.h
             
             state_dict = {
                 'cx': cx,
