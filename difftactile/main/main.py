@@ -242,8 +242,6 @@ class Contact:
 
     def training_data_collection_initialise(self):
         self.marker_data = []
-        self.vein_data = []
-        self.vein_mask_data = []
         self.vein_polyline_data = []
         self.vein_polyline_mask_data = []
         self.vein_cx_A = None
@@ -1507,7 +1505,6 @@ class Contact:
 
         vein = self.vein_2d_projection.to_numpy()
         vein_counts = self.vein_counts.to_numpy()
-        max_vein_count = np.max(vein_counts)
         vein_python_arr = []
         for i in range(vein.shape[0]):
             num_points = vein_counts[i]
@@ -1516,9 +1513,6 @@ class Contact:
                 single_vein_points
             )
         vein = vein_python_arr
-        vein_np, vein_mask = Contact.create_padded_array_with_mask(vein, k=max_vein_count)
-        self.vein_data.append(vein_np)
-        self.vein_mask_data.append(vein_mask)
         vein_polyline_python_arr = []
         for i in range(len(vein)):
             single_vein = vein[i]
@@ -1613,8 +1607,6 @@ class Contact:
         path = f'{directory}/{file}'
 
         markers_array, markers_mask = Contact.create_padded_array_with_mask(self.marker_data)
-        veins_array = np.array(self.vein_data)
-        veins_mask = np.array(self.vein_mask_data)
         vein_polyline_array = np.array(self.vein_polyline_data)
         vein_polyline_mask = np.array(self.vein_polyline_mask_data)
 
@@ -1622,15 +1614,11 @@ class Contact:
             path,
             markers=markers_array,
             markers_mask=markers_mask,
-            labels=veins_array,
-            labels_mask=veins_mask,
             vein_polyline=vein_polyline_array,
             vein_polyline_mask=vein_polyline_mask
         )
         
         self.marker_data = []
-        self.vein_data = []
-        self.vein_mask_data = []
         self.vein_polyline_data = []
         self.vein_polyline_mask_data = []
 

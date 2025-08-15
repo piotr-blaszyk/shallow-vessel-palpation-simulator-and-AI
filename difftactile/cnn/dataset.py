@@ -45,7 +45,6 @@ class MyDataset(torch.utils.data.Dataset):
 
         self.randomly_remove_k = [0, 6, 13]
         self.avs_disp_c = [0.4, 0.3, 0.2]
-        self.avs_decay_c = [1.5, 2.25, 3.0]
 
         # Pre-compute valid clips for each trajectory
         self.clips = []
@@ -194,48 +193,38 @@ class MyDataset(torch.utils.data.Dataset):
         # np.load returns a dict-like object whose keys we can access directly
         markers = data['markers']
         markers_mask = data['markers_mask']
-        labels = data['labels']
-        labels_mask = data['labels_mask']
-        vein_polyline = data['vein_polyline']
-        vein_polyline_mask = data['vein_polyline_mask']
+        labels = data['vein_polyline']
+        labels_mask = data['vein_polyline_mask']
         
         # Extract longer sequence and apply dilation
         dilated_clip_len = self.clip_len * dilation
         images = markers[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        labels = labels[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
         images_mask = markers_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        labels_mask = labels_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        vein_polyline = vein_polyline[start:start + dilated_clip_len:dilation]
-        vein_polyline_mask = vein_polyline_mask[start:start + dilated_clip_len:dilation]
+        labels = labels[start:start + dilated_clip_len:dilation]
+        labels_mask = labels_mask[start:start + dilated_clip_len:dilation]
         
-        # images, labels_signal_mask = self.augmentation_artificial_vein_signal(
-        #     images, vein_polyline, vein_polyline_mask
-        # )
-        # # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
-        # labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
-        # discrete_angles = [0, 60, 120, 180, 240, 300]
-        # rotation_angle_deg = random.choice(discrete_angles)
-        # images = self.augmentation_rotation(images, rotation_angle_deg)
-        # labels = self.augmentation_rotation(labels, rotation_angle_deg)
-        # angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
-        # magnitude = random.uniform(0, 10)
-        # images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
-        # labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
-        # angle_x = math.radians(random.uniform(-5, 5))
-        # angle_y = math.radians(random.uniform(-5, 5))
-        # images = self.rotate_xy(images, angle_x, angle_y)
-        # labels = self.rotate_xy(labels, angle_x, angle_y)
-        # images_random_remove_mask = self.randomly_remove(images)
-        # images_mask &= images_random_remove_mask
+        images, labels_signal_mask = self.augmentation_artificial_vein_signal(
+            images, labels, labels_mask
+        )
+        # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
+        labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
+        discrete_angles = [0, 60, 120, 180, 240, 300]
+        rotation_angle_deg = random.choice(discrete_angles)
+        images = self.augmentation_rotation(images, rotation_angle_deg)
+        labels = self.augmentation_rotation(labels, rotation_angle_deg)
+        angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+        magnitude = random.uniform(0, 10)
+        images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+        labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+        angle_x = math.radians(random.uniform(-5, 5))
+        angle_y = math.radians(random.uniform(-5, 5))
+        images = self.rotate_xy(images, angle_x, angle_y)
+        labels = self.rotate_xy(labels, angle_x, angle_y)
+        images_random_remove_mask = self.randomly_remove(images)
+        images_mask &= images_random_remove_mask
         
-        
-        images, images_crop_mask = MyDataset.downscale(self.k, images)
-        labels, labels_crop_mask = MyDataset.downscale(self.k, labels)
-        vein_polyline, vein_polyline_crop_mask = MyDataset.downscale(self.k, vein_polyline)
-
-        # images_mask &= images_crop_mask
-        # labels_mask &= labels_crop_mask
-        # vein_polyline_mask &= vein_polyline_crop_mask
+        images = MyDataset.downscale(self.k, images)
+        labels = MyDataset.downscale(self.k, labels)
 
         h = self.h_crop_small
         w = self.w_crop_small
@@ -244,11 +233,9 @@ class MyDataset(torch.utils.data.Dataset):
         labels, _ = MyDataset.generate_markers_image(
             h, 
             w, 
-            vein_polyline.reshape(self.clip_len, -1, 2),
-            vein_polyline_mask.reshape(self.clip_len, -1)
+            labels.reshape(self.clip_len, -1, 2),
+            labels_mask.reshape(self.clip_len, -1)
         )  # shape: (T, H, W)
-        # labels = MyDataset.generate_vein_image(h, w, labels, labels_mask)     # shape: (T, H, W)
-        # labels[marker_masks != 255] = 0
 
         # Convert to float and normalize
         images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
@@ -269,8 +256,7 @@ class MyDataset(torch.utils.data.Dataset):
         images = markers[start_ix:start_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
         images_mask = markers_mask[start_ix:start_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
         
-        images, images_crop_mask = MyDataset.downscale(k, images)
-        images_mask &= images_crop_mask
+        images = MyDataset.downscale(k, images)
         
         h_scaled = h // k
         w_scaled = w // k
@@ -501,7 +487,7 @@ class MyDataset(torch.utils.data.Dataset):
         ], dtype=float)
         points, mask = SyntheticImageGenerator.crop(points, origin, resolution)
         points = points / k
-        return points, mask
+        return points
 
     @staticmethod
     def make_3x3(points):
@@ -545,14 +531,11 @@ class MyDataset(torch.utils.data.Dataset):
             vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
             vein_visible_mask[start_idx:end_idx] = True
 
-        # lower_disp_c = self.avs_disp_c[self.difficulty_level]
-        # disp_c = random.uniform(lower_disp_c, 0.5)
-        disp_c = 1.0
+        lower_disp_c = self.avs_disp_c[self.difficulty_level]
+        disp_c = random.uniform(lower_disp_c, 0.5)
 
         for j in range(start_idx, end_idx):
             points = clip_points[j]
-            centre = np.mean(points, axis=0)
-            max_dist = np.max(np.linalg.norm(points - centre, axis=1))
             x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
             frame_vein_polyline = clip_vein_polyline[j] 
             frame_vein_polyline_mask = clip_vein_polyline_mask[j]
