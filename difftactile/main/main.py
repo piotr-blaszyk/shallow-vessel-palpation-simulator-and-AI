@@ -134,26 +134,19 @@ class Contact:
         sensor_min = _min + sensor_r
         sensor_max = _max - sensor_r
 
-        sensor_min_01 = (sensor_min - _mid) / phantom_r
-        sensor_max_01 = (sensor_max - _mid) / phantom_r
-
-        self.sensor_x_range_A = np.array([
+        self.sensor_x_range_world = np.array([
             sensor_min[0],
             sensor_max[0]
         ])
-        self.sensor_y_range_A = np.array([
+        self.sensor_y_range_world = np.array([
             sensor_min[1],
             sensor_max[1]
         ])
-        self.sensor_x_range_01 = np.array([
-            sensor_min_01[0],
-            sensor_max_01[0]
-        ])
-        self.sensor_y_range_01 = np.array([
-            sensor_min_01[1],
-            sensor_max_01[1]
-        ])
-        foo = 7
+
+        self.sensor_x_range_phantom = self.sensor_x_range_world.copy()
+        self.sensor_x_range_phantom -= _mid[0]
+        self.sensor_y_range_phantom = self.sensor_y_range_world.copy()
+        self.sensor_y_range_phantom -= _mid[1]
 
     def training_data_collection_initialise(self):
         self.marker_data = []
@@ -799,10 +792,10 @@ class Contact:
             press_depth_1
         ) = self.get_random_slide_params()
         _, _, z = self.vitactip_tip_pose[:3]
-        x = self.sensor_x_range_A[0]
-        y = self.sensor_y_range_A[0]
-        dx = self.sensor_x_range_A[1] - self.sensor_x_range_A[0]
-        dy = self.sensor_y_range_A[1] - self.sensor_y_range_A[0]
+        x = self.sensor_x_range_world[0]
+        y = self.sensor_y_range_world[0]
+        dx = self.sensor_x_range_world[1] - self.sensor_x_range_world[0]
+        dy = self.sensor_y_range_world[1] - self.sensor_y_range_world[0]
         r = SYSTEM_PARAMS.geometry.sensor_xy_radius
         d_single = random.uniform(0.5 * r, 2 * r)
         trajectory = [
@@ -820,7 +813,7 @@ class Contact:
         while True:
             a, b, c = trajectory[-1][:3]
             if (
-                a > self.sensor_x_range_A[1]
+                a > self.sensor_x_range_world[1]
                 or len(trajectory) == self.trajectories.shape[1]
             ):
                 break
@@ -841,8 +834,8 @@ class Contact:
             press_depth_1
         ) = self.get_random_slide_params()
         _, _, z = self.vitactip_tip_pose[:3]
-        x = self.sensor_x_range_A[0]
-        y = self.sensor_y_range_A[0]
+        x = self.sensor_x_range_world[0]
+        y = self.sensor_y_range_world[0]
         
         # Initial press-down motion
         trajectory = [
@@ -852,8 +845,8 @@ class Contact:
         ]
         
         # Calculate maximum possible magnitude based on sensor bounds
-        x_min, x_max = self.sensor_x_range_A
-        y_min, y_max = self.sensor_y_range_A
+        x_min, x_max = self.sensor_x_range_world
+        y_min, y_max = self.sensor_y_range_world
         max_dx = x_max - x_min
         max_dy = y_max - y_min
         max_magnitude = min(max_dx, max_dy) / 2  # Conservative estimate
@@ -914,44 +907,31 @@ class Contact:
     
     def generate_random_state_dicts(self):
         state_dicts = []
-        # num_veins = random.randint(4, SYSTEM_PARAMS.meta.max_num_veins)
         num_veins = SYSTEM_PARAMS.meta.max_num_veins
-        x, y, z = self.vitactip_tip_pose[:3]
-
-        # Keep track of placed y-coordinates
         placed_cy_values = []
         min_separation = SYSTEM_PARAMS.geometry.min_vein_separation
-
         for i in range(num_veins):
-            # theta_rand = np.random.uniform(-5, 5)
-            # theta_rand = 0
             theta_rand = 0
-
             cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
-
-            cx = self.sensor_x_range_01[0]
+            cx = self.sensor_x_range_phantom[0]
+            
             # px = SYSTEM_PARAMS.geometry.phantom_x_length
             # py = SYSTEM_PARAMS.geometry.phantom_y_length
             # pd = (px**2 + py**2) ** (1/2)
             # h = np.random.uniform(1/4 * pd, pd)
-            
-            # Keep trying random y positions until we find one with sufficient separation
+
             while True:
-                cy = np.random.uniform(*self.sensor_y_range_01)
-                # Check if this position maintains minimum separation with all previously placed veins
+                cy = np.random.uniform(*self.sensor_y_range_phantom)
                 valid_position = True
                 for prev_cy in placed_cy_values:
-                    dist_01 = abs(cy - prev_cy)
-                    dist_A = dist_01 * SYSTEM_PARAMS.geometry.phantom_y_length
-                    if dist_A < min_separation:
+                    if abs(cy - prev_cy) < min_separation:
                         valid_position = False
                         break
                 if valid_position:
                     placed_cy_values.append(cy)
                     break
-
+                
             h = SYSTEM_PARAMS.geometry.vein.h
-            
             state_dict = {
                 'cx': cx,
                 'cy': cy,
@@ -961,6 +941,9 @@ class Contact:
                 'r': SYSTEM_PARAMS.geometry.vein.r
             }
             state_dicts.append(state_dict)
+            
+        print('placed_cy_values')
+        print(placed_cy_values)
         return state_dicts
 
     @ti.kernel
