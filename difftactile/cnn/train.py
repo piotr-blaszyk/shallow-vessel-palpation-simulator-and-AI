@@ -23,9 +23,9 @@ class CurriculumCallback(pl.Callback):
 
     def on_train_epoch_start(self, trainer, pl_module):
         epoch = trainer.current_epoch
-        if epoch == 10:
+        if epoch == 5:
             self.dataset.set_difficulty_level(1)
-        elif epoch == 20:
+        elif epoch == 10:
             self.dataset.set_difficulty_level(2)
 
 class LossWeightScheduler(pl.Callback):
@@ -35,8 +35,8 @@ class LossWeightScheduler(pl.Callback):
 
     def on_train_epoch_start(self, trainer, pl_module):
         epoch = trainer.current_epoch
-        i = epoch // 10
-        j = epoch % 10
+        i = epoch // 5
+        j = epoch % 5
         min_alpha = self.min_alpha[i]
         max_alpha = self.max_alpha[i]
         alpha = min_alpha + (max_alpha - min_alpha) * (j / 9)
@@ -46,7 +46,7 @@ class LossWeightScheduler(pl.Callback):
 def train():
     start_time = time.perf_counter()
     BATCH_SIZE = 8
-    NUM_EPOCHS = 10
+    NUM_EPOCHS = 15
     NUM_WORKERS = 16
     LR = 1e-3
 
@@ -94,8 +94,7 @@ def train():
         callbacks=[
             checkpoint_cb, 
             early_stopping, 
-            CurriculumCallback(train_dataset),
-            LossWeightScheduler()
+            CurriculumCallback(train_dataset)
             ],
         logger=logger,
         log_every_n_steps=1,
@@ -222,7 +221,7 @@ def choose_optimal_threshold():
 
 
 def main():
-    choose_optimal_threshold()
+    train()
 
 
 if __name__ == "__main__":

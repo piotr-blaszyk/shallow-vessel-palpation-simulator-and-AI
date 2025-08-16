@@ -6,7 +6,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 class TverskyLoss(torch.nn.Module):
-    def __init__(self, alpha=0.7, beta=0.3, smooth=1e-6):
+    def __init__(self, alpha=0.8, beta=0.2, smooth=1e-6):
         """
         Tversky loss for imbalanced data
         :param alpha: weight of false negatives (default: 0.7)
@@ -52,7 +52,7 @@ class FocalLoss(torch.nn.Module):
 
 class SegmentationModel(pl.LightningModule):
     def __init__(self, lr=1e-3, lr_patience=5, lr_factor=0.5, lr_min=1e-6, 
-                 tversky_weight=0.3, focal_weight=0.7):
+                 tversky_weight=0.5, focal_weight=0.5):
         super().__init__()
         self.model = UNet(
             spatial_dims=3,

@@ -8,6 +8,7 @@ import matplotlib.colors as mcolors
 import pickle
 import cv2
 from tqdm import tqdm
+from sklearn.neighbors import NearestNeighbors
 
 
 class Visualisation:
@@ -95,7 +96,7 @@ class Visualisation:
                 clip_input = clip.to(device)
                 logits = model(clip_input)
                 probs = torch.sigmoid(logits)
-                pred = (probs > 0.7).float()
+                pred = (probs > 0.5).float()
                 pred = pred.cpu()
             
             # Convert tensors to numpy arrays
@@ -394,11 +395,141 @@ class Visualisation:
             pbar.update(1)
             pbar.set_description(f"Processed {i} batches")
         pbar.close()
+    
+    def graph(self):
+        full_dataset = MyDataset(
+            data_dir=SYSTEM_PARAMS.files.dataset_root
+        )
+        train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
+            full_dataset, train_size=0.1, val_size=0.0, test_size=0.0
+        )
+        num_clips = len(train_dataset)
+        visualise = False
+        
+        # Lists to store features from all frames
+        all_node_features = []
+        all_edge_features = []
+        
+        for i in range(num_clips):
+            points = train_dataset.get_markers(i)
+            adjacency = Visualisation.compute_knn_adjacency(points)
+            
+            # Compute node and edge features
+            node_features, edge_features = Visualisation.compute_graph_features(points, adjacency)
+            
+            # Store features
+            all_node_features.append(node_features)
+            all_edge_features.append(edge_features)
+            
+            if visualise:
+                should_break = Visualisation.visualise_adjacency_graph(points, adjacency)
+                if should_break:
+                    break
+        
+        plt.close('all')  # Close any remaining figures
+        return all_node_features, all_edge_features
+
+    @staticmethod
+    def compute_knn_adjacency(points, k=6):
+        """
+        Compute k-nearest neighbors adjacency matrix for given points.
+        
+        Args:
+            points: numpy array of shape (n, 2) containing 2D points
+            k: number of nearest neighbors to find (default: 6)
+        
+        Returns:
+            adjacency: numpy array of shape (n, k) containing indices of k nearest neighbors for each point
+        """
+        # Initialize the NearestNeighbors object
+        nn = NearestNeighbors(n_neighbors=k+1, algorithm='ball_tree')
+        nn.fit(points)
+        
+        # Find k+1 nearest neighbors (including the point itself)
+        distances, indices = nn.kneighbors(points)
+        
+        # Remove self-connections (first column) to get exactly k neighbors
+        adjacency = indices[:, 1:]
+        
+        return adjacency
+
+    @staticmethod
+    def visualise_adjacency_graph(points, adjacency):
+        # Create a new figure for each frame
+        plt.figure(figsize=(10, 10))
+        
+        # Plot edges first (connections between points)
+        for node_idx in range(len(points)):
+            # Get the neighbors for this node
+            neighbors = adjacency[node_idx]
+            # Draw lines from this node to all its neighbors
+            for neighbor_idx in neighbors:
+                plt.plot([points[node_idx, 0], points[neighbor_idx, 0]],
+                        [points[node_idx, 1], points[neighbor_idx, 1]],
+                        'gray', alpha=0.5, linewidth=1)
+        
+        # Plot nodes (points)
+        plt.scatter(points[:, 0], points[:, 1], c='red', s=50)
+        
+        plt.title(f'Frame {i+1}: K-Nearest Neighbors Graph (k=6)')
+        plt.xlabel('X coordinate')
+        plt.ylabel('Y coordinate')
+        
+        # Make the plot aspect ratio equal
+        plt.axis('equal')
+        
+        # Display the plot
+        plt.draw()
+        plt.pause(0.1)  # Add a small pause to allow for visualization
+        
+        # Wait for key press to continue
+        key = input("Press Enter to continue to next frame, or 'q' to quit: ")
+        if key.lower() == 'q':
+            return True
+        
+        plt.close()  # Close the current figure before showing the next one
+        return False
+
+    @staticmethod
+    def compute_graph_features(points, adjacency, cx=0, cy=0):
+        """
+        Compute node and edge features for GNN training.
+        
+        Args:
+            points: numpy array of shape (n, 2) containing 2D points
+            adjacency: numpy array of shape (n, k) containing indices of k nearest neighbors
+            cx: x-coordinate of center point (default: 0)
+            cy: y-coordinate of center point (default: 0)
+            
+        Returns:
+            node_features: numpy array of shape (num_points, 2) containing [x-cx, y-cy]
+            edge_features: numpy array of shape (num_points, k, 1) containing [euclidean_distance]
+        """
+        # Compute node features: [x-cx, y-cy]
+        node_features = points - np.array([cx, cy])  # shape: (num_points, 2)
+        
+        # Compute edge features
+        num_points = len(points)
+        k = adjacency.shape[1]
+        edge_features = np.zeros((num_points, k, 1))
+        
+        for i in range(num_points):
+            # Get coordinates of neighbors
+            neighbor_coords = points[adjacency[i]]  # shape: (k, 2)
+            # Get coordinates of current point
+            current_coords = points[i]  # shape: (2,)
+            # Compute euclidean distances
+            distances = np.sqrt(np.sum((neighbor_coords - current_coords) ** 2, axis=1))
+            edge_features[i, :, 0] = distances
+        
+        return node_features, edge_features
+
 
 def main():
     v = Visualisation()
-    v.visualize_experiment(mode='straight')
+    v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
+    # v.graph()
 
 
 if __name__ == "__main__":

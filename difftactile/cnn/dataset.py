@@ -17,6 +17,10 @@ from difftactile.main.constants import *
 from difftactile.main.main import *
 from difftactile.sensor_model.fisheye_model import *
 
+from tac_vgnn.lib.blob_extraction import img_preprocess_mask, img_preprocess, blob_detect, get_nodes_pos
+from tac_vgnn.lib.graph_generate import Plot_Voronoi_Graph, hexagon_voronoi_graph_built
+from tac_vgnn.lib.voronoi_generate import TransformVoronoi_127, cal_3d_Voronoi, plot_3d_Voronoi
+
 
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, data_dir, mode=None):
@@ -243,6 +247,48 @@ class MyDataset(torch.utils.data.Dataset):
         labels = labels.unsqueeze(0)
         
         return images, labels
+
+    def get_markers(self, idx):
+        file_path, start, dilation = self.clips[idx]
+
+        data = np.load(file_path)
+        # np.load returns a dict-like object whose keys we can access directly
+        markers = data['markers']
+        markers_mask = data['markers_mask']
+        labels = data['vein_polyline']
+        labels_mask = data['vein_polyline_mask']
+        
+        # Extract longer sequence and apply dilation
+        dilated_clip_len = self.clip_len * dilation
+        images = markers[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        images_mask = markers_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        labels = labels[start:start + dilated_clip_len:dilation]
+        labels_mask = labels_mask[start:start + dilated_clip_len:dilation]
+        
+        # images, labels_signal_mask = self.augmentation_artificial_vein_signal(
+        #     images, labels, labels_mask
+        # )
+        # # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
+        # labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
+        # discrete_angles = [0, 60, 120, 180, 240, 300]
+        # rotation_angle_deg = random.choice(discrete_angles)
+        # images = self.augmentation_rotation(images, rotation_angle_deg)
+        # labels = self.augmentation_rotation(labels, rotation_angle_deg)
+        # angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+        # magnitude = random.uniform(0, 10)
+        # images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+        # labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+        # angle_x = math.radians(random.uniform(-5, 5))
+        # angle_y = math.radians(random.uniform(-5, 5))
+        # images = self.rotate_xy(images, angle_x, angle_y)
+        # labels = self.rotate_xy(labels, angle_x, angle_y)
+        # images_random_remove_mask = self.randomly_remove(images)
+        # images_mask &= images_random_remove_mask
+        
+        images = MyDataset.downscale(self.k, images)
+        labels = MyDataset.downscale(self.k, labels)
+
+        return images[self.clip_len // 2, :, :]
 
     @staticmethod
     def get_clip(h, w, k, data, clip_len, dilation, start_ix):
