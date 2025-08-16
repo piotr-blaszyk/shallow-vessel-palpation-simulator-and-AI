@@ -24,7 +24,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.fisheye_model = FisheyeModel()
         self.data_dir = data_dir
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
-        self.clips_per_trajectory = 32
+        self.clips_per_trajectory = 16
         self.mode = mode
         self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
 

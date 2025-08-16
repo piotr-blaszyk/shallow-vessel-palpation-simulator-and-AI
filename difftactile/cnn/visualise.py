@@ -95,7 +95,7 @@ class Visualisation:
                 clip_input = clip.to(device)
                 logits = model(clip_input)
                 probs = torch.sigmoid(logits)
-                pred = (probs > 0.9).float()
+                pred = (probs > 0.7).float()
                 pred = pred.cpu()
             
             # Convert tensors to numpy arrays
@@ -397,8 +397,8 @@ class Visualisation:
 
 def main():
     v = Visualisation()
-    # v.visualize_experiment(mode='straight')
-    v.visualise('dataset')
+    v.visualize_experiment(mode='straight')
+    # v.visualise('predictions')
 
 
 if __name__ == "__main__":

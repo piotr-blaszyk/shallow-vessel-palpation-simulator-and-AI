@@ -45,7 +45,7 @@ class LossWeightScheduler(pl.Callback):
 
 def train():
     start_time = time.perf_counter()
-    BATCH_SIZE = 16
+    BATCH_SIZE = 8
     NUM_EPOCHS = 10
     NUM_WORKERS = 16
     LR = 1e-3
@@ -123,7 +123,7 @@ def choose_optimal_threshold():
     # Create test dataloader
     test_loader = DataLoader(
         test_dataset,
-        batch_size=16,  # Larger batch size for faster evaluation
+        batch_size=32,  # Larger batch size for faster evaluation
         shuffle=False,
         num_workers=num_workers
     )
@@ -136,7 +136,7 @@ def choose_optimal_threshold():
     model = model.to(device)
     
     # Define threshold range for grid search
-    thresholds = np.linspace(0.7, 0.9, 3)  # [0.1, 0.15, 0.2, ..., 0.85, 0.9]
+    thresholds = np.linspace(0.2, 0.8, 7)  # [0.1, 0.15, 0.2, ..., 0.85, 0.9]
     threshold_scores = {}
     
     print("Starting grid search for optimal threshold...")
@@ -222,7 +222,7 @@ def choose_optimal_threshold():
 
 
 def main():
-    train()
+    choose_optimal_threshold()
 
 
 if __name__ == "__main__":

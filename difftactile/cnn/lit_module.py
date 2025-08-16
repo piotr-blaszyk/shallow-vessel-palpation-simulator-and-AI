@@ -1,7 +1,7 @@
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from monai.networks.nets import BasicUNetPlusPlus
+from monai.networks.nets import BasicUNetPlusPlus, UNet
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
@@ -54,16 +54,20 @@ class SegmentationModel(pl.LightningModule):
     def __init__(self, lr=1e-3, lr_patience=5, lr_factor=0.5, lr_min=1e-6, 
                  tversky_weight=0.3, focal_weight=0.7):
         super().__init__()
-        self.model = BasicUNetPlusPlus(
+        self.model = UNet(
             spatial_dims=3,
             in_channels=1,
             out_channels=1,
-            features=(16, 16, 32, 64, 128, 16),  # Increased feature depth for fine details
-            deep_supervision=False,
-            act=("LeakyReLU", {"negative_slope": 0.1, "inplace": True}),
-            norm=("instance", {"affine": True}),
-            dropout=0.2,
-            upsample="deconv"  # Using deconvolution for better upsampling quality
+            channels=(16, 32, 64),  # Increased number and size of channels
+            strides=(2, 2),  # Added another downsampling level
+            kernel_size=3,
+            up_kernel_size=3,
+            num_res_units=2,    # Increased residual units
+            act='PRELU',
+            norm='INSTANCE',
+            dropout=0.2,        # Added some dropout for regularization
+            bias=True,
+            adn_ordering='NDA',
         )
         # Initialize loss functions
         self.tversky_loss = TverskyLoss()
