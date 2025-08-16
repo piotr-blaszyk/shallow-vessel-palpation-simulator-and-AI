@@ -9,16 +9,16 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 from difftactile.data_analysis.experiment.marker_tracker import *
-from difftactile.sensor_model.fisheye_model import *
+from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.main.constants import *
-from difftactile.main.main import SyntheticImageGenerator
+from difftactile.main.synthetic_image_generator import SyntheticImageGenerator
 from difftactile.cnn.lit_module_unet_cnn import SegmentationModel
 from difftactile.cnn.visualise import *
 from difftactile.main.main import *
 
 class PredictExp:
     def __init__(self):
-        self.fisheye_model = FisheyeModel()
+        self.fisheye_model = FisheyeModelNoTaichi()
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = SegmentationModel()
@@ -108,7 +108,7 @@ class PredictExp:
         for i in range(self.camera_h_small):
             for j in range(self.camera_w_small):
                 pixel_coords[i, j, :] = np.array([j, i])
-        points_E = self.fisheye_model.project_pix_to_points_3d_plane(
+        points_E = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(
             ps=pixel_coords,
             dist_lens_to_plane=SYSTEM_PARAMS.scaling_factor_1.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.scaling_factor_1.press_depth_1,
             resolution_down_scaling_factor=SYSTEM_PARAMS.heatmap.down_scaling_factor
@@ -163,9 +163,9 @@ class PredictExp:
     @staticmethod
     def write_video_to_npz_file(marker_tracker, path):
         n = len(marker_tracker.frame_markers)
-        markers_array, markers_mask = Contact.create_padded_array_with_mask(marker_tracker.frame_markers)
+        markers_array, markers_mask = SyntheticImageGenerator.create_padded_array_with_mask(marker_tracker.frame_markers)
         vein_data = [np.array([]) for i in range(n)]
-        veins_array, veins_mask = Contact.create_padded_array_with_mask(vein_data)
+        veins_array, veins_mask = SyntheticImageGenerator.create_padded_array_with_mask(vein_data)
         np.savez(
             path,
             markers=markers_array,

@@ -3,36 +3,19 @@ import cv2
 from os import path as osp
 import os
 import math
-import taichi as ti
 import glob
 import pickle
 import json
+
 from difftactile.main.constants import *
 
 
-class FisheyeModel:
+class FisheyeModelNoTaichi:
     def __init__(self):
         pass
 
-    @ti.func
-    def project_3d_2d(self, a):
-        a_norm = a.norm(1e-12)
-        cos = a[2] / a_norm
-        cos = ti.min(1.0, cos)
-        cos = ti.max(-1.0, cos)
-        theta = ti.acos(cos)
-        x_normalized = ti.select(
-            abs(a[0]) < 1e-10, ti.select(a[0] >= 0, 1e-10, -1e-10), a[0]
-        )
-        omega = ti.atan2(a[1], x_normalized) + ti.math.pi
-        r_x = SYSTEM_PARAMS.fisheye_model.focal_length_x * theta
-        r_y = SYSTEM_PARAMS.fisheye_model.focal_length_y * theta
-        p = ti.Vector([0.0, 0.0])
-        p[0] = -r_x * ti.cos(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_x
-        p[1] = -r_y * ti.sin(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_y
-        return p
-
-    def project_3d_2d_np(self, a):
+    @staticmethod
+    def project_3d_2d_np(a):
         a = np.asarray(a)
         if a.ndim == 1:
             a = a.reshape(1, 3)
@@ -54,7 +37,8 @@ class FisheyeModel:
         p[:, 1] = -r_y * np.sin(omega) + SYSTEM_PARAMS.fisheye_model.principal_point_y
         return p
 
-    def project_pix_to_points(self, p, hemisphere_radius):
+    @staticmethod
+    def project_pix_to_points(p, hemisphere_radius):
         x_norm = (
             p[:, 0] - SYSTEM_PARAMS.fisheye_model.principal_point_x
         ) / SYSTEM_PARAMS.fisheye_model.focal_length_x
@@ -75,8 +59,8 @@ class FisheyeModel:
             )
         return points
 
+    @staticmethod
     def project_pix_to_points_3d_plane(
-            self,
             ps,
             dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
             resolution_down_scaling_factor=None
@@ -113,7 +97,8 @@ class FisheyeModel:
         # Reshape output to match input shape + extra dimension for 3D coordinates
         return ps_3d.reshape(*original_shape, 3)
 
-    def get_marker_image(self, img):
+    @staticmethod
+    def get_marker_image(img):
         if len(img.shape) == 3:
             source_height, source_width = img.shape[:2]
         else:
@@ -141,7 +126,8 @@ class FisheyeModel:
         MarkerCenter = np.array(MarkerCenter)
         return MarkerCenter, circle_center, circle_radius
 
-    def project_points_to_pix_cv2(self, points3d):
+    @staticmethod
+    def project_points_to_pix_cv2(points3d):
         points3d = np.asarray(points3d, dtype=np.float64)
         if points3d.ndim == 1:
             points3d = points3d.reshape(1, 3)
@@ -169,7 +155,8 @@ class FisheyeModel:
         res = imgpts.reshape(-1, 2)
         return res
 
-    def interactive_exploration(self):
+    @staticmethod
+    def interactive_exploration():
         image_extensions = ["*.jpg", "*.jpeg", "*.png", "*.bmp", "*.tiff"]
         image_files = []
         for ext in image_extensions:
@@ -199,7 +186,7 @@ class FisheyeModel:
                 print(f"Failed to load image: {img_path}")
                 current_index = (current_index + 1) % len(image_files)
                 continue
-            marker_positions, circle_center, circle_radius = self.get_marker_image(img)
+            marker_positions, circle_center, circle_radius = FisheyeModelNoTaichi.get_marker_image(img)
             vis_img = img.copy()
             circle_center_int = (int(circle_center[0]), int(circle_center[1]))
             circle_radius_int = int(circle_radius)
@@ -243,7 +230,8 @@ class FisheyeModel:
                 current_index = (current_index + 1) % len(image_files)
         cv2.destroyAllWindows()
 
-    def extract_experimental_markers_and_save_to_file(self):
+    @staticmethod
+    def extract_experimental_markers_and_save_to_file():
         image_extensions = ["*.jpg", "*.jpeg", "*.png", "*.bmp", "*.tiff"]
         image_files = []
         for ext in image_extensions:
@@ -271,7 +259,7 @@ class FisheyeModel:
             if img is None:
                 print(f"Failed to load image: {img_path}")
                 continue
-            marker_positions, _, _ = self.get_marker_image(img)
+            marker_positions, _, _ = FisheyeModelNoTaichi.get_marker_image(img)
             filename = os.path.basename(img_path)
             try:
                 file_num = int(filename.split("press-")[1].split(".")[0])
@@ -315,7 +303,8 @@ class FisheyeModel:
         print(f"Marker positions shape: {all_marker_positions.shape}")
         print(f"Class labels shape: {class_labels.shape}")
 
-    def save_init_marker_positions(self):
+    @staticmethod
+    def save_init_marker_positions():
         img = cv2.imread(
             SYSTEM_PARAMS.files.vitactip_photo_default_state, cv2.IMREAD_GRAYSCALE
         )
@@ -324,21 +313,22 @@ class FisheyeModel:
                 "Could not find or open "
                 + SYSTEM_PARAMS.files.vitactip_photo_default_state
             )
-        marker_positions, circle_center, circle_radius = self.get_marker_image(img)
+        marker_positions, circle_center, circle_radius = FisheyeModelNoTaichi.get_marker_image(img)
         with open(SYSTEM_PARAMS.files.init_marker_positions, "wb") as f:
             pickle.dump(marker_positions, f)
         print(f"Found {len(marker_positions)} markers")
         print(f"Marker positions saved")
         return marker_positions
 
-    def generate_marker_3d_projection(self):
+    @staticmethod
+    def generate_marker_3d_projection():
         with open(SYSTEM_PARAMS.files.init_marker_positions, "rb") as f:
             marker_positions_2d = pickle.load(f)
-        A_points = self.project_pix_to_points(
+        A_points = FisheyeModelNoTaichi.project_pix_to_points(
             marker_positions_2d,
             hemisphere_radius=SYSTEM_PARAMS.fisheye_model.shell_outer_r,
         )
-        B_points = self.project_pix_to_points(
+        B_points = FisheyeModelNoTaichi.project_pix_to_points(
             marker_positions_2d,
             hemisphere_radius=SYSTEM_PARAMS.fisheye_model.shell_outer_r + 2,
         )
@@ -351,7 +341,6 @@ class FisheyeModel:
 
 
 def main():
-    fisheye_model = FisheyeModel()
     points = np.array([
         [10, 0, 20],
         [0, 10, 20],
@@ -359,7 +348,7 @@ def main():
         [0, -10, 20],
     ], dtype=float)
     points /= 1_000
-    res = fisheye_model.project_3d_2d_np(points)
+    res = FisheyeModelNoTaichi.project_3d_2d_np(points)
     print(res)
 
 

@@ -1,23 +1,17 @@
+from difftactile.main.constants import *
+if SYSTEM_PARAMS.meta.cnn_gnn == 0:
+    import cv2
+
 import os
-import cv2
 import torch
-from torch.utils.data import Dataset, Subset
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-from sklearn.model_selection import train_test_split
 import numpy as np
-import pickle
-import shutil
 import random
 import math
-from pathlib import Path
-import time
 from torch_geometric.data import Data
+from sklearn.neighbors import NearestNeighbors
 
-from difftactile.main.constants import *
-from difftactile.main.main import *
-from difftactile.sensor_model.fisheye_model import *
-from difftactile.cnn.visualise import *
+from difftactile.main.synthetic_image_generator import *
+from difftactile.sensor_model.fisheye_model_no_taichi import *
 
 from tac_vgnn.lib.blob_extraction import img_preprocess_mask, img_preprocess, blob_detect, get_nodes_pos
 from tac_vgnn.lib.graph_generate import Plot_Voronoi_Graph, hexagon_voronoi_graph_built
@@ -27,7 +21,6 @@ from tac_vgnn.lib.voronoi_generate import TransformVoronoi_127, cal_3d_Voronoi, 
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, data_dir, mode=None):
         super().__init__()
-        self.fisheye_model = FisheyeModel()
         self.data_dir = data_dir
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         self.clips_per_trajectory = 16
@@ -55,7 +48,7 @@ class MyDataset(torch.utils.data.Dataset):
         # Pre-compute valid clips for each trajectory
         self.clips = []
         # Possible dilation factors
-        dilations = [1, 2, 3]
+        dilations = [1]
         
         for file_path in self.files:
             data = np.load(file_path)
@@ -227,21 +220,23 @@ class MyDataset(torch.utils.data.Dataset):
         images_random_remove_mask = self.randomly_remove(images)
         images_mask &= images_random_remove_mask
 
+        images = MyDataset.downscale(self.k, images)
+        labels = MyDataset.downscale(self.k, labels)
+
+        h = self.h_crop_small
+        w = self.w_crop_small
+
+        images_images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
+        labels_images = MyDataset.generate_vein_image(
+            h, 
+            w, 
+            labels,
+            labels_mask
+        )  # shape: (T, H, W)
+
         if self.cnn_gnn == 0:
-            images = MyDataset.downscale(self.k, images)
-            labels = MyDataset.downscale(self.k, labels)
-
-            h = self.h_crop_small
-            w = self.w_crop_small
-
-            images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
-            labels = MyDataset.generate_vein_image(
-                h, 
-                w, 
-                labels,
-                labels_mask
-            )  # shape: (T, H, W)
-
+            images = images_images
+            labels = labels_images
             # Convert to float and normalize
             images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
             labels = torch.tensor(labels, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
@@ -253,13 +248,92 @@ class MyDataset(torch.utils.data.Dataset):
             return images, labels
         else:
             points = images[self.clip_len // 2, :, :]
-            adjacency = Visualisation.compute_knn_adjacency(points)
-            node_features, edge_features = Visualisation.compute_graph_features(points, adjacency)
-            MyDataset.numpy_to_pyg(
+            labels_image = labels_images[self.clip_len // 2, :, :]
+            adjacency = MyDataset.compute_knn_adjacency(points)
+            node_features, edge_features = MyDataset.compute_graph_features(points, adjacency)
+            ground_truth_labels = MyDataset.generate_graph_ground_truth_labels(
+                points,
+                labels_image
+            )
+            data = MyDataset.numpy_to_pyg(
                 node_features,
                 adjacency,
-                edge_features
+                edge_features,
+                ground_truth_labels
             )
+            return data
+    
+    @staticmethod
+    def compute_knn_adjacency(points, k=6):
+        """
+        Compute k-nearest neighbors adjacency matrix for given points.
+        
+        Args:
+            points: numpy array of shape (n, 2) containing 2D points
+            k: number of nearest neighbors to find (default: 6)
+        
+        Returns:
+            adjacency: numpy array of shape (n, k) containing indices of k nearest neighbors for each point
+        """
+        # Initialize the NearestNeighbors object
+        nn = NearestNeighbors(n_neighbors=k+1, algorithm='ball_tree')
+        nn.fit(points)
+        
+        # Find k+1 nearest neighbors (including the point itself)
+        distances, indices = nn.kneighbors(points)
+        
+        # Remove self-connections (first column) to get exactly k neighbors
+        adjacency = indices[:, 1:]
+        
+        return adjacency
+
+    @staticmethod
+    def compute_graph_features(points, adjacency, cx=0, cy=0):
+        """
+        Compute node and edge features for GNN training.
+        
+        Args:
+            points: numpy array of shape (n, 2) containing 2D points
+            adjacency: numpy array of shape (n, k) containing indices of k nearest neighbors
+            cx: x-coordinate of center point (default: 0)
+            cy: y-coordinate of center point (default: 0)
+            
+        Returns:
+            node_features: numpy array of shape (num_points, 2) containing [x-cx, y-cy]
+            edge_features: numpy array of shape (num_points, k, 1) containing [euclidean_distance]
+        """
+        # Compute node features: [x-cx, y-cy]
+        node_features = points - np.array([cx, cy])  # shape: (num_points, 2)
+        
+        # Compute edge features
+        num_points = len(points)
+        k = adjacency.shape[1]
+        edge_features = np.zeros((num_points, k, 1))
+        
+        for i in range(num_points):
+            # Get coordinates of neighbors
+            neighbor_coords = points[adjacency[i]]  # shape: (k, 2)
+            # Get coordinates of current point
+            current_coords = points[i]  # shape: (2,)
+            # Compute euclidean distances
+            distances = np.sqrt(np.sum((neighbor_coords - current_coords) ** 2, axis=1))
+            edge_features[i, :, 0] = distances
+        
+        return node_features, edge_features
+    
+    @staticmethod
+    def generate_graph_ground_truth_labels(points, labels_image):
+        res = np.zeros(shape=(points.shape[0],), dtype=int)
+        for i in range(len(points)):
+            x, y = points[i]
+            x = int(x)
+            y = int(y)
+            if (
+                x >= 0 and x < labels_image.shape[1] and
+                y >= 0 and y < labels_image.shape[0]
+            ):
+                res[i] = labels_image[y, x] == 255
+        return res
 
     @staticmethod
     def numpy_to_pyg(node_features, adjacency, edge_features, ground_truth_labels):
@@ -363,7 +437,7 @@ class MyDataset(torch.utils.data.Dataset):
                 if points_mask[t, i]:
                     filtered_points.append(point)
                     MyDataset.draw_point(images, t, point)
-            markers_mask = Contact.compute_mask(h, w, filtered_points)
+            markers_mask = SyntheticImageGenerator.compute_mask(h, w, filtered_points)
             marker_masks[t, :, :] = markers_mask
                 
         return images, marker_masks
@@ -444,7 +518,7 @@ class MyDataset(torch.utils.data.Dataset):
                     for i in range(len(line_points) - 1):
                         pt1 = tuple(line_points[i])
                         pt2 = tuple(line_points[i + 1])
-                        cv2.line(images[t], pt1, pt2, color=255, thickness=5)
+                        cv2.line(images[t], pt1, pt2, color=255, thickness=6)
                 
         return images
 
@@ -521,7 +595,7 @@ class MyDataset(torch.utils.data.Dataset):
             return points
             
         # Project all points to 3D at once
-        points_3d = self.fisheye_model.project_pix_to_points_3d_plane(points)
+        points_3d = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(points)
         z_coord = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1
         assert np.allclose(points_3d[..., 2], z_coord, atol=1e-6), f"All z-coordinates must be equal to {z_coord}"
         
@@ -555,7 +629,7 @@ class MyDataset(torch.utils.data.Dataset):
         rotated_points_3d = rotated_points_3d + np.array([0, 0, z_coord])
         
         # Project all points back to 2D at once
-        rotated_points_2d = self.fisheye_model.project_3d_2d_np(rotated_points_3d.reshape(-1, 3)).reshape(points.shape)
+        rotated_points_2d = FisheyeModelNoTaichi.project_3d_2d_np(rotated_points_3d.reshape(-1, 3)).reshape(points.shape)
         
         return rotated_points_2d
     

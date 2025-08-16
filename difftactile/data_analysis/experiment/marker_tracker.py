@@ -5,13 +5,13 @@ from PIL import Image, ImageTk
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 import pickle
-from difftactile.sensor_model.fisheye_model import *
+from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.main.constants import *
 
 
 class MarkerTracker:
     def __init__(self):
-        self.fisheye_model = FisheyeModel()
+        self.fisheye_model = FisheyeModelNoTaichi()
         self.frame_markers = []
         self.frame_mappings = []
         self.base_frame_mappings = []
@@ -37,7 +37,7 @@ class MarkerTracker:
             if True or frame_count % frame_interval == 0:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 self.frames.append(frame)
-                markers, _, _ = self.fisheye_model.get_marker_image(gray)
+                markers, _, _ = FisheyeModelNoTaichi.get_marker_image(gray)
                 if len(markers) > 0:
                     self.frame_markers.append(markers)
                 else:

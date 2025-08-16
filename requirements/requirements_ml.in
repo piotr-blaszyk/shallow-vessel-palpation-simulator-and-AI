@@ -1,0 +1,17 @@
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+torch
+torchvision
+lightning
+torch_geometric
+
+--find-links https://data.pyg.org/whl/torch-2.8.0+cu126.html
+
+pyg_lib
+torch_scatter
+torch_sparse
+torch_cluster
+torch_spline_conv
+
+numpy
+scikit-learn

@@ -4,7 +4,8 @@ import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import pickle
-from difftactile.sensor_model.fisheye_model import *
+from difftactile.sensor_model.fisheye_model_no_taichi import *
+from difftactile.sensor_model.fisheye_model_taichi import *
 from difftactile.main.constants import *
 
 TI_TYPE = ti.f32
@@ -15,7 +16,7 @@ NP_TYPE = np.float32
 @ti.data_oriented
 class ViTacTip:
     def __init__(self):
-        self.fisheye_model = FisheyeModel()
+        self.fisheye_model = FisheyeModelNoTaichi()
         self.set_up_system_params_1()
         self.set_up_system_params_2()
         self.load_mesh()
@@ -166,7 +167,7 @@ class ViTacTip:
             pos = ti.Vector(
                 [surface_nodes[i, 0], surface_nodes[i, 1], surface_nodes[i, 2]]
             )
-            proj = self.fisheye_model.project_3d_2d(pos)
+            proj = FisheyeModelTaichi.project_3d_2d(pos)
             output_projections[i, 0] = proj[0]
             output_projections[i, 1] = proj[1]
 
@@ -175,7 +176,7 @@ class ViTacTip:
         initial_camera_image = cv2.imread(
             SYSTEM_PARAMS.files.vitactip_photo_default_state
         )
-        initial_marker_positions, _, _ = self.fisheye_model.get_marker_image(
+        initial_marker_positions, _, _ = FisheyeModelTaichi.get_marker_image(
             initial_camera_image
         )
         marker_visualization_image = initial_camera_image.copy()
@@ -483,7 +484,7 @@ class ViTacTip:
                 homogeneous_point_E[2],
             ]
         )
-        projection_2d = self.fisheye_model.project_3d_2d(
+        projection_2d = FisheyeModelTaichi.project_3d_2d(
             inhomogeneous_point_E
         )
         return projection_2d

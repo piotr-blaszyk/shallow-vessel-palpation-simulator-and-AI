@@ -1,8 +1,6 @@
 import os
 import torch
 from torch.utils.data import DataLoader
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -15,6 +13,7 @@ import matplotlib.pyplot as plt
 from difftactile.cnn.dataset import *
 from difftactile.cnn.lit_module_unet_cnn import *
 from difftactile.main.constants import *
+from difftactile.cnn.dataset import *
 
 
 class CurriculumCallback(pl.Callback):
