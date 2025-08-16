@@ -30,6 +30,7 @@ class GNN(pl.LightningModule):
         return x
 
     def shared_step(self, batch, stage):
+        batch, _ = batch
         # Forward pass
         out = self(batch.x, batch.edge_index)
         

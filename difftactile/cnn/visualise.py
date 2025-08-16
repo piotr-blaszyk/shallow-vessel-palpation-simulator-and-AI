@@ -3,7 +3,6 @@ import torch
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 import numpy as np
-from difftactile.cnn.train import *
 import matplotlib.colors as mcolors
 import pickle
 import cv2
@@ -225,7 +224,7 @@ class Visualisation:
             )
             
             # Initialize model
-            model = GNN()
+            model = SegmentationModel()
             model.load_state_dict(torch.load(self.model_path))
             model.eval()
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -372,6 +371,141 @@ class Visualisation:
                     i += 1
                     cv2.destroyAllWindows()
                     break
+    
+    def visualise_gnn(self):
+        """
+        Visualize GNN predictions and ground truth segmentation masks.
+        Shows three images:
+        1. Ground truth labels (red = 0, green = 1)
+        2. Predicted labels (red = 0, green = 1)
+        3. Original labels image
+        All with black backgrounds.
+        """
+        BATCH_SIZE = 1
+        NUM_WORKERS = 1
+
+        # Load test data
+        with open(self.test_loader, 'rb') as f:
+            test_data = pickle.load(f)
+        data_loader = DataLoader(
+            test_data['dataset'],
+            batch_size=BATCH_SIZE,
+            shuffle=True,
+            num_workers=NUM_WORKERS
+        )
+
+        # Initialize model
+        model = GNN()
+        model.load_state_dict(torch.load(self.model_path))
+        model.eval()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+
+        data_iter = iter(data_loader)
+        i = 0
+
+        while True:  # Main loop for continuous data loading
+            try:
+                data, labels_image = next(data_iter)
+            except StopIteration:
+                print("End of dataset reached. Restarting...")
+                data_iter = iter(data_loader)
+                continue
+            
+            if data.y.sum() == 0:
+                continue
+
+            # Get predictions
+            with torch.no_grad():
+                data = data.to(device)
+                out = model(data.x, data.edge_index)
+                pred = out.argmax(dim=1).cpu().numpy()
+
+            # Create black background images
+            h = SYSTEM_PARAMS.fisheye_model.crop_height
+            w = SYSTEM_PARAMS.fisheye_model.crop_width
+            ground_truth_img = np.zeros((h, w, 3), dtype=np.uint8)
+            prediction_img = np.zeros((h, w, 3), dtype=np.uint8)
+
+            # Get marker positions and convert to image coordinates
+            points = data.x.cpu().numpy()
+            # Shift points to positive coordinates and scale to image size
+            points = points + np.array([w/2, h/2])
+            points = points.astype(np.int32)
+
+            # Get ground truth labels
+            ground_truth = data.y.cpu().numpy()
+
+            # Draw markers on both images
+            for point_idx, (x, y) in enumerate(points):
+                if 0 <= x < w and 0 <= y < h:
+                    # Ground truth image
+                    gt_color = (0, 255, 0) if ground_truth[point_idx] == 1 else (0, 0, 255)  # Green for 1, Red for 0
+                    cv2.circle(ground_truth_img, (x, y), 3, gt_color, -1)
+                    
+                    # Prediction image
+                    pred_color = (0, 255, 0) if pred[point_idx] == 1 else (0, 0, 255)  # Green for 1, Red for 0
+                    cv2.circle(prediction_img, (x, y), 3, pred_color, -1)
+
+            # Convert labels_image to BGR for visualization
+            labels_display = np.zeros((h // 4, w // 4, 3), dtype=np.uint8)
+            # Convert torch tensor to numpy and scale back to [0, 255]
+            labels_np = (labels_image.numpy() * 255).astype(np.uint8)
+            labels_display[..., 0] = labels_np  # Set blue channel
+            labels_display[..., 1] = labels_np  # Set green channel
+            labels_display[..., 2] = labels_np  # Set red channel
+
+            # Add frame counter text
+            frame_text = f"Sample {i+1}"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 1
+            font_thickness = 2
+            text_color = (255, 255, 255)  # White text
+            
+            text_size = cv2.getTextSize(frame_text, font, font_scale, font_thickness)[0]
+            text_x = 10
+            text_y = ground_truth_img.shape[0] - 20  # 20 pixels from bottom
+            
+            # Add black background for text visibility
+            padding = 5
+            cv2.rectangle(ground_truth_img, 
+                        (text_x - padding, text_y - text_size[1] - padding),
+                        (text_x + text_size[0] + padding, text_y + padding),
+                        (0, 0, 0), -1)
+            cv2.rectangle(prediction_img, 
+                        (text_x - padding, text_y - text_size[1] - padding),
+                        (text_x + text_size[0] + padding, text_y + padding),
+                        (0, 0, 0), -1)
+            cv2.rectangle(labels_display, 
+                        (text_x - padding, text_y - text_size[1] - padding),
+                        (text_x + text_size[0] + padding, text_y + padding),
+                        (0, 0, 0), -1)
+            
+            # Add text
+            cv2.putText(ground_truth_img, "Ground Truth - " + frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
+            cv2.putText(prediction_img, "Prediction - " + frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
+            cv2.putText(labels_display, "Labels Image - " + frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
+
+            # Show images
+            cv2.imshow(f'Ground Truth {i}', ground_truth_img)
+            cv2.imshow(f'Prediction {i}', prediction_img)
+            cv2.imshow(f'Labels Image {i}', labels_display)
+
+            # Position windows side by side
+            window_width = ground_truth_img.shape[1]
+            cv2.moveWindow(f'Ground Truth {i}', 0, 0)
+            cv2.moveWindow(f'Prediction {i}', window_width + 25, 0)
+            cv2.moveWindow(f'Labels Image {i}', 2 * (window_width + 25), 0)
+
+            # Handle keyboard input
+            key = cv2.waitKey(0) & 0xFF
+            
+            if key == ord('q'):  # Quit visualization
+                cv2.destroyAllWindows()
+                return
+            elif key == ord('c'):  # Close current sequence and load next
+                i += 1
+                cv2.destroyAllWindows()
 
     def test_data_loader(self):
         BATCH_SIZE = 16
@@ -473,9 +607,10 @@ class Visualisation:
 
 def main():
     v = Visualisation()
-    v.visualize_experiment(mode='curved')
+    # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
+    v.visualise_gnn()
 
 
 if __name__ == "__main__":

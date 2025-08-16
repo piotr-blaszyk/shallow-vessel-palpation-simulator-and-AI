@@ -261,7 +261,8 @@ class MyDataset(torch.utils.data.Dataset):
                 edge_features,
                 ground_truth_labels
             )
-            return data
+            labels_image = torch.tensor(labels_image, dtype=torch.float32) / 255.0
+            return data, labels_image
     
     @staticmethod
     def compute_knn_adjacency(points, k=6):
