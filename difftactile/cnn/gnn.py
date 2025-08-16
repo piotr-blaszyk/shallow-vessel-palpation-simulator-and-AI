@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch_geometric.data import Data
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GCNConv, NNConv
 from torch_geometric.loader import DataLoader
 import numpy as np
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -15,7 +15,8 @@ from difftactile.cnn.common import *
 class GNN(pl.LightningModule):
     def __init__(
             self, 
-            in_channels=2, 
+            node_channels=2,  # Node features dimension
+            edge_channels=1,  # Edge features dimension 
             hidden_channels=16, 
             out_channels=1,  # Changed to 1 for binary classification
             lr=1e-2,
@@ -23,8 +24,34 @@ class GNN(pl.LightningModule):
             focal_weight=0.5
         ):
         super().__init__()
-        self.conv1 = GCNConv(in_channels, hidden_channels)
-        self.conv2 = GCNConv(hidden_channels, out_channels)
+        
+        # Edge network: transforms edge features into a weight matrix
+        self.edge_net1 = nn.Sequential(
+            nn.Linear(edge_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Linear(hidden_channels, node_channels * hidden_channels)
+        )
+        
+        self.edge_net2 = nn.Sequential(
+            nn.Linear(edge_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Linear(hidden_channels, hidden_channels * out_channels)
+        )
+        
+        # Graph convolutions with edge feature support
+        self.conv1 = NNConv(
+            in_channels=node_channels,
+            out_channels=hidden_channels,
+            nn=self.edge_net1,
+            aggr='mean'
+        )
+        
+        self.conv2 = NNConv(
+            in_channels=hidden_channels,
+            out_channels=out_channels,
+            nn=self.edge_net2,
+            aggr='mean'
+        )
         
         # Initialize loss functions
         self.tversky_loss = TverskyLoss()
@@ -40,16 +67,19 @@ class GNN(pl.LightningModule):
         # Save hyperparameters for logging
         self.save_hyperparameters()
 
-    def forward(self, x, edge_index):
-        x = self.conv1(x, edge_index)
+    def forward(self, x, edge_index, edge_attr):
+        # First conv layer with edge features
+        x = self.conv1(x, edge_index, edge_attr)
         x = F.relu(x)
-        x = self.conv2(x, edge_index)
+        
+        # Second conv layer with edge features
+        x = self.conv2(x, edge_index, edge_attr)
         return x
 
     def shared_step(self, batch, stage):
         batch, _ = batch
-        # Forward pass
-        out = self(batch.x, batch.edge_index)
+        # Forward pass with edge features
+        out = self(batch.x, batch.edge_index, batch.edge_attr)
         out = out.squeeze(-1)  # Remove the channel dimension
         
         # Calculate losses
