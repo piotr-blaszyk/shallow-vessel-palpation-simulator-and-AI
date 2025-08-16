@@ -23,7 +23,10 @@ class MyDataset(torch.utils.data.Dataset):
         super().__init__()
         self.data_dir = data_dir
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
-        self.clips_per_trajectory = 16
+        if SYSTEM_PARAMS.meta.cnn_gnn == 0:
+            self.data_points_per_trajectory = 16
+        else:
+            self.data_points_per_trajectory = 128
         self.mode = mode
         self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
 
@@ -46,45 +49,73 @@ class MyDataset(torch.utils.data.Dataset):
         self.cnn_gnn = SYSTEM_PARAMS.meta.cnn_gnn
 
         # Pre-compute valid clips for each trajectory
-        self.clips = []
-        # Possible dilation factors
-        dilations = [1]
-        
-        for file_path in self.files:
-            data = np.load(file_path)
-            total_frames = len(data["markers"])
+        self.data_points = []
+        self.populate_clips()
+
+    def populate_clips(self):
+        if SYSTEM_PARAMS.meta.cnn_gnn == 0:
+            # Possible dilation factors
+            dilations = [1, 2, 3]
             
-            # For each dilation factor
-            for dilation in dilations:
-                # Calculate required clip length for this dilation
-                dilated_clip_len = self.clip_len * dilation
+            for file_path in self.files:
+                data = np.load(file_path)
+                total_frames = len(data["markers"])
                 
-                if total_frames >= dilated_clip_len:
-                    num_possible_starts = total_frames - dilated_clip_len + 1
+                # For each dilation factor
+                for dilation in dilations:
+                    # Calculate required clip length for this dilation
+                    dilated_clip_len = self.clip_len * dilation
                     
-                    if not self.file_contains_vein(file_path):
-                        # For files without veins, keep original random sampling
-                        start_indices = sorted(random.sample(
-                            range(num_possible_starts), 
-                            min(self.clips_per_trajectory, num_possible_starts)
-                        ))
-                        for start_idx in start_indices:
-                            self.clips.append((file_path, start_idx, dilation))
-                    else:
-                        # For files with veins, keep sampling until we find clips with veins
-                        clips_found = 0
-                        max_attempts = num_possible_starts * 2  # Prevent infinite loop
-                        attempts = 0
+                    if total_frames >= dilated_clip_len:
+                        num_possible_starts = total_frames - dilated_clip_len + 1
                         
-                        while clips_found < self.clips_per_trajectory and attempts < max_attempts:
-                            start_idx = random.randrange(num_possible_starts)
-                            if self.clip_contains_vein(data, start_idx, dilation):
-                                self.clips.append((file_path, start_idx, dilation))
-                                clips_found += 1
-                            attempts += 1
+                        if not self.file_contains_vein(file_path):
+                            # For files without veins, keep original random sampling
+                            start_indices = sorted(random.sample(
+                                range(num_possible_starts), 
+                                min(self.data_points_per_trajectory, num_possible_starts)
+                            ))
+                            for start_idx in start_indices:
+                                self.data_points.append((file_path, start_idx, dilation))
+                        else:
+                            # For files with veins, keep sampling until we find clips with veins
+                            clips_found = 0
+                            max_attempts = num_possible_starts * 2  # Prevent infinite loop
+                            attempts = 0
+                            
+                            while clips_found < self.data_points_per_trajectory and attempts < max_attempts:
+                                start_idx = random.randrange(num_possible_starts)
+                                if self.clip_contains_vein(data, start_idx, dilation):
+                                    self.data_points.append((file_path, start_idx, dilation))
+                                    clips_found += 1
+                                attempts += 1
+        else:
+            for file_path in self.files:
+                data = np.load(file_path)
+                total_frames = len(data["markers"])
+                if not self.file_contains_vein(file_path):
+                    # For files without veins, keep original random sampling
+                    indices = sorted(random.sample(
+                        range(total_frames), 
+                        min(self.data_points_per_trajectory, total_frames)
+                    ))
+                    for ix in indices:
+                        self.data_points.append((file_path, ix))
+                else:
+                    # For files with veins, keep sampling until we find clips with veins
+                    frames_found = 0
+                    max_attempts = self.data_points_per_trajectory * 10  # Prevent infinite loop
+                    attempts = 0
+                    
+                    while frames_found < self.data_points_per_trajectory and attempts < max_attempts:
+                        ix = random.randrange(total_frames)
+                        if self.frame_contains_vein(data, ix):
+                            self.data_points.append((file_path, ix))
+                            frames_found += 1
+                        attempts += 1
 
     def __len__(self):
-        return len(self.clips)
+        return len(self.data_points)
 
     def set_difficulty_level(self, level):
         self.difficulty_level = level
@@ -101,7 +132,8 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Group indices by trajectory
         trajectory_to_indices = {}
-        for i, (file_path, _, _) in enumerate(dataset.clips):
+        for i, data_point in enumerate(dataset.data_points):
+            file_path = data_point[0]
             trajectory_to_indices.setdefault(file_path, []).append(i)
         
         # Split trajectories
@@ -124,13 +156,13 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Create new dataset instances for each split
         train_dataset = MyDataset(dataset.data_dir, mode='train')
-        train_dataset.clips = [dataset.clips[i] for i in train_indices]
+        train_dataset.data_points = [dataset.data_points[i] for i in train_indices]
         
         val_dataset = MyDataset(dataset.data_dir, mode='val')
-        val_dataset.clips = [dataset.clips[i] for i in val_indices]
+        val_dataset.data_points = [dataset.data_points[i] for i in val_indices]
         
         test_dataset = MyDataset(dataset.data_dir, mode='test')
-        test_dataset.clips = [dataset.clips[i] for i in test_indices]
+        test_dataset.data_points = [dataset.data_points[i] for i in test_indices]
         
         res = (train_dataset, val_dataset, test_dataset)
         print(f'split len: {[len(x) for x in res]}')
@@ -161,8 +193,26 @@ class MyDataset(torch.utils.data.Dataset):
         cx = centre[0]
         cy = centre[1]
         r = SYSTEM_PARAMS.fisheye_model.circle_radius / 3
-        mask2 = SyntheticImageGenerator.filter_points_vectorised(cx, cy, r, labels)
-        labels_mask &= mask2
+        mask_circle = SyntheticImageGenerator.filter_points_vectorised(cx, cy, r, labels)
+        labels_mask &= mask_circle
+
+        res = labels[labels_mask].sum() > 0
+        return res
+
+    def frame_contains_vein(self, data, ix):
+        markers = data['markers'][ix]
+        markers_mask = data['markers_mask'][ix]
+        labels = data['vein_polyline'][ix]
+        labels_mask = data['vein_polyline_mask'][ix]
+
+        valid_markers = markers[markers_mask]
+        centre = np.mean(valid_markers, axis=0)
+        cx = centre[0]
+        cy = centre[1]
+        r = SYSTEM_PARAMS.fisheye_model.circle_radius / 3
+
+        mask_circle = SyntheticImageGenerator.filter_points_vectorised(cx, cy, r, labels)
+        labels_mask &= mask_circle
 
         res = labels[labels_mask].sum() > 0
         return res
@@ -184,43 +234,43 @@ class MyDataset(torch.utils.data.Dataset):
             return np.array([-1., -1.])  # Return invalid marker position if no valid data
 
     def __getitem__(self, idx):
-        file_path, start, dilation = self.clips[idx]
+        if SYSTEM_PARAMS.meta.cnn_gnn == 0:
+            file_path, start, dilation = self.data_points[idx]
 
-        data = np.load(file_path)
-        # np.load returns a dict-like object whose keys we can access directly
-        markers = data['markers']
-        markers_mask = data['markers_mask']
-        labels = data['vein_polyline']
-        labels_mask = data['vein_polyline_mask']
-        
-        # Extract longer sequence and apply dilation
-        dilated_clip_len = self.clip_len * dilation
-        images = markers[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        images_mask = markers_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        labels = labels[start:start + dilated_clip_len:dilation]
-        labels_mask = labels_mask[start:start + dilated_clip_len:dilation]
-        
-        images, labels_signal_mask = self.augmentation_artificial_vein_signal(
-            images, labels, labels_mask
-        )
-        # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
-        labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
-        # discrete_angles = [0, 60, 120, 180, 240, 300]
-        # rotation_angle_deg = random.choice(discrete_angles)
-        # images = self.augmentation_rotation(images, rotation_angle_deg)
-        # labels = self.augmentation_rotation(labels, rotation_angle_deg)
-        # angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
-        # magnitude = random.uniform(0, 10)
-        # images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
-        # labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
-        # angle_x = math.radians(random.uniform(-5, 5))
-        # angle_y = math.radians(random.uniform(-5, 5))
-        # images = self.rotate_xy(images, angle_x, angle_y)
-        # labels = self.rotate_xy(labels, angle_x, angle_y)
-        # images_random_remove_mask = self.randomly_remove(images)
-        # images_mask &= images_random_remove_mask
+            data = np.load(file_path)
+            # np.load returns a dict-like object whose keys we can access directly
+            markers = data['markers']
+            markers_mask = data['markers_mask']
+            labels = data['vein_polyline']
+            labels_mask = data['vein_polyline_mask']
+            
+            # Extract longer sequence and apply dilation
+            dilated_clip_len = self.clip_len * dilation
+            images = markers[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+            images_mask = markers_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+            labels = labels[start:start + dilated_clip_len:dilation]
+            labels_mask = labels_mask[start:start + dilated_clip_len:dilation]
+            
+            images, labels_signal_mask = self.augmentation_artificial_vein_signal(
+                images, labels, labels_mask
+            )
+            # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
+            labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
+            discrete_angles = [0, 60, 120, 180, 240, 300]
+            rotation_angle_deg = random.choice(discrete_angles)
+            images = self.augmentation_rotation(images, rotation_angle_deg)
+            labels = self.augmentation_rotation(labels, rotation_angle_deg)
+            angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+            magnitude = random.uniform(0, 10)
+            images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+            labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+            angle_x = math.radians(random.uniform(-5, 5))
+            angle_y = math.radians(random.uniform(-5, 5))
+            images = self.rotate_xy(images, angle_x, angle_y)
+            labels = self.rotate_xy(labels, angle_x, angle_y)
+            images_random_remove_mask = self.randomly_remove(images)
+            images_mask &= images_random_remove_mask
 
-        if self.cnn_gnn == 0:
             images = MyDataset.downscale(self.k, images)
             labels = MyDataset.downscale(self.k, labels)
 
@@ -244,19 +294,51 @@ class MyDataset(torch.utils.data.Dataset):
             
             return images, labels
         else:
+            file_path, start = self.data_points[idx]
+
+            data = np.load(file_path)
+            # np.load returns a dict-like object whose keys we can access directly
+            markers = data['markers'][np.newaxis, ...]
+            markers_mask = data['markers_mask'][np.newaxis, ...]
+            labels = data['vein_polyline'][np.newaxis, ...]
+            labels_mask = data['vein_polyline_mask'][np.newaxis, ...]
+            
+            images, labels_signal_mask = self.augmentation_artificial_vein_signal(
+                images, labels, labels_mask
+            )
+            # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
+            labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
+            discrete_angles = [0, 60, 120, 180, 240, 300]
+            rotation_angle_deg = random.choice(discrete_angles)
+            images = self.augmentation_rotation(images, rotation_angle_deg)
+            labels = self.augmentation_rotation(labels, rotation_angle_deg)
+            angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+            magnitude = random.uniform(0, 10)
+            images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+            labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+            angle_x = math.radians(random.uniform(-5, 5))
+            angle_y = math.radians(random.uniform(-5, 5))
+            images = self.rotate_xy(images, angle_x, angle_y)
+            labels = self.rotate_xy(labels, angle_x, angle_y)
+            # images_random_remove_mask = self.randomly_remove(images)
+            # images_mask &= images_random_remove_mask
+
             labels = MyDataset.generate_vein_image(
                 self.h_camera_big, 
                 self.w_camera_big, 
                 labels,
                 labels_mask
             )
-            labels_image = labels[self.clip_len // 2, :, :]
 
-            points = images[self.clip_len // 2, :, :]
-            points_og_resolution = points.copy()
-            points = MyDataset.normalise_gnn_points(points)
-            adjacency = MyDataset.compute_knn_adjacency(points)
-            node_features, edge_features = MyDataset.compute_graph_features(points, adjacency)
+            markers = markers[0, ...]
+            markers_mask = markers_mask[0, ...]
+            labels = labels[0, ...]
+            labels_mask = labels_mask[0, ...]
+
+            points_og_resolution = markers.copy()
+            markers = MyDataset.normalise_gnn_points(markers)
+            adjacency = MyDataset.compute_knn_adjacency(markers)
+            node_features, edge_features = MyDataset.compute_graph_features(markers, adjacency)
             ground_truth_labels = MyDataset.generate_graph_ground_truth_labels(
                 points_og_resolution,
                 labels_image
@@ -385,7 +467,7 @@ class MyDataset(torch.utils.data.Dataset):
         return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
 
     def get_markers(self, idx):
-        file_path, start, dilation = self.clips[idx]
+        file_path, start, dilation = self.data_points[idx]
 
         data = np.load(file_path)
         # np.load returns a dict-like object whose keys we can access directly
