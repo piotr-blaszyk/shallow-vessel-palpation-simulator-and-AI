@@ -189,8 +189,7 @@
         "seconds_per_frame": 1.000e-01
     },
     "cnn": {
-        "input_size": 186,
-        "target_size": 192,
+        "input_width_height": 192,
         "clip_len": 16
     },
     "files": {

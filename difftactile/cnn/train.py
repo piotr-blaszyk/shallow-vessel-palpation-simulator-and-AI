@@ -45,8 +45,8 @@ class LossWeightScheduler(pl.Callback):
 
 def train():
     start_time = time.perf_counter()
-    BATCH_SIZE = 32
-    NUM_EPOCHS = 4
+    BATCH_SIZE = 16
+    NUM_EPOCHS = 10
     NUM_WORKERS = 16
     LR = 1e-3
 

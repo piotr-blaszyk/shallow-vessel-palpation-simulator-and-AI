@@ -1,7 +1,7 @@
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from monai.networks.nets import UnetPlusPlus
+from monai.networks.nets import BasicUNetPlusPlus
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
@@ -54,21 +54,16 @@ class SegmentationModel(pl.LightningModule):
     def __init__(self, lr=1e-3, lr_patience=5, lr_factor=0.5, lr_min=1e-6, 
                  tversky_weight=0.3, focal_weight=0.7):
         super().__init__()
-        self.model = UnetPlusPlus(
+        self.model = BasicUNetPlusPlus(
             spatial_dims=3,
             in_channels=1,
             out_channels=1,
-            channels=(32, 64, 128, 256),
-            strides=(1, 2, 2),           # First layer uses stride 1
-            kernel_size=3,
-            up_kernel_size=3,
-            num_res_units=3,
-            act='PRELU',
-            norm='INSTANCE',
+            features=(16, 16, 32, 64, 128, 16),  # Increased feature depth for fine details
+            deep_supervision=False,
+            act=("LeakyReLU", {"negative_slope": 0.1, "inplace": True}),
+            norm=("instance", {"affine": True}),
             dropout=0.2,
-            deep_supervision=True,
-            deep_supr_num=3,
-            kernel_dilation=(2, 1, 1),    # Dilated conv in first layer
+            upsample="deconv"  # Using deconvolution for better upsampling quality
         )
         # Initialize loss functions
         self.tversky_loss = TverskyLoss()
@@ -151,11 +146,25 @@ class SegmentationModel(pl.LightningModule):
 
     def shared_step(self, batch, stage):
         x, y = batch
-        logits = self(x)
+        outputs = self(x)
         
-        # Calculate losses
-        tversky_loss = self.tversky_loss(logits, y)
-        focal_loss = self.focal_loss(logits, y)
+        # Handle deep supervision outputs
+        if isinstance(outputs, (list, tuple)):
+            # Calculate loss for each deep supervision output
+            tversky_losses = [self.tversky_loss(out, y) for out in outputs]
+            focal_losses = [self.focal_loss(out, y) for out in outputs]
+            
+            # Average the losses across deep supervision outputs
+            tversky_loss = sum(tversky_losses) / len(tversky_losses)
+            focal_loss = sum(focal_losses) / len(focal_losses)
+            
+            # Use the final output for metrics
+            logits = outputs[-1]  # Final output is typically the most refined
+        else:
+            # Single output case
+            logits = outputs
+            tversky_loss = self.tversky_loss(logits, y)
+            focal_loss = self.focal_loss(logits, y)
         
         # Combine losses using weights
         loss = self.tversky_weight * tversky_loss + self.focal_weight * focal_loss
