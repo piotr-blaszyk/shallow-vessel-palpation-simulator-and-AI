@@ -205,38 +205,35 @@ class MyDataset(torch.utils.data.Dataset):
         )
         # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
         labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
-        discrete_angles = [0, 60, 120, 180, 240, 300]
-        rotation_angle_deg = random.choice(discrete_angles)
-        images = self.augmentation_rotation(images, rotation_angle_deg)
-        labels = self.augmentation_rotation(labels, rotation_angle_deg)
-        angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
-        magnitude = random.uniform(0, 10)
-        images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
-        labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
-        angle_x = math.radians(random.uniform(-5, 5))
-        angle_y = math.radians(random.uniform(-5, 5))
-        images = self.rotate_xy(images, angle_x, angle_y)
-        labels = self.rotate_xy(labels, angle_x, angle_y)
-        images_random_remove_mask = self.randomly_remove(images)
-        images_mask &= images_random_remove_mask
-
-        images = MyDataset.downscale(self.k, images)
-        labels = MyDataset.downscale(self.k, labels)
-
-        h = self.h_crop_small
-        w = self.w_crop_small
-
-        images_images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
-        labels_images = MyDataset.generate_vein_image(
-            h, 
-            w, 
-            labels,
-            labels_mask
-        )  # shape: (T, H, W)
+        # discrete_angles = [0, 60, 120, 180, 240, 300]
+        # rotation_angle_deg = random.choice(discrete_angles)
+        # images = self.augmentation_rotation(images, rotation_angle_deg)
+        # labels = self.augmentation_rotation(labels, rotation_angle_deg)
+        # angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+        # magnitude = random.uniform(0, 10)
+        # images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+        # labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+        # angle_x = math.radians(random.uniform(-5, 5))
+        # angle_y = math.radians(random.uniform(-5, 5))
+        # images = self.rotate_xy(images, angle_x, angle_y)
+        # labels = self.rotate_xy(labels, angle_x, angle_y)
+        # images_random_remove_mask = self.randomly_remove(images)
+        # images_mask &= images_random_remove_mask
 
         if self.cnn_gnn == 0:
-            images = images_images
-            labels = labels_images
+            images = MyDataset.downscale(self.k, images)
+            labels = MyDataset.downscale(self.k, labels)
+
+            h = self.h_crop_small
+            w = self.w_crop_small
+
+            images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
+            labels = MyDataset.generate_vein_image(
+                h, 
+                w, 
+                labels,
+                labels_mask
+            )  # shape: (T, H, W)
             # Convert to float and normalize
             images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
             labels = torch.tensor(labels, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
@@ -247,12 +244,21 @@ class MyDataset(torch.utils.data.Dataset):
             
             return images, labels
         else:
+            labels = MyDataset.generate_vein_image(
+                self.h_camera_big, 
+                self.w_camera_big, 
+                labels,
+                labels_mask
+            )
+            labels_image = labels[self.clip_len // 2, :, :]
+
             points = images[self.clip_len // 2, :, :]
-            labels_image = labels_images[self.clip_len // 2, :, :]
+            points_og_resolution = points.copy()
+            points = MyDataset.normalise_gnn_points(points)
             adjacency = MyDataset.compute_knn_adjacency(points)
             node_features, edge_features = MyDataset.compute_graph_features(points, adjacency)
             ground_truth_labels = MyDataset.generate_graph_ground_truth_labels(
-                points,
+                points_og_resolution,
                 labels_image
             )
             data = MyDataset.numpy_to_pyg(
@@ -263,6 +269,28 @@ class MyDataset(torch.utils.data.Dataset):
             )
             labels_image = torch.tensor(labels_image, dtype=torch.float32) / 255.0
             return data, labels_image
+    
+    @staticmethod
+    def normalise_gnn_points(points):
+        principal_point = np.array([
+            SYSTEM_PARAMS.fisheye_model.principal_point_x,
+            SYSTEM_PARAMS.fisheye_model.principal_point_y,
+        ], dtype=float)
+        r = SYSTEM_PARAMS.fisheye_model.circle_radius
+        points -= principal_point
+        points /= r
+        return points
+    
+    @staticmethod
+    def unnormalise_gnn_points(points):
+        principal_point = np.array([
+            SYSTEM_PARAMS.fisheye_model.principal_point_x,
+            SYSTEM_PARAMS.fisheye_model.principal_point_y,
+        ], dtype=float)
+        r = SYSTEM_PARAMS.fisheye_model.circle_radius
+        points *= r
+        points += principal_point
+        return points
     
     @staticmethod
     def compute_knn_adjacency(points, k=6):
@@ -521,7 +549,7 @@ class MyDataset(torch.utils.data.Dataset):
                     for i in range(len(line_points) - 1):
                         pt1 = tuple(line_points[i])
                         pt2 = tuple(line_points[i + 1])
-                        cv2.line(images[t], pt1, pt2, color=255, thickness=6)
+                        cv2.line(images[t], pt1, pt2, color=255, thickness=30)
                 
         return images
 

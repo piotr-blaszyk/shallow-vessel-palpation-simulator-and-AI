@@ -372,34 +372,50 @@ class Visualisation:
                     cv2.destroyAllWindows()
                     break
     
-    def visualise_gnn(self):
+    def visualise_gnn(self, mode):
         """
         Visualize GNN predictions and ground truth segmentation masks.
         Shows three images:
-        1. Ground truth labels (red = 0, green = 1)
-        2. Predicted labels (red = 0, green = 1)
-        3. Original labels image
-        All with black backgrounds.
+        For mode='predictions':
+            1. Ground truth labels (red = 0, green = 1)
+            2. Predicted labels (red = 0, green = 1)
+            3. Original labels image
+        For mode='dataset':
+            1. Ground truth labels (red = 0, green = 1)
+            2. Original labels image
+        Args:
+            mode: Either 'dataset' or 'predictions'
         """
         BATCH_SIZE = 1
         NUM_WORKERS = 1
 
-        # Load test data
-        with open(self.test_loader, 'rb') as f:
-            test_data = pickle.load(f)
-        data_loader = DataLoader(
-            test_data['dataset'],
-            batch_size=BATCH_SIZE,
-            shuffle=True,
-            num_workers=NUM_WORKERS
-        )
-
-        # Initialize model
-        model = GNN()
-        model.load_state_dict(torch.load(self.model_path))
-        model.eval()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(device)
+        if mode == 'predictions':
+            # Load test data
+            with open(self.test_loader, 'rb') as f:
+                test_data = pickle.load(f)
+            data_loader = DataLoader(
+                test_data['dataset'],
+                batch_size=BATCH_SIZE,
+                shuffle=True,
+                num_workers=NUM_WORKERS
+            )
+            
+            # Initialize model
+            model = GNN()
+            model.load_state_dict(torch.load(self.model_path))
+            model.eval()
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model = model.to(device)
+        else:  # dataset mode
+            full_dataset = MyDataset(
+                data_dir=SYSTEM_PARAMS.files.dataset_root
+            )
+            train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
+                full_dataset, train_size=1.0, val_size=0.0, test_size=0.0
+            )
+            data_loader = DataLoader(
+                train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+            )
 
         data_iter = iter(data_loader)
         i = 0
@@ -415,22 +431,23 @@ class Visualisation:
             if data.y.sum() == 0:
                 continue
 
-            # Get predictions
-            with torch.no_grad():
-                data = data.to(device)
-                out = model(data.x, data.edge_index)
-                pred = out.argmax(dim=1).cpu().numpy()
+            if mode == 'predictions':
+                # Get predictions
+                with torch.no_grad():
+                    data = data.to(device)
+                    out = model(data.x, data.edge_index)
+                    pred = out.argmax(dim=1).cpu().numpy()
 
-            # Create black background images
-            h = SYSTEM_PARAMS.fisheye_model.crop_height
-            w = SYSTEM_PARAMS.fisheye_model.crop_width
+            # Create black background images with fixed size 200x200
+            h, w = 200, 200
             ground_truth_img = np.zeros((h, w, 3), dtype=np.uint8)
-            prediction_img = np.zeros((h, w, 3), dtype=np.uint8)
+            if mode == 'predictions':
+                prediction_img = np.zeros((h, w, 3), dtype=np.uint8)
 
             # Get marker positions and convert to image coordinates
             points = data.x.cpu().numpy()
-            # Shift points to positive coordinates and scale to image size
-            points = points + np.array([w/2, h/2])
+            # Transform from (-1,1) to (0,200) range
+            points = (points + 1) / 2 * w  # Now in range (0,200)
             points = points.astype(np.int32)
 
             # Get ground truth labels
@@ -443,59 +460,39 @@ class Visualisation:
                     gt_color = (0, 255, 0) if ground_truth[point_idx] == 1 else (0, 0, 255)  # Green for 1, Red for 0
                     cv2.circle(ground_truth_img, (x, y), 3, gt_color, -1)
                     
-                    # Prediction image
-                    pred_color = (0, 255, 0) if pred[point_idx] == 1 else (0, 0, 255)  # Green for 1, Red for 0
-                    cv2.circle(prediction_img, (x, y), 3, pred_color, -1)
+                    if mode == 'predictions':
+                        # Prediction image
+                        pred_color = (0, 255, 0) if pred[point_idx] == 1 else (0, 0, 255)  # Green for 1, Red for 0
+                        cv2.circle(prediction_img, (x, y), 3, pred_color, -1)
 
+            labels_image = labels_image.numpy().squeeze()
             # Convert labels_image to BGR for visualization
-            labels_display = np.zeros((h // 4, w // 4, 3), dtype=np.uint8)
+            labels_display = np.zeros((labels_image.shape[0], labels_image.shape[1], 3), dtype=np.uint8)
             # Convert torch tensor to numpy and scale back to [0, 255]
-            labels_np = (labels_image.numpy() * 255).astype(np.uint8)
+            labels_np = (labels_image * 255).astype(np.uint8)
             labels_display[..., 0] = labels_np  # Set blue channel
             labels_display[..., 1] = labels_np  # Set green channel
             labels_display[..., 2] = labels_np  # Set red channel
 
-            # Add frame counter text
-            frame_text = f"Sample {i+1}"
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 1
-            font_thickness = 2
-            text_color = (255, 255, 255)  # White text
-            
-            text_size = cv2.getTextSize(frame_text, font, font_scale, font_thickness)[0]
-            text_x = 10
-            text_y = ground_truth_img.shape[0] - 20  # 20 pixels from bottom
-            
-            # Add black background for text visibility
-            padding = 5
-            cv2.rectangle(ground_truth_img, 
-                        (text_x - padding, text_y - text_size[1] - padding),
-                        (text_x + text_size[0] + padding, text_y + padding),
-                        (0, 0, 0), -1)
-            cv2.rectangle(prediction_img, 
-                        (text_x - padding, text_y - text_size[1] - padding),
-                        (text_x + text_size[0] + padding, text_y + padding),
-                        (0, 0, 0), -1)
-            cv2.rectangle(labels_display, 
-                        (text_x - padding, text_y - text_size[1] - padding),
-                        (text_x + text_size[0] + padding, text_y + padding),
-                        (0, 0, 0), -1)
-            
-            # Add text
-            cv2.putText(ground_truth_img, "Ground Truth - " + frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
-            cv2.putText(prediction_img, "Prediction - " + frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
-            cv2.putText(labels_display, "Labels Image - " + frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
+            # Downscale by factor of 4 using INTER_AREA interpolation
+            h_small = labels_display.shape[0] // 4
+            w_small = labels_display.shape[1] // 4
+            labels_display = cv2.resize(labels_display, (w_small, h_small), interpolation=cv2.INTER_AREA)
 
             # Show images
             cv2.imshow(f'Ground Truth {i}', ground_truth_img)
-            cv2.imshow(f'Prediction {i}', prediction_img)
+            if mode == 'predictions':
+                cv2.imshow(f'Prediction {i}', prediction_img)
             cv2.imshow(f'Labels Image {i}', labels_display)
 
             # Position windows side by side
             window_width = ground_truth_img.shape[1]
             cv2.moveWindow(f'Ground Truth {i}', 0, 0)
-            cv2.moveWindow(f'Prediction {i}', window_width + 25, 0)
-            cv2.moveWindow(f'Labels Image {i}', 2 * (window_width + 25), 0)
+            if mode == 'predictions':
+                cv2.moveWindow(f'Prediction {i}', window_width + 25, 0)
+                cv2.moveWindow(f'Labels Image {i}', 2 * (window_width + 25), 0)
+            else:
+                cv2.moveWindow(f'Labels Image {i}', window_width * 2, 0)
 
             # Handle keyboard input
             key = cv2.waitKey(0) & 0xFF
@@ -610,7 +607,7 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn()
+    v.visualise_gnn(mode='dataset')
 
 
 if __name__ == "__main__":
