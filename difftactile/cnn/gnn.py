@@ -4,8 +4,8 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv
+from torch_geometric.loader import DataLoader
 import numpy as np
-from torch.utils.data import DataLoader
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from difftactile.cnn.dataset import *
@@ -29,11 +29,33 @@ class GNN(pl.LightningModule):
         x = self.conv2(x, edge_index)
         return x
 
-    def training_step(self, batch, batch_idx):
+    def shared_step(self, batch, stage):
+        # Forward pass
         out = self(batch.x, batch.edge_index)
+        
+        # Calculate loss
         loss = F.cross_entropy(out, batch.y)
-        self.log("train_loss", loss)
+        
+        # Calculate accuracy
+        pred = out.argmax(dim=1)
+        correct = (pred == batch.y).sum()
+        total = len(batch.y)
+        acc = correct / total
+        
+        # Log metrics with explicit batch_size
+        self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=batch.num_graphs)
+        self.log(f"{stage}_acc", acc, prog_bar=False, batch_size=batch.num_graphs)
+        
         return loss
+
+    def training_step(self, batch, batch_idx):
+        return self.shared_step(batch, "train")
+
+    def validation_step(self, batch, batch_idx):
+        return self.shared_step(batch, "val")
+
+    def test_step(self, batch, batch_idx):
+        return self.shared_step(batch, "test")
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-2)
@@ -52,6 +74,7 @@ if __name__ == "__main__":
     train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
         full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
     )
+    # Using PyTorch Geometric's DataLoader
     train_loader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
     )

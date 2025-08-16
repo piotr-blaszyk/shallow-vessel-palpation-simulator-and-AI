@@ -481,7 +481,9 @@ class MyDataset(torch.utils.data.Dataset):
                     weight = wx * wy
                     
                     # Update pixel value with anti-aliasing
-                    images[t, yi, xi] = min(255, images[t, yi, xi] + int(255 * weight))
+                    current_val = int(images[t, yi, xi])
+                    weight_val = int(255 * weight)
+                    images[t, yi, xi] = min(255, current_val + weight_val)
 
     @staticmethod
     def generate_vein_image(h, w, points, points_mask):
