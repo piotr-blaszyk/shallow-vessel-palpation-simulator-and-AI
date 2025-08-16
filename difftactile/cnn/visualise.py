@@ -435,8 +435,9 @@ class Visualisation:
                 # Get predictions
                 with torch.no_grad():
                     data = data.to(device)
-                    out = model(data.x, data.edge_index)
-                    pred = out.argmax(dim=1).cpu().numpy()
+                    out = model(data.x, data.edge_index, data.edge_attr)
+                    out = out.squeeze(-1)  # Remove the channel dimension
+                    pred = (torch.sigmoid(out) > 0.5).cpu().numpy().astype(int)
 
             # Create black background images with fixed size 200x200
             h, w = 200, 200
@@ -489,8 +490,8 @@ class Visualisation:
             window_width = ground_truth_img.shape[1]
             cv2.moveWindow(f'Ground Truth {i}', 0, 0)
             if mode == 'predictions':
-                cv2.moveWindow(f'Prediction {i}', window_width + 25, 0)
-                cv2.moveWindow(f'Labels Image {i}', 2 * (window_width + 25), 0)
+                cv2.moveWindow(f'Prediction {i}', window_width * 2, 0)
+                cv2.moveWindow(f'Labels Image {i}', window_width * 5, 0)
             else:
                 cv2.moveWindow(f'Labels Image {i}', window_width * 2, 0)
 
@@ -607,7 +608,7 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn(mode='dataset')
+    v.visualise_gnn(mode='predictions')
 
 
 if __name__ == "__main__":

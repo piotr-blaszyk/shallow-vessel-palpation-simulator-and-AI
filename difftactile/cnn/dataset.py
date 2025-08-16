@@ -235,21 +235,21 @@ class MyDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         if SYSTEM_PARAMS.meta.cnn_gnn == 0:
-            file_path, start, dilation = self.data_points[idx]
+            file_path, frame_ix, dilation = self.data_points[idx]
 
             data = np.load(file_path)
             # np.load returns a dict-like object whose keys we can access directly
-            markers = data['markers']
-            markers_mask = data['markers_mask']
+            images = data['markers']
+            images_mask = data['markers_mask']
             labels = data['vein_polyline']
             labels_mask = data['vein_polyline_mask']
             
             # Extract longer sequence and apply dilation
             dilated_clip_len = self.clip_len * dilation
-            images = markers[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-            images_mask = markers_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-            labels = labels[start:start + dilated_clip_len:dilation]
-            labels_mask = labels_mask[start:start + dilated_clip_len:dilation]
+            images = images[frame_ix:frame_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
+            images_mask = images_mask[frame_ix:frame_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
+            labels = labels[frame_ix:frame_ix + dilated_clip_len:dilation]
+            labels_mask = labels_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
             
             images, labels_signal_mask = self.augmentation_artificial_vein_signal(
                 images, labels, labels_mask
@@ -294,14 +294,14 @@ class MyDataset(torch.utils.data.Dataset):
             
             return images, labels
         else:
-            file_path, start = self.data_points[idx]
+            file_path, frame_ix = self.data_points[idx]
 
             data = np.load(file_path)
             # np.load returns a dict-like object whose keys we can access directly
-            markers = data['markers'][np.newaxis, ...]
-            markers_mask = data['markers_mask'][np.newaxis, ...]
-            labels = data['vein_polyline'][np.newaxis, ...]
-            labels_mask = data['vein_polyline_mask'][np.newaxis, ...]
+            images = data['markers'][frame_ix][np.newaxis, ...]
+            images_mask = data['markers_mask'][frame_ix][np.newaxis, ...]
+            labels = data['vein_polyline'][frame_ix][np.newaxis, ...]
+            labels_mask = data['vein_polyline_mask'][frame_ix][np.newaxis, ...]
             
             images, labels_signal_mask = self.augmentation_artificial_vein_signal(
                 images, labels, labels_mask
@@ -330,9 +330,9 @@ class MyDataset(torch.utils.data.Dataset):
                 labels_mask
             )
 
-            markers = markers[0, ...]
-            markers_mask = markers_mask[0, ...]
-            labels = labels[0, ...]
+            markers = images[0, ...]
+            markers_mask = images_mask[0, ...]
+            labels_image = labels[0, ...]
             labels_mask = labels_mask[0, ...]
 
             points_og_resolution = markers.copy()
@@ -350,6 +350,7 @@ class MyDataset(torch.utils.data.Dataset):
                 ground_truth_labels
             )
             labels_image = torch.tensor(labels_image, dtype=torch.float32) / 255.0
+            labels_image = torch.empty(0)
             return data, labels_image
     
     @staticmethod
