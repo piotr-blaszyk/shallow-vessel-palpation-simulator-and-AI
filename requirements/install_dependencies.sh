@@ -16,6 +16,6 @@ uv pip install opencv-python
 uv pip install matplotlib
 uv pip install -U 'tensorboardX'
 uv pip install -U 'tensorboard'
-
+uv pip install seaborn
 
 echo "All dependencies installed successfully!" 

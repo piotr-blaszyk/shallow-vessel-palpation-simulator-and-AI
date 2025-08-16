@@ -272,6 +272,7 @@ def main():
     BATCH_SIZE = 64
     NUM_EPOCHS = 10
     NUM_WORKERS = 16
+    LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="segmentation_model")
     full_dataset = MyDataset(
@@ -298,7 +299,7 @@ def main():
     with open(SYSTEM_PARAMS.files.test_loader_gnn, 'wb') as f:
         pickle.dump(test_data, f)
 
-    model = GNN()
+    model = GNN(lr=LR)
 
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS, 

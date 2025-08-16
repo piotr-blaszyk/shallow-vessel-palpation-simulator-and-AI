@@ -314,10 +314,13 @@ class FisheyeModelNoTaichi:
                 + SYSTEM_PARAMS.files.vitactip_photo_default_state
             )
         marker_positions, circle_center, circle_radius = FisheyeModelNoTaichi.get_marker_image(img)
+        # Save as pickle
         with open(SYSTEM_PARAMS.files.init_marker_positions, "wb") as f:
             pickle.dump(marker_positions, f)
-        print(f"Found {len(marker_positions)} markers")
-        print(f"Marker positions saved")
+        # Save as npz
+        np.savez(SYSTEM_PARAMS.files.init_marker_positions_npz, points=marker_positions)
+        print(f"Found {len(marker_positions)} markers; shape={marker_positions.shape}")
+        print(f"Marker positions saved in pickle and npz formats")
         return marker_positions
 
     @staticmethod
@@ -341,15 +344,7 @@ class FisheyeModelNoTaichi:
 
 
 def main():
-    points = np.array([
-        [10, 0, 20],
-        [0, 10, 20],
-        [-10, 0, 20],
-        [0, -10, 20],
-    ], dtype=float)
-    points /= 1_000
-    res = FisheyeModelNoTaichi.project_3d_2d_np(points)
-    print(res)
+    res = FisheyeModelNoTaichi.save_init_marker_positions()
 
 
 if __name__ == '__main__':

@@ -13,10 +13,6 @@ from sklearn.neighbors import NearestNeighbors
 from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 
-from tac_vgnn.lib.blob_extraction import img_preprocess_mask, img_preprocess, blob_detect, get_nodes_pos
-from tac_vgnn.lib.graph_generate import Plot_Voronoi_Graph, hexagon_voronoi_graph_built
-from tac_vgnn.lib.voronoi_generate import TransformVoronoi_127, cal_3d_Voronoi, plot_3d_Voronoi
-
 
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, data_dir, mode=None):

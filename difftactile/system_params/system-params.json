@@ -195,7 +195,9 @@
     },
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",
+        "init_marker_positions_npz": "difftactile/output/init-marker-positions.npz",
         "biomimetic_tip_points": "difftactile/output/biomimetic-tip-points.pkl",
+        "voronoi_image": "difftactile/output/voronoi.png",
         "gmsh_mesh": "difftactile/output/gmsh-mesh.pkl",
         "fisheye_model_image_dir": "difftactile/manual_or_experimental_data/downward-press-vascular-phantom",
         "vitactip_photo_default_state": "difftactile/manual_or_experimental_data/vitactip_photo_default_state_1920_1080.jpg",
