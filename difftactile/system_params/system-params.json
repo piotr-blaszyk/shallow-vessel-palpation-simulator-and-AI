@@ -61,7 +61,7 @@
         "coulomb_friction_coeff": 4.000e-01,
         "num_sub_frames": 125,
         "num_opt_steps": 2,
-        "num_training_trajectories": 5,
+        "num_training_trajectories": 10,
         "pid_max_speed_translation": 5.000e-01,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,
@@ -134,7 +134,7 @@
         "press_depth_1": 4.000e-03
     },
     "meta": {
-        "target_courant_number": 2.000e-01,
+        "target_courant_number": 1.000e-01,
         "enable_tactile_map": 1,
         "enable_pid_controller": 1,
         "distance_scaling_factor": 5.000e+00,
@@ -143,7 +143,7 @@
         "max_num_veins": 4,
         "num_trajectories": 4,
         "max_num_trajectory_points": 1000,
-        "max_timesteps_per_trajectory": 500,
+        "max_timesteps_per_trajectory": 1000,
         "polyline_num": 25
     },
     "visualisation": {

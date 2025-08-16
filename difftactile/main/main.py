@@ -2580,7 +2580,7 @@ class Contact:
                         self.visualisation_update_gui(ts)
                         if (
                             self.current_target_idx[None] > 2 
-                            and ts % 2 == 0
+                            and ts % 4 == 0
                         ):
                             self.record_training_data_point(j, ts)
                         if self.last_target_reached[None] == 1:
