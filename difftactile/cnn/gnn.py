@@ -61,7 +61,7 @@ class GNN(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=1e-2)
 
 
-if __name__ == "__main__":
+def main():
     BATCH_SIZE = 8
     NUM_EPOCHS = 10
     NUM_WORKERS = 16
@@ -85,6 +85,13 @@ if __name__ == "__main__":
         test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
     )
 
+    test_data = {
+        'dataset': test_dataset,
+        'num_workers': NUM_WORKERS
+    }
+    with open(SYSTEM_PARAMS.files.test_loader_gnn, 'wb') as f:
+        pickle.dump(test_data, f)
+
     model = GNN()
 
     trainer = pl.Trainer(
@@ -97,3 +104,9 @@ if __name__ == "__main__":
     trainer.fit(model, train_loader, val_loader)
     trainer.test(model, test_loader)
 
+    os.makedirs("saved_models", exist_ok=True)
+    torch.save(model.state_dict(), SYSTEM_PARAMS.files.final_segmentation_model_gnn)
+
+
+if __name__ == "__main__":
+    main()

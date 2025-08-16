@@ -10,11 +10,16 @@ import cv2
 from tqdm import tqdm
 
 from difftactile.cnn.dataset import *
-
+from difftactile.cnn.gnn import *
 
 class Visualisation:
     def __init__(self):
-        pass
+        if SYSTEM_PARAMS.meta.cnn_gnn == 0:
+            self.model_path = SYSTEM_PARAMS.files.final_segmentation_model
+            self.test_loader = SYSTEM_PARAMS.files.test_loader
+        elif SYSTEM_PARAMS.meta.cnn_gnn == 1:
+            self.model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn
+            self.test_loader = SYSTEM_PARAMS.files.test_loader_gnn
 
     @staticmethod
     def calculate_iou(ground_truth, prediction):
@@ -60,9 +65,8 @@ class Visualisation:
         self.exp_data = np.load(npz_path)
         
         # Initialize model
-        model_path = SYSTEM_PARAMS.files.final_segmentation_model
         model = SegmentationModel()
-        model.load_state_dict(torch.load(model_path))
+        model.load_state_dict(torch.load(self.model_path))
         model.eval()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
@@ -211,8 +215,7 @@ class Visualisation:
         BATCH_SIZE = 1
         NUM_WORKERS = 1
         if mode == 'predictions':
-            model_path = SYSTEM_PARAMS.files.final_segmentation_model
-            with open(SYSTEM_PARAMS.files.test_loader, 'rb') as f:
+            with open(self.test_loader, 'rb') as f:
                 test_data = pickle.load(f)
             data_loader = DataLoader(
                 test_data['dataset'],
@@ -222,8 +225,8 @@ class Visualisation:
             )
             
             # Initialize model
-            model = SegmentationModel()
-            model.load_state_dict(torch.load(model_path))
+            model = GNN()
+            model.load_state_dict(torch.load(self.model_path))
             model.eval()
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model = model.to(device)
