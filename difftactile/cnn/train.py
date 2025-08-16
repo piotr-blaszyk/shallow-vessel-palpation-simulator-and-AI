@@ -13,7 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from difftactile.cnn.dataset import *
-from difftactile.cnn.lit_module import *
+from difftactile.cnn.lit_module_unet_cnn import *
 from difftactile.main.constants import *
 
 

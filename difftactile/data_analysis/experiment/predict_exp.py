@@ -12,7 +12,7 @@ from difftactile.data_analysis.experiment.marker_tracker import *
 from difftactile.sensor_model.fisheye_model import *
 from difftactile.main.constants import *
 from difftactile.main.main import SyntheticImageGenerator
-from difftactile.cnn.lit_module import SegmentationModel
+from difftactile.cnn.lit_module_unet_cnn import SegmentationModel
 from difftactile.cnn.visualise import *
 from difftactile.main.main import *
 

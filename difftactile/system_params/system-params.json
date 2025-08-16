@@ -144,7 +144,8 @@
         "num_trajectories": 4,
         "max_num_trajectory_points": 1000,
         "max_timesteps_per_trajectory": 1000,
-        "polyline_num": 25
+        "polyline_num": 25,
+        "cnn_gnn": 1
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,

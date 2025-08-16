@@ -10,6 +10,8 @@ import cv2
 from tqdm import tqdm
 from sklearn.neighbors import NearestNeighbors
 
+from difftactile.cnn.dataset import *
+
 
 class Visualisation:
     def __init__(self):

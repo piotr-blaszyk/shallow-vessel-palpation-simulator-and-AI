@@ -12,10 +12,12 @@ import random
 import math
 from pathlib import Path
 import time
+from torch_geometric.data import Data
 
 from difftactile.main.constants import *
 from difftactile.main.main import *
 from difftactile.sensor_model.fisheye_model import *
+from difftactile.cnn.visualise import *
 
 from tac_vgnn.lib.blob_extraction import img_preprocess_mask, img_preprocess, blob_detect, get_nodes_pos
 from tac_vgnn.lib.graph_generate import Plot_Voronoi_Graph, hexagon_voronoi_graph_built
@@ -48,6 +50,7 @@ class MyDataset(torch.utils.data.Dataset):
 
         self.randomly_remove_k = [0, 6, 13]
         self.avs_disp_c = [0.4, 0.3, 0.2]
+        self.cnn_gnn = SYSTEM_PARAMS.meta.cnn_gnn
 
         # Pre-compute valid clips for each trajectory
         self.clips = []
@@ -223,30 +226,60 @@ class MyDataset(torch.utils.data.Dataset):
         labels = self.rotate_xy(labels, angle_x, angle_y)
         images_random_remove_mask = self.randomly_remove(images)
         images_mask &= images_random_remove_mask
-        
-        images = MyDataset.downscale(self.k, images)
-        labels = MyDataset.downscale(self.k, labels)
 
-        h = self.h_crop_small
-        w = self.w_crop_small
+        if self.cnn_gnn == 0:
+            images = MyDataset.downscale(self.k, images)
+            labels = MyDataset.downscale(self.k, labels)
 
-        images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
-        labels = MyDataset.generate_vein_image(
-            h, 
-            w, 
-            labels,
-            labels_mask
-        )  # shape: (T, H, W)
+            h = self.h_crop_small
+            w = self.w_crop_small
 
-        # Convert to float and normalize
-        images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
-        labels = torch.tensor(labels, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
-        
-        # Add channel dimension: (T, H, W) -> (C, T, H, W)
-        images = images.unsqueeze(0)
-        labels = labels.unsqueeze(0)
-        
-        return images, labels
+            images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
+            labels = MyDataset.generate_vein_image(
+                h, 
+                w, 
+                labels,
+                labels_mask
+            )  # shape: (T, H, W)
+
+            # Convert to float and normalize
+            images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
+            labels = torch.tensor(labels, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
+            
+            # Add channel dimension: (T, H, W) -> (C, T, H, W)
+            images = images.unsqueeze(0)
+            labels = labels.unsqueeze(0)
+            
+            return images, labels
+        else:
+            points = images[self.clip_len // 2, :, :]
+            adjacency = Visualisation.compute_knn_adjacency(points)
+            node_features, edge_features = Visualisation.compute_graph_features(points, adjacency)
+            MyDataset.numpy_to_pyg(
+                node_features,
+                adjacency,
+                edge_features
+            )
+
+    @staticmethod
+    def numpy_to_pyg(node_features, adjacency, edge_features, ground_truth_labels):
+        num_nodes, num_neighbours = adjacency.shape
+
+        # Build edge_index and edge_attr from adjacency and edge_features
+        edge_index_list = []
+        edge_attr_list = []
+        for i in range(num_nodes):
+            for j_idx, j in enumerate(adjacency[i]):
+                edge_index_list.append([i, j])
+                edge_attr_list.append(edge_features[i, j_idx])
+
+        edge_index = torch.tensor(edge_index_list, dtype=torch.long).t().contiguous()
+        edge_attr = torch.tensor(np.array(edge_attr_list), dtype=torch.float)
+
+        x = torch.tensor(node_features, dtype=torch.float)
+        y = torch.tensor(ground_truth_labels, dtype=torch.long)
+
+        return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
 
     def get_markers(self, idx):
         file_path, start, dilation = self.clips[idx]
