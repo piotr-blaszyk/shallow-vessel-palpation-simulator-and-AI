@@ -343,14 +343,12 @@ class MyDataset(torch.utils.data.Dataset):
 
             points = images
             points_mask = images_mask
-            labels_image = labels[self.clip_len // 2, ...]
-            labels_mask = labels_mask
 
             points = MyDataset.normalise_gnn_points(points)
             pyg = MyDataset.generate_pyg(points, labels)
-            labels_image = torch.tensor(labels_image, dtype=torch.float32) / 255.0
-            labels_image = torch.empty(0)
-            return pyg, labels_image
+            labels = torch.tensor(labels, dtype=torch.float32) / 255.0
+            # labels = torch.empty(0)
+            return pyg, labels
     
     def get_points(self, idx):
         file_path, frame_ix = self.data_points[idx]
