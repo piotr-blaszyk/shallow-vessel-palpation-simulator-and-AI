@@ -120,7 +120,7 @@ class MyDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def create_splits(
-        dataset, train_size, val_size, test_size, random_state=42
+        dataset, train_size, val_size, test_size, random_state=42, override=True
     ):
         """Split dataset while ensuring all clips from the same trajectory stay together"""
         assert abs(train_size + val_size + test_size - 1.0) < 1e-10, (
@@ -142,9 +142,22 @@ class MyDataset(torch.utils.data.Dataset):
         train_split = int(n * train_size)
         val_split = int(n * (train_size + val_size))
         
-        train_trajectories = trajectories[:train_split]
-        val_trajectories = trajectories[train_split:val_split]
-        test_trajectories = trajectories[val_split:]
+
+        if not override:
+            train_trajectories = trajectories[:train_split]
+            val_trajectories = trajectories[train_split:val_split]
+            test_trajectories = trajectories[val_split:]
+        else:
+            test_ixs = np.array([1, 2], dtype=int)
+            val_ixs = np.array([3, 4], dtype=int)
+            
+            # Get trajectories with specified indices
+            test_trajectories = [trajectories[i] for i in test_ixs if i < len(trajectories)]
+            val_trajectories = [trajectories[i] for i in val_ixs if i < len(trajectories)]
+            
+            # Get remaining trajectories (not in test_ixs or val_ixs)
+            used_indices = set(test_ixs) | set(val_ixs)
+            train_trajectories = [trajectories[i] for i in range(len(trajectories)) if i not in used_indices]
         
         # Convert trajectory splits to index splits
         train_indices = [i for traj in train_trajectories for i in trajectory_to_indices[traj]]
