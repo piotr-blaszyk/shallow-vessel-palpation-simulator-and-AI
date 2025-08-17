@@ -50,7 +50,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.populate_clips()
 
     def populate_clips(self):
-        if SYSTEM_PARAMS.meta.cnn_gnn == 0:
+        if True or SYSTEM_PARAMS.meta.cnn_gnn == 0:
             # Possible dilation factors
             dilations = [1, 2, 3]
             
@@ -197,8 +197,8 @@ class MyDataset(torch.utils.data.Dataset):
         centre = MyDataset.compute_mean_marker_position(markers, markers_mask)
         
         dilated_clip_len = self.clip_len * dilation
-        labels = labels[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
-        labels_mask = labels_mask[start:start + dilated_clip_len:dilation]  # Take every dilation-th frame
+        labels = labels[start:start + dilated_clip_len:dilation]
+        labels_mask = labels_mask[start:start + dilated_clip_len:dilation]
 
         cx = centre[0]
         cy = centre[1]
@@ -248,23 +248,20 @@ class MyDataset(torch.utils.data.Dataset):
             file_path, frame_ix, dilation = self.data_points[idx]
 
             data = np.load(file_path)
-            # np.load returns a dict-like object whose keys we can access directly
             images = data['markers']
             images_mask = data['markers_mask']
             labels = data['vein_polyline']
             labels_mask = data['vein_polyline_mask']
             
-            # Extract longer sequence and apply dilation
             dilated_clip_len = self.clip_len * dilation
-            images = images[frame_ix:frame_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
-            images_mask = images_mask[frame_ix:frame_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
+            images = images[frame_ix:frame_ix + dilated_clip_len:dilation]
+            images_mask = images_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
             labels = labels[frame_ix:frame_ix + dilated_clip_len:dilation]
             labels_mask = labels_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
             
             images, labels_signal_mask = self.augmentation_artificial_vein_signal(
                 images, labels, labels_mask
             )
-            # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
             labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
             discrete_angles = [0, 60, 120, 180, 240, 300]
             rotation_angle_deg = random.choice(discrete_angles)
@@ -287,16 +284,15 @@ class MyDataset(torch.utils.data.Dataset):
             h = self.h_crop_small
             w = self.w_crop_small
 
-            images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)  # shape: (T, H, W)
+            images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)
             labels = MyDataset.generate_vein_image(
                 h, 
                 w, 
                 labels,
                 labels_mask
-            )  # shape: (T, H, W)
-            # Convert to float and normalize
-            images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
-            labels = torch.tensor(labels, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
+            )
+            images = torch.tensor(images, dtype=torch.float32) / 255.0
+            labels = torch.tensor(labels, dtype=torch.float32) / 255.0
             
             # Add channel dimension: (T, H, W) -> (C, T, H, W)
             images = images.unsqueeze(0)
@@ -304,19 +300,23 @@ class MyDataset(torch.utils.data.Dataset):
             
             return images, labels
         else:
-            file_path, frame_ix = self.data_points[idx]
+            file_path, frame_ix, dilation = self.data_points[idx]
 
             data = np.load(file_path)
-            # np.load returns a dict-like object whose keys we can access directly
-            images = data['markers'][frame_ix][np.newaxis, ...]
-            images_mask = data['markers_mask'][frame_ix][np.newaxis, ...]
-            labels = data['vein_polyline'][frame_ix][np.newaxis, ...]
-            labels_mask = data['vein_polyline_mask'][frame_ix][np.newaxis, ...]
+            images = data['markers']
+            images_mask = data['markers_mask']
+            labels = data['vein_polyline']
+            labels_mask = data['vein_polyline_mask']
+            
+            dilated_clip_len = self.clip_len * dilation
+            images = images[frame_ix:frame_ix + dilated_clip_len:dilation]
+            images_mask = images_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
+            labels = labels[frame_ix:frame_ix + dilated_clip_len:dilation]
+            labels_mask = labels_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
             
             images, labels_signal_mask = self.augmentation_artificial_vein_signal(
                 images, labels, labels_mask
             )
-            # Expand labels_signal_mask to broadcast with shape (num_video_frames, num_veins, num_points)
             labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
             discrete_angles = [0, 60, 120, 180, 240, 300]
             rotation_angle_deg = random.choice(discrete_angles)
@@ -330,8 +330,6 @@ class MyDataset(torch.utils.data.Dataset):
             angle_y = math.radians(random.uniform(-5, 5))
             images = self.rotate_xy(images, angle_x, angle_y)
             labels = self.rotate_xy(labels, angle_x, angle_y)
-            # images_random_remove_mask = self.randomly_remove(images)
-            # images_mask &= images_random_remove_mask
 
             labels = MyDataset.generate_vein_image(
                 self.h_camera_big, 
@@ -340,10 +338,10 @@ class MyDataset(torch.utils.data.Dataset):
                 labels_mask
             )
 
-            points = images[0, ...]
-            points_mask = images_mask[0, ...]
-            labels_image = labels[0, ...]
-            labels_mask = labels_mask[0, ...]
+            points = images
+            points_mask = images_mask
+            labels_image = labels[self.clip_len // 2, ...]
+            labels_mask = labels_mask
 
             points = MyDataset.normalise_gnn_points(points)
             MyDataset.generate_pyg(points, labels)
@@ -380,127 +378,85 @@ class MyDataset(torch.utils.data.Dataset):
         return points
 
     @staticmethod
-    def generate_pyg(points, labels_image):
-        base_points, points, adjacency = ComputeEdges.get_graph_connectivity(points)
-        num_points = points.shape[0]
-        num_edges = adjacency.shape[0]
-        num_edge_features = 1
-        
-        edge_attr = np.zeros(shape=(num_edges, num_edge_features))
-        for i in range(num_edges):
-            me_ix, neighbour_ix = adjacency[i, :]
-            vec = points[neighbour_ix] - points[me_ix]
-            dist = np.linalg.norm(vec)
-            edge_attr[i, 1] = dist
-        
-        ground_truth_labels = np.zeros(shape=(num_points,), dtype=int)
-        for i in range(num_points):
-            x, y = points[i]
-            x = int(x)
-            y = int(y)
-            if (
-                x >= 0 and x < labels_image.shape[1] and
-                y >= 0 and y < labels_image.shape[0]
-            ):
-                ground_truth_labels[i] = labels_image[y, x] == 255
+    def generate_pyg(clip_points, clip_labels_image):
+        num_frames = clip_points.shape[0]
+        central_frame = num_frames // 2
+        num_nodes = clip_points.shape[1]
+        num_edge_features = 7
+        num_node_features = 3
+        x_clip = np.zeros(shape=(num_frames * num_nodes, num_node_features), dtype=float)
+        data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
+        base_adjacency_matrix = data['adjacency_matrix']
+        num_edges_single_frame = base_adjacency_matrix.shape[0]
+        ground_truth_labels_clip = np.zeros(shape=(num_frames * num_nodes,), dtype=int)
+        spatial = np.array([0, 1], dtype=float)
+        temporal = np.array([1, 0], dtype=float)
 
-        x = torch.tensor(points, dtype=torch.float)
-        edge_index = torch.tensor(adjacency.T, dtype=torch.long)
-        edge_attr = torch.tensor(edge_attr, dtype=torch.float)
-        y = torch.tensor(ground_truth_labels, dtype=torch.long)
-        return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
-    
-    @staticmethod
-    def compute_knn_adjacency(points, k=6):
-        """
-        Compute k-nearest neighbors adjacency matrix for given points.
-        
-        Args:
-            points: numpy array of shape (n, 2) containing 2D points
-            k: number of nearest neighbors to find (default: 6)
-        
-        Returns:
-            adjacency: numpy array of shape (n, k) containing indices of k nearest neighbors for each point
-        """
-        # Initialize the NearestNeighbors object
-        nn = NearestNeighbors(n_neighbors=k+1, algorithm='ball_tree')
-        nn.fit(points)
-        
-        # Find k+1 nearest neighbors (including the point itself)
-        distances, indices = nn.kneighbors(points)
-        
-        # Remove self-connections (first column) to get exactly k neighbors
-        adjacency = indices[:, 1:]
-        
-        return adjacency
+        adjacency_clip_list = []
+        edge_attr_clip_list = []
 
-    @staticmethod
-    def compute_graph_features(points, adjacency, cx=0, cy=0):
-        """
-        Compute node and edge features for GNN training.
-        
-        Args:
-            points: numpy array of shape (n, 2) containing 2D points
-            adjacency: numpy array of shape (n, k) containing indices of k nearest neighbors
-            cx: x-coordinate of center point (default: 0)
-            cy: y-coordinate of center point (default: 0)
+        for t in range(num_frames):
+            points = clip_points[t]
+            labels_image = clip_labels_image[t]
+
+            base_points, points, adjacency = ComputeEdges.get_graph_connectivity(points)
+            adjacency += t*num_nodes
+            adjacency_clip_list.append(adjacency)
+            x_clip[t*num_nodes:(t+1)*num_nodes, 0:2] = points
+            x_clip[t*num_nodes:(t+1)*num_nodes, 2] = t - central_frame
             
-        Returns:
-            node_features: numpy array of shape (num_points, 2) containing [x-cx, y-cy]
-            edge_features: numpy array of shape (num_points, k, 1) containing [euclidean_distance]
-        """
-        # Compute node features: [x-cx, y-cy]
-        node_features = points - np.array([cx, cy])  # shape: (num_points, 2)
+            edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
+            for i in range(num_edges_single_frame):
+                me_ix, neighbour_ix = adjacency[i, :]
+                vec = points[neighbour_ix] - points[me_ix]
+                dist = np.linalg.norm(vec)
+                sin_theta = vec[1] / (dist + 1e-10)
+                cos_theta = vec[0] / (dist + 1e-10)
+                edge_attr[i] = np.array([*vec, dist, sin_theta, cos_theta, *spatial], dtype=float)
+            edge_attr_clip_list.append(edge_attr)
+            
+            ground_truth_labels = np.zeros(shape=(num_nodes,), dtype=int)
+            for i in range(num_nodes):
+                x, y = points[i]
+                x = int(x)
+                y = int(y)
+                if (
+                    x >= 0 and x < labels_image.shape[1] and
+                    y >= 0 and y < labels_image.shape[0]
+                ):
+                    ground_truth_labels[i] = labels_image[y, x] == 255
+            ground_truth_labels_clip[t*num_nodes:(t+1)*num_nodes, :] = ground_truth_labels
         
-        # Compute edge features
-        num_points = len(points)
-        k = adjacency.shape[1]
-        edge_features = np.zeros((num_points, k, 1))
-        
-        for i in range(num_points):
-            # Get coordinates of neighbors
-            neighbor_coords = points[adjacency[i]]  # shape: (k, 2)
-            # Get coordinates of current point
-            current_coords = points[i]  # shape: (2,)
-            # Compute euclidean distances
-            distances = np.sqrt(np.sum((neighbor_coords - current_coords) ** 2, axis=1))
-            edge_features[i, :, 0] = distances
-        
-        return node_features, edge_features
-    
-    @staticmethod
-    def generate_graph_ground_truth_labels(points, labels_image):
-        res = np.zeros(shape=(points.shape[0],), dtype=int)
-        for i in range(len(points)):
-            x, y = points[i]
-            x = int(x)
-            y = int(y)
-            if (
-                x >= 0 and x < labels_image.shape[1] and
-                y >= 0 and y < labels_image.shape[0]
-            ):
-                res[i] = labels_image[y, x] == 255
-        return res
+        adjacency_clip_temporal_list = []
+        edge_attr_clip_temporal_list = []
+        for t in range(num_frames-1):
+            for i in range(num_nodes):
+                src = t*num_nodes+i
+                dst = (t+1)*num_nodes+i
+                vec = points[dst] - points[src]
+                dist = np.linalg.norm(vec)
+                sin_theta = vec[1] / (dist + 1e-10)
+                cos_theta = vec[0] / (dist + 1e-10)
+                adjacency_clip_temporal_list.append([src, dst])
+                edge_attr_clip_temporal_list.append(
+                    [*vec, dist, sin_theta, cos_theta, *temporal]
+                )
+        adjacency_clip_temporal = np.array(adjacency_clip_temporal_list)
+        edge_attr_clip_temporal = np.array(edge_attr_clip_temporal_list)
+        adjacency_clip_list.append(adjacency_clip_temporal)
+        edge_attr_clip_list.append(edge_attr_clip_temporal)
 
-    @staticmethod
-    def numpy_to_pyg(node_features, adjacency, edge_features, ground_truth_labels):
-        num_nodes, num_neighbours = adjacency.shape
+        adjacency_clip = np.array(adjacency_clip_list)
+        edge_attr_clip = np.array(edge_attr_clip_list)
 
-        # Build edge_index and edge_attr from adjacency and edge_features
-        edge_index_list = []
-        edge_attr_list = []
-        for i in range(num_nodes):
-            for j_idx, j in enumerate(adjacency[i]):
-                edge_index_list.append([i, j])
-                edge_attr_list.append(edge_features[i, j_idx])
-
-        edge_index = torch.tensor(edge_index_list, dtype=torch.long).t().contiguous()
-        edge_attr = torch.tensor(np.array(edge_attr_list), dtype=torch.float)
-
-        x = torch.tensor(node_features, dtype=torch.float)
-        y = torch.tensor(ground_truth_labels, dtype=torch.long)
-
-        return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
+        x = torch.tensor(x_clip, dtype=torch.float)
+        edge_index = torch.tensor(adjacency_clip.T, dtype=torch.long)
+        edge_attr = torch.tensor(edge_attr_clip, dtype=torch.float)
+        y = torch.tensor(ground_truth_labels_clip, dtype=torch.long)
+        mask = np.zeros(shape=(num_frames * num_nodes,), dtype=bool)
+        mask[central_frame * num_nodes : (central_frame + 1) * num_nodes] = True
+        mask = torch.tensor(mask, dtype=torch.bool)
+        return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, mask=mask)
 
     def get_markers(self, idx):
         file_path, start, dilation = self.data_points[idx]

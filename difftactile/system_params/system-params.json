@@ -191,7 +191,7 @@
     },
     "cnn": {
         "input_width_height": 192,
-        "clip_len": 1
+        "clip_len": 5
     },
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",
