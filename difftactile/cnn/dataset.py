@@ -382,8 +382,8 @@ class MyDataset(torch.utils.data.Dataset):
         num_frames = clip_points.shape[0]
         central_frame = num_frames // 2
         num_nodes = clip_points.shape[1]
-        num_edge_features = 7
-        num_node_features = 3
+        num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features
+        num_node_features = SYSTEM_PARAMS.gnn.num_node_features
         x_clip = np.zeros(shape=(num_frames * num_nodes, num_node_features), dtype=float)
         data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_adjacency_matrix = data['adjacency_matrix']
@@ -449,13 +449,13 @@ class MyDataset(torch.utils.data.Dataset):
         adjacency_clip = np.array(adjacency_clip_list)
         edge_attr_clip = np.array(edge_attr_clip_list)
 
-        x = torch.tensor(x_clip, dtype=torch.float)
-        edge_index = torch.tensor(adjacency_clip.T, dtype=torch.long)
-        edge_attr = torch.tensor(edge_attr_clip, dtype=torch.float)
-        y = torch.tensor(ground_truth_labels_clip, dtype=torch.long)
         mask = np.zeros(shape=(num_frames * num_nodes,), dtype=bool)
         mask[central_frame * num_nodes : (central_frame + 1) * num_nodes] = True
         mask = torch.tensor(mask, dtype=torch.bool)
+        x = torch.tensor(x_clip, dtype=torch.float)
+        edge_index = torch.tensor(adjacency_clip.T, dtype=torch.long)
+        edge_attr = torch.tensor(edge_attr_clip, dtype=torch.float)
+        y = torch.tensor(ground_truth_labels_clip[mask], dtype=torch.long)
         return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, mask=mask)
 
     def get_markers(self, idx):

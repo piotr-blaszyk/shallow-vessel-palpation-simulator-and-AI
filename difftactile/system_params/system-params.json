@@ -147,6 +147,10 @@
         "polyline_num": 25,
         "cnn_gnn": 1
     },
+    "gnn": {
+        "num_edge_features": 7,
+        "num_node_features": 3
+    },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,
         "camera_offset": 5.000e+00,

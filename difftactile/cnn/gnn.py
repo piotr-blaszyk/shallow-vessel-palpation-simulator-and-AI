@@ -97,8 +97,8 @@ class GNNFocalLoss(nn.Module):
 class GNN(pl.LightningModule):
     def __init__(
             self, 
-            node_channels=2,  # Node features dimension
-            edge_channels=1,  # Edge features dimension 
+            node_channels=SYSTEM_PARAMS.gnn.num_node_features,  # Node features dimension
+            edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,  # Edge features dimension 
             hidden_channels=16, 
             out_channels=1,  # Changed to 1 for binary classification
             lr=1e-2,
@@ -198,6 +198,8 @@ class GNN(pl.LightningModule):
         # Forward pass with edge features
         out = self(batch.x, batch.edge_index, batch.edge_attr)
         out = out.squeeze(-1)  # Remove the channel dimension
+        mask = batch.mask
+        out = out[mask]
         
         # Calculate losses
         tversky_loss = self.tversky_loss(out, batch.y.float())
@@ -220,9 +222,9 @@ class GNN(pl.LightningModule):
         
         # Calculate IoU for each graph separately
         for i in range(B):
-            mask = batch.batch == i
-            graph_preds = preds[mask]
-            graph_targets = batch.y[mask]
+            iou_mask = batch.batch == i
+            graph_preds = preds[iou_mask]
+            graph_targets = batch.y[iou_mask]
             metrics = self.iou_score(graph_preds, graph_targets)
             batch_metrics['fg_iou'][i] = metrics['fg_iou']
             batch_metrics['bg_iou'][i] = metrics['bg_iou']
