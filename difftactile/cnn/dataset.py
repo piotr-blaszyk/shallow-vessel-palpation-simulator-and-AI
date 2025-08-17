@@ -415,9 +415,10 @@ class MyDataset(torch.utils.data.Dataset):
             adjacency += t*num_nodes
             adjacency_clip_list.append(adjacency)
             
+            points_unnormalised = MyDataset.unnormalise_gnn_points(points)
             ground_truth_labels = np.zeros(shape=(num_nodes,), dtype=int)
             for i in range(num_nodes):
-                x, y = points[i]
+                x, y = points_unnormalised[i]
                 x = int(x)
                 y = int(y)
                 if (
@@ -623,7 +624,7 @@ class MyDataset(torch.utils.data.Dataset):
                     for i in range(len(line_points) - 1):
                         pt1 = tuple(line_points[i])
                         pt2 = tuple(line_points[i + 1])
-                        cv2.line(images[t], pt1, pt2, color=255, thickness=30)
+                        cv2.line(images[t], pt1, pt2, color=255, thickness=40)
                 
         return images
 

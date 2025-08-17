@@ -388,6 +388,7 @@ class Visualisation:
         """
         BATCH_SIZE = 1
         NUM_WORKERS = 1
+        LABELS_DOWNSIZE = 4
 
         if mode == 'predictions':
             # Load test data
@@ -425,14 +426,22 @@ class Visualisation:
                 data_iter = iter(data_loader)
                 continue
             
-            # if data.y.sum() == 0:
-            #     continue
+            labels_images = labels_images.numpy()[0, ...]
 
             # Get number of frames from the mask
             num_nodes_per_frame = torch.sum(data.mask).item()
             num_frames = len(data.x) // num_nodes_per_frame
             central_frame = num_frames // 2
-            current_frame = 0
+
+            # Pre-compute image dimensions
+            h, w = 500, 500
+            labels_h = labels_images.shape[1] // LABELS_DOWNSIZE
+            labels_w = labels_images.shape[2] // LABELS_DOWNSIZE
+
+            # Initialize image stacks for each color channel
+            ground_truth_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)
+            prediction_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)
+            labels_stack = np.zeros((num_frames, labels_h, labels_w, 3), dtype=np.uint8)
 
             if mode == 'predictions':
                 # Get predictions
@@ -442,49 +451,78 @@ class Visualisation:
                     out = out.squeeze(-1)  # Remove the channel dimension
                     pred = (torch.sigmoid(out) > 0.5).cpu().numpy().astype(int)
 
-            while True:  # Frame navigation loop
-                # Create black background images with fixed size 200x200
-                h, w = 200, 200
-                ground_truth_img = np.zeros((h, w, 3), dtype=np.uint8)
-                prediction_img = np.zeros((h, w, 3), dtype=np.uint8)
+            if data.y.cpu().numpy().sum() == 0:
+                continue
 
+            # Pre-compute all frames
+            for frame_idx in range(num_frames):
                 # Get marker positions for current frame
-                start_idx = current_frame * num_nodes_per_frame
-                end_idx = (current_frame + 1) * num_nodes_per_frame
+                start_idx = frame_idx * num_nodes_per_frame
+                end_idx = (frame_idx + 1) * num_nodes_per_frame
                 frame_points = data.x[start_idx:end_idx].cpu().numpy()
                 
                 # Transform from (-1,1) to (0,200) range
                 points = (frame_points + 1) / 2 * w  # Now in range (0,200)
                 points = points[:, 0:2]
-                points = points.astype(np.int32)
+                points = points.astype(np.float32)  # Keep as float for draw_point
+
+                # Create temporary single-channel images for each color
+                temp_r = np.zeros((1, h, w), dtype=np.uint8)
+                temp_g = np.zeros((1, h, w), dtype=np.uint8)
+                temp_b = np.zeros((1, h, w), dtype=np.uint8)
 
                 # Only show ground truth and predictions for central frame
-                if current_frame == central_frame:
+                if frame_idx == central_frame:
                     ground_truth = data.y.cpu().numpy()
                     
                     # Draw markers on ground truth image
-                    for point_idx, (x, y) in enumerate(points):
-                        if 0 <= x < w and 0 <= y < h:
-                            gt_color = (0, 255, 0) if ground_truth[point_idx] == 1 else (0, 0, 255)  # Green for 1, Red for 0
-                            cv2.circle(ground_truth_img, (x, y), 3, gt_color, -1)
+                    for point_idx, point in enumerate(points):
+                        if 0 <= point[0] < w and 0 <= point[1] < h:
+                            if ground_truth[point_idx] == 1:
+                                # Green for positive class
+                                MyDataset.draw_point(temp_g, 0, point, n=6)
+                            else:
+                                # Red for negative class
+                                MyDataset.draw_point(temp_r, 0, point, n=6)
+                    
+                    # Combine channels
+                    ground_truth_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
                     
                     if mode == 'predictions':
+                        # Reset temporary images
+                        temp_r.fill(0)
+                        temp_g.fill(0)
+                        temp_b.fill(0)
+                        
                         # Draw markers on prediction image
                         frame_pred = pred[start_idx:end_idx]
-                        for point_idx, (x, y) in enumerate(points):
-                            if 0 <= x < w and 0 <= y < h:
-                                pred_color = (0, 255, 0) if frame_pred[point_idx] == 1 else (0, 0, 255)  # Green for 1, Red for 0
-                                cv2.circle(prediction_img, (x, y), 3, pred_color, -1)
+                        for point_idx, point in enumerate(points):
+                            if 0 <= point[0] < w and 0 <= point[1] < h:
+                                if frame_pred[point_idx] == 1:
+                                    # Green for positive class
+                                    MyDataset.draw_point(temp_g, 0, point, n=6)
+                                else:
+                                    # Red for negative class
+                                    MyDataset.draw_point(temp_r, 0, point, n=6)
+                        
+                        # Combine channels
+                        prediction_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
                 else:
-                    # For non-central frames, just show marker positions in white
-                    for x, y in points:
-                        if 0 <= x < w and 0 <= y < h:
-                            cv2.circle(ground_truth_img, (x, y), 3, (255, 255, 255), -1)
-                            if mode == 'predictions':
-                                cv2.circle(prediction_img, (x, y), 3, (255, 255, 255), -1)
+                    # For non-central frames, draw white markers
+                    for point in points:
+                        if 0 <= point[0] < w and 0 <= point[1] < h:
+                            # Draw white points (all channels)
+                            MyDataset.draw_point(temp_r, 0, point, n=6)
+                            MyDataset.draw_point(temp_g, 0, point, n=6)
+                            MyDataset.draw_point(temp_b, 0, point, n=6)
+                    
+                    # Combine channels
+                    ground_truth_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
+                    if mode == 'predictions':
+                        prediction_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
 
                 # Get and process labels image for current frame
-                labels_image = labels_images[0, current_frame].numpy()
+                labels_image = labels_images[frame_idx]
                 # Convert labels_image to BGR for visualization
                 labels_display = np.zeros((labels_image.shape[0], labels_image.shape[1], 3), dtype=np.uint8)
                 # Convert torch tensor to numpy and scale back to [0, 255]
@@ -494,27 +532,29 @@ class Visualisation:
                 labels_display[..., 2] = labels_np  # Set red channel
 
                 # Downscale by factor of 4 using INTER_AREA interpolation
-                h_small = labels_display.shape[0] // 4
-                w_small = labels_display.shape[1] // 4
-                labels_display = cv2.resize(labels_display, (w_small, h_small), interpolation=cv2.INTER_AREA)
+                labels_stack[frame_idx] = cv2.resize(labels_display, (labels_w, labels_h), interpolation=cv2.INTER_AREA)
 
-                # Show images
+            # Display loop
+            current_frame = 0
+            while True:
+                # Show images from pre-computed stacks
                 title_prefix = f'Frame {current_frame}/{num_frames-1} '
                 title_prefix += '(Central Frame) ' if current_frame == central_frame else ''
                 
-                cv2.imshow(f'Ground Truth {sequence_idx}', ground_truth_img)
+                cv2.imshow(f'Ground Truth {sequence_idx}', ground_truth_stack[current_frame])
                 if mode == 'predictions':
-                    cv2.imshow(f'Prediction {sequence_idx}', prediction_img)
-                cv2.imshow(f'Labels Image {sequence_idx}', labels_display)
+                    cv2.imshow(f'Prediction {sequence_idx}', prediction_stack[current_frame])
+                cv2.imshow(f'Labels Image {sequence_idx}', labels_stack[current_frame])
 
                 # Position windows side by side
-                window_width = ground_truth_img.shape[1]
+                window_width = h  # Using h since it's the image width
+                sep = 100
                 cv2.moveWindow(f'Ground Truth {sequence_idx}', 0, 0)
                 if mode == 'predictions':
-                    cv2.moveWindow(f'Prediction {sequence_idx}', window_width * 2, 0)
-                    cv2.moveWindow(f'Labels Image {sequence_idx}', window_width * 5, 0)
+                    cv2.moveWindow(f'Prediction {sequence_idx}', window_width + sep, 0)
+                    cv2.moveWindow(f'Labels Image {sequence_idx}', 2 * (window_width + sep), 0)
                 else:
-                    cv2.moveWindow(f'Labels Image {sequence_idx}', window_width * 2, 0)
+                    cv2.moveWindow(f'Labels Image {sequence_idx}', window_width + sep, 0)
 
                 # Handle keyboard input
                 key = cv2.waitKey(0) & 0xFF
@@ -528,10 +568,8 @@ class Visualisation:
                     break
                 elif key == ord('j'):  # Previous frame
                     current_frame = max(0, current_frame - 1)
-                    cv2.destroyAllWindows()
                 elif key == ord('k'):  # Next frame
                     current_frame = min(num_frames - 1, current_frame + 1)
-                    cv2.destroyAllWindows()
 
     def test_data_loader(self):
         BATCH_SIZE = 16
