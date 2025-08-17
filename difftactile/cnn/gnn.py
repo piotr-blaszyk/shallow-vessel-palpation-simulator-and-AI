@@ -80,7 +80,7 @@ class GNNTverskyLoss(nn.Module):
 
 
 class GNNFocalLoss(nn.Module):
-    def __init__(self, alpha=0.75, gamma=3.0):
+    def __init__(self, alpha=0.6, gamma=0.0):
         """Focal Loss for GNN node classification.
         
         Specifically designed for node-level binary classification where the focus
@@ -121,14 +121,14 @@ class GNNFocalLoss(nn.Module):
 class GNN(pl.LightningModule):
     def __init__(
             self, 
+            lr,
             node_channels=SYSTEM_PARAMS.gnn.num_node_features,
             edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
             hidden_channels=128,
             out_channels=1,
             num_heads=4,  # Number of attention heads
-            lr=1e-2,
-            tversky_weight=0.5,
-            focal_weight=0.5
+            tversky_weight=0.0,
+            focal_weight=1.0
         ):
         super().__init__()
         
@@ -150,16 +150,8 @@ class GNN(pl.LightningModule):
             add_self_loops=False  # We'll handle temporal connections explicitly
         )
         
+        # Final prediction layer (previously conv2, now outputs final predictions)
         self.conv2 = GATv2Conv(
-            in_channels=hidden_channels,
-            out_channels=hidden_channels // num_heads,
-            heads=num_heads,
-            edge_dim=internal_edge_channels,
-            add_self_loops=False
-        )
-        
-        # Final prediction layer
-        self.conv3 = GATv2Conv(
             in_channels=hidden_channels,
             out_channels=out_channels,
             heads=1,  # Single head for final prediction
@@ -167,9 +159,8 @@ class GNN(pl.LightningModule):
             add_self_loops=False
         )
         
-        # Layer norms for better training stability
+        # Layer norm for better training stability (only need one now)
         self.norm1 = nn.LayerNorm(hidden_channels)
-        self.norm2 = nn.LayerNorm(hidden_channels)
         
         # Initialize loss functions
         self.tversky_loss = GNNTverskyLoss()
@@ -248,12 +239,8 @@ class GNN(pl.LightningModule):
         h1 = self.conv1(x, edge_index, edge_attr=edge_features)
         h1 = F.relu(self.norm1(h1))
         
-        # Second conv layer with residual connection
-        h2 = self.conv2(h1, edge_index, edge_attr=edge_features)
-        h2 = F.relu(self.norm2(h2 + h1))  # Residual connection
-        
-        # Final conv layer
-        out = self.conv3(h2, edge_index, edge_attr=edge_features)
+        # Final conv layer (previously conv3, now conv2)
+        out = self.conv2(h1, edge_index, edge_attr=edge_features)
         return out
 
     def shared_step(self, batch, stage):
@@ -346,7 +333,6 @@ def main():
     train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
         full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
     )
-    # Using PyTorch Geometric's DataLoader
     train_loader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
     )
