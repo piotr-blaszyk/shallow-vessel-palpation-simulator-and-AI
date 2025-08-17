@@ -7,8 +7,7 @@ class FisheyeModelTaichi:
         pass
 
     @ti.func
-    @staticmethod
-    def project_3d_2d(a):
+    def project_3d_2d(self, a):
         a_norm = a.norm(1e-12)
         cos = a[2] / a_norm
         cos = ti.min(1.0, cos)

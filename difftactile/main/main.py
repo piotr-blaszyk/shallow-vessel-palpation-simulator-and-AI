@@ -2143,7 +2143,7 @@ class Contact:
         self.normal_stiffness[None] = random.uniform(ns * 0.5, ns * 1.5)
         self.normal_damping[None] = random.uniform(nd * 0.5, nd * 1.5)
         self.tangential_stiffness[None] = random.uniform(ts * 0.5, ts * 1.5)
-        self.coulomb_friction_coeff[None] = random.uniform(cfc * 0.5, cfc * 1.5)
+        self.coulomb_friction_coeff[None] = random.uniform(cfc * 0.5, cfc * 1.25)
     
     def print_contact_params(self):
         ns = SYSTEM_PARAMS.contact.normal_stiffness
@@ -2396,8 +2396,7 @@ class Contact:
                         )
                         self.visualisation_update_gui(ts)
                         if (
-                            self.current_target_idx[None] > 2 
-                            and ts % 4 == 0
+                            self.current_target_idx[None] > 2
                         ):
                             self.record_training_data_point(j, ts)
                         if self.last_target_reached[None] == 1:

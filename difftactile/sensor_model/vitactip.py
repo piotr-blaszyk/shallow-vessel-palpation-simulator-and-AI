@@ -16,7 +16,7 @@ NP_TYPE = np.float32
 @ti.data_oriented
 class ViTacTip:
     def __init__(self):
-        self.fisheye_model = FisheyeModelNoTaichi()
+        self.fisheye_model_taichi = FisheyeModelTaichi()
         self.set_up_system_params_1()
         self.set_up_system_params_2()
         self.load_mesh()
@@ -167,7 +167,7 @@ class ViTacTip:
             pos = ti.Vector(
                 [surface_nodes[i, 0], surface_nodes[i, 1], surface_nodes[i, 2]]
             )
-            proj = FisheyeModelTaichi.project_3d_2d(pos)
+            proj = self.fisheye_model_taichi.project_3d_2d(pos)
             output_projections[i, 0] = proj[0]
             output_projections[i, 1] = proj[1]
 
@@ -176,7 +176,7 @@ class ViTacTip:
         initial_camera_image = cv2.imread(
             SYSTEM_PARAMS.files.vitactip_photo_default_state
         )
-        initial_marker_positions, _, _ = FisheyeModelTaichi.get_marker_image(
+        initial_marker_positions, _, _ = FisheyeModelNoTaichi.get_marker_image(
             initial_camera_image
         )
         marker_visualization_image = initial_camera_image.copy()
@@ -484,7 +484,7 @@ class ViTacTip:
                 homogeneous_point_E[2],
             ]
         )
-        projection_2d = FisheyeModelTaichi.project_3d_2d(
+        projection_2d = self.fisheye_model_taichi.project_3d_2d(
             inhomogeneous_point_E
         )
         return projection_2d
