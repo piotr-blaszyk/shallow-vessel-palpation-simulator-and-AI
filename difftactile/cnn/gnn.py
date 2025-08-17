@@ -127,7 +127,7 @@ class GNN(pl.LightningModule):
             node_channels=1,
             # edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
             edge_channels=1,
-            hidden_channels=16,
+            hidden_channels=128,
             out_channels=1,
             num_layers=2,
             tversky_weight=0.0,
