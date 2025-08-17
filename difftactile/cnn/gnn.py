@@ -222,7 +222,7 @@ class GNN(pl.LightningModule):
         
         # Calculate IoU for each graph separately
         for i in range(B):
-            iou_mask = batch.batch == i
+            iou_mask = batch.batch[mask] == i
             graph_preds = preds[iou_mask]
             graph_targets = batch.y[iou_mask]
             metrics = self.iou_score(graph_preds, graph_targets)
@@ -271,8 +271,8 @@ class GNN(pl.LightningModule):
 
 
 def main():
-    BATCH_SIZE = 64
-    NUM_EPOCHS = 10
+    BATCH_SIZE = 16
+    NUM_EPOCHS = 4
     NUM_WORKERS = 16
     LR = 1e-3
 

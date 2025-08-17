@@ -2360,7 +2360,7 @@ class Contact:
 
     def collect_training_data(self):
         self.clear_temp_images()
-        self.clear_npz()
+        # self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for k in range(0, 2):
@@ -2402,7 +2402,7 @@ class Contact:
                         if self.last_target_reached[None] == 1:
                             break
                     file_num = j * 4 + k * 2 + i
-                    self.write_training_data_to_file(file_num)
+                    # self.write_training_data_to_file(file_num)
                     
                     self.reset_loss()
                     self.batch_loss.fill(0.0)

@@ -16,14 +16,14 @@ from difftactile.data_analysis.experiment.voronoi import *
 
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir, mode=None):
+    def __init__(self, data_dir, mode='root'):
         super().__init__()
         self.data_dir = data_dir
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         if SYSTEM_PARAMS.meta.cnn_gnn == 0:
             self.data_points_per_trajectory = 16
         else:
-            self.data_points_per_trajectory = 128
+            self.data_points_per_trajectory = 16
         self.mode = mode
         self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
 
@@ -47,12 +47,13 @@ class MyDataset(torch.utils.data.Dataset):
 
         # Pre-compute valid clips for each trajectory
         self.data_points = []
-        self.populate_clips()
+        if mode == 'root':
+            self.populate_clips()
 
     def populate_clips(self):
         if True or SYSTEM_PARAMS.meta.cnn_gnn == 0:
             # Possible dilation factors
-            dilations = [1, 2, 3]
+            dilations = [1, 2, 3, 4]
             
             for file_path in self.files:
                 data = np.load(file_path)
@@ -110,6 +111,7 @@ class MyDataset(torch.utils.data.Dataset):
                             self.data_points.append((file_path, ix))
                             frames_found += 1
                         attempts += 1
+        print("clips have now been populated!")
 
     def __len__(self):
         return len(self.data_points)
@@ -135,6 +137,7 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Split trajectories
         trajectories = list(trajectory_to_indices.keys())
+        trajectories.sort()
         # random.seed(random_state)
         # random.shuffle(trajectories)
         
@@ -148,8 +151,8 @@ class MyDataset(torch.utils.data.Dataset):
             val_trajectories = trajectories[train_split:val_split]
             test_trajectories = trajectories[val_split:]
         else:
-            test_ixs = np.array([1, 2], dtype=int)
-            val_ixs = np.array([3, 4], dtype=int)
+            test_ixs = np.array([12, 14], dtype=int)
+            val_ixs = np.array([13, 15], dtype=int)
             
             # Get trajectories with specified indices
             test_trajectories = [trajectories[i] for i in test_ixs if i < len(trajectories)]
@@ -344,10 +347,10 @@ class MyDataset(torch.utils.data.Dataset):
             labels_mask = labels_mask
 
             points = MyDataset.normalise_gnn_points(points)
-            MyDataset.generate_pyg(points, labels)
+            pyg = MyDataset.generate_pyg(points, labels)
             labels_image = torch.tensor(labels_image, dtype=torch.float32) / 255.0
             labels_image = torch.empty(0)
-            return data, labels_image
+            return pyg, labels_image
     
     def get_points(self, idx):
         file_path, frame_ix = self.data_points[idx]
@@ -398,10 +401,7 @@ class MyDataset(torch.utils.data.Dataset):
         for t in range(num_frames):
             points = clip_points[t]
             labels_image = clip_labels_image[t]
-
             base_points, points, adjacency = ComputeEdges.get_graph_connectivity(points)
-            adjacency += t*num_nodes
-            adjacency_clip_list.append(adjacency)
             x_clip[t*num_nodes:(t+1)*num_nodes, 0:2] = points
             x_clip[t*num_nodes:(t+1)*num_nodes, 2] = t - central_frame
             
@@ -414,6 +414,8 @@ class MyDataset(torch.utils.data.Dataset):
                 cos_theta = vec[0] / (dist + 1e-10)
                 edge_attr[i] = np.array([*vec, dist, sin_theta, cos_theta, *spatial], dtype=float)
             edge_attr_clip_list.append(edge_attr)
+            adjacency += t*num_nodes
+            adjacency_clip_list.append(adjacency)
             
             ground_truth_labels = np.zeros(shape=(num_nodes,), dtype=int)
             for i in range(num_nodes):
@@ -425,7 +427,7 @@ class MyDataset(torch.utils.data.Dataset):
                     y >= 0 and y < labels_image.shape[0]
                 ):
                     ground_truth_labels[i] = labels_image[y, x] == 255
-            ground_truth_labels_clip[t*num_nodes:(t+1)*num_nodes, :] = ground_truth_labels
+            ground_truth_labels_clip[t*num_nodes:(t+1)*num_nodes] = ground_truth_labels
         
         adjacency_clip_temporal_list = []
         edge_attr_clip_temporal_list = []
@@ -433,7 +435,7 @@ class MyDataset(torch.utils.data.Dataset):
             for i in range(num_nodes):
                 src = t*num_nodes+i
                 dst = (t+1)*num_nodes+i
-                vec = points[dst] - points[src]
+                vec = x_clip[dst, 0:2] - x_clip[src, 0:2]
                 dist = np.linalg.norm(vec)
                 sin_theta = vec[1] / (dist + 1e-10)
                 cos_theta = vec[0] / (dist + 1e-10)
@@ -446,8 +448,8 @@ class MyDataset(torch.utils.data.Dataset):
         adjacency_clip_list.append(adjacency_clip_temporal)
         edge_attr_clip_list.append(edge_attr_clip_temporal)
 
-        adjacency_clip = np.array(adjacency_clip_list)
-        edge_attr_clip = np.array(edge_attr_clip_list)
+        adjacency_clip = np.vstack(adjacency_clip_list)
+        edge_attr_clip = np.vstack(edge_attr_clip_list)
 
         mask = np.zeros(shape=(num_frames * num_nodes,), dtype=bool)
         mask[central_frame * num_nodes : (central_frame + 1) * num_nodes] = True
