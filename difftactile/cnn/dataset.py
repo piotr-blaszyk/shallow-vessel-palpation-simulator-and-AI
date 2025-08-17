@@ -349,6 +349,12 @@ class MyDataset(torch.utils.data.Dataset):
             labels_image = torch.empty(0)
             return data, labels_image
     
+    def get_points(self, idx):
+        file_path, frame_ix = self.data_points[idx]
+        data = np.load(file_path)
+        points = data['markers'][frame_ix]
+        return points
+
     @staticmethod
     def normalise_gnn_points(points):
         principal_point = np.array([

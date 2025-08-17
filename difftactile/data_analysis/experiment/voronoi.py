@@ -9,14 +9,18 @@ from sklearn.model_selection import LeaveOneOut
 from sklearn.metrics import confusion_matrix, f1_score, accuracy_score, recall_score
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.spatial import Voronoi
+import matplotlib.pyplot as plt
+from shapely.geometry import Polygon
 
 from difftactile.main.constants import *
+from difftactile.cnn.dataset import *
 
-class VoronoiGenerator:
+class ComputeEdges:
     def __init__(self):
         pass
 
-    def go(self):
+    def compute_base_graph_connectivity(self):
         # Load marker positions from npz file
         data = np.load(SYSTEM_PARAMS.files.init_marker_positions_npz)
         points = data['points']  # shape: (num_points, 2)
@@ -102,7 +106,7 @@ class VoronoiGenerator:
                 projected_magnitudes[i] = np.sqrt(np.sum(projection**2))
 
         rings = list(range(0, 7))
-        rings = [VoronoiGenerator.num_markers_in_ring(x) for x in rings]
+        rings = [ComputeEdges.num_markers_in_ring(x) for x in rings]
         
         # First sort by projected magnitudes to get rough ring ordering
         magnitude_sorted_indices = np.argsort(projected_magnitudes)
@@ -127,6 +131,66 @@ class VoronoiGenerator:
         # Create a mapping from old indices to new indices
         index_mapping = {old_idx: new_idx for new_idx, old_idx in enumerate(new_indices)}
 
+        # Reorder points array according to the index mapping
+        points = points[new_indices]
+
+        ordered_indices = np.arange(127, dtype=int)
+
+        ix_thresh_4_neighbours = 91
+
+        ixs_3_neighbours = np.array([
+            94, 100, 106, 112, 118, 124
+        ], dtype=int)
+
+        # Initialize with 6 neighbors for all points
+        neighbour_counts = 6 * np.ones(shape=ordered_indices.shape, dtype=int)
+        
+        # Set 4 neighbors for points with index >= ix_thresh_4_neighbours
+        neighbour_counts[ordered_indices >= ix_thresh_4_neighbours] = 4
+        
+        # Set 3 neighbors for specific points using vectorized operation
+        mask = np.isin(ordered_indices, ixs_3_neighbours)
+        neighbour_counts[mask] = 3
+
+        # Find k nearest neighbors for each point
+        k = 6  # maximum number of neighbors
+        knn = KNeighborsClassifier(n_neighbors=k+1, metric='euclidean')  # k+1 because point itself is included
+        knn.fit(points, np.zeros(len(points)))  # dummy labels
+        distances, neighbors = knn.kneighbors(points)
+        
+        # Remove self-connections (first column)
+        distances = distances[:, 1:]
+        neighbors = neighbors[:, 1:]
+        
+        # Create edges list with sorting by distance for each node
+        edges = []
+        for i in range(len(points)):
+            # Get number of neighbors for this node
+            n_neighbors = neighbour_counts[i]
+            
+            # Sort neighbors by distance
+            node_distances = distances[i, :n_neighbors]
+            node_neighbors = neighbors[i, :n_neighbors]
+            
+            # Sort indices by distance
+            sort_idx = np.argsort(node_distances)
+            node_neighbors = node_neighbors[sort_idx]
+            
+            # Add edges in both directions
+            for neighbor in node_neighbors:
+                edges.append([i, neighbor])
+                edges.append([neighbor, i])
+        
+        # Convert to numpy array
+        adjacency_matrix = np.array(edges, dtype=int)
+
+        # Save adjacency matrix and points to npz file
+        np.savez(
+            SYSTEM_PARAMS.files.base_graph_connectivity,
+            adjacency_matrix=adjacency_matrix,
+            points=points
+        )
+
         # Load the default state image
         img = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
         if img is None:
@@ -140,11 +204,16 @@ class VoronoiGenerator:
             # Draw a circle at the point
             cv2.circle(img, (x, y), radius=3, color=(0, 0, 255), thickness=-1)  # Red filled circle
             
-            # Add text label with new index (if point has one)
-            if i in index_mapping:
-                new_idx = index_mapping[i]
-                cv2.putText(img, str(new_idx), (x + 5, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 
-                           fontScale=0.5, color=(0, 255, 0), thickness=1)  # Green text
+            degree = neighbour_counts[i]
+            cv2.putText(img, str(degree), (x + 5, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 
+                        fontScale=0.5, color=(0, 255, 0), thickness=1)  # Green text
+
+        # Draw edges between connected nodes
+        for edge in adjacency_matrix:
+            start_idx, end_idx = edge
+            start_point = tuple(map(int, points[start_idx]))
+            end_point = tuple(map(int, points[end_idx]))
+            cv2.line(img, start_point, end_point, color=(255, 255, 0), thickness=1)  # Yellow lines
 
         # Display the image
         cv2.imshow('Marker Positions', img)
@@ -153,18 +222,113 @@ class VoronoiGenerator:
 
         # Save the image
         cv2.imwrite(SYSTEM_PARAMS.files.voronoi_image, img)
-    
+
     @staticmethod
     def num_markers_in_ring(k):
         if k == 0:
             return 1
         else:
             return k * 6
+    
+    @staticmethod
+    def validate_graph_connectivity_algorithm():
+        dataset = MyDataset(data_dir=SYSTEM_PARAMS.files.dataset_root)
+        n = len(dataset)
+        
+        # Create shuffled array of indices
+        indices = np.arange(n, dtype=int)
+        np.random.shuffle(indices)
+        current_ix = 0
+        
+        while True:
+            ix = indices[current_ix]
+            points = dataset.get_points(ix)
+            
+            # Skip if any point has (0,0) coordinates
+            # if np.any(np.all(points == 0, axis=1)):
+            #     current_ix = (current_ix + 1) % n
+            #     continue
+                
+            base_points, points, adjacency_matrix = ComputeEdges.get_graph_connectivity(points)
+            
+            # Create black image
+            img = np.zeros((1080, 1920, 3), dtype=np.uint8)
+
+            mode = 'adjacency_matrix'
+            
+            if mode == 'hungarian':
+                # Draw correspondence edges in green
+                for i in range(len(points)):
+                    start_point = tuple(map(int, points[i]))
+                    end_point = tuple(map(int, base_points[i]))
+                    cv2.line(img, start_point, end_point, color=(0, 255, 0), thickness=1)
+                
+                # Draw input points in red
+                for point in points:
+                    x, y = map(int, point)
+                    cv2.circle(img, (x, y), radius=3, color=(0, 0, 255), thickness=-1)
+                
+                # Draw base points in blue
+                for point in base_points:
+                    x, y = map(int, point)
+                    cv2.circle(img, (x, y), radius=3, color=(255, 0, 0), thickness=-1)
+            elif mode == 'adjacency_matrix':
+                # Draw edges from adjacency matrix in green
+                for edge in adjacency_matrix:
+                    start_idx, end_idx = edge
+                    start_point = tuple(map(int, points[start_idx]))
+                    end_point = tuple(map(int, points[end_idx]))
+                    cv2.line(img, start_point, end_point, color=(0, 255, 0), thickness=1)
+                
+                # Draw points in red
+                for point in points:
+                    x, y = map(int, point)
+                    cv2.circle(img, (x, y), radius=3, color=(0, 0, 255), thickness=-1)
+            
+            # Display image and index
+            cv2.putText(img, f"Index: {ix} ({current_ix}/{n})", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
+                       1, (255, 255, 255), 2)
+            cv2.imshow('Graph Connectivity Validation', img)
+            key = cv2.waitKey(0)
+            
+            if key == ord('q'):
+                break
+            elif key == ord('j'):
+                # Go back one image
+                current_ix = (current_ix - 1) % n
+            elif key == ord('k'):
+                # Go forward one image
+                current_ix = (current_ix + 1) % n
+        
+        cv2.destroyAllWindows()
+
+    @staticmethod
+    def get_graph_connectivity(points):
+        # Load base graph connectivity data
+        data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
+        base_points = data['points']
+        base_adjacency_matrix = data['adjacency_matrix']
+
+        # Compute cost matrix as squared euclidean distances between all pairs of points
+        cost_matrix = cdist(points, base_points, metric='sqeuclidean')
+        
+        # Apply Hungarian algorithm to find optimal assignment
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
+        
+        # Create inverse mapping: for each base point index, which input point maps to it
+        inverse_mapping = np.zeros_like(row_ind)
+        inverse_mapping[col_ind] = row_ind
+        
+        # Reorder input points to match base points ordering
+        points_reordered = points[inverse_mapping]
+        
+        return base_points, points_reordered, base_adjacency_matrix
 
 
 def main():
-    v = VoronoiGenerator()
-    v.go()
+    # c = ComputeEdges()
+    # c.compute_base_graph_connectivity()
+    ComputeEdges.validate_graph_connectivity_algorithm()
 
 
 if __name__ == '__main__':

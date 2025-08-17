@@ -196,6 +196,7 @@
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",
         "init_marker_positions_npz": "difftactile/output/init-marker-positions.npz",
+        "base_graph_connectivity": "difftactile/output/base-graph-connectivity.npz",
         "biomimetic_tip_points": "difftactile/output/biomimetic-tip-points.pkl",
         "voronoi_image": "difftactile/output/voronoi.png",
         "gmsh_mesh": "difftactile/output/gmsh-mesh.pkl",
