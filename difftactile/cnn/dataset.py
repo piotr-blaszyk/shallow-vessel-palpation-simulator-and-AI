@@ -12,7 +12,7 @@ from sklearn.neighbors import NearestNeighbors
 
 from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
-from difftactile.data_analysis.experiment.voronoi import *
+from difftactile.data_analysis.experiment.adjacency import *
 import re
 
 
@@ -24,7 +24,7 @@ class MyDataset(torch.utils.data.Dataset):
         if SYSTEM_PARAMS.meta.cnn_gnn == 0:
             self.data_points_per_trajectory = 16
         else:
-            self.data_points_per_trajectory = 128
+            self.data_points_per_trajectory = 32
         self.mode = mode
         self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
 
@@ -46,6 +46,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.avs_disp_c = [0.4, 0.3, 0.2]
         self.cnn_gnn = SYSTEM_PARAMS.meta.cnn_gnn
         self.visualisation_mode = False
+        self.data_points_per_epoch = SYSTEM_PARAMS.dataset.data_points_per_epoch
 
         # Pre-compute valid clips for each trajectory
         self.data_points = []
@@ -364,9 +365,9 @@ class MyDataset(torch.utils.data.Dataset):
         self.visualisation_mode = True
     
     def get_points(self, idx):
-        file_path, frame_ix = self.data_points[idx]
+        file_path, start_idx, dilation = self.data_points[idx]
         data = np.load(file_path)
-        points = data['markers'][frame_ix]
+        points = data['markers'][start_idx]
         return points
 
     @staticmethod
@@ -412,7 +413,7 @@ class MyDataset(torch.utils.data.Dataset):
         for t in range(num_frames):
             points = clip_points[t]
             labels_image = clip_labels_image[t]
-            base_points, points, adjacency = ComputeEdges.get_graph_connectivity(points)
+            base_points, points, adjacency = Adjacency.get_graph_connectivity(points)
             x_clip[t*num_nodes:(t+1)*num_nodes, 0:2] = points
             x_clip[t*num_nodes:(t+1)*num_nodes, 2] = t - central_frame
             
@@ -423,7 +424,8 @@ class MyDataset(torch.utils.data.Dataset):
                 dist = np.linalg.norm(vec)
                 sin_theta = vec[1] / (dist + 1e-10)
                 cos_theta = vec[0] / (dist + 1e-10)
-                edge_attr[i] = np.array([*vec, dist, sin_theta, cos_theta, *spatial], dtype=float)
+                # edge_attr[i] = np.array([*vec, dist, sin_theta, cos_theta, *spatial], dtype=float)
+                edge_attr[i] = np.array([dist], dtype=float)
             edge_attr_clip_list.append(edge_attr)
             adjacency += t*num_nodes
             adjacency_clip_list.append(adjacency)
@@ -452,13 +454,16 @@ class MyDataset(torch.utils.data.Dataset):
                 sin_theta = vec[1] / (dist + 1e-10)
                 cos_theta = vec[0] / (dist + 1e-10)
                 adjacency_clip_temporal_list.append([src, dst])
-                edge_attr_clip_temporal_list.append(
-                    [*vec, dist, sin_theta, cos_theta, *temporal]
-                )
-        adjacency_clip_temporal = np.array(adjacency_clip_temporal_list)
-        edge_attr_clip_temporal = np.array(edge_attr_clip_temporal_list)
-        adjacency_clip_list.append(adjacency_clip_temporal)
-        edge_attr_clip_list.append(edge_attr_clip_temporal)
+                adjacency_clip_temporal_list.append([dst, src])
+                # feature_vector = [*vec, dist, sin_theta, cos_theta, *temporal]
+                feature_vector = [dist]
+                edge_attr_clip_temporal_list.append(feature_vector)
+                edge_attr_clip_temporal_list.append(feature_vector)
+        if len(adjacency_clip_temporal_list) > 0:
+            adjacency_clip_temporal = np.array(adjacency_clip_temporal_list)
+            edge_attr_clip_temporal = np.array(edge_attr_clip_temporal_list)
+            adjacency_clip_list.append(adjacency_clip_temporal)
+            edge_attr_clip_list.append(edge_attr_clip_temporal)
 
         adjacency_clip = np.vstack(adjacency_clip_list)
         edge_attr_clip = np.vstack(edge_attr_clip_list)
@@ -466,11 +471,14 @@ class MyDataset(torch.utils.data.Dataset):
         mask = np.zeros(shape=(num_frames * num_nodes,), dtype=bool)
         mask[central_frame * num_nodes : (central_frame + 1) * num_nodes] = True
         mask = torch.tensor(mask, dtype=torch.bool)
-        x = torch.tensor(x_clip, dtype=torch.float)
+        x_clip_const = np.zeros(shape=(num_frames * num_nodes, 1), dtype=float)
+        x = torch.tensor(x_clip_const, dtype=torch.float)
+        pos = torch.tensor(x_clip, dtype=torch.float)
         edge_index = torch.tensor(adjacency_clip.T, dtype=torch.long)
-        edge_attr = torch.tensor(edge_attr_clip, dtype=torch.float)
+        edge_attr_clip_normalised = (edge_attr_clip - np.mean(edge_attr_clip)) / np.std(edge_attr_clip)
+        edge_attr = torch.tensor(edge_attr_clip_normalised, dtype=torch.float)
         y = torch.tensor(ground_truth_labels_clip[mask], dtype=torch.long)
-        return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, mask=mask)
+        return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, mask=mask, pos=pos)
 
     def get_markers(self, idx):
         file_path, start, dilation = self.data_points[idx]
@@ -834,7 +842,8 @@ class MyDataset(torch.utils.data.Dataset):
             vein_visible_mask[start_idx:end_idx] = True
 
         lower_disp_c = self.avs_disp_c[self.difficulty_level]
-        disp_c = random.uniform(lower_disp_c, 0.5)
+        # disp_c = random.uniform(lower_disp_c, 0.5)
+        disp_c = 1.0
 
         for j in range(start_idx, end_idx):
             points = clip_points[j]

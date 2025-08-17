@@ -15,6 +15,7 @@ from shapely.geometry import Polygon
 
 from difftactile.main.constants import *
 from difftactile.cnn.dataset import *
+from difftactile.data_analysis.experiment.adjacency import *
 
 class ComputeEdges:
     def __init__(self):
@@ -234,6 +235,7 @@ class ComputeEdges:
     def validate_graph_connectivity_algorithm():
         dataset = MyDataset(data_dir=SYSTEM_PARAMS.files.dataset_root)
         n = len(dataset)
+        k = 2
         
         # Create shuffled array of indices
         indices = np.arange(n, dtype=int)
@@ -249,10 +251,13 @@ class ComputeEdges:
             #     current_ix = (current_ix + 1) % n
             #     continue
                 
-            base_points, points, adjacency_matrix = ComputeEdges.get_graph_connectivity(points)
+            base_points, points, adjacency_matrix = Adjacency.get_graph_connectivity(points)
+
+            base_points /= k
+            points /= k
             
             # Create black image
-            img = np.zeros((1080, 1920, 3), dtype=np.uint8)
+            img = np.zeros((1080 // k, 1920 // k, 3), dtype=np.uint8)
 
             mode = 'adjacency_matrix'
             
@@ -302,32 +307,10 @@ class ComputeEdges:
         
         cv2.destroyAllWindows()
 
-    @staticmethod
-    def get_graph_connectivity(points):
-        # Load base graph connectivity data
-        data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
-        base_points = data['points']
-        base_adjacency_matrix = data['adjacency_matrix']
-
-        # Compute cost matrix as squared euclidean distances between all pairs of points
-        cost_matrix = cdist(points, base_points, metric='sqeuclidean')
-        
-        # Apply Hungarian algorithm to find optimal assignment
-        row_ind, col_ind = linear_sum_assignment(cost_matrix)
-        
-        # Create inverse mapping: for each base point index, which input point maps to it
-        inverse_mapping = np.zeros_like(row_ind)
-        inverse_mapping[col_ind] = row_ind
-        
-        # Reorder input points to match base points ordering
-        points_reordered = points[inverse_mapping]
-        
-        return base_points, points_reordered, base_adjacency_matrix
-
 
 def main():
-    ComputeEdges.compute_base_graph_connectivity()
-    # ComputeEdges.validate_graph_connectivity_algorithm()
+    # ComputeEdges.compute_base_graph_connectivity()
+    ComputeEdges.validate_graph_connectivity_algorithm()
 
 
 if __name__ == '__main__':

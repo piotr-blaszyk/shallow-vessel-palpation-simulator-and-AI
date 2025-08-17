@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.gnn import *
+from difftactile.data_analysis.experiment.adjacency import Adjacency  # Add this import
 
 class Visualisation:
     def __init__(self):
@@ -375,14 +376,17 @@ class Visualisation:
     def visualise_gnn(self, mode):
         """
         Visualize GNN predictions and ground truth segmentation masks.
-        Shows three images per frame:
+        Shows images per frame:
         For mode='predictions':
             1. Ground truth labels (red = 0, green = 1) - only shown for central frame
-            2. Predicted labels (red = 0, green = 1) - only shown for central frame
-            3. Original labels image - shown for all frames
+            2. Hard predicted labels (red = 0, green = 1) - only shown for central frame
+            3. Soft predicted labels (color intensity shows confidence) - only shown for central frame
+            4. Original labels image - shown for all frames
+            5. Graph connectivity visualization - shown for all frames
         For mode='dataset':
             1. Ground truth labels (red = 0, green = 1) - only shown for central frame
             2. Original labels image - shown for all frames
+            3. Graph connectivity visualization - shown for all frames
         Args:
             mode: Either 'dataset' or 'predictions'
         """
@@ -403,7 +407,7 @@ class Visualisation:
             )
             
             # Initialize model
-            model = GNN()
+            model = GNN(lr=1e-3)
             model.load_state_dict(torch.load(self.model_path))
             model.eval()
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -432,7 +436,7 @@ class Visualisation:
 
             # Get number of frames from the mask
             num_nodes_per_frame = torch.sum(data.mask).item()
-            num_frames = len(data.x) // num_nodes_per_frame
+            num_frames = len(data.pos) // num_nodes_per_frame
             central_frame = num_frames // 2
 
             # Pre-compute image dimensions
@@ -443,7 +447,9 @@ class Visualisation:
             # Initialize image stacks for each color channel
             ground_truth_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)
             prediction_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)
+            soft_prediction_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)  # New stack for soft predictions
             labels_stack = np.zeros((num_frames, labels_h, labels_w, 3), dtype=np.uint8)
+            graph_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)  # New stack for graph visualization
 
             if mode == 'predictions':
                 # Get predictions
@@ -453,7 +459,11 @@ class Visualisation:
                     out = out.squeeze(-1)  # Remove the channel dimension
                     mask = data.mask
                     out = out[mask]
-                    pred = (torch.sigmoid(out) > 0.5).cpu().numpy().astype(int)
+                    probs = torch.sigmoid(out)
+                    pred = (probs > 0.5).float()
+                    
+                    probs = probs.cpu().numpy().astype(np.float32)
+                    pred = pred.cpu().numpy().astype(int)
 
             # if data.y.cpu().numpy().sum() == 0 or pred.sum() == 0:
             #     continue
@@ -463,7 +473,7 @@ class Visualisation:
                 # Get marker positions for current frame
                 start_idx = frame_idx * num_nodes_per_frame
                 end_idx = (frame_idx + 1) * num_nodes_per_frame
-                frame_points = data.x[start_idx:end_idx].cpu().numpy()
+                frame_points = data.pos[start_idx:end_idx].cpu().numpy()
                 
                 # Transform from (-1,1) to (0,200) range
                 points = (frame_points + 1) / 2 * w  # Now in range (0,200)
@@ -474,6 +484,24 @@ class Visualisation:
                 temp_r = np.zeros((1, h, w), dtype=np.uint8)
                 temp_g = np.zeros((1, h, w), dtype=np.uint8)
                 temp_b = np.zeros((1, h, w), dtype=np.uint8)
+                # Create graph connectivity visualization
+                _, points, adjacency_matrix = Adjacency.knn(points)
+                graph_img = np.zeros((h, w, 3), dtype=np.uint8)
+                
+                # Draw edges from adjacency matrix in green
+                for edge in adjacency_matrix:
+                    start_idx, end_idx = edge
+                    start_point = tuple(map(int, points[start_idx]))
+                    end_point = tuple(map(int, points[end_idx]))
+                    cv2.line(graph_img, start_point, end_point, color=(0, 255, 0), thickness=1)
+                
+                # Draw points in red
+                for point in points:
+                    x, y = map(int, point)
+                    if 0 <= x < w and 0 <= y < h:
+                        cv2.circle(graph_img, (x, y), radius=3, color=(0, 0, 255), thickness=-1)
+                
+                graph_stack[frame_idx] = graph_img
 
                 # Only show ground truth and predictions for central frame
                 if frame_idx == central_frame:
@@ -498,7 +526,7 @@ class Visualisation:
                         temp_g.fill(0)
                         temp_b.fill(0)
                         
-                        # Draw markers on prediction image
+                        # Draw markers on prediction image (hard predictions)
                         for point_idx, point in enumerate(points):
                             if 0 <= point[0] < w and 0 <= point[1] < h:
                                 if pred[point_idx] == 1:
@@ -508,8 +536,29 @@ class Visualisation:
                                     # Red for negative class
                                     MyDataset.draw_point(temp_r, 0, point, n=6)
                         
-                        # Combine channels
+                        # Combine channels for hard predictions
                         prediction_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
+
+                        # Reset temporary images for soft predictions
+                        temp_r.fill(0)
+                        temp_g.fill(0)
+                        temp_b.fill(0)
+                        
+                        # Draw markers on soft prediction image
+                        for point_idx, point in enumerate(points):
+                            if 0 <= point[0] < w and 0 <= point[1] < h:
+                                prob = probs[point_idx]
+                                if prob > 0.5:
+                                    # Green with intensity based on confidence
+                                    intensity = int(255 * (2 * prob - 1))  # Map 0.5-1.0 to 0-255
+                                    MyDataset.draw_point(temp_g, 0, point, n=6, value=intensity)
+                                else:
+                                    # Red with intensity based on confidence
+                                    intensity = int(255 * (1 - 2 * prob))  # Map 0.0-0.5 to 255-0
+                                    MyDataset.draw_point(temp_r, 0, point, n=6, value=intensity)
+                        
+                        # Combine channels for soft predictions
+                        soft_prediction_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
                 else:
                     # For non-central frames, draw white markers
                     for point in points:
@@ -523,6 +572,7 @@ class Visualisation:
                     ground_truth_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
                     if mode == 'predictions':
                         prediction_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
+                        soft_prediction_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1) # Ensure soft prediction is also filled for non-central frames
 
                 # Get and process labels image for current frame
                 labels_image = labels_images[frame_idx]
@@ -546,18 +596,22 @@ class Visualisation:
                 
                 cv2.imshow(f'Ground Truth {sequence_idx}', ground_truth_stack[current_frame])
                 if mode == 'predictions':
-                    cv2.imshow(f'Prediction {sequence_idx}', prediction_stack[current_frame])
+                    cv2.imshow(f'Hard Prediction {sequence_idx}', prediction_stack[current_frame])
+                    cv2.imshow(f'Soft Prediction {sequence_idx}', soft_prediction_stack[current_frame])
                 cv2.imshow(f'Labels Image {sequence_idx}', labels_stack[current_frame])
+                cv2.imshow(f'Graph Connectivity {sequence_idx}', graph_stack[current_frame])
 
                 # Position windows side by side
-                window_width = h  # Using h since it's the image width
                 sep = 100
                 cv2.moveWindow(f'Ground Truth {sequence_idx}', 0, 0)
                 if mode == 'predictions':
-                    cv2.moveWindow(f'Prediction {sequence_idx}', window_width + sep, 0)
-                    cv2.moveWindow(f'Labels Image {sequence_idx}', 2 * (window_width + sep), 0)
+                    cv2.moveWindow(f'Hard Prediction {sequence_idx}', w + sep, 0)
+                    cv2.moveWindow(f'Soft Prediction {sequence_idx}', 2 * (w + sep), 0)
+                    cv2.moveWindow(f'Labels Image {sequence_idx}', 3 * (w + sep), 0)
+                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', 3 * (w + sep), labels_h + 2 * sep)
                 else:
-                    cv2.moveWindow(f'Labels Image {sequence_idx}', window_width + sep, 0)
+                    cv2.moveWindow(f'Labels Image {sequence_idx}', w + sep, 0)
+                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', w + sep, labels_h + 2 * sep)
 
                 # Handle keyboard input
                 key = cv2.waitKey(0) & 0xFF
@@ -677,7 +731,7 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn(mode='predictions')
+    v.visualise_gnn(mode='dataset')
 
 
 if __name__ == "__main__":

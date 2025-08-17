@@ -195,7 +195,10 @@
     },
     "cnn": {
         "input_width_height": 192,
-        "clip_len": 5
+        "clip_len": 1
+    },
+    "dataset": {
+        "data_points_per_epoch": 128
     },
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",

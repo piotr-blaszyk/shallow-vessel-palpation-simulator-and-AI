@@ -3,11 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch_geometric.data import Data
-from torch_geometric.nn import GATv2Conv, Linear
+from torch_geometric.nn import GINEConv, Linear
 from torch_geometric.loader import DataLoader
 import numpy as np
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from torch.utils.data import SubsetRandomSampler
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.common import *
@@ -124,43 +125,30 @@ class GNN(pl.LightningModule):
             lr,
             node_channels=SYSTEM_PARAMS.gnn.num_node_features,
             edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
-            hidden_channels=128,
+            hidden_channels=32,
             out_channels=1,
-            num_heads=4,  # Number of attention heads
+            num_layers=2,
             tversky_weight=0.0,
             focal_weight=1.0
         ):
         super().__init__()
         
-        # Edge embedding
-        self.edge_embedding = nn.Sequential(
-            nn.Linear(edge_channels, hidden_channels),
+        # Node networks for GINEConv
+        self.node_net1 = nn.Sequential(
+            nn.Linear(node_channels, hidden_channels),
             nn.ReLU(),
             nn.Linear(hidden_channels, hidden_channels)
         )
-
-        internal_edge_channels = hidden_channels
         
-        # GATv2 layers with edge features and multi-head attention
-        self.conv1 = GATv2Conv(
-            in_channels=node_channels,
-            out_channels=hidden_channels // num_heads,  # Split channels across heads
-            heads=num_heads,
-            edge_dim=internal_edge_channels,  # Edge features dimension
-            add_self_loops=False  # We'll handle temporal connections explicitly
+        self.node_net2 = nn.Sequential(
+            nn.Linear(hidden_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Linear(hidden_channels, out_channels)
         )
         
-        # Final prediction layer (previously conv2, now outputs final predictions)
-        self.conv2 = GATv2Conv(
-            in_channels=hidden_channels,
-            out_channels=out_channels,
-            heads=1,  # Single head for final prediction
-            edge_dim=internal_edge_channels,
-            add_self_loops=False
-        )
-        
-        # Layer norm for better training stability (only need one now)
-        self.norm1 = nn.LayerNorm(hidden_channels)
+        # GINEConv layers
+        self.conv1 = GINEConv(self.node_net1, edge_dim=edge_channels)
+        self.conv2 = GINEConv(self.node_net2, edge_dim=edge_channels)
         
         # Initialize loss functions
         self.tversky_loss = GNNTverskyLoss()
@@ -231,16 +219,12 @@ class GNN(pl.LightningModule):
         }
 
     def forward(self, x, edge_index, edge_attr):
-        # Embed edge features
-        edge_features = self.edge_embedding(edge_attr)
-        # edge_features = edge_attr
+        # First GINEConv layer
+        x = self.conv1(x, edge_index, edge_attr)
+        x = F.relu(x)
         
-        # First conv layer
-        h1 = self.conv1(x, edge_index, edge_attr=edge_features)
-        h1 = F.relu(self.norm1(h1))
-        
-        # Final conv layer (previously conv3, now conv2)
-        out = self.conv2(h1, edge_index, edge_attr=edge_features)
+        # Second GINEConv layer
+        out = self.conv2(x, edge_index, edge_attr)
         return out
 
     def shared_step(self, batch, stage):
@@ -319,6 +303,50 @@ class GNN(pl.LightningModule):
         }
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
 
+class MyDataModule(pl.LightningDataModule):
+    def __init__(self, train_dataset, val_dataset, test_dataset, subset_size, batch_size, num_workers, seed=42):
+        super().__init__()
+        self.train_dataset = train_dataset
+        self.val_dataset = val_dataset
+        self.test_dataset = test_dataset
+        self.subset_size = subset_size
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.seed = seed
+        self.generator = torch.Generator()
+        self.generator.manual_seed(seed)
+        self.current_indices = None
+
+    def train_dataloader(self):
+        sampler = SubsetRandomSampler(self.current_indices, generator=self.generator)
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            sampler=sampler,
+            num_workers=self.num_workers
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers
+        )
+
+    def test_dataloader(self):
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers
+        )
+
+    def on_train_epoch_start(self):
+        self.current_indices = np.random.choice(
+            len(self.train_dataset),
+            self.subset_size,
+            replace=False
+        )
+
 
 def main():
     BATCH_SIZE = 128
@@ -333,14 +361,15 @@ def main():
     train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
         full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
     )
-    train_loader = DataLoader(
-        train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
-    )
-    val_loader = DataLoader(
-        val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
-    )
-    test_loader = DataLoader(
-        test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
+
+    # Create a single datamodule for training, validation and testing
+    data_module = MyDataModule(
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        test_dataset=test_dataset,
+        subset_size=128,
+        batch_size=16,
+        num_workers=NUM_WORKERS
     )
 
     test_data = {
@@ -351,7 +380,6 @@ def main():
         pickle.dump(test_data, f)
 
     model = GNN(lr=LR)
-
 
     checkpoint_cb = ModelCheckpoint(
         monitor="val_fg_iou",
@@ -376,8 +404,8 @@ def main():
             LossWeightScheduler(NUM_EPOCHS)
         ]
     )
-    trainer.fit(model, train_loader, val_loader)
-    trainer.test(model, test_loader)
+    trainer.fit(model, datamodule=data_module)
+    trainer.test(model, datamodule=data_module)
 
     os.makedirs("saved_models", exist_ok=True)
     torch.save(model.state_dict(), SYSTEM_PARAMS.files.final_segmentation_model_gnn)
