@@ -1356,7 +1356,6 @@ class Contact:
         self.move_og_resolution()
         markers = self.sim_markers_deformed.to_numpy()
         self.move_ti_resolution()
-        markers = SyntheticImageGenerator.filter_points(w, h, cx, cy, r, markers)
         self.marker_data.append(markers)
         markers_img = np.zeros((h, w), dtype=np.uint8)
         for point in markers:

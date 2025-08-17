@@ -12,6 +12,7 @@ from sklearn.neighbors import NearestNeighbors
 
 from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
+from difftactile.data_analysis.experiment.voronoi import *
 
 
 class MyDataset(torch.utils.data.Dataset):
@@ -333,7 +334,8 @@ class MyDataset(torch.utils.data.Dataset):
 
             points_og_resolution = markers.copy()
             markers = MyDataset.normalise_gnn_points(markers)
-            adjacency = MyDataset.compute_knn_adjacency(markers)
+            # adjacency = MyDataset.compute_knn_adjacency(markers)
+            base_markers, markers, adjacency = ComputeEdges.get_graph_connectivity(markers)
             node_features, edge_features = MyDataset.compute_graph_features(markers, adjacency)
             ground_truth_labels = MyDataset.generate_graph_ground_truth_labels(
                 points_og_resolution,
