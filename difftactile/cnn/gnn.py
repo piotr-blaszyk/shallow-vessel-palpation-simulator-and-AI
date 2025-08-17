@@ -317,7 +317,20 @@ class MyDataModule(pl.LightningDataModule):
         self.generator.manual_seed(seed)
         self.current_indices = None
 
+    def setup(self, stage=None):
+        # Initialize current_indices for the first epoch
+        self._select_new_subset()
+
+    def _select_new_subset(self):
+        self.current_indices = np.random.choice(
+            len(self.train_dataset),
+            self.subset_size,
+            replace=False
+        )
+
     def train_dataloader(self):
+        if self.current_indices is None:
+            self._select_new_subset()
         sampler = SubsetRandomSampler(self.current_indices, generator=self.generator)
         return DataLoader(
             self.train_dataset,
@@ -341,17 +354,14 @@ class MyDataModule(pl.LightningDataModule):
         )
 
     def on_train_epoch_start(self):
-        self.current_indices = np.random.choice(
-            len(self.train_dataset),
-            self.subset_size,
-            replace=False
-        )
+        self._select_new_subset()
 
 
 def main():
-    BATCH_SIZE = 128
+    BATCH_SIZE = 32
     NUM_EPOCHS = 10
     NUM_WORKERS = 16
+    EPOCH_SUBSET_SIZE = 128
     LR = 1e-4
 
     logger = TensorBoardLogger("lightning_logs", name="segmentation_model")
@@ -367,8 +377,8 @@ def main():
         train_dataset=train_dataset,
         val_dataset=val_dataset,
         test_dataset=test_dataset,
-        subset_size=128,
-        batch_size=16,
+        subset_size=EPOCH_SUBSET_SIZE,
+        batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS
     )
 
@@ -400,9 +410,7 @@ def main():
         enable_checkpointing=False,
         logger=logger,
         log_every_n_steps=1,
-        callbacks=[
-            LossWeightScheduler(NUM_EPOCHS)
-        ]
+        callbacks=[]
     )
     trainer.fit(model, datamodule=data_module)
     trainer.test(model, datamodule=data_module)

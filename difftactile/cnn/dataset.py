@@ -24,7 +24,7 @@ class MyDataset(torch.utils.data.Dataset):
         if SYSTEM_PARAMS.meta.cnn_gnn == 0:
             self.data_points_per_trajectory = 16
         else:
-            self.data_points_per_trajectory = 32
+            self.data_points_per_trajectory = 64
         self.mode = mode
         self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
 
