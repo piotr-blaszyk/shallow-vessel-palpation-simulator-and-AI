@@ -20,7 +20,8 @@ class ComputeEdges:
     def __init__(self):
         pass
 
-    def compute_base_graph_connectivity(self):
+    @staticmethod
+    def compute_base_graph_connectivity():
         # Load marker positions from npz file
         data = np.load(SYSTEM_PARAMS.files.init_marker_positions_npz)
         points = data['points']  # shape: (num_points, 2)
@@ -179,7 +180,6 @@ class ComputeEdges:
             # Add edges in both directions
             for neighbor in node_neighbors:
                 edges.append([i, neighbor])
-                edges.append([neighbor, i])
         
         # Convert to numpy array
         adjacency_matrix = np.array(edges, dtype=int)
@@ -326,9 +326,8 @@ class ComputeEdges:
 
 
 def main():
-    # c = ComputeEdges()
-    # c.compute_base_graph_connectivity()
-    ComputeEdges.validate_graph_connectivity_algorithm()
+    ComputeEdges.compute_base_graph_connectivity()
+    # ComputeEdges.validate_graph_connectivity_algorithm()
 
 
 if __name__ == '__main__':
