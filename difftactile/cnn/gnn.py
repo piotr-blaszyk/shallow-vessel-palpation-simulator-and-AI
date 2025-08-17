@@ -81,7 +81,7 @@ class GNNTverskyLoss(nn.Module):
 
 
 class GNNFocalLoss(nn.Module):
-    def __init__(self, alpha=0.6, gamma=0.0):
+    def __init__(self, alpha=0.8, gamma=0.0):
         """Focal Loss for GNN node classification.
         
         Specifically designed for node-level binary classification where the focus
@@ -123,9 +123,11 @@ class GNN(pl.LightningModule):
     def __init__(
             self, 
             lr,
-            node_channels=SYSTEM_PARAMS.gnn.num_node_features,
-            edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
-            hidden_channels=32,
+            # node_channels=SYSTEM_PARAMS.gnn.num_node_features,
+            node_channels=1,
+            # edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
+            edge_channels=1,
+            hidden_channels=16,
             out_channels=1,
             num_layers=2,
             tversky_weight=0.0,
@@ -304,34 +306,51 @@ class GNN(pl.LightningModule):
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
 
 class MyDataModule(pl.LightningDataModule):
-    def __init__(self, train_dataset, val_dataset, test_dataset, subset_size, batch_size, num_workers, seed=42):
+    def __init__(self, train_dataset, val_dataset, test_dataset, train_subset_size, val_subset_size, batch_size, num_workers, seed=42):
         super().__init__()
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.test_dataset = test_dataset
-        self.subset_size = subset_size
+        self.train_subset_size = train_subset_size
+        self.val_subset_size = val_subset_size
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.seed = seed
         self.generator = torch.Generator()
         self.generator.manual_seed(seed)
-        self.current_indices = None
+        self.current_train_indices = None
+        self.current_val_indices = None
 
     def setup(self, stage=None):
         # Initialize current_indices for the first epoch
         self._select_new_subset()
 
     def _select_new_subset(self):
-        self.current_indices = np.random.choice(
-            len(self.train_dataset),
-            self.subset_size,
+        len_train = len(self.train_dataset)
+        train_subset_size = min(
+            len_train,
+            self.train_subset_size
+        )
+        self.current_train_indices = np.random.choice(
+            len_train,
+            train_subset_size,
+            replace=False
+        )
+        len_val = len(self.val_dataset)
+        val_subset_size = min(
+            len_val,
+            self.val_subset_size
+        )
+        self.current_val_indices = np.random.choice(
+            len_val,
+            val_subset_size,
             replace=False
         )
 
     def train_dataloader(self):
-        if self.current_indices is None:
+        if self.current_train_indices is None:
             self._select_new_subset()
-        sampler = SubsetRandomSampler(self.current_indices, generator=self.generator)
+        sampler = SubsetRandomSampler(self.current_train_indices, generator=self.generator)
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
@@ -340,9 +359,13 @@ class MyDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self):
+        if self.current_val_indices is None:
+            self._select_new_subset()
+        sampler = SubsetRandomSampler(self.current_val_indices, generator=self.generator)
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
+            sampler=sampler,
             num_workers=self.num_workers
         )
 
@@ -358,11 +381,11 @@ class MyDataModule(pl.LightningDataModule):
 
 
 def main():
-    BATCH_SIZE = 32
-    NUM_EPOCHS = 10
+    BATCH_SIZE = 256
+    NUM_EPOCHS = 100
     NUM_WORKERS = 16
-    EPOCH_SUBSET_SIZE = 128
-    LR = 1e-4
+    EPOCH_SUBSET_SIZE = 1024
+    LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="segmentation_model")
     full_dataset = MyDataset(
@@ -377,7 +400,8 @@ def main():
         train_dataset=train_dataset,
         val_dataset=val_dataset,
         test_dataset=test_dataset,
-        subset_size=EPOCH_SUBSET_SIZE,
+        train_subset_size=EPOCH_SUBSET_SIZE,
+        val_subset_size=EPOCH_SUBSET_SIZE,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS
     )
@@ -407,10 +431,13 @@ def main():
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS, 
         accelerator="auto",
-        enable_checkpointing=False,
+        enable_checkpointing=True,
         logger=logger,
         log_every_n_steps=1,
-        callbacks=[]
+        callbacks=[
+            checkpoint_cb, 
+            early_stopping, 
+        ]
     )
     trainer.fit(model, datamodule=data_module)
     trainer.test(model, datamodule=data_module)

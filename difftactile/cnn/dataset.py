@@ -417,7 +417,8 @@ class MyDataset(torch.utils.data.Dataset):
             x_clip[t*num_nodes:(t+1)*num_nodes, 0:2] = points
             x_clip[t*num_nodes:(t+1)*num_nodes, 2] = t - central_frame
             
-            edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
+            # edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
+            edge_attr = np.zeros(shape=(num_edges_single_frame, 1), dtype=float)
             for i in range(num_edges_single_frame):
                 me_ix, neighbour_ix = adjacency[i, :]
                 vec = points[neighbour_ix] - points[me_ix]
@@ -568,7 +569,7 @@ class MyDataset(torch.utils.data.Dataset):
         return images, marker_masks
 
     @staticmethod
-    def draw_point(images, t, point, n=8):
+    def draw_point(images, t, point, n=8, intensity=255):
         """
         Draw a point as an nxn square with smooth interpolation at the edges.
         
@@ -576,7 +577,8 @@ class MyDataset(torch.utils.data.Dataset):
             images: Image array of shape (T, H, W)
             t: Time index
             point: (x, y) coordinates
-            n: Size of the square (default=4)
+            n: Size of the square (default=8)
+            intensity: Maximum intensity value for the point (default=255)
         """
         _, h, w = images.shape
         x, y = point[0], point[1]
@@ -605,9 +607,9 @@ class MyDataset(torch.utils.data.Dataset):
                     wy = max(0, 1 - dy/(half_size))
                     weight = wx * wy
                     
-                    # Update pixel value with anti-aliasing
+                    # Update pixel value with anti-aliasing and intensity control
                     current_val = int(images[t, yi, xi])
-                    weight_val = int(255 * weight)
+                    weight_val = int(intensity * weight)
                     images[t, yi, xi] = min(255, current_val + weight_val)
 
     @staticmethod

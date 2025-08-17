@@ -551,11 +551,11 @@ class Visualisation:
                                 if prob > 0.5:
                                     # Green with intensity based on confidence
                                     intensity = int(255 * (2 * prob - 1))  # Map 0.5-1.0 to 0-255
-                                    MyDataset.draw_point(temp_g, 0, point, n=6, value=intensity)
+                                    MyDataset.draw_point(temp_g, 0, point, n=6, intensity=intensity)
                                 else:
                                     # Red with intensity based on confidence
                                     intensity = int(255 * (1 - 2 * prob))  # Map 0.0-0.5 to 255-0
-                                    MyDataset.draw_point(temp_r, 0, point, n=6, value=intensity)
+                                    MyDataset.draw_point(temp_r, 0, point, n=6, intensity=intensity)
                         
                         # Combine channels for soft predictions
                         soft_prediction_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
@@ -731,7 +731,7 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn(mode='dataset')
+    v.visualise_gnn(mode='predictions')
 
 
 if __name__ == "__main__":
