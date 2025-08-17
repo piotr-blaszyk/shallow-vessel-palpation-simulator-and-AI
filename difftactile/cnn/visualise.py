@@ -394,6 +394,7 @@ class Visualisation:
             # Load test data
             with open(self.test_loader, 'rb') as f:
                 test_data = pickle.load(f)
+            test_data['dataset'].eval()
             data_loader = DataLoader(
                 test_data['dataset'],
                 batch_size=BATCH_SIZE,
@@ -449,9 +450,11 @@ class Visualisation:
                     data = data.to(device)
                     out = model(data.x, data.edge_index, data.edge_attr)
                     out = out.squeeze(-1)  # Remove the channel dimension
+                    mask = data.mask
+                    out = out[mask]
                     pred = (torch.sigmoid(out) > 0.5).cpu().numpy().astype(int)
 
-            if data.y.cpu().numpy().sum() == 0:
+            if data.y.cpu().numpy().sum() == 0 or pred.sum() == 0:
                 continue
 
             # Pre-compute all frames
@@ -495,10 +498,9 @@ class Visualisation:
                         temp_b.fill(0)
                         
                         # Draw markers on prediction image
-                        frame_pred = pred[start_idx:end_idx]
                         for point_idx, point in enumerate(points):
                             if 0 <= point[0] < w and 0 <= point[1] < h:
-                                if frame_pred[point_idx] == 1:
+                                if pred[point_idx] == 1:
                                     # Green for positive class
                                     MyDataset.draw_point(temp_g, 0, point, n=6)
                                 else:

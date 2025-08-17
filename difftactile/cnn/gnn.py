@@ -13,7 +13,7 @@ from difftactile.cnn.common import *
 
 
 class GNNTverskyLoss(nn.Module):
-    def __init__(self, alpha=0.9, beta=0.1, smooth=1e-6):
+    def __init__(self, alpha=0.5, beta=0.5, smooth=1e-6):
         """Tversky Loss for GNN node classification with imbalanced data.
         
         Specifically designed for node-level binary classification where each node
@@ -56,7 +56,7 @@ class GNNTverskyLoss(nn.Module):
 
 
 class GNNFocalLoss(nn.Module):
-    def __init__(self, alpha=0.75, gamma=2.0):
+    def __init__(self, alpha=0.5, gamma=0.0):
         """Focal Loss for GNN node classification.
         
         Specifically designed for node-level binary classification where the focus
@@ -160,7 +160,8 @@ class GNN(pl.LightningModule):
             eps: Small constant to avoid division by zero
             
         Returns:
-            Dictionary containing foreground and background IoU scores
+            Dictionary containing foreground and background IoU scores.
+            Returns 0 for IoU when union is 0 (no overlap and no predictions/targets).
         """
         # Convert inputs to float for calculations
         preds = preds.float()
@@ -169,14 +170,20 @@ class GNN(pl.LightningModule):
         # Compute foreground IoU (class 1)
         fg_intersection = (preds * targets).sum()
         fg_union = (preds + targets).sum() - fg_intersection
-        fg_iou = (fg_intersection + eps) / (fg_union + eps)
+        if fg_union > eps:
+            fg_iou = fg_intersection / fg_union
+        else:
+            fg_iou = torch.tensor(0., device=preds.device)
         
         # Compute background IoU (class 0)
         bg_preds = 1 - preds
         bg_targets = 1 - targets
         bg_intersection = (bg_preds * bg_targets).sum()
         bg_union = (bg_preds + bg_targets).sum() - bg_intersection
-        bg_iou = (bg_intersection + eps) / (bg_union + eps)
+        if bg_union > eps:
+            bg_iou = bg_intersection / bg_union
+        else:
+            bg_iou = torch.tensor(0., device=preds.device)
         
         return {
             'fg_iou': fg_iou,
@@ -271,8 +278,8 @@ class GNN(pl.LightningModule):
 
 
 def main():
-    BATCH_SIZE = 16
-    NUM_EPOCHS = 4
+    BATCH_SIZE = 64
+    NUM_EPOCHS = 8
     NUM_WORKERS = 16
     LR = 1e-3
 

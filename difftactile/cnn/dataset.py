@@ -23,7 +23,7 @@ class MyDataset(torch.utils.data.Dataset):
         if SYSTEM_PARAMS.meta.cnn_gnn == 0:
             self.data_points_per_trajectory = 16
         else:
-            self.data_points_per_trajectory = 16
+            self.data_points_per_trajectory = 64
         self.mode = mode
         self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
 
@@ -44,6 +44,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.randomly_remove_k = [0, 6, 13]
         self.avs_disp_c = [0.4, 0.3, 0.2]
         self.cnn_gnn = SYSTEM_PARAMS.meta.cnn_gnn
+        self.visualisation_mode = False
 
         # Pre-compute valid clips for each trajectory
         self.data_points = []
@@ -346,9 +347,14 @@ class MyDataset(torch.utils.data.Dataset):
 
             points = MyDataset.normalise_gnn_points(points)
             pyg = MyDataset.generate_pyg(points, labels)
-            labels = torch.tensor(labels, dtype=torch.float32) / 255.0
-            # labels = torch.empty(0)
+            if self.visualisation_mode:
+                labels = torch.tensor(labels, dtype=torch.float32) / 255.0
+            else:
+                labels = torch.empty(0)
             return pyg, labels
+    
+    def eval(self):
+        self.visualisation_mode = True
     
     def get_points(self, idx):
         file_path, frame_ix = self.data_points[idx]
