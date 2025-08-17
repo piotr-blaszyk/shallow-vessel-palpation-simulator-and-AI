@@ -3,17 +3,41 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch_geometric.data import Data
-from torch_geometric.nn import GCNConv, NNConv
+from torch_geometric.nn import GATv2Conv, Linear
 from torch_geometric.loader import DataLoader
 import numpy as np
 from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.common import *
 
 
+class LossWeightScheduler(pl.Callback):
+    def __init__(self, max_epochs):
+        self.tversky_alpha = [0.5, 0.8]
+        self.tversky_beta = [0.5, 0.2]
+        self.focal_alpha = [0.5, 0.8]
+        self.focal_gamma = [0.0, 2.0]
+        self.max_epochs = max_epochs
+
+    def on_train_epoch_start(self, trainer, pl_module):
+        epoch = trainer.current_epoch
+        ratio = epoch/(self.max_epochs-1)
+        pl_module.set_loss_weights(
+            self.compute_val(*self.tversky_alpha, ratio),
+            self.compute_val(*self.tversky_beta, ratio),
+            self.compute_val(*self.focal_alpha, ratio),
+            self.compute_val(*self.focal_gamma, ratio),
+        )
+    
+    def compute_val(self, min, max, ratio):
+        diff = max - min
+        return min + diff * ratio
+
+
 class GNNTverskyLoss(nn.Module):
-    def __init__(self, alpha=0.5, beta=0.5, smooth=1e-6):
+    def __init__(self, alpha=1.0, beta=0.25, smooth=1e-6):
         """Tversky Loss for GNN node classification with imbalanced data.
         
         Specifically designed for node-level binary classification where each node
@@ -56,7 +80,7 @@ class GNNTverskyLoss(nn.Module):
 
 
 class GNNFocalLoss(nn.Module):
-    def __init__(self, alpha=0.5, gamma=0.0):
+    def __init__(self, alpha=0.75, gamma=3.0):
         """Focal Loss for GNN node classification.
         
         Specifically designed for node-level binary classification where the focus
@@ -97,43 +121,55 @@ class GNNFocalLoss(nn.Module):
 class GNN(pl.LightningModule):
     def __init__(
             self, 
-            node_channels=SYSTEM_PARAMS.gnn.num_node_features,  # Node features dimension
-            edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,  # Edge features dimension 
-            hidden_channels=16, 
-            out_channels=1,  # Changed to 1 for binary classification
+            node_channels=SYSTEM_PARAMS.gnn.num_node_features,
+            edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
+            hidden_channels=128,
+            out_channels=1,
+            num_heads=4,  # Number of attention heads
             lr=1e-2,
             tversky_weight=0.5,
             focal_weight=0.5
         ):
         super().__init__()
         
-        # Edge network: transforms edge features into a weight matrix
-        self.edge_net1 = nn.Sequential(
+        # Edge embedding
+        self.edge_embedding = nn.Sequential(
             nn.Linear(edge_channels, hidden_channels),
             nn.ReLU(),
-            nn.Linear(hidden_channels, node_channels * hidden_channels)
+            nn.Linear(hidden_channels, hidden_channels)
         )
+
+        internal_edge_channels = hidden_channels
         
-        self.edge_net2 = nn.Sequential(
-            nn.Linear(edge_channels, hidden_channels),
-            nn.ReLU(),
-            nn.Linear(hidden_channels, hidden_channels * out_channels)
-        )
-        
-        # Graph convolutions with edge feature support
-        self.conv1 = NNConv(
+        # GATv2 layers with edge features and multi-head attention
+        self.conv1 = GATv2Conv(
             in_channels=node_channels,
-            out_channels=hidden_channels,
-            nn=self.edge_net1,
-            aggr='mean'
+            out_channels=hidden_channels // num_heads,  # Split channels across heads
+            heads=num_heads,
+            edge_dim=internal_edge_channels,  # Edge features dimension
+            add_self_loops=False  # We'll handle temporal connections explicitly
         )
         
-        self.conv2 = NNConv(
+        self.conv2 = GATv2Conv(
+            in_channels=hidden_channels,
+            out_channels=hidden_channels // num_heads,
+            heads=num_heads,
+            edge_dim=internal_edge_channels,
+            add_self_loops=False
+        )
+        
+        # Final prediction layer
+        self.conv3 = GATv2Conv(
             in_channels=hidden_channels,
             out_channels=out_channels,
-            nn=self.edge_net2,
-            aggr='mean'
+            heads=1,  # Single head for final prediction
+            edge_dim=internal_edge_channels,
+            add_self_loops=False
         )
+        
+        # Layer norms for better training stability
+        self.norm1 = nn.LayerNorm(hidden_channels)
+        self.norm2 = nn.LayerNorm(hidden_channels)
         
         # Initialize loss functions
         self.tversky_loss = GNNTverskyLoss()
@@ -148,6 +184,18 @@ class GNN(pl.LightningModule):
         
         # Save hyperparameters for logging
         self.save_hyperparameters()
+    
+    def set_loss_weights(
+            self,
+            tversky_alpha,
+            tversky_beta,
+            focal_alpha,
+            focal_gamma
+    ):
+        self.tversky_loss.alpha = tversky_alpha
+        self.tversky_loss.beta = tversky_beta
+        self.focal_loss.alpha = focal_alpha
+        self.focal_loss.gamma = focal_gamma
 
     @staticmethod
     def iou_score(preds, targets, eps=1e-6):
@@ -192,13 +240,21 @@ class GNN(pl.LightningModule):
         }
 
     def forward(self, x, edge_index, edge_attr):
-        # First conv layer with edge features
-        x = self.conv1(x, edge_index, edge_attr)
-        x = F.relu(x)
+        # Embed edge features
+        edge_features = self.edge_embedding(edge_attr)
+        # edge_features = edge_attr
         
-        # Second conv layer with edge features
-        x = self.conv2(x, edge_index, edge_attr)
-        return x
+        # First conv layer
+        h1 = self.conv1(x, edge_index, edge_attr=edge_features)
+        h1 = F.relu(self.norm1(h1))
+        
+        # Second conv layer with residual connection
+        h2 = self.conv2(h1, edge_index, edge_attr=edge_features)
+        h2 = F.relu(self.norm2(h2 + h1))  # Residual connection
+        
+        # Final conv layer
+        out = self.conv3(h2, edge_index, edge_attr=edge_features)
+        return out
 
     def shared_step(self, batch, stage):
         batch, _ = batch
@@ -278,10 +334,10 @@ class GNN(pl.LightningModule):
 
 
 def main():
-    BATCH_SIZE = 64
-    NUM_EPOCHS = 8
+    BATCH_SIZE = 128
+    NUM_EPOCHS = 10
     NUM_WORKERS = 16
-    LR = 1e-3
+    LR = 1e-4
 
     logger = TensorBoardLogger("lightning_logs", name="segmentation_model")
     full_dataset = MyDataset(
@@ -310,12 +366,29 @@ def main():
 
     model = GNN(lr=LR)
 
+
+    checkpoint_cb = ModelCheckpoint(
+        monitor="val_fg_iou",
+        mode="max",
+        save_top_k=1,
+        filename="best-model",
+    )
+    early_stopping = EarlyStopping(
+        monitor="val_fg_iou",
+        mode="max",
+        patience=5,
+        min_delta=1e-4,
+        verbose=True
+    )
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS, 
         accelerator="auto",
         enable_checkpointing=False,
         logger=logger,
-        log_every_n_steps=1
+        log_every_n_steps=1,
+        callbacks=[
+            LossWeightScheduler(NUM_EPOCHS)
+        ]
     )
     trainer.fit(model, train_loader, val_loader)
     trainer.test(model, test_loader)

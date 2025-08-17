@@ -13,6 +13,7 @@ from sklearn.neighbors import NearestNeighbors
 from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.data_analysis.experiment.voronoi import *
+import re
 
 
 class MyDataset(torch.utils.data.Dataset):
@@ -23,7 +24,7 @@ class MyDataset(torch.utils.data.Dataset):
         if SYSTEM_PARAMS.meta.cnn_gnn == 0:
             self.data_points_per_trajectory = 16
         else:
-            self.data_points_per_trajectory = 64
+            self.data_points_per_trajectory = 128
         self.mode = mode
         self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
 
@@ -57,6 +58,9 @@ class MyDataset(torch.utils.data.Dataset):
             dilations = [1, 2, 3, 4]
             
             for file_path in self.files:
+                file_num = MyDataset.extract_trajectory_number(file_path)
+                if (file_num % 4) > 1:
+                    continue
                 data = np.load(file_path)
                 total_frames = len(data["markers"])
                 
@@ -139,6 +143,7 @@ class MyDataset(torch.utils.data.Dataset):
         # Split trajectories
         trajectories = list(trajectory_to_indices.keys())
         trajectories.sort()
+        file_nums = np.array([MyDataset.extract_trajectory_number(file_path) for file_path in trajectories], dtype=int)
         # random.seed(random_state)
         # random.shuffle(trajectories)
         
@@ -152,16 +157,18 @@ class MyDataset(torch.utils.data.Dataset):
             val_trajectories = trajectories[train_split:val_split]
             test_trajectories = trajectories[val_split:]
         else:
-            test_ixs = np.array([12, 14], dtype=int)
-            val_ixs = np.array([13, 15], dtype=int)
+            # Use file numbers for test and validation
+            test_nums = np.array([12, 14], dtype=int)
+            val_nums = np.array([13, 15], dtype=int)
             
-            # Get trajectories with specified indices
-            test_trajectories = [trajectories[i] for i in test_ixs if i < len(trajectories)]
-            val_trajectories = [trajectories[i] for i in val_ixs if i < len(trajectories)]
+            # Get trajectories with matching file numbers
+            test_mask = np.isin(file_nums, test_nums)
+            val_mask = np.isin(file_nums, val_nums)
+            train_mask = ~(test_mask | val_mask)
             
-            # Get remaining trajectories (not in test_ixs or val_ixs)
-            used_indices = set(test_ixs) | set(val_ixs)
-            train_trajectories = [trajectories[i] for i in range(len(trajectories)) if i not in used_indices]
+            test_trajectories = [traj for traj, is_test in zip(trajectories, test_mask) if is_test]
+            val_trajectories = [traj for traj, is_val in zip(trajectories, val_mask) if is_val]
+            train_trajectories = [traj for traj, is_train in zip(trajectories, train_mask) if is_train]
         
         # Convert trajectory splits to index splits
         train_indices = [i for traj in train_trajectories for i in trajectory_to_indices[traj]]
@@ -862,4 +869,19 @@ class MyDataset(torch.utils.data.Dataset):
             clip_points[j] = points
 
         return clip_points, vein_visible_mask
+    
+    @staticmethod
+    def extract_trajectory_number(file_path):
+        """Extract the trajectory number from the file path.
+        
+        Args:
+            file_path (str): Path like 'path/to/trajectory_0001.npz'
+            
+        Returns:
+            int: The trajectory number (e.g., 1 for 'trajectory_0001.npz')
+        """
+        match = re.search(r'trajectory_(\d+)\.npz$', file_path)
+        if match:
+            return int(match.group(1))
+        raise ValueError(f"Could not extract trajectory number from {file_path}")
     

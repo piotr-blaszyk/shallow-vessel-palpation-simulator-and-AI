@@ -412,6 +412,7 @@ class Visualisation:
             full_dataset = MyDataset(
                 data_dir=SYSTEM_PARAMS.files.dataset_root
             )
+            full_dataset.eval()
             data_loader = DataLoader(
                 full_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
             )
@@ -454,8 +455,8 @@ class Visualisation:
                     out = out[mask]
                     pred = (torch.sigmoid(out) > 0.5).cpu().numpy().astype(int)
 
-            if data.y.cpu().numpy().sum() == 0 or pred.sum() == 0:
-                continue
+            # if data.y.cpu().numpy().sum() == 0 or pred.sum() == 0:
+            #     continue
 
             # Pre-compute all frames
             for frame_idx in range(num_frames):
