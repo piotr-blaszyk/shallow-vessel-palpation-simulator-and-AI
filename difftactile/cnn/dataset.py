@@ -334,8 +334,8 @@ class MyDataset(torch.utils.data.Dataset):
 
             points_og_resolution = markers.copy()
             markers = MyDataset.normalise_gnn_points(markers)
-            # adjacency = MyDataset.compute_knn_adjacency(markers)
-            base_markers, markers, adjacency = ComputeEdges.get_graph_connectivity(markers)
+            adjacency = MyDataset.compute_knn_adjacency(markers)
+            # base_markers, markers, adjacency = ComputeEdges.get_graph_connectivity(markers)
             node_features, edge_features = MyDataset.compute_graph_features(markers, adjacency)
             ground_truth_labels = MyDataset.generate_graph_ground_truth_labels(
                 points_og_resolution,
@@ -378,6 +378,50 @@ class MyDataset(torch.utils.data.Dataset):
         points *= r
         points += principal_point
         return points
+
+    @staticmethod
+    def generate_pyg(points, cx, cy, labels_image):
+        k = 6
+        nn = NearestNeighbors(n_neighbors=k+1, algorithm='ball_tree')
+        nn.fit(points)
+        distances, indices = nn.kneighbors(points)
+        adjacency = indices[:, 1:]
+
+        node_features = points
+        num_points = len(points)
+        k = adjacency.shape[1]
+        edge_features = np.zeros((num_points, k, 1))
+        
+        for i in range(num_points):
+            neighbor_coords = points[adjacency[i]]
+            current_coords = points[i]
+            distances = np.sqrt(np.sum((neighbor_coords - current_coords) ** 2, axis=1))
+            edge_features[i, :, 0] = distances
+        
+        ground_truth_labels = np.zeros(shape=(points.shape[0],), dtype=int)
+        for i in range(len(points)):
+            x, y = points[i]
+            x = int(x)
+            y = int(y)
+            if (
+                x >= 0 and x < labels_image.shape[1] and
+                y >= 0 and y < labels_image.shape[0]
+            ):
+                ground_truth_labels[i] = labels_image[y, x] == 255
+
+        num_nodes, num_neighbours = adjacency.shape
+        edge_index_list = []
+        edge_attr_list = []
+        for i in range(num_nodes):
+            for j_idx, j in enumerate(adjacency[i]):
+                edge_index_list.append([i, j])
+                edge_attr_list.append(edge_features[i, j_idx])
+        edge_index = torch.tensor(edge_index_list, dtype=torch.long).t().contiguous()
+        edge_attr = torch.tensor(np.array(edge_attr_list), dtype=torch.float)
+        x = torch.tensor(node_features, dtype=torch.float)
+        y = torch.tensor(ground_truth_labels, dtype=torch.long)
+
+        return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
     
     @staticmethod
     def compute_knn_adjacency(points, k=6):
