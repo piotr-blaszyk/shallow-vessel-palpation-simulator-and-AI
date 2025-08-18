@@ -394,6 +394,8 @@ class Visualisation:
         NUM_WORKERS = 1
         LABELS_DOWNSIZE = 4
         MARKER_SIZE = 10
+        base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
+        adjacency_matrix = base_graph_data['adjacency_matrix']
 
         if mode == 'predictions':
             # Load test data
@@ -408,14 +410,14 @@ class Visualisation:
             )
             
             # Initialize model
-            model = GNN(lr=1e-3)
+            model = GNN(lr=-1, alpha_pos=-1)
             model.load_state_dict(torch.load(self.model_path))
             model.eval()
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model = model.to(device)
         else:  # dataset mode
             full_dataset = MyDataset(
-                data_dir=SYSTEM_PARAMS.files.dataset_root
+                data_dir=SYSTEM_PARAMS.files.dataset_root_test
             )
             full_dataset.eval()
             data_loader = DataLoader(
@@ -484,7 +486,7 @@ class Visualisation:
                 points = points.astype(np.float32)  # Keep as float for draw_point
                 
                 # Create graph connectivity visualization
-                _, points, adjacency_matrix = Adjacency.get_graph_connectivity(points)
+                # _, points, adjacency_matrix = Adjacency.get_graph_connectivity(points)
                 graph_img = np.zeros((h, w, 3), dtype=np.uint8)
                 
                 # Draw edges from adjacency matrix in green
@@ -701,7 +703,7 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn(mode='dataset')
+    v.visualise_gnn(mode='predictions')
 
 
 if __name__ == "__main__":

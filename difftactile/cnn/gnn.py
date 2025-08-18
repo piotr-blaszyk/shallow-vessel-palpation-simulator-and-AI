@@ -419,7 +419,7 @@ def main():
 
     logger = TensorBoardLogger("lightning_logs", name="segmentation_model")
     full_dataset = MyDataset(
-        data_dir=SYSTEM_PARAMS.files.dataset_root
+        data_dir=SYSTEM_PARAMS.files.dataset_root_test
     )
     train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
         full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
