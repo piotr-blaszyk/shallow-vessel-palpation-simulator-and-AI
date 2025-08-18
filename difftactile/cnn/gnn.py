@@ -128,7 +128,7 @@ class GNN(pl.LightningModule):
             node_channels=1,
             # edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
             edge_channels=2,
-            hidden_channels=4,
+            hidden_channels=128,
             out_channels=1,
             num_layers=2,
             tversky_weight=0.0,
@@ -376,7 +376,9 @@ class MyDataModule(pl.LightningDataModule):
             self.train_dataset,
             batch_size=self.batch_size,
             sampler=sampler,
-            num_workers=self.num_workers
+            num_workers=self.num_workers,
+            pin_memory=True,
+            persistent_workers=True
         )
 
     def val_dataloader(self):
@@ -387,14 +389,18 @@ class MyDataModule(pl.LightningDataModule):
             self.val_dataset,
             batch_size=self.batch_size,
             sampler=sampler,
-            num_workers=self.num_workers
+            num_workers=self.num_workers,
+            pin_memory=True,
+            persistent_workers=True
         )
 
     def test_dataloader(self):
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
-            num_workers=self.num_workers
+            num_workers=self.num_workers,
+            pin_memory=True,
+            persistent_workers=True
         )
 
     def on_train_epoch_start(self):
@@ -403,9 +409,9 @@ class MyDataModule(pl.LightningDataModule):
 
 def main():
     BATCH_SIZE = 512
-    NUM_EPOCHS = 10
+    NUM_EPOCHS = 4
     NUM_WORKERS = 16
-    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 16
+    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 64
     VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 1
     LR = 1e-3
 

@@ -453,7 +453,7 @@ class MyDataset(torch.utils.data.Dataset):
             points = clip_points[t]
             labels = clip_labels[t]
             labels_mask = clip_labels_mask[t]
-            labels = labels[labels_mask]
+            labels_filtered = labels[labels_mask]
             base_points, points, adjacency = Adjacency.get_graph_connectivity(points)
             x_clip[t*num_nodes:(t+1)*num_nodes, 0:2] = points
             x_clip[t*num_nodes:(t+1)*num_nodes, 2] = t - central_frame
@@ -473,10 +473,13 @@ class MyDataset(torch.utils.data.Dataset):
             adjacency_clip_list.append(adjacency)
             
             points_unnormalised = MyDataset.unnormalise_gnn_points(points)
-            distances = cdist(points_unnormalised, labels)
-            min_distances = np.min(distances, axis=1)
-            px_threshold = 40
-            ground_truth_labels = min_distances < px_threshold
+            if labels_filtered.size > 0:
+                distances = cdist(points_unnormalised, labels_filtered)
+                min_distances = np.min(distances, axis=1)
+                px_threshold = 40
+                ground_truth_labels = min_distances < px_threshold
+            else:
+                ground_truth_labels = np.zeros(shape=(num_nodes,), dtype=int)
             ground_truth_labels_clip[t*num_nodes:(t+1)*num_nodes] = ground_truth_labels
         
         adjacency_clip_temporal_list = []
