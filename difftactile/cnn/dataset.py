@@ -70,8 +70,7 @@ class MyDataset(torch.utils.data.Dataset):
 
     def populate_clips(self):
         if True or SYSTEM_PARAMS.meta.cnn_gnn == 0:
-            # Possible dilation factors
-            dilations = [1, 2, 4, 8, 16]
+            dilations = [1, 2, 4]
             
             for i in range(len(self.files)):
                 file_path = self.files[i]
@@ -476,7 +475,7 @@ class MyDataset(torch.utils.data.Dataset):
             if labels_filtered.size > 0:
                 distances = cdist(points_unnormalised, labels_filtered)
                 min_distances = np.min(distances, axis=1)
-                px_threshold = 40
+                px_threshold = SYSTEM_PARAMS.meta.vein_px_thickness
                 ground_truth_labels = min_distances < px_threshold
             else:
                 ground_truth_labels = np.zeros(shape=(num_nodes,), dtype=int)
@@ -566,7 +565,7 @@ class MyDataset(torch.utils.data.Dataset):
             points_unnormalised = MyDataset.unnormalise_gnn_points(points)
             distances = cdist(points_unnormalised, labels)
             min_distances = np.min(distances, axis=1)
-            px_threshold = 40
+            px_threshold = SYSTEM_PARAMS.meta.vein_px_thickness
             ground_truth_labels = min_distances < px_threshold
             ground_truth_labels_clip[t*num_nodes:(t+1)*num_nodes] = ground_truth_labels
         
@@ -787,7 +786,7 @@ class MyDataset(torch.utils.data.Dataset):
                     for i in range(len(line_points) - 1):
                         pt1 = tuple(line_points[i])
                         pt2 = tuple(line_points[i + 1])
-                        cv2.line(images[t], pt1, pt2, color=255, thickness=40)
+                        cv2.line(images[t], pt1, pt2, color=255, thickness=SYSTEM_PARAMS.meta.vein_px_thickness)
                 
         return images
 

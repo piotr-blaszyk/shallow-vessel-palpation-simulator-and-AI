@@ -145,7 +145,8 @@
         "max_num_trajectory_points": 1500,
         "max_timesteps_per_trajectory": 1500,
         "polyline_num": 25,
-        "cnn_gnn": 1
+        "cnn_gnn": 1,
+        "vein_px_thickness": 30
     },
     "gnn": {
         "num_edge_features": 7,

@@ -701,7 +701,7 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn(mode='predictions')
+    v.visualise_gnn(mode='dataset')
 
 
 if __name__ == "__main__":

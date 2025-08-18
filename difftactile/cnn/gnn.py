@@ -10,6 +10,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from torch.utils.data import SubsetRandomSampler
 import time
+from tqdm import tqdm
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.common import *
@@ -82,7 +83,7 @@ class GNNTverskyLoss(nn.Module):
 
 
 class GNNFocalLoss(nn.Module):
-    def __init__(self, alpha=0.8, gamma=0.0):
+    def __init__(self, alpha, gamma=0.0):
         """Focal Loss for GNN node classification.
         
         Specifically designed for node-level binary classification where the focus
@@ -124,6 +125,7 @@ class GNN(pl.LightningModule):
     def __init__(
             self, 
             lr,
+            alpha_pos,
             # node_channels=SYSTEM_PARAMS.gnn.num_node_features,
             node_channels=1,
             # edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
@@ -132,7 +134,7 @@ class GNN(pl.LightningModule):
             out_channels=1,
             num_layers=2,
             tversky_weight=0.0,
-            focal_weight=1.0
+            focal_weight=1.0,
         ):
         super().__init__()
         
@@ -158,7 +160,7 @@ class GNN(pl.LightningModule):
         
         # Initialize loss functions
         self.tversky_loss = GNNTverskyLoss()
-        self.focal_loss = GNNFocalLoss()
+        self.focal_loss = GNNFocalLoss(alpha=alpha_pos)
         
         # Loss weights
         self.tversky_weight = tversky_weight
@@ -423,6 +425,27 @@ def main():
         full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
     )
 
+    len_train = len(train_dataset)
+    train_subset_size = BATCH_SIZE
+    ixs = np.random.choice(
+        len_train,
+        train_subset_size,
+        replace=False
+    )
+    num_pos = 0
+    num_neg = 0
+    for ix in tqdm(ixs, desc="Calculating class balance"):
+        pyg, _ = train_dataset[ix]
+        y = pyg.y
+        y = y.cpu().numpy()
+        pos = y.sum()
+        neg = y.shape[0] - pos
+        num_pos += pos
+        num_neg += neg
+    alpha_pos = num_neg / (num_neg + num_pos)
+    alpha_neg = num_pos / (num_neg + num_pos)
+    print(f'pos:neg = {alpha_neg:.2f}:{alpha_pos:.2f}')
+
     # Create a single datamodule for training, validation and testing
     data_module = MyDataModule(
         train_dataset=train_dataset,
@@ -441,7 +464,7 @@ def main():
     with open(SYSTEM_PARAMS.files.test_loader_gnn, 'wb') as f:
         pickle.dump(test_data, f)
 
-    model = GNN(lr=LR)
+    model = GNN(lr=LR, alpha_pos=alpha_pos)
 
     checkpoint_cb = ModelCheckpoint(
         monitor="val_fg_iou",
