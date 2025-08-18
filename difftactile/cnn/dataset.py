@@ -10,6 +10,7 @@ import math
 from torch_geometric.data import Data
 from sklearn.neighbors import NearestNeighbors
 import time
+from tqdm import tqdm
 
 from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
@@ -18,7 +19,7 @@ import re
 
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir, mode='root'):
+    def __init__(self, data_dir, mode='root', data_points=[]):
         super().__init__()
         start_time = time.perf_counter()
         self.data_dir = data_dir
@@ -59,8 +60,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.visualisation_mode = False
         self.data_points_per_epoch = SYSTEM_PARAMS.dataset.data_points_per_epoch
 
-        # Pre-compute valid clips for each trajectory
-        self.data_points = []
+        self.data_points = data_points
         if mode == 'root':
             self.populate_clips()
         end_time = time.perf_counter()
@@ -193,14 +193,23 @@ class MyDataset(torch.utils.data.Dataset):
         test_indices = [i for traj in test_trajectories for i in trajectory_to_indices[traj]]
         
         # Create new dataset instances for each split
-        train_dataset = MyDataset(dataset.data_dir, mode='train')
-        train_dataset.data_points = [dataset.data_points[i] for i in train_indices]
+        train_dataset = MyDataset(
+            dataset.data_dir, 
+            mode='train',
+            data_points = [dataset.data_points[i] for i in train_indices]
+        )
         
-        val_dataset = MyDataset(dataset.data_dir, mode='val')
-        val_dataset.data_points = [dataset.data_points[i] for i in val_indices]
+        val_dataset = MyDataset(
+            dataset.data_dir, 
+            mode='val',
+            data_points = [dataset.data_points[i] for i in val_indices]
+        )
         
-        test_dataset = MyDataset(dataset.data_dir, mode='test')
-        test_dataset.data_points = [dataset.data_points[i] for i in test_indices]
+        test_dataset = MyDataset(
+            dataset.data_dir, 
+            mode='test',
+            data_points = [dataset.data_points[i] for i in test_indices]
+        )
         
         res = (train_dataset, val_dataset, test_dataset)
         print(f'split len: {[len(x) for x in res]}')
@@ -435,8 +444,8 @@ class MyDataset(torch.utils.data.Dataset):
         base_adjacency_matrix = data['adjacency_matrix']
         num_edges_single_frame = base_adjacency_matrix.shape[0]
         ground_truth_labels_clip = np.zeros(shape=(num_frames * num_nodes,), dtype=int)
-        spatial = np.array([0, 1], dtype=float)
-        temporal = np.array([1, 0], dtype=float)
+        spatial = 0
+        temporal = 1
 
         adjacency_clip_list = []
         edge_attr_clip_list = []
@@ -449,15 +458,15 @@ class MyDataset(torch.utils.data.Dataset):
             x_clip[t*num_nodes:(t+1)*num_nodes, 2] = t - central_frame
             
             # edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
-            edge_attr = np.zeros(shape=(num_edges_single_frame, 1), dtype=float)
+            edge_attr = np.zeros(shape=(num_edges_single_frame, 2), dtype=float)
             for i in range(num_edges_single_frame):
                 me_ix, neighbour_ix = adjacency[i, :]
                 vec = points[neighbour_ix] - points[me_ix]
                 dist = np.linalg.norm(vec)
                 sin_theta = vec[1] / (dist + 1e-10)
                 cos_theta = vec[0] / (dist + 1e-10)
-                # edge_attr[i] = np.array([*vec, dist, sin_theta, cos_theta, *spatial], dtype=float)
-                edge_attr[i] = np.array([dist], dtype=float)
+                # edge_attr[i] = np.array([*vec, dist, sin_theta, cos_theta, spatial], dtype=float)
+                edge_attr[i] = np.array([dist, spatial], dtype=float)
             edge_attr_clip_list.append(edge_attr)
             adjacency += t*num_nodes
             adjacency_clip_list.append(adjacency)
@@ -487,8 +496,8 @@ class MyDataset(torch.utils.data.Dataset):
                 cos_theta = vec[0] / (dist + 1e-10)
                 adjacency_clip_temporal_list.append([src, dst])
                 adjacency_clip_temporal_list.append([dst, src])
-                # feature_vector = [*vec, dist, sin_theta, cos_theta, *temporal]
-                feature_vector = [dist]
+                # feature_vector = [*vec, dist, sin_theta, cos_theta, temporal]
+                feature_vector = [dist, temporal]
                 edge_attr_clip_temporal_list.append(feature_vector)
                 edge_attr_clip_temporal_list.append(feature_vector)
         if len(adjacency_clip_temporal_list) > 0:
@@ -500,11 +509,10 @@ class MyDataset(torch.utils.data.Dataset):
         adjacency_clip = np.vstack(adjacency_clip_list)
         edge_attr_clip = np.vstack(edge_attr_clip_list)
 
-        mask = np.zeros(shape=(num_frames * num_nodes,), dtype=bool)
-        mask[central_frame * num_nodes : (central_frame + 1) * num_nodes] = True
-        mask = torch.tensor(mask, dtype=torch.bool)
         x_clip_const = np.zeros(shape=(num_frames * num_nodes, 1), dtype=float)
         x = torch.tensor(x_clip_const, dtype=torch.float)
+        mask = np.ones(shape=(num_frames * num_nodes,), dtype=bool)
+        mask = torch.tensor(mask, dtype=torch.bool)
         pos = torch.tensor(x_clip, dtype=torch.float)
         edge_index = torch.tensor(adjacency_clip.T, dtype=torch.long)
         edge_attr_clip_normalised = (edge_attr_clip - np.mean(edge_attr_clip)) / np.std(edge_attr_clip)

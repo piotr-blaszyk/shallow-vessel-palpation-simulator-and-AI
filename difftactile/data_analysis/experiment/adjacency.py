@@ -11,6 +11,10 @@ class Adjacency:
     def get_graph_connectivity(points):
         # Load base graph connectivity data
         data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
+        return Adjacency.get_graph_connectivity_helper(data, points)
+        
+    @staticmethod
+    def get_graph_connectivity_helper(data, points):
         base_points = data['points']
         base_adjacency_matrix = data['adjacency_matrix']
 

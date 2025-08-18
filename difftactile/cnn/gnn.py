@@ -9,6 +9,7 @@ import numpy as np
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from torch.utils.data import SubsetRandomSampler
+import time
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.common import *
@@ -126,8 +127,8 @@ class GNN(pl.LightningModule):
             # node_channels=SYSTEM_PARAMS.gnn.num_node_features,
             node_channels=1,
             # edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
-            edge_channels=1,
-            hidden_channels=128,
+            edge_channels=2,
+            hidden_channels=4,
             out_channels=1,
             num_layers=2,
             tversky_weight=0.0,
@@ -404,7 +405,8 @@ def main():
     BATCH_SIZE = 512
     NUM_EPOCHS = 10
     NUM_WORKERS = 16
-    EPOCH_SUBSET_SIZE = BATCH_SIZE * 10
+    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 16
+    VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 1
     LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="segmentation_model")
@@ -420,8 +422,8 @@ def main():
         train_dataset=train_dataset,
         val_dataset=val_dataset,
         test_dataset=test_dataset,
-        train_subset_size=EPOCH_SUBSET_SIZE,
-        val_subset_size=EPOCH_SUBSET_SIZE,
+        train_subset_size=TRAIN_EPOCH_SUBSET_SIZE,
+        val_subset_size=VAL_EPOCH_SUBSET_SIZE,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS
     )
@@ -459,8 +461,13 @@ def main():
             early_stopping, 
         ]
     )
+
+    start = time.perf_counter()
     trainer.fit(model, datamodule=data_module)
     trainer.test(model, datamodule=data_module)
+    end = time.perf_counter()
+    duration = end - start
+    print(f"Training and testing completed in {duration:.2f} seconds ({duration/60:.2f} minutes)")
 
     os.makedirs("saved_models", exist_ok=True)
     torch.save(model.state_dict(), SYSTEM_PARAMS.files.final_segmentation_model_gnn)

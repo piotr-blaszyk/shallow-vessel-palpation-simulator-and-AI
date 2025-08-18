@@ -195,7 +195,7 @@
     },
     "cnn": {
         "input_width_height": 192,
-        "clip_len": 1
+        "clip_len": 3
     },
     "dataset": {
         "data_points_per_epoch": 128
