@@ -64,8 +64,9 @@ class MyDataset(torch.utils.data.Dataset):
         if mode == 'root':
             self.populate_clips()
         end_time = time.perf_counter()
-        print(f"Time taken to initialise dataset: {end_time - start_time:.2f} seconds")
-        print(f"num data points: {len(self.data_points):,}")
+        if mode == 'root':
+            print(f"Time taken to initialise dataset: {end_time - start_time:.2f} seconds")
+            print(f"num data points: {len(self.data_points):,}")
 
     def populate_clips(self):
         if True or SYSTEM_PARAMS.meta.cnn_gnn == 0:
