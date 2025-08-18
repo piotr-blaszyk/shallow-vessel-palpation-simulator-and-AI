@@ -52,7 +52,7 @@ class MyDataset(torch.utils.data.Dataset):
         # self.h_scaled = 1080
         self.avg_call_time = 0.0
         self.num_calls = 0
-        self.difficulty_level = 0
+        self.difficulty_level = 2
 
         self.randomly_remove_k = [0, 6, 13]
         self.avs_disp_c = [0.4, 0.3, 0.2]
@@ -394,7 +394,7 @@ class MyDataset(torch.utils.data.Dataset):
             images, labels_signal_mask = self.augmentation_artificial_vein_signal_vectorised(
                 images, labels, labels_mask
             )
-            labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
+            labels_mask &= labels_signal_mask[np.newaxis, :, :]
             discrete_angles = [0, 60, 120, 180, 240, 300]
             rotation_angle_deg = random.choice(discrete_angles)
             images = self.augmentation_rotation(images, rotation_angle_deg)
@@ -988,9 +988,11 @@ class MyDataset(torch.utils.data.Dataset):
 
     def augmentation_artificial_vein_signal_vectorised(self, clip_points, clip_vein_polyline, clip_vein_polyline_mask):
         valid_frames_mask = np.any(np.all(clip_vein_polyline_mask, axis=2), axis=1)
-        vein_visible_mask = np.ones(clip_points.shape[0], dtype=bool)
+        num_veins = clip_vein_polyline.shape[1]
+        num_vein_points = clip_vein_polyline.shape[2]
+        my_vein_mask = np.ones(shape=(num_veins, num_vein_points), dtype=bool)
         if not np.any(valid_frames_mask):
-            return clip_points, vein_visible_mask
+            return clip_points, my_vein_mask
         
         padded = np.concatenate(([False], valid_frames_mask, [False]))
         runs = np.where(np.diff(padded))[0]
@@ -1002,22 +1004,29 @@ class MyDataset(torch.utils.data.Dataset):
         else:
             start_idx = 0
             end_idx = 0
-        if self.difficulty_level == 2:
-            max_length = end_idx - start_idx
-            if max_length < 3:
-                length = 0
-            else:
-                length = random.randint(3, max_length)
-            end_idx -= length
-            start_idx = random.randint(start_idx, end_idx)
-            end_idx = start_idx + length
-
-            vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
-            vein_visible_mask[start_idx:end_idx] = True
 
         lower_disp_c = self.avs_disp_c[self.difficulty_level]
         # disp_c = random.uniform(lower_disp_c, 0.5)
         disp_c = 1.0
+
+        if self.difficulty_level == 2:
+            my_vein_mask = np.zeros(shape=(num_veins, num_vein_points), dtype=bool)
+            # Generate random start indices for all veins at once
+            target_num_vein_points = np.random.randint(
+                int(1/5*num_vein_points), 
+                int(num_vein_points) + 1, 
+                size=num_veins
+            )
+            max_start_indices = num_vein_points - target_num_vein_points
+            start_indices = np.random.randint(0, max_start_indices + 1)
+            
+            # Create indices array for each vein
+            row_indices = np.arange(num_veins)[:, np.newaxis]
+            col_indices = np.arange(num_vein_points)[np.newaxis, :]
+            
+            # Set True for the selected ranges
+            my_vein_mask = (col_indices >= start_indices[:, np.newaxis]) & \
+                                 (col_indices < (start_indices[:, np.newaxis] + target_num_vein_points[:, np.newaxis]))
 
         for j in range(start_idx, end_idx):
             points = clip_points[j]
@@ -1029,12 +1038,7 @@ class MyDataset(torch.utils.data.Dataset):
             
             for k in range(frame_vein_polyline.shape[0]):
                 vein_polyline = frame_vein_polyline[k]
-
-                # Vectorized version of the inner loop
-                if self.difficulty_level == 2:
-                    proceed_mask = np.random.uniform(0, 1, len(points)) >= 0.5
-                else:
-                    proceed_mask = np.ones(len(points), dtype=bool)
+                vein_polyline = vein_polyline[my_vein_mask[k]]
 
                 # Calculate vectors for all points at once
                 vecs = SyntheticImageGenerator.vector_point_to_polynomial(vein_polyline, points)
@@ -1049,13 +1053,13 @@ class MyDataset(torch.utils.data.Dataset):
                 displacement[mask2] = x_0 - (x[mask2] - x_0)
                 
                 # Apply displacement where needed
-                mask = (displacement > 0) & proceed_mask
+                mask = displacement > 0
                 vec_normalized = vecs[mask] / x[mask, np.newaxis]
                 points[mask] = points[mask] + vec_normalized * displacement[mask, np.newaxis] * disp_c
 
             clip_points[j] = points
 
-        return clip_points, vein_visible_mask
+        return clip_points, my_vein_mask
 
     def augmentation_artificial_vein_signal_unvectorised(self, clip_points, clip_vein_polyline, clip_vein_polyline_mask):
         valid_frames_mask = np.any(np.all(clip_vein_polyline_mask, axis=2), axis=1)
