@@ -311,7 +311,7 @@ class MyDataset(torch.utils.data.Dataset):
             labels = labels[frame_ix:frame_ix + dilated_clip_len:dilation]
             labels_mask = labels_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
             
-            images, labels_signal_mask = self.augmentation_artificial_vein_signal(
+            images, labels_signal_mask = self.augmentation_artificial_vein_signal_vectorised(
                 images, labels, labels_mask
             )
             labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
@@ -366,7 +366,7 @@ class MyDataset(torch.utils.data.Dataset):
             labels = labels[frame_ix:frame_ix + dilated_clip_len:dilation]
             labels_mask = labels_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
             
-            images, labels_signal_mask = self.augmentation_artificial_vein_signal(
+            images, labels_signal_mask = self.augmentation_artificial_vein_signal_vectorised(
                 images, labels, labels_mask
             )
             labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
@@ -387,7 +387,7 @@ class MyDataset(torch.utils.data.Dataset):
             points_mask = images_mask
 
             points = MyDataset.normalise_gnn_points(points)
-            pyg = MyDataset.generate_pyg(points, labels, labels_mask)
+            pyg = MyDataset.generate_pyg_vectorised(points, labels, labels_mask)
             if self.visualisation_mode:
                 labels = MyDataset.generate_vein_image(
                     self.h_camera_big, 
@@ -432,7 +432,95 @@ class MyDataset(torch.utils.data.Dataset):
         return points
 
     @staticmethod
-    def generate_pyg(clip_points, clip_labels, clip_labels_mask):
+    def generate_pyg_vectorised(clip_points, clip_labels, clip_labels_mask):
+        num_frames = clip_points.shape[0]
+        central_frame = num_frames // 2
+        num_nodes = clip_points.shape[1]
+        num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features
+        num_node_features = SYSTEM_PARAMS.gnn.num_node_features
+        x_clip = np.zeros(shape=(num_frames * num_nodes, num_node_features), dtype=float)
+        data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
+        base_adjacency_matrix = data['adjacency_matrix']
+        num_edges_single_frame = base_adjacency_matrix.shape[0]
+        ground_truth_labels_clip = np.zeros(shape=(num_frames * num_nodes,), dtype=int)
+        spatial = 0
+        temporal = 1
+
+        adjacency_clip_list = []
+        edge_attr_clip_list = []
+
+        for t in range(num_frames):
+            points = clip_points[t]
+            labels = clip_labels[t]
+            labels_mask = clip_labels_mask[t]
+            labels = labels[labels_mask]
+            base_points, points, adjacency = Adjacency.get_graph_connectivity(points)
+            x_clip[t*num_nodes:(t+1)*num_nodes, 0:2] = points
+            x_clip[t*num_nodes:(t+1)*num_nodes, 2] = t - central_frame
+            
+            # edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
+            edge_attr = np.zeros(shape=(num_edges_single_frame, 2), dtype=float)
+            # Vectorized computation replacing the loop
+            me_points = points[adjacency[:, 0]]
+            neighbor_points = points[adjacency[:, 1]]
+            vec = neighbor_points - me_points
+            dist = np.linalg.norm(vec, axis=1)
+            # Not using sin_theta and cos_theta in final edge_attr, so we can skip computing them
+            edge_attr[:, 0] = dist
+            edge_attr[:, 1] = spatial
+            edge_attr_clip_list.append(edge_attr)
+            adjacency += t*num_nodes
+            adjacency_clip_list.append(adjacency)
+            
+            points_unnormalised = MyDataset.unnormalise_gnn_points(points)
+            distances = cdist(points_unnormalised, labels)
+            min_distances = np.min(distances, axis=1)
+            px_threshold = 40
+            ground_truth_labels = min_distances < px_threshold
+            ground_truth_labels_clip[t*num_nodes:(t+1)*num_nodes] = ground_truth_labels
+        
+        adjacency_clip_temporal_list = []
+        edge_attr_clip_temporal_list = []
+        for t in range(num_frames-1):
+            # Vectorized computation replacing the inner loop
+            src = t*num_nodes + np.arange(num_nodes)
+            dst = (t+1)*num_nodes + np.arange(num_nodes)
+            
+            # Calculate vectors between corresponding nodes in consecutive frames
+            vec = x_clip[dst, 0:2] - x_clip[src, 0:2]
+            dist = np.linalg.norm(vec, axis=1)
+            
+            # Create forward and backward temporal edges
+            src_all = np.concatenate([src, dst])
+            dst_all = np.concatenate([dst, src])
+            adjacency_clip_temporal_list.extend(np.column_stack([src_all, dst_all]))
+            
+            # Create edge attributes for both directions
+            feature_vector = np.column_stack([dist, np.full_like(dist, temporal)])
+            edge_attr_clip_temporal_list.extend(np.tile(feature_vector, (2, 1)))
+            
+        if len(adjacency_clip_temporal_list) > 0:
+            adjacency_clip_temporal = np.array(adjacency_clip_temporal_list)
+            edge_attr_clip_temporal = np.array(edge_attr_clip_temporal_list)
+            adjacency_clip_list.append(adjacency_clip_temporal)
+            edge_attr_clip_list.append(edge_attr_clip_temporal)
+
+        adjacency_clip = np.vstack(adjacency_clip_list)
+        edge_attr_clip = np.vstack(edge_attr_clip_list)
+
+        x_clip_const = np.zeros(shape=(num_frames * num_nodes, 1), dtype=float)
+        x = torch.tensor(x_clip_const, dtype=torch.float)
+        mask = np.ones(shape=(num_frames * num_nodes,), dtype=bool)
+        mask = torch.tensor(mask, dtype=torch.bool)
+        pos = torch.tensor(x_clip, dtype=torch.float)
+        edge_index = torch.tensor(adjacency_clip.T, dtype=torch.long)
+        edge_attr_clip_normalised = (edge_attr_clip - np.mean(edge_attr_clip)) / np.std(edge_attr_clip)
+        edge_attr = torch.tensor(edge_attr_clip_normalised, dtype=torch.float)
+        y = torch.tensor(ground_truth_labels_clip[mask], dtype=torch.long)
+        return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, mask=mask, pos=pos)
+    
+    @staticmethod
+    def generate_pyg_unvectorised(clip_points, clip_labels, clip_labels_mask):
         num_frames = clip_points.shape[0]
         central_frame = num_frames // 2
         num_nodes = clip_points.shape[1]
@@ -863,7 +951,78 @@ class MyDataset(torch.utils.data.Dataset):
         points, mask = SyntheticImageGenerator.crop(points, origin, resolution)
         return points, mask
 
-    def augmentation_artificial_vein_signal(self, clip_points, clip_vein_polyline, clip_vein_polyline_mask):
+    def augmentation_artificial_vein_signal_vectorised(self, clip_points, clip_vein_polyline, clip_vein_polyline_mask):
+        valid_frames_mask = np.any(np.all(clip_vein_polyline_mask, axis=2), axis=1)
+        vein_visible_mask = np.ones(clip_points.shape[0], dtype=bool)
+        if not np.any(valid_frames_mask):
+            return clip_points, vein_visible_mask
+        
+        padded = np.concatenate(([False], valid_frames_mask, [False]))
+        runs = np.where(np.diff(padded))[0]
+        run_lengths = runs[1::2] - runs[::2]
+        if len(run_lengths) > 0:
+            longest_run_idx = np.argmax(run_lengths)
+            start_idx = runs[::2][longest_run_idx]
+            end_idx = runs[1::2][longest_run_idx]
+        else:
+            start_idx = 0
+            end_idx = 0
+        if self.difficulty_level == 2:
+            max_length = end_idx - start_idx
+            if max_length < 3:
+                length = 0
+            else:
+                length = random.randint(3, max_length)
+            end_idx -= length
+            start_idx = random.randint(start_idx, end_idx)
+            end_idx = start_idx + length
+
+            vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
+            vein_visible_mask[start_idx:end_idx] = True
+
+        lower_disp_c = self.avs_disp_c[self.difficulty_level]
+        # disp_c = random.uniform(lower_disp_c, 0.5)
+        disp_c = 1.0
+
+        for j in range(start_idx, end_idx):
+            points = clip_points[j]
+            x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
+            frame_vein_polyline = clip_vein_polyline[j] 
+            frame_vein_polyline_mask = clip_vein_polyline_mask[j]
+            valid_veins = np.all(frame_vein_polyline_mask, axis=1)
+            frame_vein_polyline = frame_vein_polyline[valid_veins]
+            
+            for k in range(frame_vein_polyline.shape[0]):
+                vein_polyline = frame_vein_polyline[k]
+
+                # Vectorized version of the inner loop
+                if self.difficulty_level == 2:
+                    proceed_mask = np.random.uniform(0, 1, len(points)) >= 0.5
+                else:
+                    proceed_mask = np.ones(len(points), dtype=bool)
+
+                # Calculate vectors for all points at once
+                vecs = SyntheticImageGenerator.vector_point_to_polynomial(vein_polyline, points)
+                x = np.linalg.norm(vecs, axis=1)
+                
+                # Calculate displacements based on conditions
+                displacement = np.zeros_like(x)
+                mask1 = (0 < x) & (x < x_0)
+                mask2 = (x_0 <= x) & (x < 2 * x_0)
+                
+                displacement[mask1] = x[mask1]
+                displacement[mask2] = x_0 - (x[mask2] - x_0)
+                
+                # Apply displacement where needed
+                mask = (displacement > 0) & proceed_mask
+                vec_normalized = vecs[mask] / x[mask, np.newaxis]
+                points[mask] = points[mask] + vec_normalized * displacement[mask, np.newaxis] * disp_c
+
+            clip_points[j] = points
+
+        return clip_points, vein_visible_mask
+
+    def augmentation_artificial_vein_signal_unvectorised(self, clip_points, clip_vein_polyline, clip_vein_polyline_mask):
         valid_frames_mask = np.any(np.all(clip_vein_polyline_mask, axis=2), axis=1)
         vein_visible_mask = np.ones(clip_points.shape[0], dtype=bool)
         if not np.any(valid_frames_mask):
