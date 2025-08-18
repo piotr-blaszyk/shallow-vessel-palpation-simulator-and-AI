@@ -388,7 +388,6 @@ class MyDataset(torch.utils.data.Dataset):
 
             points = MyDataset.normalise_gnn_points(points)
             pyg = MyDataset.generate_pyg(points, labels, labels_mask)
-            pyg = None
             if self.visualisation_mode:
                 labels = MyDataset.generate_vein_image(
                     self.h_camera_big, 
