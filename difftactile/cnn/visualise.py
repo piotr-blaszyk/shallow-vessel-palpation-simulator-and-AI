@@ -415,7 +415,7 @@ class Visualisation:
             model = model.to(device)
         else:  # dataset mode
             full_dataset = MyDataset(
-                data_dir=SYSTEM_PARAMS.files.dataset_root_test
+                data_dir=SYSTEM_PARAMS.files.dataset_root
             )
             full_dataset.eval()
             data_loader = DataLoader(
@@ -707,7 +707,7 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn(mode='predictions')
+    v.visualise_gnn(mode='dataset')
 
 
 if __name__ == "__main__":

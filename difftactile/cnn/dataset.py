@@ -9,6 +9,7 @@ import random
 import math
 from torch_geometric.data import Data
 from sklearn.neighbors import NearestNeighbors
+import time
 
 from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
@@ -19,14 +20,24 @@ import re
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, data_dir, mode='root'):
         super().__init__()
+        start_time = time.perf_counter()
         self.data_dir = data_dir
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         if SYSTEM_PARAMS.meta.cnn_gnn == 0:
             self.data_points_per_trajectory = 16
         else:
-            self.data_points_per_trajectory = 1
+            self.data_points_per_trajectory = 256
         self.mode = mode
-        self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])[:1]
+        self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
+        self.file_vein_masks = []
+        self.file_contains_vein = []
+        for i in range(len(self.files)):
+            self.file_vein_masks.append(
+                self.video_contains_vein(self.files[i])
+            )
+            self.file_contains_vein.append(
+                self.compute_file_contains_vein(self.files[i])
+            )
 
         self.w_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
         self.h_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
@@ -52,13 +63,17 @@ class MyDataset(torch.utils.data.Dataset):
         self.data_points = []
         if mode == 'root':
             self.populate_clips()
+        end_time = time.perf_counter()
+        print(f"Time taken to initialise dataset: {end_time - start_time:.2f} seconds")
+        print(f"num data points: {len(self.data_points):,}")
 
     def populate_clips(self):
         if True or SYSTEM_PARAMS.meta.cnn_gnn == 0:
             # Possible dilation factors
-            dilations = [1, 2, 3, 4]
+            dilations = [1, 2, 4, 8, 16]
             
-            for file_path in self.files:
+            for i in range(len(self.files)):
+                file_path = self.files[i]
                 file_num = MyDataset.extract_trajectory_number(file_path)
                 if (file_num % 4) > 1:
                     continue
@@ -73,7 +88,7 @@ class MyDataset(torch.utils.data.Dataset):
                     if total_frames >= dilated_clip_len:
                         num_possible_starts = total_frames - dilated_clip_len + 1
                         
-                        if not self.file_contains_vein(file_path):
+                        if not self.file_contains_vein[i]:
                             # For files without veins, keep original random sampling
                             start_indices = sorted(random.sample(
                                 range(num_possible_starts), 
@@ -89,7 +104,7 @@ class MyDataset(torch.utils.data.Dataset):
                             
                             while clips_found < self.data_points_per_trajectory and attempts < max_attempts:
                                 start_idx = random.randrange(num_possible_starts)
-                                if self.clip_contains_vein(data, start_idx, dilation):
+                                if self.clip_contains_vein(i, start_idx, dilation):
                                     self.data_points.append((file_path, start_idx, dilation))
                                     clips_found += 1
                                 attempts += 1
@@ -97,7 +112,7 @@ class MyDataset(torch.utils.data.Dataset):
             for file_path in self.files:
                 data = np.load(file_path)
                 total_frames = len(data["markers"])
-                if not self.file_contains_vein(file_path):
+                if not self.compute_file_contains_vein(file_path):
                     # For files without veins, keep original random sampling
                     indices = sorted(random.sample(
                         range(total_frames), 
@@ -128,7 +143,7 @@ class MyDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def create_splits(
-        dataset, train_size, val_size, test_size, random_state=42, override=True
+        dataset, train_size, val_size, test_size, random_state=42, override=False
     ):
         """Split dataset while ensuring all clips from the same trajectory stay together"""
         assert abs(train_size + val_size + test_size - 1.0) < 1e-10, (
@@ -190,7 +205,7 @@ class MyDataset(torch.utils.data.Dataset):
         print(f'split len: {[len(x) for x in res]}')
         return res
 
-    def file_contains_vein(self, file_path):
+    def compute_file_contains_vein(self, file_path):
         # Extract the file name from the path
         file_name = os.path.basename(file_path)
         
@@ -200,26 +215,41 @@ class MyDataset(torch.utils.data.Dataset):
         
         return (file_num % 4) < 2
 
-    def clip_contains_vein(self, data, start, dilation):
-        markers = data['markers']
-        markers_mask = data['markers_mask']
-        labels = data['vein_polyline']
-        labels_mask = data['vein_polyline_mask']
-
-        centre = MyDataset.compute_mean_marker_position(markers, markers_mask)
-        
+    def clip_contains_vein(self, file_ix, start, dilation):
         dilated_clip_len = self.clip_len * dilation
-        labels = labels[start:start + dilated_clip_len:dilation]
-        labels_mask = labels_mask[start:start + dilated_clip_len:dilation]
-
-        cx = centre[0]
-        cy = centre[1]
-        r = SYSTEM_PARAMS.fisheye_model.circle_radius / 3
-        mask_circle = SyntheticImageGenerator.filter_points_vectorised(cx, cy, r, labels)
-        labels_mask &= mask_circle
-
-        res = labels[labels_mask].sum() > 0
+        clip_vein_mask = self.file_vein_masks[file_ix][start : start+dilated_clip_len : dilation]
+        res = clip_vein_mask.sum() > 0
         return res
+
+    def video_contains_vein(self, file_path):
+        data = np.load(file_path)
+        markers = data['markers']  # shape: (num_video_frames, num_markers, 2)
+        labels = data['vein_polyline']  # shape: (num_video_frames, num_veins, num_points, 2)
+        labels_mask = data['vein_polyline_mask']  # shape: (num_video_frames, num_veins, num_points)
+        
+        # Compute mean position for each frame
+        mean_positions = np.mean(markers, axis=1)  # shape: (num_video_frames, 2)
+        r = SYSTEM_PARAMS.fisheye_model.circle_radius / 3
+
+        # Reshape mean_positions to broadcast against labels
+        # (num_video_frames, 1, 1, 2) to broadcast with (num_video_frames, num_veins, num_points, 2)
+        centres = mean_positions[:, np.newaxis, np.newaxis, :]
+        
+        # Extract x and y coordinates
+        cx = centres[..., 0]
+        cy = centres[..., 1]
+        x = labels[..., 0]
+        y = labels[..., 1]
+        
+        # Check circle condition for all points
+        in_circle = ((x - cx) ** 2 + (y - cy) ** 2) <= r ** 2  # shape: (num_video_frames, num_veins, num_points)
+        
+        labels_mask &= in_circle
+        
+        # Reduce to (num_video_frames,) by checking if any point in each frame is True
+        contains_vein = np.any(labels_mask, axis=(1,2))  # shape: (num_video_frames,)
+        
+        return contains_vein
 
     def frame_contains_vein(self, data, ix):
         markers = data['markers'][ix]
