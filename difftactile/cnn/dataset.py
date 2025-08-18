@@ -486,9 +486,18 @@ class MyDataset(torch.utils.data.Dataset):
             neighbor_points = points[adjacency[:, 1]]
             vec = neighbor_points - me_points
             dist = np.linalg.norm(vec, axis=1)
-            # Not using sin_theta and cos_theta in final edge_attr, so we can skip computing them
+            
+            # Calculate sin(theta) and cos(theta) from vector components
+            # Add small epsilon to avoid division by zero
+            eps = 1e-10
+            normalized_vec = vec / (dist[:, np.newaxis] + eps)
+            cos_theta = normalized_vec[:, 0]  # x component is cos(theta)
+            sin_theta = normalized_vec[:, 1]  # y component is sin(theta)
+            
             edge_attr[:, 0] = dist
             edge_attr[:, 1] = spatial
+            edge_attr[:, 2] = sin_theta
+            edge_attr[:, 3] = cos_theta
             edge_attr_clip_list.append(edge_attr)
             adjacency_frame = adjacency + t*num_nodes
             adjacency_clip_list.append(adjacency_frame)
@@ -510,19 +519,34 @@ class MyDataset(torch.utils.data.Dataset):
             dst = (t+1)*num_nodes + np.arange(num_nodes)
             
             # Calculate vectors between corresponding nodes in consecutive frames
-            vec = x_clip[dst, 0:2] - x_clip[src, 0:2]
-            dist = np.linalg.norm(vec, axis=1)
+            vec_forward = x_clip[dst, 0:2] - x_clip[src, 0:2]  # src -> dst direction
+            vec_backward = -vec_forward  # dst -> src direction
+            
+            # Calculate distances (same for both directions)
+            dist = np.linalg.norm(vec_forward, axis=1)
+            
+            # Calculate sin(theta) and cos(theta) for both directions
+            eps = 1e-10
+            # Forward direction (src -> dst)
+            normalized_vec_forward = vec_forward / (dist[:, np.newaxis] + eps)
+            cos_theta_forward = normalized_vec_forward[:, 0]
+            sin_theta_forward = normalized_vec_forward[:, 1]
+            
+            # Backward direction (dst -> src)
+            normalized_vec_backward = vec_backward / (dist[:, np.newaxis] + eps)
+            cos_theta_backward = normalized_vec_backward[:, 0]
+            sin_theta_backward = normalized_vec_backward[:, 1]
             
             # Create forward and backward temporal edges
             src_all = np.concatenate([src, dst])
             dst_all = np.concatenate([dst, src])
             adjacency_clip_temporal_list.extend(np.column_stack([src_all, dst_all]))
             
-            # Create edge attributes for both directions
-            feature_vector = np.column_stack([dist, np.full_like(dist, temporal)])
-            # feature_vector = dist.reshape(-1, 1)  # Reshape to column vector
-            edge_attr_clip_temporal_list.extend(np.tile(feature_vector, (2, 1)))
-            
+            # Create edge attributes with separate angles for each direction
+            feature_vector_forward = np.column_stack([dist, np.full_like(dist, temporal), sin_theta_forward, cos_theta_forward])
+            feature_vector_backward = np.column_stack([dist, np.full_like(dist, temporal), sin_theta_backward, cos_theta_backward])
+            edge_attr_clip_temporal_list.extend(np.vstack([feature_vector_forward, feature_vector_backward]))
+
         if len(adjacency_clip_temporal_list) > 0:
             adjacency_clip_temporal = np.array(adjacency_clip_temporal_list)
             edge_attr_clip_temporal = np.array(edge_attr_clip_temporal_list)
@@ -1119,21 +1143,6 @@ class MyDataset(torch.utils.data.Dataset):
             clip_points[j] = points
 
         return clip_points, vein_visible_mask
-    
-    @staticmethod
-    def extract_trajectory_number(file_path):
-        """Extract the trajectory number from the file path.
-        
-        Args:
-            file_path (str): Path like 'path/to/trajectory_0001.npz'
-            
-        Returns:
-            int: The trajectory number (e.g., 1 for 'trajectory_0001.npz')
-        """
-        match = re.search(r'trajectory_(\d+)\.npz$', file_path)
-        if match:
-            return int(match.group(1))
-        raise ValueError(f"Could not extract trajectory number from {file_path}")
     
     @staticmethod
     def extract_trajectory_number(file_path):

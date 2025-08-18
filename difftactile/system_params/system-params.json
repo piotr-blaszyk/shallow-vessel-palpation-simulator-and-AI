@@ -149,7 +149,7 @@
         "vein_px_thickness": 30
     },
     "gnn": {
-        "num_edge_features": 2,
+        "num_edge_features": 4,
         "num_node_features": 1,
         "num_hidden_channels": 128
     },
