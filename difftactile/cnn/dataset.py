@@ -468,6 +468,8 @@ class MyDataset(torch.utils.data.Dataset):
         spatial = 0
         temporal = 1
         adjacency = self.adjacency_matrix
+        frame_displacements = clip_points[1:] - clip_points[:-1]
+        mean_frame_displacements = np.mean(frame_displacements, axis=1)
 
         adjacency_clip_list = []
         edge_attr_clip_list = []
@@ -505,27 +507,29 @@ class MyDataset(torch.utils.data.Dataset):
         adjacency_clip_temporal_list = []
         edge_attr_clip_temporal_list = []
         for t in range(num_frames-1):
-            # Vectorized computation replacing the inner loop
-            src = t*num_nodes + np.arange(num_nodes)
-            dst = (t+1)*num_nodes + np.arange(num_nodes)
-            
-            # Calculate vectors between corresponding nodes in consecutive frames
-            vec = x_clip[dst, 0:2] - x_clip[src, 0:2]
-            dist = np.linalg.norm(vec, axis=1)
-            
-            # Create forward and backward temporal edges
-            src_all = np.concatenate([src, dst])
-            dst_all = np.concatenate([dst, src])
-            adjacency_clip_temporal_list.extend(np.column_stack([src_all, dst_all]))
-            
-            # Create edge attributes for both directions
-            feature_vector = np.column_stack([dist, np.full_like(dist, temporal)])
-            # feature_vector = dist.reshape(-1, 1)  # Reshape to column vector
-            edge_attr_clip_temporal_list.extend(np.tile(feature_vector, (2, 1)))
+            for direction in range(2):  # 0: forward, 1: backward
+                if direction == 0:  # forward edges (t → t+1)
+                    src = t*num_nodes + np.arange(num_nodes)
+                    dst = (t+1)*num_nodes + np.arange(num_nodes)
+                else:  # backward edges (t+1 → t)
+                    src = (t+1)*num_nodes + np.arange(num_nodes)
+                    dst = t*num_nodes + np.arange(num_nodes)
+                
+                # Compute displacement vector and subtract mean frame displacement
+                vec = x_clip[dst, 0:2] - x_clip[src, 0:2]
+                if direction == 0:
+                    vec = vec - mean_frame_displacements[t]
+                else:
+                    vec = vec + mean_frame_displacements[t]  # Add because we're going backwards
+                
+                dist = np.linalg.norm(vec, axis=1)
+                
+                adjacency_clip_temporal_list.append(np.column_stack([src, dst]))
+                edge_attr_clip_temporal_list.append(np.column_stack([dist, np.full_like(dist, temporal)]))
             
         if len(adjacency_clip_temporal_list) > 0:
-            adjacency_clip_temporal = np.array(adjacency_clip_temporal_list)
-            edge_attr_clip_temporal = np.array(edge_attr_clip_temporal_list)
+            adjacency_clip_temporal = np.vstack(adjacency_clip_temporal_list)
+            edge_attr_clip_temporal = np.vstack(edge_attr_clip_temporal_list)
             adjacency_clip_list.append(adjacency_clip_temporal)
             edge_attr_clip_list.append(edge_attr_clip_temporal)
 
