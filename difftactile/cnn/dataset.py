@@ -59,6 +59,8 @@ class MyDataset(torch.utils.data.Dataset):
         self.cnn_gnn = SYSTEM_PARAMS.meta.cnn_gnn
         self.visualisation_mode = False
         self.data_points_per_epoch = SYSTEM_PARAMS.dataset.data_points_per_epoch
+        base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
+        self.adjacency_matrix = base_graph_data['adjacency_matrix']
 
         self.data_points = data_points
         if mode == 'root':
@@ -386,7 +388,7 @@ class MyDataset(torch.utils.data.Dataset):
             points_mask = images_mask
 
             points = MyDataset.normalise_gnn_points(points)
-            pyg = MyDataset.generate_pyg_vectorised(points, labels, labels_mask)
+            pyg = self.generate_pyg_vectorised(points, labels, labels_mask)
             if self.visualisation_mode:
                 labels = MyDataset.generate_vein_image(
                     self.h_camera_big, 
@@ -430,14 +432,13 @@ class MyDataset(torch.utils.data.Dataset):
         points += principal_point
         return points
 
-    @staticmethod
-    def generate_pyg_vectorised(clip_points, clip_labels, clip_labels_mask):
+    def generate_pyg_vectorised(self, clip_points, clip_labels, clip_labels_mask):
         num_frames = clip_points.shape[0]
         central_frame = num_frames // 2
         num_nodes = clip_points.shape[1]
         num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features
         num_node_features = SYSTEM_PARAMS.gnn.num_node_features
-        x_clip = np.zeros(shape=(num_frames * num_nodes, num_node_features), dtype=float)
+        x_clip_unused = np.zeros(shape=(num_frames * num_nodes, 3), dtype=float)
         data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_adjacency_matrix = data['adjacency_matrix']
         num_edges_single_frame = base_adjacency_matrix.shape[0]
@@ -453,12 +454,12 @@ class MyDataset(torch.utils.data.Dataset):
             labels = clip_labels[t]
             labels_mask = clip_labels_mask[t]
             labels_filtered = labels[labels_mask]
-            base_points, points, adjacency = Adjacency.get_graph_connectivity(points)
-            x_clip[t*num_nodes:(t+1)*num_nodes, 0:2] = points
-            x_clip[t*num_nodes:(t+1)*num_nodes, 2] = t - central_frame
+            adjacency = self.adjacency_matrix
+            x_clip_unused[t*num_nodes:(t+1)*num_nodes, 0:2] = points
+            x_clip_unused[t*num_nodes:(t+1)*num_nodes, 2] = t - central_frame
             
             # edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
-            edge_attr = np.zeros(shape=(num_edges_single_frame, 2), dtype=float)
+            edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
             # Vectorized computation replacing the loop
             me_points = points[adjacency[:, 0]]
             neighbor_points = points[adjacency[:, 1]]
@@ -466,7 +467,7 @@ class MyDataset(torch.utils.data.Dataset):
             dist = np.linalg.norm(vec, axis=1)
             # Not using sin_theta and cos_theta in final edge_attr, so we can skip computing them
             edge_attr[:, 0] = dist
-            edge_attr[:, 1] = spatial
+            # edge_attr[:, 1] = spatial
             edge_attr_clip_list.append(edge_attr)
             adjacency += t*num_nodes
             adjacency_clip_list.append(adjacency)
@@ -489,7 +490,7 @@ class MyDataset(torch.utils.data.Dataset):
             dst = (t+1)*num_nodes + np.arange(num_nodes)
             
             # Calculate vectors between corresponding nodes in consecutive frames
-            vec = x_clip[dst, 0:2] - x_clip[src, 0:2]
+            vec = x_clip_unused[dst, 0:2] - x_clip_unused[src, 0:2]
             dist = np.linalg.norm(vec, axis=1)
             
             # Create forward and backward temporal edges
@@ -514,7 +515,7 @@ class MyDataset(torch.utils.data.Dataset):
         x = torch.tensor(x_clip_const, dtype=torch.float)
         mask = np.ones(shape=(num_frames * num_nodes,), dtype=bool)
         mask = torch.tensor(mask, dtype=torch.bool)
-        pos = torch.tensor(x_clip, dtype=torch.float)
+        pos = torch.tensor(x_clip_unused, dtype=torch.float)
         edge_index = torch.tensor(adjacency_clip.T, dtype=torch.long)
         edge_attr_clip_normalised = (edge_attr_clip - np.mean(edge_attr_clip)) / np.std(edge_attr_clip)
         edge_attr = torch.tensor(edge_attr_clip_normalised, dtype=torch.float)

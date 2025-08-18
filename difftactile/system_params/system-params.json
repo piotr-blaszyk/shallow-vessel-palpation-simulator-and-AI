@@ -149,8 +149,8 @@
         "vein_px_thickness": 30
     },
     "gnn": {
-        "num_edge_features": 7,
-        "num_node_features": 3
+        "num_edge_features": 1,
+        "num_node_features": 1
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,
@@ -196,7 +196,7 @@
     },
     "cnn": {
         "input_width_height": 192,
-        "clip_len": 3
+        "clip_len": 1
     },
     "dataset": {
         "data_points_per_epoch": 128
