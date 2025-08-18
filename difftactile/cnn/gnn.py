@@ -135,6 +135,9 @@ class GNN(pl.LightningModule):
         ):
         super().__init__()
         
+        # Add previous_lr attribute to track changes
+        self._previous_lr = None
+        
         # Node networks for GINEConv
         self.node_net1 = nn.Sequential(
             nn.Linear(node_channels, hidden_channels),
@@ -269,6 +272,8 @@ class GNN(pl.LightningModule):
         # Average metrics across batch
         metrics = {k: v.mean() for k, v in batch_metrics.items()}
         
+        is_val_stage = f'{stage}' == 'val'
+
         # Log all metrics
         self.log(f"{stage}_tversky_loss", tversky_loss, prog_bar=False, batch_size=batch.num_graphs)
         self.log(f"{stage}_focal_loss", focal_loss, prog_bar=False, batch_size=batch.num_graphs)
@@ -298,12 +303,27 @@ class GNN(pl.LightningModule):
                 patience=3,          # Number of epochs with no improvement after which LR will be reduced
                 min_lr=1e-6,        # Don't reduce LR below this value
                 cooldown=1,         # Number of epochs to wait before resuming normal operation after LR has been reduced
+                threshold=1e-4,
+                threshold_mode='rel'
             ),
             "monitor": "val_fg_iou",   # Quantity to monitor
             "interval": "epoch",
             "frequency": 1
         }
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
+
+    def on_train_epoch_start(self):
+        # Get current learning rate
+        current_lr = self.optimizers().param_groups[0]['lr']
+        
+        # Print only if learning rate has changed
+        if self._previous_lr != current_lr:
+            print(f"\nLearning rate changed from {self._previous_lr} to {current_lr:.2e}")
+            self._previous_lr = current_lr
+            
+        # Still log to tensorboard but don't show in progress bar
+        self.log('learning_rate', current_lr, prog_bar=False)
+
 
 class MyDataModule(pl.LightningDataModule):
     def __init__(self, train_dataset, val_dataset, test_dataset, train_subset_size, val_subset_size, batch_size, num_workers, seed=42):
@@ -381,10 +401,10 @@ class MyDataModule(pl.LightningDataModule):
 
 
 def main():
-    BATCH_SIZE = 256
-    NUM_EPOCHS = 100
+    BATCH_SIZE = 512
+    NUM_EPOCHS = 10
     NUM_WORKERS = 16
-    EPOCH_SUBSET_SIZE = 1024
+    EPOCH_SUBSET_SIZE = BATCH_SIZE * 10
     LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="segmentation_model")
