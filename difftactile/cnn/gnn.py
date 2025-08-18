@@ -130,7 +130,7 @@ class GNN(pl.LightningModule):
             # node_channels=1,
             edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
             # edge_channels=2,
-            hidden_channels=128,
+            hidden_channels=SYSTEM_PARAMS.gnn.num_hidden_channels,
             out_channels=1,
             num_layers=2,
             tversky_weight=0.0,
@@ -434,17 +434,59 @@ def main():
     )
     num_pos = 0
     num_neg = 0
-    for ix in tqdm(ixs, desc="Calculating class balance"):
+    edge_attrs = []
+    points = []
+    for ix in tqdm(ixs, desc="Computing stats"):
         pyg, _ = train_dataset[ix]
-        y = pyg.y
-        y = y.cpu().numpy()
+        y = pyg.y.cpu().numpy()
         pos = y.sum()
         neg = y.shape[0] - pos
         num_pos += pos
         num_neg += neg
+        edge_attr = pyg.edge_attr.cpu().numpy()[:, 0]
+        edge_attrs.append(edge_attr)
+        edge_attr = pyg.edge_attr.cpu().numpy()[:, 0]
+        points_batch = pyg.pos.cpu().numpy()
+        points.append(points_batch)
     alpha_pos = num_neg / (num_neg + num_pos)
     alpha_neg = num_pos / (num_neg + num_pos)
     print(f'pos:neg = {alpha_neg:.2f}:{alpha_pos:.2f}')
+    edge_attrs = np.hstack(edge_attrs)
+    edge_dist_mean = edge_attrs.mean()
+    edge_dist_std = edge_attrs.std()
+    points = np.vstack(points)
+    x = points[:, 0]
+    y = points[:, 1]
+    x_mean = x.mean()
+    x_std = x.std()
+    y_mean = y.mean()
+    y_std = y.std()
+    train_dataset.set_stats(
+        edge_dist_mean, 
+        edge_dist_std,
+        x_mean,
+        x_std,
+        y_mean,
+        y_std,
+    )
+    val_dataset.set_stats(
+        edge_dist_mean, 
+        edge_dist_std,
+        x_mean,
+        x_std,
+        y_mean,
+        y_std,
+    )
+    test_dataset.set_stats(
+        edge_dist_mean, 
+        edge_dist_std,
+        x_mean,
+        x_std,
+        y_mean,
+        y_std,
+    )
+
+    pyg, _ = train_dataset[ixs[0]]
 
     # Create a single datamodule for training, validation and testing
     data_module = MyDataModule(

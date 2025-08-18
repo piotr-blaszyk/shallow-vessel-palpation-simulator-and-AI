@@ -61,6 +61,13 @@ class MyDataset(torch.utils.data.Dataset):
         self.data_points_per_epoch = SYSTEM_PARAMS.dataset.data_points_per_epoch
         base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         self.adjacency_matrix = base_graph_data['adjacency_matrix']
+        self.warmup = True
+        self.edge_dist_mean = None
+        self.edge_dist_std = None
+        self.x_mean = None
+        self.x_std = None
+        self.y_mean = None
+        self.y_std = None
 
         self.data_points = data_points
         if mode == 'root':
@@ -69,6 +76,23 @@ class MyDataset(torch.utils.data.Dataset):
         if mode == 'root':
             print(f"Time taken to initialise dataset: {end_time - start_time:.2f} seconds")
             print(f"num data points: {len(self.data_points):,}")
+
+    def set_stats(
+            self,
+            edge_dist_mean,
+            edge_dist_std,
+            x_mean,
+            x_std,
+            y_mean,
+            y_std,
+    ):
+        self.warmup = False
+        self.edge_dist_mean = edge_dist_mean
+        self.edge_dist_std = edge_dist_std
+        self.x_mean = x_mean
+        self.x_std = x_std
+        self.y_mean = y_mean
+        self.y_std = y_std
 
     def populate_clips(self):
         if True or SYSTEM_PARAMS.meta.cnn_gnn == 0:
@@ -387,7 +411,6 @@ class MyDataset(torch.utils.data.Dataset):
             points = images
             points_mask = images_mask
 
-            points = MyDataset.normalise_gnn_points(points)
             pyg = self.generate_pyg_vectorised(points, labels, labels_mask)
             if self.visualisation_mode:
                 labels = MyDataset.generate_vein_image(
@@ -434,17 +457,17 @@ class MyDataset(torch.utils.data.Dataset):
 
     def generate_pyg_vectorised(self, clip_points, clip_labels, clip_labels_mask):
         num_frames = clip_points.shape[0]
-        central_frame = num_frames // 2
         num_nodes = clip_points.shape[1]
         num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features
         num_node_features = SYSTEM_PARAMS.gnn.num_node_features
-        x_clip_unused = np.zeros(shape=(num_frames * num_nodes, 3), dtype=float)
+        x_clip = np.zeros(shape=(num_frames * num_nodes, 2), dtype=float)
         data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_adjacency_matrix = data['adjacency_matrix']
         num_edges_single_frame = base_adjacency_matrix.shape[0]
         ground_truth_labels_clip = np.zeros(shape=(num_frames * num_nodes,), dtype=int)
         spatial = 0
         temporal = 1
+        adjacency = self.adjacency_matrix
 
         adjacency_clip_list = []
         edge_attr_clip_list = []
@@ -454,9 +477,7 @@ class MyDataset(torch.utils.data.Dataset):
             labels = clip_labels[t]
             labels_mask = clip_labels_mask[t]
             labels_filtered = labels[labels_mask]
-            adjacency = self.adjacency_matrix
-            x_clip_unused[t*num_nodes:(t+1)*num_nodes, 0:2] = points
-            x_clip_unused[t*num_nodes:(t+1)*num_nodes, 2] = t - central_frame
+            x_clip[t*num_nodes:(t+1)*num_nodes, 0:2] = points
             
             # edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
             edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
@@ -467,14 +488,13 @@ class MyDataset(torch.utils.data.Dataset):
             dist = np.linalg.norm(vec, axis=1)
             # Not using sin_theta and cos_theta in final edge_attr, so we can skip computing them
             edge_attr[:, 0] = dist
-            # edge_attr[:, 1] = spatial
+            edge_attr[:, 1] = spatial
             edge_attr_clip_list.append(edge_attr)
-            adjacency += t*num_nodes
-            adjacency_clip_list.append(adjacency)
+            adjacency_frame = adjacency + t*num_nodes
+            adjacency_clip_list.append(adjacency_frame)
             
-            points_unnormalised = MyDataset.unnormalise_gnn_points(points)
             if labels_filtered.size > 0:
-                distances = cdist(points_unnormalised, labels_filtered)
+                distances = cdist(points, labels_filtered)
                 min_distances = np.min(distances, axis=1)
                 px_threshold = SYSTEM_PARAMS.meta.vein_px_thickness
                 ground_truth_labels = min_distances < px_threshold
@@ -490,7 +510,7 @@ class MyDataset(torch.utils.data.Dataset):
             dst = (t+1)*num_nodes + np.arange(num_nodes)
             
             # Calculate vectors between corresponding nodes in consecutive frames
-            vec = x_clip_unused[dst, 0:2] - x_clip_unused[src, 0:2]
+            vec = x_clip[dst, 0:2] - x_clip[src, 0:2]
             dist = np.linalg.norm(vec, axis=1)
             
             # Create forward and backward temporal edges
@@ -500,7 +520,41 @@ class MyDataset(torch.utils.data.Dataset):
             
             # Create edge attributes for both directions
             feature_vector = np.column_stack([dist, np.full_like(dist, temporal)])
+            # feature_vector = dist.reshape(-1, 1)  # Reshape to column vector
             edge_attr_clip_temporal_list.extend(np.tile(feature_vector, (2, 1)))
+        
+        # implement the code here to compute the temporal edges between the same node across all temporal dimensions
+        # Create temporal edges between all instances of the same node across time (vectorized)
+        # Create all possible time frame combinations
+        t1_indices, t2_indices = np.triu_indices(num_frames, k=1)
+        
+        # For each node, create edges between its instances at different time frames
+        node_indices = np.arange(num_nodes)
+        
+        # Create all combinations of (t1, t2, node_idx)
+        t1_expanded = np.repeat(t1_indices, num_nodes)
+        t2_expanded = np.repeat(t2_indices, num_nodes)
+        node_expanded = np.tile(node_indices, len(t1_indices))
+        
+        # Calculate global indices for source and destination nodes
+        src_indices = t1_expanded * num_nodes + node_expanded
+        dst_indices = t2_expanded * num_nodes + node_expanded
+        
+        # Get positions for all source and destination nodes
+        src_pos = x_clip[src_indices, 0:2]
+        dst_pos = x_clip[dst_indices, 0:2]
+        
+        # Calculate distances between temporal instances
+        dist = np.linalg.norm(dst_pos - src_pos, axis=1)
+        
+        # Create bidirectional edges and their features
+        src_all = np.concatenate([src_indices, dst_indices])
+        dst_all = np.concatenate([dst_indices, src_indices])
+        adjacency_clip_temporal_list.extend(np.column_stack([src_all, dst_all]))
+        
+        # Create edge features for both directions
+        edge_features = np.column_stack([np.tile(dist, 2), np.full(len(dist) * 2, temporal)])
+        edge_attr_clip_temporal_list.extend(edge_features)
             
         if len(adjacency_clip_temporal_list) > 0:
             adjacency_clip_temporal = np.array(adjacency_clip_temporal_list)
@@ -511,17 +565,22 @@ class MyDataset(torch.utils.data.Dataset):
         adjacency_clip = np.vstack(adjacency_clip_list)
         edge_attr_clip = np.vstack(edge_attr_clip_list)
 
+        pos = x_clip[:, :2].copy()
+        if not self.warmup:
+            edge_attr_clip[:, 0] = (edge_attr_clip[:, 0] - self.edge_dist_mean) / self.edge_dist_std
+            x_clip[:, 0] = (x_clip[:, 0] - self.x_mean) / self.x_std
+            x_clip[:, 1] = (x_clip[:, 1] - self.y_mean) / self.y_std
+
+        edge_attr = torch.tensor(edge_attr_clip, dtype=torch.float)
         x_clip_const = np.zeros(shape=(num_frames * num_nodes, 1), dtype=float)
         x = torch.tensor(x_clip_const, dtype=torch.float)
         mask = np.ones(shape=(num_frames * num_nodes,), dtype=bool)
         mask = torch.tensor(mask, dtype=torch.bool)
-        pos = torch.tensor(x_clip_unused, dtype=torch.float)
+        pos = torch.tensor(pos, dtype=torch.float)
         edge_index = torch.tensor(adjacency_clip.T, dtype=torch.long)
-        edge_attr_clip_normalised = (edge_attr_clip - np.mean(edge_attr_clip)) / np.std(edge_attr_clip)
-        edge_attr = torch.tensor(edge_attr_clip_normalised, dtype=torch.float)
         y = torch.tensor(ground_truth_labels_clip[mask], dtype=torch.long)
         return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, mask=mask, pos=pos)
-    
+
     @staticmethod
     def generate_pyg_unvectorised(clip_points, clip_labels, clip_labels_mask):
         num_frames = clip_points.shape[0]
@@ -586,11 +645,34 @@ class MyDataset(torch.utils.data.Dataset):
                 feature_vector = [dist, temporal]
                 edge_attr_clip_temporal_list.append(feature_vector)
                 edge_attr_clip_temporal_list.append(feature_vector)
+
+        # implement the code here to compute the temporal edges between the same node across all temporal dimensions
+        # Add temporal edges between all instances of the same node across time
+        for node_idx in range(num_nodes):  # For each spatial node
+            for t1 in range(num_frames):  # From each time frame
+                for t2 in range(t1 + 1, num_frames):  # To all future time frames
+                    # Get the global indices for this node at both timeframes
+                    src_idx = t1 * num_nodes + node_idx
+                    dst_idx = t2 * num_nodes + node_idx
+                    
+                    # Calculate distance between the node positions
+                    src_pos = x_clip[src_idx, 0:2]
+                    dst_pos = x_clip[dst_idx, 0:2]
+                    dist = np.linalg.norm(dst_pos - src_pos)
+                    
+                    # Create bidirectional edges
+                    adjacency_clip_temporal_list.extend([[src_idx, dst_idx], [dst_idx, src_idx]])
+                    
+                    # Add edge features for both directions
+                    edge_features = np.array([[dist, temporal], [dist, temporal]])
+                    edge_attr_clip_temporal_list.extend(edge_features)
+                    
         if len(adjacency_clip_temporal_list) > 0:
             adjacency_clip_temporal = np.array(adjacency_clip_temporal_list)
             edge_attr_clip_temporal = np.array(edge_attr_clip_temporal_list)
             adjacency_clip_list.append(adjacency_clip_temporal)
             edge_attr_clip_list.append(edge_attr_clip_temporal)
+        
 
         adjacency_clip = np.vstack(adjacency_clip_list)
         edge_attr_clip = np.vstack(edge_attr_clip_list)
@@ -1091,6 +1173,21 @@ class MyDataset(torch.utils.data.Dataset):
             clip_points[j] = points
 
         return clip_points, vein_visible_mask
+    
+    @staticmethod
+    def extract_trajectory_number(file_path):
+        """Extract the trajectory number from the file path.
+        
+        Args:
+            file_path (str): Path like 'path/to/trajectory_0001.npz'
+            
+        Returns:
+            int: The trajectory number (e.g., 1 for 'trajectory_0001.npz')
+        """
+        match = re.search(r'trajectory_(\d+)\.npz$', file_path)
+        if match:
+            return int(match.group(1))
+        raise ValueError(f"Could not extract trajectory number from {file_path}")
     
     @staticmethod
     def extract_trajectory_number(file_path):

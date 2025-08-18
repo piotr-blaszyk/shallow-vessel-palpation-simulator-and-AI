@@ -149,8 +149,16 @@
         "vein_px_thickness": 30
     },
     "gnn": {
-        "num_edge_features": 1,
-        "num_node_features": 1
+        "num_edge_features": 2,
+        "num_node_features": 1,
+        "num_hidden_channels": 128
+    },
+    "cnn": {
+        "input_width_height": 192,
+        "clip_len": 5
+    },
+    "dataset": {
+        "data_points_per_epoch": 128
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,
@@ -193,13 +201,6 @@
     },
     "marker_tracker": {
         "seconds_per_frame": 1.000e-01
-    },
-    "cnn": {
-        "input_width_height": 192,
-        "clip_len": 1
-    },
-    "dataset": {
-        "data_points_per_epoch": 128
     },
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",
