@@ -24,9 +24,9 @@ class MyDataset(torch.utils.data.Dataset):
         if SYSTEM_PARAMS.meta.cnn_gnn == 0:
             self.data_points_per_trajectory = 16
         else:
-            self.data_points_per_trajectory = 64
+            self.data_points_per_trajectory = 1
         self.mode = mode
-        self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
+        self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])[:1]
 
         self.w_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
         self.h_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_height)

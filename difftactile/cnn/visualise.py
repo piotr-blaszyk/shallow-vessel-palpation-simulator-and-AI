@@ -414,7 +414,7 @@ class Visualisation:
             model = model.to(device)
         else:  # dataset mode
             full_dataset = MyDataset(
-                data_dir=SYSTEM_PARAMS.files.dataset_root
+                data_dir=SYSTEM_PARAMS.files.dataset_root_test
             )
             full_dataset.eval()
             data_loader = DataLoader(
@@ -440,7 +440,7 @@ class Visualisation:
             central_frame = num_frames // 2
 
             # Pre-compute image dimensions
-            h, w = 500, 500
+            h, w = 400, 400
             labels_h = labels_images.shape[1] // LABELS_DOWNSIZE
             labels_w = labels_images.shape[2] // LABELS_DOWNSIZE
 
@@ -602,16 +602,17 @@ class Visualisation:
                 cv2.imshow(f'Graph Connectivity {sequence_idx}', graph_stack[current_frame])
 
                 # Position windows side by side
-                sep = 100
+                sep_w = 20
+                sep_h = 130
                 cv2.moveWindow(f'Ground Truth {sequence_idx}', 0, 0)
                 if mode == 'predictions':
-                    cv2.moveWindow(f'Hard Prediction {sequence_idx}', w + sep, 0)
-                    cv2.moveWindow(f'Soft Prediction {sequence_idx}', 2 * (w + sep), 0)
-                    cv2.moveWindow(f'Labels Image {sequence_idx}', 3 * (w + sep), 0)
-                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', 3 * (w + sep), labels_h + 2 * sep)
+                    cv2.moveWindow(f'Hard Prediction {sequence_idx}', w + sep_w, 0)
+                    cv2.moveWindow(f'Soft Prediction {sequence_idx}', w + sep_w, h + sep_h)
+                    cv2.moveWindow(f'Labels Image {sequence_idx}', 2 * (w + sep_w), 0)
+                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', 2 * (w + sep_w), labels_h + sep_h)
                 else:
-                    cv2.moveWindow(f'Labels Image {sequence_idx}', w + sep, 0)
-                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', w + sep, labels_h + 2 * sep)
+                    cv2.moveWindow(f'Labels Image {sequence_idx}', w + sep_w, 0)
+                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', w + sep_w, labels_h + sep_h)
 
                 # Handle keyboard input
                 key = cv2.waitKey(0) & 0xFF
@@ -731,7 +732,7 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn(mode='predictions')
+    v.visualise_gnn(mode='dataset')
 
 
 if __name__ == "__main__":
