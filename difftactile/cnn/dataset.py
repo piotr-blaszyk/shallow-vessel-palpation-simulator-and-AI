@@ -383,19 +383,19 @@ class MyDataset(torch.utils.data.Dataset):
             images = self.rotate_xy(images, angle_x, angle_y)
             labels = self.rotate_xy(labels, angle_x, angle_y)
 
-            labels = MyDataset.generate_vein_image(
-                self.h_camera_big, 
-                self.w_camera_big, 
-                labels,
-                labels_mask
-            )
-
             points = images
             points_mask = images_mask
 
             points = MyDataset.normalise_gnn_points(points)
-            pyg = MyDataset.generate_pyg(points, labels)
+            pyg = MyDataset.generate_pyg(points, labels, labels_mask)
+            pyg = None
             if self.visualisation_mode:
+                labels = MyDataset.generate_vein_image(
+                    self.h_camera_big, 
+                    self.w_camera_big, 
+                    labels,
+                    labels_mask
+                )
                 labels = torch.tensor(labels, dtype=torch.float32) / 255.0
             else:
                 labels = torch.empty(0)
@@ -433,7 +433,7 @@ class MyDataset(torch.utils.data.Dataset):
         return points
 
     @staticmethod
-    def generate_pyg(clip_points, clip_labels_image):
+    def generate_pyg(clip_points, clip_labels, clip_labels_mask):
         num_frames = clip_points.shape[0]
         central_frame = num_frames // 2
         num_nodes = clip_points.shape[1]
@@ -452,7 +452,9 @@ class MyDataset(torch.utils.data.Dataset):
 
         for t in range(num_frames):
             points = clip_points[t]
-            labels_image = clip_labels_image[t]
+            labels = clip_labels[t]
+            labels_mask = clip_labels_mask[t]
+            labels = labels[labels_mask]
             base_points, points, adjacency = Adjacency.get_graph_connectivity(points)
             x_clip[t*num_nodes:(t+1)*num_nodes, 0:2] = points
             x_clip[t*num_nodes:(t+1)*num_nodes, 2] = t - central_frame
@@ -472,16 +474,10 @@ class MyDataset(torch.utils.data.Dataset):
             adjacency_clip_list.append(adjacency)
             
             points_unnormalised = MyDataset.unnormalise_gnn_points(points)
-            ground_truth_labels = np.zeros(shape=(num_nodes,), dtype=int)
-            for i in range(num_nodes):
-                x, y = points_unnormalised[i]
-                x = int(x)
-                y = int(y)
-                if (
-                    x >= 0 and x < labels_image.shape[1] and
-                    y >= 0 and y < labels_image.shape[0]
-                ):
-                    ground_truth_labels[i] = labels_image[y, x] == 255
+            distances = cdist(points_unnormalised, labels)
+            min_distances = np.min(distances, axis=1)
+            px_threshold = 40
+            ground_truth_labels = min_distances < px_threshold
             ground_truth_labels_clip[t*num_nodes:(t+1)*num_nodes] = ground_truth_labels
         
         adjacency_clip_temporal_list = []

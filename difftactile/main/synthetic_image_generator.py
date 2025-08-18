@@ -125,27 +125,37 @@ class SyntheticImageGenerator:
     @staticmethod
     def vector_point_to_polynomial(polynomial, target):
         """
-        Compute the shortest vector from a target point to the closest point on a polynomial curve.
+        Compute the shortest vector from target point(s) to the closest point on a polynomial curve.
         
         Args:
             polynomial: numpy array of shape (num_points, 2) containing points along the polynomial curve
-            target: numpy array of shape (2,) containing the target point coordinates
+            target: numpy array of shape (2,) or (N, 2) containing the target point coordinates
             
         Returns:
-            numpy array of shape (2,) representing the vector from target to closest point
+            numpy array of shape (2,) or (N, 2) representing the vector(s) from target to closest point
         """
-        # Compute squared distances from target to all points on polynomial
+        # Handle both single point and batch inputs
+        single_input = target.ndim == 1
+        if single_input:
+            target = target[np.newaxis, :]
+        
+        # Compute squared distances from each target to all points on polynomial
         # Using broadcasting: (x1-x2)^2 + (y1-y2)^2 for all points at once
-        distances = np.sum((polynomial - target)**2, axis=1)
+        # Shape: (N, num_points)
+        distances = np.sum((polynomial[np.newaxis, :, :] - target[:, np.newaxis, :]) ** 2, axis=2)
         
-        # Find index of closest point
-        closest_idx = np.argmin(distances)
+        # Find indices of closest points for each target
+        # Shape: (N,)
+        closest_idx = np.argmin(distances, axis=1)
         
-        # Get closest point
-        closest_point = polynomial[closest_idx]
+        # Get closest points for each target
+        # Shape: (N, 2)
+        closest_points = polynomial[closest_idx]
         
-        # Return vector from target to closest point
-        return closest_point - target
+        # Compute vectors from targets to closest points
+        vectors = closest_points - target
+        
+        return vectors[0] if single_input else vectors
 
     @staticmethod
     def compute_mask(h, w, points):
