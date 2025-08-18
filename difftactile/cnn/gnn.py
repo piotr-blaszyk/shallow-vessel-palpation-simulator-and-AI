@@ -83,7 +83,7 @@ class GNNTverskyLoss(nn.Module):
 
 
 class GNNFocalLoss(nn.Module):
-    def __init__(self, alpha, gamma=0.0):
+    def __init__(self, alpha, gamma=3.0):
         """Focal Loss for GNN node classification.
         
         Specifically designed for node-level binary classification where the focus
@@ -517,7 +517,7 @@ def main():
     early_stopping = EarlyStopping(
         monitor="val_fg_iou",
         mode="max",
-        patience=5,
+        patience=NUM_EPOCHS*2,
         min_delta=1e-4,
         verbose=True
     )
