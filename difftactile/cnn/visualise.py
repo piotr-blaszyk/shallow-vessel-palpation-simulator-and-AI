@@ -436,8 +436,8 @@ class Visualisation:
             labels_images = labels_images.numpy()[0, ...]
 
             # Get number of frames from the mask
-            num_nodes_per_frame = torch.sum(data.mask).item()
-            num_frames = len(data.pos) // num_nodes_per_frame
+            num_nodes_per_frame = SYSTEM_PARAMS.vitactip.num_markers
+            num_frames = SYSTEM_PARAMS.cnn.clip_len
             central_frame = num_frames // 2
 
             # Pre-compute image dimensions
@@ -502,51 +502,45 @@ class Visualisation:
                 
                 graph_stack[frame_idx] = graph_img
 
-                # Only show ground truth and predictions for central frame
-                if frame_idx == central_frame:
-                    ground_truth = data.y.cpu().numpy()
+                # Get predictions for current frame
+                start_idx = frame_idx * num_nodes_per_frame
+                end_idx = (frame_idx + 1) * num_nodes_per_frame
+                ground_truth = data.y[start_idx:end_idx].cpu().numpy()
+                
+                # Draw markers on ground truth image
+                for point_idx, point in enumerate(points):
+                    if 0 <= point[0] < w and 0 <= point[1] < h:
+                        center = (int(point[0]), int(point[1]))
+                        if ground_truth[point_idx] == 1:
+                            # Magenta (BGR = (255, 0, 255)) for positive class
+                            cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
+                        else:
+                            # Cyan (BGR = (255, 255, 0)) for negative class
+                            cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 0), -1, cv2.LINE_AA)
+                
+                if mode == 'predictions':
+                    frame_pred = pred[start_idx:end_idx]
+                    frame_probs = probs[start_idx:end_idx]
                     
-                    # Draw markers on ground truth image
+                    # Draw markers on prediction image (hard predictions)
                     for point_idx, point in enumerate(points):
                         if 0 <= point[0] < w and 0 <= point[1] < h:
                             center = (int(point[0]), int(point[1]))
-                            if ground_truth[point_idx] == 1:
+                            if frame_pred[point_idx] == 1:
                                 # Magenta (BGR = (255, 0, 255)) for positive class
-                                cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
+                                cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
                             else:
                                 # Cyan (BGR = (255, 255, 0)) for negative class
-                                cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 0), -1, cv2.LINE_AA)
+                                cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 0), -1, cv2.LINE_AA)
                     
-                    if mode == 'predictions':
-                        # Draw markers on prediction image (hard predictions)
-                        for point_idx, point in enumerate(points):
-                            if 0 <= point[0] < w and 0 <= point[1] < h:
-                                center = (int(point[0]), int(point[1]))
-                                if pred[point_idx] == 1:
-                                    # Magenta (BGR = (255, 0, 255)) for positive class
-                                    cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
-                                else:
-                                    # Cyan (BGR = (255, 255, 0)) for negative class
-                                    cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 0), -1, cv2.LINE_AA)
-                        
-                        # Draw markers on soft prediction image
-                        for point_idx, point in enumerate(points):
-                            if 0 <= point[0] < w and 0 <= point[1] < h:
-                                center = (int(point[0]), int(point[1]))
-                                prob = probs[point_idx]
-                                intensity = int(255 * prob)  # Scale to [0,255]
-                                # Use white color with varying intensity for all points
-                                cv2.circle(soft_prediction_stack[frame_idx], center, MARKER_RADIUS, (intensity, intensity, intensity), -1, cv2.LINE_AA)
-                else:
-                    # For non-central frames, draw white markers
-                    for point in points:
+                    # Draw markers on soft prediction image
+                    for point_idx, point in enumerate(points):
                         if 0 <= point[0] < w and 0 <= point[1] < h:
                             center = (int(point[0]), int(point[1]))
-                            # Draw white points (BGR = (255, 255, 255))
-                            cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 255), -1, cv2.LINE_AA)
-                            if mode == 'predictions':
-                                cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 255), -1, cv2.LINE_AA)
-                                cv2.circle(soft_prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 255), -1, cv2.LINE_AA)
+                            prob = frame_probs[point_idx]
+                            intensity = int(255 * prob)  # Scale to [0,255]
+                            # Use white color with varying intensity for all points
+                            cv2.circle(soft_prediction_stack[frame_idx], center, MARKER_RADIUS, (intensity, intensity, intensity), -1, cv2.LINE_AA)
 
                 # Get and process labels image for current frame
                 labels_image = labels_images[frame_idx]
