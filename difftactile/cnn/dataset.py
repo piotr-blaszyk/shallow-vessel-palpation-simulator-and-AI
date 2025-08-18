@@ -522,39 +522,6 @@ class MyDataset(torch.utils.data.Dataset):
             feature_vector = np.column_stack([dist, np.full_like(dist, temporal)])
             # feature_vector = dist.reshape(-1, 1)  # Reshape to column vector
             edge_attr_clip_temporal_list.extend(np.tile(feature_vector, (2, 1)))
-        
-        # implement the code here to compute the temporal edges between the same node across all temporal dimensions
-        # Create temporal edges between all instances of the same node across time (vectorized)
-        # Create all possible time frame combinations
-        t1_indices, t2_indices = np.triu_indices(num_frames, k=1)
-        
-        # For each node, create edges between its instances at different time frames
-        node_indices = np.arange(num_nodes)
-        
-        # Create all combinations of (t1, t2, node_idx)
-        t1_expanded = np.repeat(t1_indices, num_nodes)
-        t2_expanded = np.repeat(t2_indices, num_nodes)
-        node_expanded = np.tile(node_indices, len(t1_indices))
-        
-        # Calculate global indices for source and destination nodes
-        src_indices = t1_expanded * num_nodes + node_expanded
-        dst_indices = t2_expanded * num_nodes + node_expanded
-        
-        # Get positions for all source and destination nodes
-        src_pos = x_clip[src_indices, 0:2]
-        dst_pos = x_clip[dst_indices, 0:2]
-        
-        # Calculate distances between temporal instances
-        dist = np.linalg.norm(dst_pos - src_pos, axis=1)
-        
-        # Create bidirectional edges and their features
-        src_all = np.concatenate([src_indices, dst_indices])
-        dst_all = np.concatenate([dst_indices, src_indices])
-        adjacency_clip_temporal_list.extend(np.column_stack([src_all, dst_all]))
-        
-        # Create edge features for both directions
-        edge_features = np.column_stack([np.tile(dist, 2), np.full(len(dist) * 2, temporal)])
-        edge_attr_clip_temporal_list.extend(edge_features)
             
         if len(adjacency_clip_temporal_list) > 0:
             adjacency_clip_temporal = np.array(adjacency_clip_temporal_list)
@@ -645,27 +612,6 @@ class MyDataset(torch.utils.data.Dataset):
                 feature_vector = [dist, temporal]
                 edge_attr_clip_temporal_list.append(feature_vector)
                 edge_attr_clip_temporal_list.append(feature_vector)
-
-        # implement the code here to compute the temporal edges between the same node across all temporal dimensions
-        # Add temporal edges between all instances of the same node across time
-        for node_idx in range(num_nodes):  # For each spatial node
-            for t1 in range(num_frames):  # From each time frame
-                for t2 in range(t1 + 1, num_frames):  # To all future time frames
-                    # Get the global indices for this node at both timeframes
-                    src_idx = t1 * num_nodes + node_idx
-                    dst_idx = t2 * num_nodes + node_idx
-                    
-                    # Calculate distance between the node positions
-                    src_pos = x_clip[src_idx, 0:2]
-                    dst_pos = x_clip[dst_idx, 0:2]
-                    dist = np.linalg.norm(dst_pos - src_pos)
-                    
-                    # Create bidirectional edges
-                    adjacency_clip_temporal_list.extend([[src_idx, dst_idx], [dst_idx, src_idx]])
-                    
-                    # Add edge features for both directions
-                    edge_features = np.array([[dist, temporal], [dist, temporal]])
-                    edge_attr_clip_temporal_list.extend(edge_features)
                     
         if len(adjacency_clip_temporal_list) > 0:
             adjacency_clip_temporal = np.array(adjacency_clip_temporal_list)
