@@ -569,18 +569,25 @@ class MyDataset(torch.utils.data.Dataset):
         return images, marker_masks
 
     @staticmethod
-    def draw_point(images, t, point, n=8, intensity=255):
+    def draw_point(images, t, point, n=8, intensity=(255, 255, 255)):
         """
         Draw a point as an nxn square with smooth interpolation at the edges.
         
         Args:
-            images: Image array of shape (T, H, W)
+            images: Image array of shape (T, H, W) for grayscale or (T, H, W, 3) for BGR
             t: Time index
             point: (x, y) coordinates
             n: Size of the square (default=8)
-            intensity: Maximum intensity value for the point (default=255)
+            intensity: BGR intensity tuple (default=(255,255,255) for white)
+                      Note: OpenCV uses BGR order, so (B,G,R) not (R,G,B)
         """
-        _, h, w = images.shape
+        if len(images.shape) == 3:  # Grayscale
+            _, h, w = images.shape
+            is_grayscale = True
+        else:  # BGR
+            _, h, w, _ = images.shape
+            is_grayscale = False
+        
         x, y = point[0], point[1]
         
         # Calculate the center of the nxn square
@@ -607,10 +614,18 @@ class MyDataset(torch.utils.data.Dataset):
                     wy = max(0, 1 - dy/(half_size))
                     weight = wx * wy
                     
-                    # Update pixel value with anti-aliasing and intensity control
-                    current_val = int(images[t, yi, xi])
-                    weight_val = int(intensity * weight)
-                    images[t, yi, xi] = min(255, current_val + weight_val)
+                    if is_grayscale:
+                        # For grayscale, use the average of BGR intensities
+                        avg_intensity = sum(intensity) // 3
+                        current_val = int(images[t, yi, xi])
+                        weight_val = int(avg_intensity * weight)
+                        images[t, yi, xi] = max(0, min(255, current_val + weight_val))
+                    else:
+                        # For BGR, apply weight to each channel in BGR order
+                        for c in range(3):  # c=0 is Blue, c=1 is Green, c=2 is Red
+                            current_val = int(images[t, yi, xi, c])
+                            weight_val = int(intensity[c] * weight)  # intensity is already in BGR order
+                            images[t, yi, xi, c] = max(0, min(255, current_val + weight_val))
 
     @staticmethod
     def generate_vein_image(h, w, points, points_mask):

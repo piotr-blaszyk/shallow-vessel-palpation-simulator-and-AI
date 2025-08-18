@@ -393,6 +393,7 @@ class Visualisation:
         BATCH_SIZE = 1
         NUM_WORKERS = 1
         LABELS_DOWNSIZE = 4
+        MARKER_SIZE = 10
 
         if mode == 'predictions':
             # Load test data
@@ -443,8 +444,10 @@ class Visualisation:
             h, w = 400, 400
             labels_h = labels_images.shape[1] // LABELS_DOWNSIZE
             labels_w = labels_images.shape[2] // LABELS_DOWNSIZE
+            MARKER_SIZE = 6
+            MARKER_RADIUS = MARKER_SIZE // 2
 
-            # Initialize image stacks for each color channel
+            # Initialize image stacks for each color channel with white background
             ground_truth_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)
             prediction_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)
             soft_prediction_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)  # New stack for soft predictions
@@ -479,13 +482,9 @@ class Visualisation:
                 points = (frame_points + 1) / 2 * w  # Now in range (0,200)
                 points = points[:, 0:2]
                 points = points.astype(np.float32)  # Keep as float for draw_point
-
-                # Create temporary single-channel images for each color
-                temp_r = np.zeros((1, h, w), dtype=np.uint8)
-                temp_g = np.zeros((1, h, w), dtype=np.uint8)
-                temp_b = np.zeros((1, h, w), dtype=np.uint8)
+                
                 # Create graph connectivity visualization
-                _, points, adjacency_matrix = Adjacency.knn(points)
+                _, points, adjacency_matrix = Adjacency.get_graph_connectivity(points)
                 graph_img = np.zeros((h, w, 3), dtype=np.uint8)
                 
                 # Draw edges from adjacency matrix in green
@@ -510,69 +509,44 @@ class Visualisation:
                     # Draw markers on ground truth image
                     for point_idx, point in enumerate(points):
                         if 0 <= point[0] < w and 0 <= point[1] < h:
+                            center = (int(point[0]), int(point[1]))
                             if ground_truth[point_idx] == 1:
-                                # Green for positive class
-                                MyDataset.draw_point(temp_g, 0, point, n=6)
+                                # Magenta (BGR = (255, 0, 255)) for positive class
+                                cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
                             else:
-                                # Red for negative class
-                                MyDataset.draw_point(temp_r, 0, point, n=6)
-                    
-                    # Combine channels
-                    ground_truth_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
+                                # Cyan (BGR = (255, 255, 0)) for negative class
+                                cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 0), -1, cv2.LINE_AA)
                     
                     if mode == 'predictions':
-                        # Reset temporary images
-                        temp_r.fill(0)
-                        temp_g.fill(0)
-                        temp_b.fill(0)
-                        
                         # Draw markers on prediction image (hard predictions)
                         for point_idx, point in enumerate(points):
                             if 0 <= point[0] < w and 0 <= point[1] < h:
+                                center = (int(point[0]), int(point[1]))
                                 if pred[point_idx] == 1:
-                                    # Green for positive class
-                                    MyDataset.draw_point(temp_g, 0, point, n=6)
+                                    # Magenta (BGR = (255, 0, 255)) for positive class
+                                    cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
                                 else:
-                                    # Red for negative class
-                                    MyDataset.draw_point(temp_r, 0, point, n=6)
-                        
-                        # Combine channels for hard predictions
-                        prediction_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
-
-                        # Reset temporary images for soft predictions
-                        temp_r.fill(0)
-                        temp_g.fill(0)
-                        temp_b.fill(0)
+                                    # Cyan (BGR = (255, 255, 0)) for negative class
+                                    cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 0), -1, cv2.LINE_AA)
                         
                         # Draw markers on soft prediction image
                         for point_idx, point in enumerate(points):
                             if 0 <= point[0] < w and 0 <= point[1] < h:
+                                center = (int(point[0]), int(point[1]))
                                 prob = probs[point_idx]
-                                if prob > 0.5:
-                                    # Green with intensity based on confidence
-                                    intensity = int(255 * (2 * prob - 1))  # Map 0.5-1.0 to 0-255
-                                    MyDataset.draw_point(temp_g, 0, point, n=6, intensity=intensity)
-                                else:
-                                    # Red with intensity based on confidence
-                                    intensity = int(255 * (1 - 2 * prob))  # Map 0.0-0.5 to 255-0
-                                    MyDataset.draw_point(temp_r, 0, point, n=6, intensity=intensity)
-                        
-                        # Combine channels for soft predictions
-                        soft_prediction_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
+                                intensity = int(255 * prob)  # Scale to [0,255]
+                                # Use white color with varying intensity for all points
+                                cv2.circle(soft_prediction_stack[frame_idx], center, MARKER_RADIUS, (intensity, intensity, intensity), -1, cv2.LINE_AA)
                 else:
                     # For non-central frames, draw white markers
                     for point in points:
                         if 0 <= point[0] < w and 0 <= point[1] < h:
-                            # Draw white points (all channels)
-                            MyDataset.draw_point(temp_r, 0, point, n=6)
-                            MyDataset.draw_point(temp_g, 0, point, n=6)
-                            MyDataset.draw_point(temp_b, 0, point, n=6)
-                    
-                    # Combine channels
-                    ground_truth_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
-                    if mode == 'predictions':
-                        prediction_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1)
-                        soft_prediction_stack[frame_idx] = np.stack([temp_r[0], temp_g[0], temp_b[0]], axis=-1) # Ensure soft prediction is also filled for non-central frames
+                            center = (int(point[0]), int(point[1]))
+                            # Draw white points (BGR = (255, 255, 255))
+                            cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 255), -1, cv2.LINE_AA)
+                            if mode == 'predictions':
+                                cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 255), -1, cv2.LINE_AA)
+                                cv2.circle(soft_prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 255), -1, cv2.LINE_AA)
 
                 # Get and process labels image for current frame
                 labels_image = labels_images[frame_idx]
@@ -619,6 +593,7 @@ class Visualisation:
                 
                 if key == ord('q'):  # Quit visualization
                     cv2.destroyAllWindows()
+                    cv2.waitKey(1)
                     return
                 elif key == ord('c'):  # Close current sequence and load next
                     sequence_idx += 1
@@ -732,7 +707,7 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn(mode='dataset')
+    v.visualise_gnn(mode='predictions')
 
 
 if __name__ == "__main__":
