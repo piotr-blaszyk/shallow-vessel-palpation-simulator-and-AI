@@ -9,34 +9,26 @@ from difftactile.main.constants import *
 class HungarianExp:
     @staticmethod
     def reorder_exp_points():
-        path = SYSTEM_PARAMS.files.exp_video_npz
-        data = np.load(path)
+        input_path = SYSTEM_PARAMS.files.exp_video_npz
+        output_path = SYSTEM_PARAMS.files.exp_video_npz_reordered
+        data = np.load(input_path)
         points = data['markers']
         points_mask = data['markers_mask']
         base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_points = base_graph_data['points']
-        adjacency = base_graph_data['adjacency_matrix']
-        points_reordered_list = []
-        points_mask_reordered_list = []
-        edge_attrs_list = []
+        adjacency_matrix = base_graph_data['adjacency_matrix']
 
-        cost_matrix = cdist(points[0], base_points, metric='sqeuclidean')
-        row_ind, col_ind = linear_sum_assignment(cost_matrix)
-        inverse_mapping = np.zeros_like(row_ind)
-        inverse_mapping[col_ind] = row_ind
-        points_reordered = points[0, inverse_mapping, :]
-        points_mask_reordered = points_mask[0, inverse_mapping]
-        points_reordered_list.append(points_reordered)
-        points_mask_reordered_list.append(points_mask_reordered)
-
-        me_points = points_reordered[adjacency[:, 0]]
-        neighbor_points = points_reordered[adjacency[:, 1]]
-        disp = neighbor_points - me_points
-        edge_attrs_list.append(disp)
-
-        for i in range(1, points.shape[0]):
-            prev_points = points_reordered_list[-1]
-            prev_point_mask = points_mask_reordered_list[-1]
+        tracked_points, tracked_points_mask = HungarianExp.track_markers_with_interpolation(
+            points,
+            points_mask,
+            base_points,
+            adjacency_matrix
+        )
+        np.savez(
+            output_path,
+            markers=tracked_points,
+            markers_mask=tracked_points_mask
+        )
     
     @staticmethod
     def reorder_exp_points_simple():
@@ -114,8 +106,8 @@ class HungarianExp:
         
         # Scale normalized points to display size and center in canvas
         scaled_points = np.zeros_like(normalized_points)
-        scaled_points[..., 0] = (normalized_points[..., 0] * (display_size/4)) + (canvas_size/2)
-        scaled_points[..., 1] = (normalized_points[..., 1] * (display_size/4)) + (canvas_size/2)
+        scaled_points[..., 0] = (normalized_points[..., 0] * (display_size/6)) + (canvas_size/2)
+        scaled_points[..., 1] = (normalized_points[..., 1] * (display_size/6)) + (canvas_size/2)
 
         current_frame = 0
         num_frames = all_points.shape[0]
@@ -260,5 +252,5 @@ class HungarianExp:
 
 
 def main():
-    # HungarianExp.reorder_exp_points_simple()
+    # HungarianExp.reorder_exp_points()
     HungarianExp.visualise_reordered_point_connectivity()
