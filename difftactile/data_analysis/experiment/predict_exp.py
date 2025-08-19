@@ -3,26 +3,21 @@ import cv2
 import torch
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import pickle
 
 from difftactile.data_analysis.experiment.marker_tracker import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.main.constants import *
 from difftactile.main.synthetic_image_generator import SyntheticImageGenerator
-if False:
-    from difftactile.cnn.lit_module_unet_cnn import SegmentationModel
+from difftactile.cnn.gnn import *
+from difftactile.cnn.dataset import *
 from difftactile.cnn.visualise import *
-# from difftactile.main.main import *
 
 class PredictExp:
     def __init__(self):
         self.fisheye_model = FisheyeModelNoTaichi()
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if False:
-            self.model = SegmentationModel()
-            self.model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model))
-            self.model = self.model.to(self.device)
-            self.model.eval()
         self.poses = np.array([
             [-382.1576,   85.3686,   28.0000,   180.0,   0.0,   0.0],  # target 0
             [-382.1576,   85.3686,   24.0000,   180.0,   0.0,   0.0],  # target 1
@@ -45,7 +40,7 @@ class PredictExp:
             [-317.1576,  -74.6314,   24.0000,   180.0,   0.0,   0.0],  # target 18
             [-317.1576,  -94.6314,   24.0000,   180.0,   0.0,   0.0],  # target 19
         ], dtype=float)
-        # og video has 1304 frames - so if I now use a video /w fewer frames, I just map a different range to the range (0, 1304)
+        # og video has 1305 frames - so if I now use a video /w fewer frames, I just map a different range to the range (0, 1304)
         self.video_frames = np.array([
             60,    # target 0
             77,    # target 1
@@ -68,6 +63,7 @@ class PredictExp:
             1207,  # target 18
             1243,  # target 19
         ], dtype=int)
+        self.video_frames //= 3
         self.start_ix = 77
         self.end_ix = 1077
         self.sensor_radius = 20
@@ -83,10 +79,25 @@ class PredictExp:
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         self.dilation = 2
         self.dilated_clip_len = self.clip_len * self.dilation
-        if False:
-            self.init_model()
+        self.init_model()
         self.init_camera_params()
         self.compute_mapping_2d_3d()
+        self.dataset = MyDataset(
+            data_dir=SYSTEM_PARAMS.files.dummy_data_dir
+        )
+        with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
+            test_data = pickle.load(f)
+        self.stats = test_data['dataset_stats'][1.0]
+        self.dataset.set_stats(self.stats)
+    
+    def z_unnormalise(self, points):
+        x_mean = self.stats['x_mean']
+        x_std = self.stats['x_std']
+        y_mean = self.stats['y_mean']
+        y_std = self.stats['y_std']
+        points[:, 0] = (points[:, 0] * x_std) + x_mean
+        points[:, 1] = (points[:, 1] * y_std) + y_mean
+        return points
     
     def get_T_EA(self, k, x, y, z):
         cos_k = np.cos(k)
@@ -103,21 +114,20 @@ class PredictExp:
         return T
     
     def compute_mapping_2d_3d(self):
-        pixel_coords = np.zeros((self.camera_h_small, self.camera_w_small, 2), dtype=np.float32)
-        for i in range(self.camera_h_small):
-            for j in range(self.camera_w_small):
-                pixel_coords[i, j, :] = np.array([j, i])
+        pixel_coords = np.zeros((self.camera_w_big, self.camera_h_big, 2), dtype=np.float32)
+        for i in range(self.camera_w_big):
+            for j in range(self.camera_h_big):
+                pixel_coords[i, j, :] = np.array([i, j])
         points_E = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(
             ps=pixel_coords,
-            dist_lens_to_plane=SYSTEM_PARAMS.scaling_factor_1.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.scaling_factor_1.press_depth_1,
-            resolution_down_scaling_factor=SYSTEM_PARAMS.heatmap.down_scaling_factor
+            dist_lens_to_plane=SYSTEM_PARAMS.scaling_factor_1.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.scaling_factor_1.press_depth_1
         )
         points_E *= 1_000
         self.map_2d_3d = points_E
 
     def init_model(self):
-        model_path = SYSTEM_PARAMS.files.final_segmentation_model
-        model = SegmentationModel()
+        model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn
+        model = GNN(lr=-1)
         model.load_state_dict(torch.load(model_path))
         model.eval()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -126,15 +136,8 @@ class PredictExp:
         self.device = device
     
     def init_camera_params(self):
-        # Get resolution parameters
-        self.crop_x = SYSTEM_PARAMS.fisheye_model.crop_x
-        self.crop_y = SYSTEM_PARAMS.fisheye_model.crop_y
-        self.crop_w_big = SYSTEM_PARAMS.fisheye_model.crop_width
-        self.crop_h_big = SYSTEM_PARAMS.fisheye_model.crop_height
         self.camera_w_big = 1920
         self.camera_h_big = 1080
-        self.camera_w_small = self.camera_w_big // SYSTEM_PARAMS.heatmap.down_scaling_factor
-        self.camera_h_small = self.camera_h_big // SYSTEM_PARAMS.heatmap.down_scaling_factor
 
     def compute_all_3d_positions(self):
         n = self.data['markers'].shape[0]
@@ -178,72 +181,60 @@ class PredictExp:
         self.data = np.load(path)
     
     def predict_clip(self, i):
-        w = SYSTEM_PARAMS.fisheye_model.crop_width
-        h = SYSTEM_PARAMS.fisheye_model.crop_height
-        k = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
-        clip = MyDataset.get_clip(h, w, k, self.data, self.clip_len, self.dilation, start_ix=i)
+        pyg = self.dataset.get_clip(
+            self.data,
+            self.clip_len,
+            self.dilation,
+            i
+        )
         with torch.no_grad():
-            clip_input = clip.to(self.device)
-            logits = self.model(clip_input)
-            probs = torch.sigmoid(logits)
-            pred = probs
-            pred = pred.cpu()
-        pred_seq = pred.numpy().squeeze()  # Shape: (T, H, W)
+            pyg = pyg.to(self.device)
+            out = self.model(pyg.x, pyg.edge_index, pyg.edge_attr)
+            out = out.squeeze(-1)  # Remove the channel dimension
+            mask = pyg.mask
+            out = out[mask]
+            probs = torch.sigmoid(out)
+            probs = probs.cpu().numpy().astype(np.float32)
+        points = pyg.pos.cpu().numpy().astype(np.float32)
+        points = self.z_unnormalise(points)
+        points = points.reshape((self.clip_len, 127, 2))
+        probs = probs.reshape((self.clip_len, 127,))
 
-        # Transform each frame in the sequence
-        num_frames = pred_seq.shape[0]
-        
-        # Create meshgrid for all pixel coordinates once
-        j_coords, k_coords = np.meshgrid(np.arange(self.camera_h_small), np.arange(self.camera_w_small), indexing='ij')
-        
-        # Process all frames at once for resizing operations
-        frames = (pred_seq * 255).astype(np.uint8)  # Shape: (T, H, W)
-        
-        # Resize all crops from small to big
-        crops_big = np.array([cv2.resize(frame, (self.crop_w_big, self.crop_h_big), interpolation=cv2.INTER_NEAREST) 
-                             for frame in frames])
-        
-        # Place all in full camera frames
-        cameras_big = np.zeros((num_frames, self.camera_h_big, self.camera_w_big), dtype=np.uint8)
-        cameras_big[:, self.crop_y:self.crop_y + self.crop_h_big, 
-                      self.crop_x:self.crop_x + self.crop_w_big] = crops_big
-        
-        # Resize all to final small camera frames
-        transformed_seq = np.array([cv2.resize(frame, (self.camera_w_small, self.camera_h_small), 
-                                             interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0 
-                                  for frame in cameras_big])
-        
-        # Get positions for all pixels (same for all frames)
-        pos_E = self.map_2d_3d[j_coords, k_coords]  # Shape: (H, W, 2)
-        pos_E_homogeneous = np.pad(pos_E, ((0, 0), (0, 0), (0, 1)), constant_values=1)  # Shape: (H, W, 3)
-        pos_E_flat = pos_E_homogeneous.reshape(-1, 4).T  # Shape: (4, H*W)
-        
-        # Process each frame's transformation matrix and accumulate results
-        for t in range(num_frames):
-            x, y, z = self.all_positions[i + t]
+        for t in range(self.clip_len):
+            x, y, z = self.all_positions[i + t*self.dilation]
             t_EA = self.get_T_EA(
                 np.deg2rad(SYSTEM_PARAMS.geometry.camera_rotation_angle),
-                x, y, z
+                x,
+                y,
+                z
             )
-            
-            # Transform all points for this frame
-            pos_A_homogeneous = t_EA @ pos_E_flat  # Shape: (4, H*W)
-            pos_A = pos_A_homogeneous[:3].T.reshape(self.camera_h_small, self.camera_w_small, 3)
-            
-            # Calculate x_A and y_A for all points
-            x_A = (pos_A[..., 0] - self.min_x).astype(np.int32)
-            y_A = (pos_A[..., 1] - self.min_y).astype(np.int32)
-            
-            # Create mask for valid positions
-            valid_mask = (x_A >= 0) & (x_A < 105) & (y_A >= 0) & (y_A < 180)
-            
-            # Update bin_prob_sum and bin_count using valid positions
-            np.add.at(self.bin_prob_sum, (x_A[valid_mask], y_A[valid_mask]), transformed_seq[t][valid_mask])
-            np.add.at(self.bin_count, (x_A[valid_mask], y_A[valid_mask]), 1)
-
+            for j in range(127):
+                prob = probs[t, j]
+                x, y = points[t, j]
+                pos_E = self.map_2d_3d[int(x), int(y)]
+                pos_E_homogeneous = np.append(pos_E, 1)
+                pos_A_homogeneous = t_EA @ pos_E_homogeneous
+                pos_A = pos_A_homogeneous[:3]
+                x_A = pos_A[0]
+                y_A = pos_A[1]
+                x_A -= self.min_x
+                y_A -= self.min_y
+                x_A = int(x_A)
+                y_A = int(y_A)
+                succ = (
+                    x_A >= 0 and
+                    x_A < 105 and
+                    y_A >= 0 and
+                    y_A < 180
+                )
+                if not succ:
+                    continue
+                self.bin_prob_sum[x_A, y_A] += prob
+                self.bin_count[x_A, y_A] += 1
+        
     def predict_all_clips(self):
         n = self.data['markers'].shape[0]
-        for i in tqdm(range(0, n - self.dilated_clip_len, self.dilated_clip_len // 4), desc="clip inference"):
+        for i in tqdm(range(0, n - self.dilated_clip_len, self.dilated_clip_len), desc="clip inference"):
             self.predict_clip(i)
         
         self.write_probs_to_npz()
@@ -394,6 +385,22 @@ class PredictExp:
         # self.evaluate()
         # PredictExp.compute_npz_straight()
         pass
+
+    @staticmethod
+    def generate_image(points, probabilities):
+        # Create a black background image
+        image = np.zeros((1080, 1920), dtype=np.uint8)
+        
+        # Draw circles for each point with intensity based on probability
+        for point, prob in zip(points, probabilities):
+            # Convert point coordinates to integers
+            center = (int(point[0]), int(point[1]))
+            # Scale probability to intensity range (0-255)
+            intensity = int(prob * 255)
+            # Draw white circle with given intensity
+            cv2.circle(image, center, radius=5, color=intensity, thickness=-1)
+            
+        return image
 
 
 def main():

@@ -467,10 +467,12 @@ def main():
     test_data = {
         'dataset': test_dataset,
         'num_workers': NUM_WORKERS,
-        'dataset_stats': stats
+        'dataset_stats': all_stats
     }
     with open(SYSTEM_PARAMS.files.test_loader_gnn, 'wb') as f:
         pickle.dump(test_data, f)
+    
+    return
 
     model = GNN(lr=LR)
 

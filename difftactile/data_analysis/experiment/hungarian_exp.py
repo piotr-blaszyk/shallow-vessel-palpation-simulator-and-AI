@@ -252,5 +252,5 @@ class HungarianExp:
 
 
 def main():
-    HungarianExp.reorder_exp_points()
+    # HungarianExp.reorder_exp_points()
     HungarianExp.visualise_reordered_point_connectivity()

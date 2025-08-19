@@ -710,28 +710,28 @@ class MyDataset(torch.utils.data.Dataset):
 
         return images[self.clip_len // 2, :, :]
 
-    @staticmethod
-    def get_clip(h, w, k, data, clip_len, dilation, start_ix):
-        markers = data['markers']
-        markers_mask = data['markers_mask']
+    def get_clip(self, data, clip_len, dilation, start_ix):
+        points = data['markers']
+        points_mask = data['markers_mask']
 
         dilated_clip_len = clip_len * dilation
-        images = markers[start_ix:start_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
-        images_mask = markers_mask[start_ix:start_ix + dilated_clip_len:dilation]  # Take every dilation-th frame
-        
-        images = MyDataset.downscale(k, images)
-        
-        h_scaled = h // k
-        w_scaled = w // k
-        images, _ = MyDataset.generate_markers_image(h_scaled, w_scaled, images, images_mask)  # shape: (T, H, W)
+        points = points[start_ix:start_ix + dilated_clip_len:dilation]
+        points_mask = points_mask[start_ix:start_ix + dilated_clip_len:dilation]
 
-        # Convert to float and normalize
-        images = torch.tensor(images, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
+        labels = np.zeros(shape=(
+            points.shape[0],
+            0,
+            0,
+            2
+        ), dtype=int)
+        labels_mask = np.zeros(shape=(
+            points.shape[0],
+            0,
+            0
+        ), dtype=bool)
         
-        # Add channel dimension: (T, H, W) -> (C, T, H, W)
-        images = images.unsqueeze(0).unsqueeze(0)
-        
-        return images
+        pyg = self.generate_pyg_vectorised(points, labels, labels_mask)
+        return pyg
 
     @staticmethod
     def generate_markers_image(h, w, points, points_mask):
