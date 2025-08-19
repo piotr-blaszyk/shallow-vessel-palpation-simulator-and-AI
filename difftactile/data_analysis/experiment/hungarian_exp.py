@@ -9,7 +9,7 @@ from difftactile.main.constants import *
 class HungarianExp:
     @staticmethod
     def reorder_exp_points():
-        input_path = SYSTEM_PARAMS.files.exp_video_npz
+        input_path = SYSTEM_PARAMS.files.exp_video_npz_test
         output_path = SYSTEM_PARAMS.files.exp_video_npz_reordered
         data = np.load(input_path)
         points = data['markers']
@@ -175,7 +175,7 @@ class HungarianExp:
         tracked_points_mask = np.zeros((num_frames, num_desired_points), dtype=bool)
         
         # Match first frame to base points
-        valid_points_first = points[0][points_mask[0]]
+        valid_points_first = points[9][points_mask[9]]
         cost_matrix = cdist(valid_points_first, base_points, metric='sqeuclidean')
         row_ind, col_ind = linear_sum_assignment(cost_matrix)
         
@@ -252,5 +252,5 @@ class HungarianExp:
 
 
 def main():
-    # HungarianExp.reorder_exp_points()
+    HungarianExp.reorder_exp_points()
     HungarianExp.visualise_reordered_point_connectivity()

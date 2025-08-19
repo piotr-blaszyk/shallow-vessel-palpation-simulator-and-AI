@@ -106,6 +106,20 @@ class FisheyeModelNoTaichi:
         scale_x = source_width / SYSTEM_PARAMS.fisheye_model.target_image_width
         scale_y = source_height / SYSTEM_PARAMS.fisheye_model.target_image_height
         params = cv2.SimpleBlobDetector_Params()
+        
+        # Filter by intensity (darkness)
+        params.filterByColor = True
+        params.blobColor = 0  # 0 for dark blobs, 255 for light blobs
+        params.minThreshold = 0
+        params.maxThreshold = 200  # Adjust this value to control how dark the blob must be
+        
+        # Filter by size
+        params.filterByArea = True
+        # areas=[809, 1206]
+        # sizes=[16.1, 19.5]
+        params.minArea = 120  # Minimum area in pixels
+        params.maxArea = 350  # Maximum area in pixels
+        
         detector = cv2.SimpleBlobDetector_create(params)
         keypoints = detector.detect(img)
         circle_center = np.array(
@@ -118,12 +132,19 @@ class FisheyeModelNoTaichi:
             scale_x, scale_y
         )
         MarkerCenter = []
+        areas = []
+        sizes = []
         for pt in keypoints:
             point = np.array([pt.pt[0], pt.pt[1]])
             distance = np.linalg.norm(point - circle_center)
             if distance < circle_radius:
                 MarkerCenter.append([pt.pt[0], pt.pt[1]])
+                areas.append(np.pi * (pt.size / 2) ** 2)  # Area of circular blob
+                sizes.append(pt.size)
         MarkerCenter = np.array(MarkerCenter)
+        areas = np.array(areas)
+        sizes = np.array(sizes)
+        # print(f'area_min: {areas.min()}; area_mean: {areas.mean()}; area_max: {areas.max()}')
         return MarkerCenter, circle_center, circle_radius
 
     @staticmethod

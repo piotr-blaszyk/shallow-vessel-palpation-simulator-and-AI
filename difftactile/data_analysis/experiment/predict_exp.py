@@ -8,19 +8,21 @@ from difftactile.data_analysis.experiment.marker_tracker import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.main.constants import *
 from difftactile.main.synthetic_image_generator import SyntheticImageGenerator
-from difftactile.cnn.lit_module_unet_cnn import SegmentationModel
+if False:
+    from difftactile.cnn.lit_module_unet_cnn import SegmentationModel
 from difftactile.cnn.visualise import *
-from difftactile.main.main import *
+# from difftactile.main.main import *
 
 class PredictExp:
     def __init__(self):
         self.fisheye_model = FisheyeModelNoTaichi()
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = SegmentationModel()
-        self.model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model))
-        self.model = self.model.to(self.device)
-        self.model.eval()
+        if False:
+            self.model = SegmentationModel()
+            self.model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model))
+            self.model = self.model.to(self.device)
+            self.model.eval()
         self.poses = np.array([
             [-382.1576,   85.3686,   28.0000,   180.0,   0.0,   0.0],  # target 0
             [-382.1576,   85.3686,   24.0000,   180.0,   0.0,   0.0],  # target 1
@@ -43,6 +45,7 @@ class PredictExp:
             [-317.1576,  -74.6314,   24.0000,   180.0,   0.0,   0.0],  # target 18
             [-317.1576,  -94.6314,   24.0000,   180.0,   0.0,   0.0],  # target 19
         ], dtype=float)
+        # og video has 1304 frames - so if I now use a video /w fewer frames, I just map a different range to the range (0, 1304)
         self.video_frames = np.array([
             60,    # target 0
             77,    # target 1
@@ -80,7 +83,8 @@ class PredictExp:
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         self.dilation = 2
         self.dilated_clip_len = self.clip_len * self.dilation
-        self.init_model()
+        if False:
+            self.init_model()
         self.init_camera_params()
         self.compute_mapping_2d_3d()
     
@@ -267,11 +271,20 @@ class PredictExp:
         img = np.flip(np.flip(img, axis=0), axis=1)
         cv2.imwrite(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, img)
     
-    def compute_npz(self):
+    @staticmethod
+    def compute_npz():
         PredictExp.compute_npz_helper(
             video_in=SYSTEM_PARAMS.files.vein_slide_across,
             video_out=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers,
             npz_out=SYSTEM_PARAMS.files.exp_video_npz
+        )
+    
+    @staticmethod
+    def compute_npz_test():
+        PredictExp.compute_npz_helper(
+            video_in=SYSTEM_PARAMS.files.vein_slide_across,
+            video_out=SYSTEM_PARAMS.files.vein_slide_across_extracted_markers_test,
+            npz_out=SYSTEM_PARAMS.files.exp_video_npz_test
         )
     
     @staticmethod
@@ -288,7 +301,10 @@ class PredictExp:
         video_out,
         npz_out
     ):
-        marker_tracker = MarkerTracker()
+        marker_tracker = MarkerTracker(
+            # start_frame_ix=1000,
+            # end_frame_ix=1050
+        )
         marker_tracker.extract_frames(
             video_in
         )
@@ -381,5 +397,6 @@ class PredictExp:
 
 
 def main():
-    predict_exp = PredictExp()
-    predict_exp.go()
+    # predict_exp = PredictExp()
+    # predict_exp.go()
+    PredictExp.compute_npz_test()

@@ -10,12 +10,14 @@ from difftactile.main.constants import *
 
 
 class MarkerTracker:
-    def __init__(self):
+    def __init__(self, start_frame_ix=0, end_frame_ix=None):
         self.fisheye_model = FisheyeModelNoTaichi()
         self.frame_markers = []
         self.frame_mappings = []
         self.base_frame_mappings = []
         self.frames = []
+        self.start_frame_ix = start_frame_ix
+        self.end_frame_ix = end_frame_ix
         self.lk_params = dict(
             winSize=(15, 15),
             maxLevel=4,
@@ -23,29 +25,28 @@ class MarkerTracker:
         )
 
     def extract_frames(self, input_path):
-        cap = cv2.VideoCapture(str(
-            input_path
-            ))
+        cap = cv2.VideoCapture(str(input_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
         frame_interval = int(fps * SYSTEM_PARAMS.marker_tracker.seconds_per_frame)
-        frame_count = 0
         frame_idx = 0
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-            if True or frame_count % frame_interval == 0:
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                self.frames.append(frame)
-                markers, _, _ = FisheyeModelNoTaichi.get_marker_image(gray)
-                if len(markers) > 0:
-                    self.frame_markers.append(markers)
-                else:
-                    self.frame_markers.append(np.array([]))
-                frame_idx += 1
-            frame_count += 1
+            if frame_idx % frame_interval == 0:
+                if self.end_frame_ix is not None and frame_idx >= self.end_frame_ix:
+                    break
+                if frame_idx >= self.start_frame_ix:
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    self.frames.append(frame)
+                    markers, _, _ = FisheyeModelNoTaichi.get_marker_image(gray)
+                    if len(markers) > 0:
+                        self.frame_markers.append(markers)
+                    else:
+                        self.frame_markers.append(np.array([]))
+            frame_idx += 1
         cap.release()
-        print(f"marker tracker: extracted {len(self.frame_markers)} frames")
+        print(f"marker tracker: extracted {len(self.frame_markers)} frames from range {self.start_frame_ix} to {self.end_frame_ix if self.end_frame_ix is not None else 'end'}")
 
     def match_consecutive_frames(self):
         for i in range(len(self.frame_markers) - 1):
