@@ -16,27 +16,21 @@ from difftactile.cnn.dataset import *
 from difftactile.cnn.common import *
 
 
-class LossWeightScheduler(pl.Callback):
-    def __init__(self, max_epochs):
-        self.tversky_alpha = [0.5, 0.8]
-        self.tversky_beta = [0.5, 0.2]
-        self.focal_alpha = [0.5, 0.8]
-        self.focal_gamma = [0.0, 2.0]
-        self.max_epochs = max_epochs
+class CurriculumCallback(pl.Callback):
+    def __init__(self, data_module):
+        self.data_module = data_module
 
     def on_train_epoch_start(self, trainer, pl_module):
         epoch = trainer.current_epoch
-        ratio = epoch/(self.max_epochs-1)
-        pl_module.set_loss_weights(
-            self.compute_val(*self.tversky_alpha, ratio),
-            self.compute_val(*self.tversky_beta, ratio),
-            self.compute_val(*self.focal_alpha, ratio),
-            self.compute_val(*self.focal_gamma, ratio),
-        )
-    
-    def compute_val(self, min, max, ratio):
-        diff = max - min
-        return min + diff * ratio
+        if epoch < 4:
+            difficulty = 0.0
+        elif epoch >= 4 and epoch < 14:
+            difficulty = (epoch - 4) / 10
+        else:
+            difficulty = 1.0
+        datasets = self.data_module.get_datasets()
+        for i in range(len(datasets)):
+            datasets[i].set_difficulty_level(difficulty)
 
 
 class GNNTverskyLoss(nn.Module):
@@ -343,6 +337,13 @@ class MyDataModule(pl.LightningDataModule):
         self.generator.manual_seed(seed)
         self.current_train_indices = None
         self.current_val_indices = None
+    
+    def get_datasets(self):
+        return [
+            self.train_dataset,
+            self.val_dataset,
+            self.test_dataset
+        ]
 
     def setup(self, stage=None):
         # Initialize current_indices for the first epoch
@@ -410,7 +411,6 @@ class MyDataModule(pl.LightningDataModule):
 
 
 def main():
-    return
     BATCH_SIZE = 512
     NUM_EPOCHS = 40
     NUM_WORKERS = 16
@@ -530,7 +530,8 @@ def main():
         log_every_n_steps=1,
         callbacks=[
             checkpoint_cb, 
-            early_stopping, 
+            early_stopping,
+            CurriculumCallback(data_module)
         ]
     )
 

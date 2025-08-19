@@ -52,10 +52,17 @@ class MyDataset(torch.utils.data.Dataset):
         # self.h_scaled = 1080
         self.avg_call_time = 0.0
         self.num_calls = 0
-        self.difficulty_level = 0
+
+        self.min_disp_c_range = [1.0, 0.1]
+        self.max_disp_c_range = [1.0, 0.4]
+        self.min_vein_length_range = [1.0, 0.2]
+        self.max_vein_length_range = [1.0, 0.5]
+        self.min_disp_c = None
+        self.max_disp_c = None
+        self.min_vein_length = None
+        self.max_vein_length = None
 
         self.randomly_remove_k = [0, 6, 13]
-        self.avs_disp_c = [0.4, 0.3, 0.2]
         self.cnn_gnn = SYSTEM_PARAMS.meta.cnn_gnn
         self.visualisation_mode = False
         self.data_points_per_epoch = SYSTEM_PARAMS.dataset.data_points_per_epoch
@@ -68,6 +75,8 @@ class MyDataset(torch.utils.data.Dataset):
         self.x_std = None
         self.y_mean = None
         self.y_std = None
+
+        self.set_difficulty_level(0.0)
 
         self.data_points = data_points
         if mode == 'root':
@@ -163,9 +172,28 @@ class MyDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.data_points)
 
-    def set_difficulty_level(self, level):
-        self.difficulty_level = level
-        print(f'new difficulty: {self.difficulty_level}')
+    @staticmethod
+    def interpolate(a, b, b_weight):
+        return a * (1 - b_weight) + b * b_weight
+
+    def set_difficulty_level(self, difficulty):
+        print(f'new difficulty: {difficulty}')
+        self.min_disp_c = MyDataset.interpolate(
+            *self.min_disp_c_range,
+            difficulty
+        )
+        self.min_vein_length = MyDataset.interpolate(
+            *self.min_vein_length_range,
+            difficulty
+        )
+        self.max_disp_c = MyDataset.interpolate(
+            *self.max_disp_c_range,
+            difficulty
+        )
+        self.max_vein_length = MyDataset.interpolate(
+            *self.max_vein_length_range,
+            difficulty
+        )
 
     @staticmethod
     def create_splits(
@@ -939,11 +967,12 @@ class MyDataset(torch.utils.data.Dataset):
         return rotated_points_2d
     
     def randomly_remove(self, points):
+        return
         if points.shape[-1] == 0:  # Check if there are any points
             return np.ones((points.shape[0], 0), dtype=bool)  # Return empty mask matching input shape
             
         # Get max number of points that can be removed
-        max_k = self.randomly_remove_k[self.difficulty_level]
+        max_k = self.randomly_remove_k[self.difficulty]
         
         # Initialize mask array for all frames
         mask = np.ones(points.shape[:2], dtype=bool)  # Shape: (n, num_points)
@@ -996,24 +1025,20 @@ class MyDataset(torch.utils.data.Dataset):
         num_vein_points = clip_vein_polyline.shape[2]
         if not np.any(valid_frames_mask):
             return clip_points, clip_vein_polyline
-        # lower_disp_c = self.avs_disp_c[self.difficulty_level]
-        # disp_c = random.uniform(lower_disp_c, 0.5)
-        disp_c = 1.0
+        disp_c = random.uniform(self.min_disp_c, self.max_disp_c)
 
-        if self.difficulty_level == 2:
-            target_num_vein_points = np.random.randint(
-                int(1/5*num_vein_points), 
-                int(num_vein_points) + 1, 
-                size=num_veins
-            )
-            max_start_indices = num_vein_points - target_num_vein_points
-            start_indices = np.random.randint(0, max_start_indices + 1)
-            row_indices = np.arange(num_veins)[:, np.newaxis]
-            col_indices = np.arange(num_vein_points)[np.newaxis, :]
-            my_vein_mask = (col_indices >= start_indices[:, np.newaxis]) & \
-                                 (col_indices < (start_indices[:, np.newaxis] + target_num_vein_points[:, np.newaxis]))
-        else:
-            my_vein_mask = np.ones(shape=(num_veins, num_vein_points), dtype=bool)
+        target_num_vein_points = np.random.randint(
+            int(self.min_vein_length*num_vein_points), 
+            int(self.max_vein_length*num_vein_points) + 1, 
+            size=num_veins
+        )
+        max_start_indices = num_vein_points - target_num_vein_points
+        start_indices = np.random.randint(0, max_start_indices + 1)
+        row_indices = np.arange(num_veins)[:, np.newaxis]
+        col_indices = np.arange(num_vein_points)[np.newaxis, :]
+        my_vein_mask = (col_indices >= start_indices[:, np.newaxis]) & \
+                                (col_indices < (start_indices[:, np.newaxis] + target_num_vein_points[:, np.newaxis]))
+
         clip_vein_polyline_mask &= my_vein_mask[np.newaxis, :, :]
 
         for t in range(clip_points.shape[0]):
@@ -1045,6 +1070,7 @@ class MyDataset(torch.utils.data.Dataset):
         return clip_points, clip_vein_polyline_mask
 
     def augmentation_artificial_vein_signal_unvectorised(self, clip_points, clip_vein_polyline, clip_vein_polyline_mask):
+        return
         valid_frames_mask = np.any(np.all(clip_vein_polyline_mask, axis=2), axis=1)
         vein_visible_mask = np.ones(clip_points.shape[0], dtype=bool)
         if not np.any(valid_frames_mask):
@@ -1060,7 +1086,7 @@ class MyDataset(torch.utils.data.Dataset):
         else:
             start_idx = 0
             end_idx = 0
-        if self.difficulty_level == 2:
+        if self.difficulty == 2:
             max_length = end_idx - start_idx
             if max_length < 3:
                 length = 0
@@ -1073,7 +1099,7 @@ class MyDataset(torch.utils.data.Dataset):
             vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
             vein_visible_mask[start_idx:end_idx] = True
 
-        lower_disp_c = self.avs_disp_c[self.difficulty_level]
+        lower_disp_c = self.min_disp_c_range[self.difficulty]
         # disp_c = random.uniform(lower_disp_c, 0.5)
         disp_c = 1.0
 
@@ -1090,7 +1116,7 @@ class MyDataset(torch.utils.data.Dataset):
                 vein_polyline = frame_vein_polyline[k]
 
                 for i in range(len(points)):
-                    if self.difficulty_level == 2:
+                    if self.difficulty == 2:
                         proceed = random.uniform(0, 1)
                     else:
                         proceed = 1.0
