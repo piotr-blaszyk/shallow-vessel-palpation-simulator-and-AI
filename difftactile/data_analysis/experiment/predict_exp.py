@@ -1,10 +1,6 @@
 import numpy as np
 import cv2
 import torch
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-import os
-import glob
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
@@ -25,7 +21,6 @@ class PredictExp:
         self.model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model))
         self.model = self.model.to(self.device)
         self.model.eval()
-        self.transforms = A.Compose([ToTensorV2()])
         self.poses = np.array([
             [-382.1576,   85.3686,   28.0000,   180.0,   0.0,   0.0],  # target 0
             [-382.1576,   85.3686,   24.0000,   180.0,   0.0,   0.0],  # target 1

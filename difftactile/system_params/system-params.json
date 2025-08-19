@@ -296,6 +296,7 @@
         "test_loader_gnn": "difftactile/output/test_loader_gnn.pickle",
         "threshold_optimization": "difftactile/output/threshold_optimization.png",
         "exp_video_npz": "difftactile/output/exp_video.npz",
+        "exp_video_npz_reordered": "difftactile/output/exp_video_reordered.npz",
         "exp_probs_npz": "difftactile/output/exp_probs.npz",
         "exp_overlay": "difftactile/output/exp_overlay.png",
         "video_in_straight": "difftactile/manual_or_experimental_data/domain-adaptation-vascular-videos/mkv/traj_1_trimmed.mkv",
