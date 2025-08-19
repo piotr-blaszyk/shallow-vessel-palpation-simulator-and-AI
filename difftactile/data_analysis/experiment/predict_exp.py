@@ -12,6 +12,7 @@ from difftactile.main.synthetic_image_generator import SyntheticImageGenerator
 from difftactile.cnn.gnn import *
 from difftactile.cnn.dataset import *
 from difftactile.cnn.visualise import *
+from difftactile.cnn.common import Common
 
 class PredictExp:
     def __init__(self):
@@ -77,7 +78,7 @@ class PredictExp:
         self.bin_prob_sum = np.zeros(shape=(self.phantom_length_x, self.phantom_length_y), dtype=float)
         self.bin_count = np.zeros(shape=(self.phantom_length_x, self.phantom_length_y), dtype=int)
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
-        self.dilation = 2
+        self.dilation = 1
         self.dilated_clip_len = self.clip_len * self.dilation
         self.init_model()
         self.init_camera_params()
@@ -177,7 +178,7 @@ class PredictExp:
         )
     
     def load_npz(self):
-        path = SYSTEM_PARAMS.files.exp_video_npz
+        path = SYSTEM_PARAMS.files.exp_video_npz_test
         self.data = np.load(path)
     
     def predict_clip(self, i):
@@ -196,7 +197,6 @@ class PredictExp:
             probs = torch.sigmoid(out)
             probs = probs.cpu().numpy().astype(np.float32)
         points = pyg.pos.cpu().numpy().astype(np.float32)
-        points = self.z_unnormalise(points)
         points = points.reshape((self.clip_len, 127, 2))
         probs = probs.reshape((self.clip_len, 127,))
 
@@ -234,7 +234,7 @@ class PredictExp:
         
     def predict_all_clips(self):
         n = self.data['markers'].shape[0]
-        for i in tqdm(range(0, n - self.dilated_clip_len, self.dilated_clip_len), desc="clip inference"):
+        for i in tqdm(range(0, n - self.dilated_clip_len), desc="clip inference"):
             self.predict_clip(i)
         
         self.write_probs_to_npz()
@@ -255,7 +255,7 @@ class PredictExp:
     
     def generate_mask_image(self):
         res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
-        threshold = np.percentile(res, 90)
+        threshold = np.percentile(res, 95)
         res_binary = (res > threshold).astype(np.int32)
 
         img = (res_binary * 255).astype(np.uint8)
@@ -345,7 +345,7 @@ class PredictExp:
         prediction_tensor = torch.from_numpy(prediction).float().unsqueeze(0).unsqueeze(0)
         ground_truth_tensor = torch.from_numpy(ground_truth).float().unsqueeze(0).unsqueeze(0)
 
-        metrics = SegmentationModel.iou_score(prediction_tensor, ground_truth_tensor)
+        metrics = Common.iou_score(prediction_tensor, ground_truth_tensor)
         confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth, prediction)
         print(metrics)
 
@@ -376,34 +376,16 @@ class PredictExp:
         plt.close()
 
     def go(self):
-        # self.load_npz()
-        # self.compute_all_3d_positions()
-        # self.predict_all_clips()
-        # self.write_probs_to_npz()
-        # self.load_probs_from_npz()
-        # self.generate_mask_image()
-        # self.evaluate()
-        # PredictExp.compute_npz_straight()
-        pass
-
-    @staticmethod
-    def generate_image(points, probabilities):
-        # Create a black background image
-        image = np.zeros((1080, 1920), dtype=np.uint8)
-        
-        # Draw circles for each point with intensity based on probability
-        for point, prob in zip(points, probabilities):
-            # Convert point coordinates to integers
-            center = (int(point[0]), int(point[1]))
-            # Scale probability to intensity range (0-255)
-            intensity = int(prob * 255)
-            # Draw white circle with given intensity
-            cv2.circle(image, center, radius=5, color=intensity, thickness=-1)
-            
-        return image
+        self.load_npz()
+        self.compute_all_3d_positions()
+        self.predict_all_clips()
+        self.write_probs_to_npz()
+        self.load_probs_from_npz()
+        self.generate_mask_image()
+        self.evaluate()
 
 
 def main():
-    # predict_exp = PredictExp()
-    # predict_exp.go()
-    PredictExp.compute_npz_test()
+    predict_exp = PredictExp()
+    predict_exp.go()
+    # PredictExp.compute_npz_test()
