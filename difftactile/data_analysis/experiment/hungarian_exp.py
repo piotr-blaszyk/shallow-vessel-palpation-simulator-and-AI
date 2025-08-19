@@ -8,8 +8,7 @@ from difftactile.main.constants import *
 
 class HungarianExp:
     @staticmethod
-    def reorder_exp_points_complicated():
-        return
+    def reorder_exp_points():
         path = SYSTEM_PARAMS.files.exp_video_npz
         data = np.load(path)
         points = data['markers']
@@ -38,7 +37,6 @@ class HungarianExp:
         for i in range(1, points.shape[0]):
             prev_points = points_reordered_list[-1]
             prev_point_mask = points_mask_reordered_list[-1]
-            break
     
     @staticmethod
     def reorder_exp_points_simple():
@@ -163,6 +161,102 @@ class HungarianExp:
 
         cv2.destroyAllWindows()
         cv2.waitKey(1)
+
+    @staticmethod
+    def track_markers_with_interpolation(points, points_mask, base_points, adjacency_matrix):
+        """
+        Track markers across frames with interpolation for missing points.
+        
+        Args:
+            points: numpy array of shape (num_frames, max_num_points, 2) containing detected points
+            points_mask: numpy array of shape (num_frames, max_num_points) containing point validity masks
+            base_points: numpy array of shape (desired_num_points, 2) containing reference points
+            adjacency_matrix: numpy array of shape (num_edges, 2) containing edge connectivity
+            
+        Returns:
+            tracked_points: numpy array of shape (num_frames, desired_num_points, 2)
+            tracked_points_mask: numpy array of shape (num_frames, desired_num_points)
+        """
+        num_frames = points.shape[0]
+        num_desired_points = base_points.shape[0]
+        tracked_points = np.zeros((num_frames, num_desired_points, 2))
+        tracked_points_mask = np.zeros((num_frames, num_desired_points), dtype=bool)
+        
+        # Match first frame to base points
+        valid_points_first = points[0][points_mask[0]]
+        cost_matrix = cdist(valid_points_first, base_points, metric='sqeuclidean')
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
+        
+        # Initialize first frame tracking
+        tracked_points[0] = np.zeros((num_desired_points, 2))
+        tracked_points_mask[0] = np.zeros(num_desired_points, dtype=bool)
+        for detected_idx, base_idx in zip(row_ind, col_ind):
+            tracked_points[0, base_idx] = valid_points_first[detected_idx]
+            tracked_points_mask[0, base_idx] = True
+            
+        # Process subsequent frames
+        for t in range(1, num_frames):
+            prev_points = tracked_points[t-1]
+            prev_mask = tracked_points_mask[t-1]
+            curr_points = points[t][points_mask[t]]
+            
+            if len(curr_points) == 0:  # No points detected in current frame
+                tracked_points[t] = tracked_points[t-1]
+                tracked_points_mask[t] = np.zeros_like(tracked_points_mask[t-1])
+                continue
+                
+            # Match current frame points to previous frame points that were valid
+            prev_valid_points = prev_points[prev_mask]
+            cost_matrix = cdist(curr_points, prev_valid_points, metric='sqeuclidean')
+            
+            if len(curr_points) < len(prev_valid_points):  # Scenario 1: Fewer points
+                row_ind, col_ind = linear_sum_assignment(cost_matrix)
+                
+                # Initialize current frame arrays
+                tracked_points[t] = np.zeros((num_desired_points, 2))
+                tracked_points_mask[t] = np.zeros(num_desired_points, dtype=bool)
+                
+                # Map matched points
+                prev_valid_indices = np.where(prev_mask)[0]
+                for curr_idx, prev_valid_idx in zip(row_ind, col_ind):
+                    global_prev_idx = prev_valid_indices[prev_valid_idx]
+                    tracked_points[t, global_prev_idx] = curr_points[curr_idx]
+                    tracked_points_mask[t, global_prev_idx] = True
+                
+                # Interpolate missing points using neighbor information
+                for missing_idx in range(num_desired_points):
+                    if not tracked_points_mask[t, missing_idx]:
+                        # Find neighbors of the missing point
+                        neighbor_indices = np.concatenate([
+                            adjacency_matrix[adjacency_matrix[:, 0] == missing_idx, 1],
+                            adjacency_matrix[adjacency_matrix[:, 1] == missing_idx, 0]
+                        ])
+                        
+                        valid_neighbors = neighbor_indices[tracked_points_mask[t, neighbor_indices]]
+                        if len(valid_neighbors) > 0:
+                            # Calculate displacement vectors from previous frame
+                            prev_displacements = prev_points[valid_neighbors] - prev_points[missing_idx]
+                            # Use mean displacement to predict current position
+                            curr_neighbor_positions = tracked_points[t, valid_neighbors]
+                            predicted_pos = np.mean(curr_neighbor_positions - prev_displacements, axis=0)
+                            tracked_points[t, missing_idx] = predicted_pos
+                            tracked_points_mask[t, missing_idx] = True
+                            
+            else:  # Scenario 2 & 3: Same or more points
+                row_ind, col_ind = linear_sum_assignment(cost_matrix)
+                
+                # Initialize current frame arrays
+                tracked_points[t] = np.zeros((num_desired_points, 2))
+                tracked_points_mask[t] = np.zeros(num_desired_points, dtype=bool)
+                
+                # Map matched points
+                prev_valid_indices = np.where(prev_mask)[0]
+                for curr_idx, prev_valid_idx in zip(row_ind, col_ind):
+                    global_prev_idx = prev_valid_indices[prev_valid_idx]
+                    tracked_points[t, global_prev_idx] = curr_points[curr_idx]
+                    tracked_points_mask[t, global_prev_idx] = True
+        
+        return tracked_points, tracked_points_mask
 
 
 def main():
