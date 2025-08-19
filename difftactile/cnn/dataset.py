@@ -107,8 +107,8 @@ class MyDataset(torch.utils.data.Dataset):
             for i in range(len(self.files)):
                 file_path = self.files[i]
                 file_num = MyDataset.extract_trajectory_number(file_path)
-                if (file_num % 4) > 1:
-                    continue
+                # if (file_num % 4) > 1:
+                #     continue
                 data = np.load(file_path)
                 total_frames = len(data["markers"])
                 
@@ -1022,7 +1022,7 @@ class MyDataset(torch.utils.data.Dataset):
         num_veins = clip_vein_polyline.shape[1]
         num_vein_points = clip_vein_polyline.shape[2]
         if not np.any(valid_frames_mask):
-            return clip_points, clip_vein_polyline
+            return clip_points, clip_vein_polyline_mask
         disp_c = random.uniform(self.min_disp_c, self.max_disp_c)
 
         target_num_vein_points = np.random.randint(

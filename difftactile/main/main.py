@@ -752,6 +752,10 @@ class Contact:
             [x, y, z - press_depth_surface, *srq],
             [x, y, z - press_depth_1, *srq],
         ]
+        # 0,1,2,3,4!,5,6,7!,8,9,10!,11,12,13!,14,15,16!
+        # x = 4 + 3*k, k >= 0
+        # x >= 4 and (x - 4) % 3 == 0
+        # ts >= 4 and (ts - 4) % 3 == 0
         xy_dirs = [
             [0, 1],
             [1, 0],
@@ -767,13 +771,17 @@ class Contact:
             ):
                 break
             x_dir, y_dir = xy_dirs[xy_i]
-            xy_i += 1
-            xy_i %= 4
             a2 = a + x_dir * d_single
             b2 = b + y_dir * dy
+            if xy_i == 0 or xy_i == 2:
+                trajectory.append(
+                    [a2, (b+b2)/2, c, *srq]
+                )
             trajectory.append(
                 [a2, b2, c, *srq]
             )
+            xy_i += 1
+            xy_i %= 4
         return trajectory
 
     def get_fully_random_trajectory(self):
@@ -863,7 +871,7 @@ class Contact:
         placed_cy_values = []
         min_separation = SYSTEM_PARAMS.geometry.min_vein_separation
         for i in range(num_veins):
-            theta_rand = random.uniform(-5, 5)
+            theta_rand = random.uniform(-10, 10)
             cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
             cx = self.sensor_x_range_phantom[0]
 
@@ -2360,14 +2368,14 @@ class Contact:
 
     def collect_training_data(self):
         self.clear_temp_images()
-        # self.clear_npz()
+        self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for k in range(0, 2):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(0, 2):
-                    self.randomise_contact_params()
+                for i in range(0, 1):
+                    # self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     self.set_up_initial_positions_state_and_trajectory()
                     self.vein_sparse_to_dense()
@@ -2395,14 +2403,15 @@ class Contact:
                             SYSTEM_PARAMS.contact.num_sub_frames - 1
                         )
                         self.visualisation_update_gui(ts)
+                        target = self.current_target_idx[None]
                         if (
-                            self.current_target_idx[None] > 2
+                            target >= 4 and (target - 4) % 3 == 0
                         ):
                             self.record_training_data_point(j, ts)
                         if self.last_target_reached[None] == 1:
                             break
                     file_num = j * 4 + k * 2 + i
-                    # self.write_training_data_to_file(file_num)
+                    self.write_training_data_to_file(file_num)
                     
                     self.reset_loss()
                     self.batch_loss.fill(0.0)
