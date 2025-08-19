@@ -17,21 +17,25 @@ from difftactile.cnn.common import *
 
 
 class CurriculumCallback(pl.Callback):
-    def __init__(self, data_module):
+    def __init__(self, data_module, all_stats):
         self.data_module = data_module
+        self.all_stats = all_stats
 
     def on_train_epoch_start(self, trainer, pl_module):
+        print(f'execute CurriculumCallback.on_train_epoch_start')
         epoch = trainer.current_epoch
-        if epoch < 4:
+        n = 2
+        k = 10
+        if epoch < n:
             difficulty = 0.0
-        elif epoch >= 4 and epoch < 14:
-            difficulty = (epoch - 4) / 10
+        elif epoch >= n and epoch < (n+k):
+            difficulty = (epoch+1-n) / k
         else:
             difficulty = 1.0
         datasets = self.data_module.get_datasets()
         for i in range(len(datasets)):
             datasets[i].set_difficulty_level(difficulty)
-
+        pl_module.set_stats(self.all_stats[difficulty])
 
 class GNNTverskyLoss(nn.Module):
     def __init__(self, alpha=1.0, beta=0.25, smooth=1e-6):
@@ -77,7 +81,7 @@ class GNNTverskyLoss(nn.Module):
 
 
 class GNNFocalLoss(nn.Module):
-    def __init__(self, alpha, gamma=3.0):
+    def __init__(self, alpha=0.5, gamma=3.0):
         """Focal Loss for GNN node classification.
         
         Specifically designed for node-level binary classification where the focus
@@ -119,7 +123,6 @@ class GNN(pl.LightningModule):
     def __init__(
             self, 
             lr,
-            alpha_pos,
             node_channels=SYSTEM_PARAMS.gnn.num_node_features,
             # node_channels=1,
             edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
@@ -154,7 +157,7 @@ class GNN(pl.LightningModule):
         
         # Initialize loss functions
         self.tversky_loss = GNNTverskyLoss()
-        self.focal_loss = GNNFocalLoss(alpha=alpha_pos)
+        self.focal_loss = GNNFocalLoss()
         
         # Loss weights
         self.tversky_weight = tversky_weight
@@ -165,6 +168,10 @@ class GNN(pl.LightningModule):
         
         # Save hyperparameters for logging
         self.save_hyperparameters()
+    
+    def set_stats(self, stats):
+        self.focal_loss.alpha = stats['alpha_pos']
+        print(f'focal_loss.alpha={self.focal_loss.alpha}')
     
     def set_loss_weights(
             self,
@@ -307,7 +314,8 @@ class GNN(pl.LightningModule):
             "interval": "epoch",
             "frequency": 1
         }
-        return {"optimizer": optimizer, "lr_scheduler": scheduler}
+        # return {"optimizer": optimizer, "lr_scheduler": scheduler}
+        return {"optimizer": optimizer}
 
     def on_train_epoch_start(self):
         # Get current learning rate
@@ -375,35 +383,38 @@ class MyDataModule(pl.LightningDataModule):
         if self.current_train_indices is None:
             self._select_new_subset()
         sampler = SubsetRandomSampler(self.current_train_indices, generator=self.generator)
+        print(f'train dataset difficulty: {self.train_dataset.difficulty_fyi}')
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
             sampler=sampler,
             num_workers=self.num_workers,
-            pin_memory=True,
-            persistent_workers=True
+            pin_memory=False,
+            persistent_workers=False
         )
 
     def val_dataloader(self):
         if self.current_val_indices is None:
             self._select_new_subset()
         sampler = SubsetRandomSampler(self.current_val_indices, generator=self.generator)
+        print(f'val dataset difficulty: {self.train_dataset.difficulty_fyi}')
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
             sampler=sampler,
             num_workers=self.num_workers,
-            pin_memory=True,
-            persistent_workers=True
+            pin_memory=False,
+            persistent_workers=False
         )
 
     def test_dataloader(self):
+        print(f'test dataset difficulty: {self.train_dataset.difficulty_fyi}')
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
-            pin_memory=True,
-            persistent_workers=True
+            pin_memory=False,
+            persistent_workers=False
         )
 
     def on_train_epoch_start(self):
@@ -425,69 +436,22 @@ def main():
     train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
         full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
     )
+    all_stats = {}
+    for i in range(11):
+        difficulty = i / 10
+        train_dataset.set_difficulty_level(difficulty)
+        stats = compute_stats(train_dataset, BATCH_SIZE)
+        all_stats[difficulty] = stats
 
-    len_train = len(train_dataset)
-    train_subset_size = BATCH_SIZE
-    ixs = np.random.choice(
-        len_train,
-        train_subset_size,
-        replace=False
-    )
-    num_pos = 0
-    num_neg = 0
-    edge_attrs = []
-    points = []
-    for ix in tqdm(ixs, desc="Computing stats"):
-        pyg, _ = train_dataset[ix]
-        y = pyg.y.cpu().numpy()
-        pos = y.sum()
-        neg = y.shape[0] - pos
-        num_pos += pos
-        num_neg += neg
-        edge_attr = pyg.edge_attr.cpu().numpy()[:, 0]
-        edge_attrs.append(edge_attr)
-        edge_attr = pyg.edge_attr.cpu().numpy()[:, 0]
-        points_batch = pyg.pos.cpu().numpy()
-        points.append(points_batch)
-    alpha_pos = num_neg / (num_neg + num_pos)
-    alpha_neg = num_pos / (num_neg + num_pos)
-    print(f'pos:neg = {alpha_neg:.2f}:{alpha_pos:.2f}')
-    edge_attrs = np.hstack(edge_attrs)
-    edge_dist_mean = edge_attrs.mean()
-    edge_dist_std = edge_attrs.std()
-    points = np.vstack(points)
-    x = points[:, 0]
-    y = points[:, 1]
-    x_mean = x.mean()
-    x_std = x.std()
-    y_mean = y.mean()
-    y_std = y.std()
-    train_dataset.set_stats(
-        edge_dist_mean, 
-        edge_dist_std,
-        x_mean,
-        x_std,
-        y_mean,
-        y_std,
-    )
-    val_dataset.set_stats(
-        edge_dist_mean, 
-        edge_dist_std,
-        x_mean,
-        x_std,
-        y_mean,
-        y_std,
-    )
-    test_dataset.set_stats(
-        edge_dist_mean, 
-        edge_dist_std,
-        x_mean,
-        x_std,
-        y_mean,
-        y_std,
-    )
-
-    pyg, _ = train_dataset[ixs[0]]
+        alpha_neg = stats['alpha_neg']
+        alpha_pos = stats['alpha_pos']
+        print(f'difficulty: {difficulty}; pos:neg = {alpha_neg:.2f}:{alpha_pos:.2f}')
+    init_difficulty = 0.0
+    final_difficulty = 1.0
+    train_dataset.set_difficulty_level(init_difficulty)
+    train_dataset.set_stats(all_stats[final_difficulty])
+    val_dataset.set_stats(all_stats[final_difficulty])
+    test_dataset.set_stats(all_stats[final_difficulty])
 
     # Create a single datamodule for training, validation and testing
     data_module = MyDataModule(
@@ -502,12 +466,13 @@ def main():
 
     test_data = {
         'dataset': test_dataset,
-        'num_workers': NUM_WORKERS
+        'num_workers': NUM_WORKERS,
+        'dataset_stats': stats
     }
     with open(SYSTEM_PARAMS.files.test_loader_gnn, 'wb') as f:
         pickle.dump(test_data, f)
 
-    model = GNN(lr=LR, alpha_pos=alpha_pos)
+    model = GNN(lr=LR)
 
     checkpoint_cb = ModelCheckpoint(
         monitor="val_fg_iou",
@@ -530,9 +495,10 @@ def main():
         log_every_n_steps=1,
         callbacks=[
             checkpoint_cb, 
-            early_stopping,
-            CurriculumCallback(data_module)
-        ]
+            # early_stopping,
+            CurriculumCallback(data_module, all_stats)
+        ],
+        reload_dataloaders_every_n_epochs=1
     )
 
     start = time.perf_counter()
@@ -555,6 +521,7 @@ def choose_optimal_threshold():
     with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
         test_data = pickle.load(f)
     test_dataset = test_data['dataset']
+    test_dataset.set_difficulty_level(1.0)
     
     # Create data module using test dataset as validation dataset
     data_module = MyDataModule(
@@ -568,14 +535,14 @@ def choose_optimal_threshold():
     )
     
     # Load model
-    model = GNN(lr=-1, alpha_pos=-1)  # Dummy values since we're not training
+    model = GNN(lr=-1)  # Dummy values since we're not training
     model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     model.eval()
     
     # Test different thresholds
-    thresholds = np.linspace(0.1, 0.9, 17)  # Test thresholds from 0.1 to 0.9 in steps of 0.05
+    thresholds = np.linspace(0.4, 0.6, 5)  # Test thresholds from 0.1 to 0.9 in steps of 0.05
     best_threshold = 0.5  # Default threshold
     best_fg_iou = 0.0
     
@@ -615,6 +582,51 @@ def choose_optimal_threshold():
     print(f"Best foreground IoU: {best_fg_iou:.4f}")
 
 
-if __name__ == "__main__":
-    choose_optimal_threshold()
+def compute_stats(dataset, batch_size):
+    len_train = len(dataset)
+    train_subset_size = batch_size
+    ixs = np.random.choice(
+        len_train,
+        train_subset_size,
+        replace=False
+    )
+    num_pos = 0
+    num_neg = 0
+    edge_attrs = []
+    points = []
+    for ix in tqdm(ixs, desc="Computing stats"):
+        pyg, _ = dataset[ix]
+        y = pyg.y.cpu().numpy()
+        pos = y.sum()
+        neg = y.shape[0] - pos
+        num_pos += pos
+        num_neg += neg
+        edge_attr = pyg.edge_attr.cpu().numpy()[:, 0]
+        edge_attrs.append(edge_attr)
+        edge_attr = pyg.edge_attr.cpu().numpy()[:, 0]
+        points_batch = pyg.pos.cpu().numpy()
+        points.append(points_batch)
+    alpha_pos = num_neg / (num_neg + num_pos)
+    alpha_neg = num_pos / (num_neg + num_pos)
+    edge_attrs = np.hstack(edge_attrs)
+    edge_dist_mean = edge_attrs.mean()
+    edge_dist_std = edge_attrs.std()
+    points = np.vstack(points)
+    x = points[:, 0]
+    y = points[:, 1]
+    x_mean = x.mean()
+    x_std = x.std()
+    y_mean = y.mean()
+    y_std = y.std()
+
+    return {
+        'alpha_pos': alpha_pos,
+        'alpha_neg': alpha_neg,
+        'edge_dist_mean': edge_dist_mean,
+        'edge_dist_std': edge_dist_std,
+        'x_mean': x_mean,
+        'x_std': x_std,
+        'y_mean': y_mean,
+        'y_std': y_std
+    }
 

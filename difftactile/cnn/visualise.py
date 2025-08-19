@@ -401,16 +401,18 @@ class Visualisation:
             # Load test data
             with open(self.test_loader, 'rb') as f:
                 test_data = pickle.load(f)
-            test_data['dataset'].eval()
+            dataset = test_data['dataset']
+            dataset.eval()
+            dataset.set_difficulty_level(1.0)
             data_loader = DataLoader(
-                test_data['dataset'],
+                dataset,
                 batch_size=BATCH_SIZE,
                 shuffle=True,
                 num_workers=NUM_WORKERS
             )
             
             # Initialize model
-            model = GNN(lr=-1, alpha_pos=-1)
+            model = GNN(lr=-1)
             model.load_state_dict(torch.load(self.model_path))
             model.eval()
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -465,7 +467,7 @@ class Visualisation:
                     mask = data.mask
                     out = out[mask]
                     probs = torch.sigmoid(out)
-                    pred = (probs > 0.5).float()
+                    pred = (probs > 0.55).float()
                     
                     probs = probs.cpu().numpy().astype(np.float32)
                     pred = pred.cpu().numpy().astype(int)
@@ -705,7 +707,7 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn(mode='dataset')
+    v.visualise_gnn(mode='predictions')
 
 
 if __name__ == "__main__":

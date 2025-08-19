@@ -69,12 +69,14 @@ class MyDataset(torch.utils.data.Dataset):
         base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         self.adjacency_matrix = base_graph_data['adjacency_matrix']
         self.warmup = True
+
         self.edge_dist_mean = None
         self.edge_dist_std = None
         self.x_mean = None
         self.x_std = None
         self.y_mean = None
         self.y_std = None
+        self.difficulty_fyi = None
 
         self.set_difficulty_level(0.0)
 
@@ -88,20 +90,15 @@ class MyDataset(torch.utils.data.Dataset):
 
     def set_stats(
             self,
-            edge_dist_mean,
-            edge_dist_std,
-            x_mean,
-            x_std,
-            y_mean,
-            y_std,
+            stats
     ):
         self.warmup = False
-        self.edge_dist_mean = edge_dist_mean
-        self.edge_dist_std = edge_dist_std
-        self.x_mean = x_mean
-        self.x_std = x_std
-        self.y_mean = y_mean
-        self.y_std = y_std
+        self.edge_dist_mean = stats['edge_dist_mean']
+        self.edge_dist_std = stats['edge_dist_std']
+        self.x_mean = stats['x_mean']
+        self.x_std = stats['x_std']
+        self.y_mean = stats['y_mean']
+        self.y_std = stats['y_std']
 
     def populate_clips(self):
         if True or SYSTEM_PARAMS.meta.cnn_gnn == 0:
@@ -177,7 +174,7 @@ class MyDataset(torch.utils.data.Dataset):
         return a * (1 - b_weight) + b * b_weight
 
     def set_difficulty_level(self, difficulty):
-        print(f'new difficulty: {difficulty}')
+        # print(f'new difficulty: {difficulty}')
         self.min_disp_c = MyDataset.interpolate(
             *self.min_disp_c_range,
             difficulty
@@ -194,6 +191,7 @@ class MyDataset(torch.utils.data.Dataset):
             *self.max_vein_length_range,
             difficulty
         )
+        self.difficulty_fyi = difficulty
 
     @staticmethod
     def create_splits(
