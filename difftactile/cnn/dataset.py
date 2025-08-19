@@ -321,108 +321,112 @@ class MyDataset(torch.utils.data.Dataset):
             return np.array([-1., -1.])  # Return invalid marker position if no valid data
 
     def __getitem__(self, idx):
-        if SYSTEM_PARAMS.meta.cnn_gnn == 0:
-            file_path, frame_ix, dilation = self.data_points[idx]
+        file_path, frame_ix, dilation = self.data_points[idx]
 
-            data = np.load(file_path)
-            images = data['markers']
-            images_mask = data['markers_mask']
-            labels = data['vein_polyline']
-            labels_mask = data['vein_polyline_mask']
-            
-            dilated_clip_len = self.clip_len * dilation
-            images = images[frame_ix:frame_ix + dilated_clip_len:dilation]
-            images_mask = images_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
-            labels = labels[frame_ix:frame_ix + dilated_clip_len:dilation]
-            labels_mask = labels_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
-            
-            images, labels_signal_mask = self.augmentation_artificial_vein_signal_vectorised(
-                images, labels, labels_mask
-            )
-            labels_mask &= labels_signal_mask[:, np.newaxis, np.newaxis]
-            discrete_angles = [0, 60, 120, 180, 240, 300]
-            rotation_angle_deg = random.choice(discrete_angles)
-            images = self.augmentation_rotation(images, rotation_angle_deg)
-            labels = self.augmentation_rotation(labels, rotation_angle_deg)
-            angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
-            magnitude = random.uniform(0, 10)
-            images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
-            labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
-            angle_x = math.radians(random.uniform(-5, 5))
-            angle_y = math.radians(random.uniform(-5, 5))
-            images = self.rotate_xy(images, angle_x, angle_y)
-            labels = self.rotate_xy(labels, angle_x, angle_y)
-            images_random_remove_mask = self.randomly_remove(images)
-            images_mask &= images_random_remove_mask
+        data = np.load(file_path)
+        images = data['markers']
+        images_mask = data['markers_mask']
+        labels = data['vein_polyline']
+        labels_mask = data['vein_polyline_mask']
+        
+        dilated_clip_len = self.clip_len * dilation
+        images = images[frame_ix:frame_ix + dilated_clip_len:dilation]
+        images_mask = images_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
+        labels = labels[frame_ix:frame_ix + dilated_clip_len:dilation]
+        labels_mask = labels_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
 
-            images = MyDataset.downscale(self.k, images)
-            labels = MyDataset.downscale(self.k, labels)
+        # labels = labels[:, 0:1, :, :]
+        # labels_mask = labels_mask[:, 0:1, :]
+        
+        images, labels_signal_mask = self.augmentation_artificial_vein_signal_vectorised(
+            images, labels, labels_mask
+        )
+        labels_mask &= labels_signal_mask
+        discrete_angles = [0, 60, 120, 180, 240, 300]
+        rotation_angle_deg = random.choice(discrete_angles)
+        images = self.augmentation_rotation(images, rotation_angle_deg)
+        labels = self.augmentation_rotation(labels, rotation_angle_deg)
+        angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+        magnitude = random.uniform(0, 10)
+        images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+        labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+        angle_x = math.radians(random.uniform(-5, 5))
+        angle_y = math.radians(random.uniform(-5, 5))
+        images = self.rotate_xy(images, angle_x, angle_y)
+        labels = self.rotate_xy(labels, angle_x, angle_y)
 
-            h = self.h_crop_small
-            w = self.w_crop_small
+        points = images
+        points_mask = images_mask
 
-            images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)
+        pyg = self.generate_pyg_vectorised(points, labels, labels_mask)
+        if self.visualisation_mode:
             labels = MyDataset.generate_vein_image(
-                h, 
-                w, 
+                self.h_camera_big, 
+                self.w_camera_big, 
                 labels,
                 labels_mask
             )
-            images = torch.tensor(images, dtype=torch.float32) / 255.0
             labels = torch.tensor(labels, dtype=torch.float32) / 255.0
-            
-            # Add channel dimension: (T, H, W) -> (C, T, H, W)
-            images = images.unsqueeze(0)
-            labels = labels.unsqueeze(0)
-            
-            return images, labels
         else:
-            file_path, frame_ix, dilation = self.data_points[idx]
+            labels = torch.empty(0)
+        return pyg, labels
+    
+    def old_cnn_method(self):
+        return
+        file_path, frame_ix, dilation = self.data_points[idx]
 
-            data = np.load(file_path)
-            images = data['markers']
-            images_mask = data['markers_mask']
-            labels = data['vein_polyline']
-            labels_mask = data['vein_polyline_mask']
-            
-            dilated_clip_len = self.clip_len * dilation
-            images = images[frame_ix:frame_ix + dilated_clip_len:dilation]
-            images_mask = images_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
-            labels = labels[frame_ix:frame_ix + dilated_clip_len:dilation]
-            labels_mask = labels_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
-            
-            images, labels_signal_mask = self.augmentation_artificial_vein_signal_vectorised(
-                images, labels, labels_mask
-            )
-            labels_mask &= labels_signal_mask[np.newaxis, :, :]
-            discrete_angles = [0, 60, 120, 180, 240, 300]
-            rotation_angle_deg = random.choice(discrete_angles)
-            images = self.augmentation_rotation(images, rotation_angle_deg)
-            labels = self.augmentation_rotation(labels, rotation_angle_deg)
-            angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
-            magnitude = random.uniform(0, 10)
-            images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
-            labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
-            angle_x = math.radians(random.uniform(-5, 5))
-            angle_y = math.radians(random.uniform(-5, 5))
-            images = self.rotate_xy(images, angle_x, angle_y)
-            labels = self.rotate_xy(labels, angle_x, angle_y)
+        data = np.load(file_path)
+        images = data['markers']
+        images_mask = data['markers_mask']
+        labels = data['vein_polyline']
+        labels_mask = data['vein_polyline_mask']
+        
+        dilated_clip_len = self.clip_len * dilation
+        images = images[frame_ix:frame_ix + dilated_clip_len:dilation]
+        images_mask = images_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
+        labels = labels[frame_ix:frame_ix + dilated_clip_len:dilation]
+        labels_mask = labels_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
+        
+        images, labels_signal_mask = self.augmentation_artificial_vein_signal_vectorised(
+            images, labels, labels_mask
+        )
+        labels_mask &= labels_signal_mask
+        discrete_angles = [0, 60, 120, 180, 240, 300]
+        rotation_angle_deg = random.choice(discrete_angles)
+        images = self.augmentation_rotation(images, rotation_angle_deg)
+        labels = self.augmentation_rotation(labels, rotation_angle_deg)
+        angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+        magnitude = random.uniform(0, 10)
+        images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+        labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+        angle_x = math.radians(random.uniform(-5, 5))
+        angle_y = math.radians(random.uniform(-5, 5))
+        images = self.rotate_xy(images, angle_x, angle_y)
+        labels = self.rotate_xy(labels, angle_x, angle_y)
+        images_random_remove_mask = self.randomly_remove(images)
+        images_mask &= images_random_remove_mask
 
-            points = images
-            points_mask = images_mask
+        images = MyDataset.downscale(self.k, images)
+        labels = MyDataset.downscale(self.k, labels)
 
-            pyg = self.generate_pyg_vectorised(points, labels, labels_mask)
-            if self.visualisation_mode:
-                labels = MyDataset.generate_vein_image(
-                    self.h_camera_big, 
-                    self.w_camera_big, 
-                    labels,
-                    labels_mask
-                )
-                labels = torch.tensor(labels, dtype=torch.float32) / 255.0
-            else:
-                labels = torch.empty(0)
-            return pyg, labels
+        h = self.h_crop_small
+        w = self.w_crop_small
+
+        images, marker_masks = MyDataset.generate_markers_image(h, w, images, images_mask)
+        labels = MyDataset.generate_vein_image(
+            h, 
+            w, 
+            labels,
+            labels_mask
+        )
+        images = torch.tensor(images, dtype=torch.float32) / 255.0
+        labels = torch.tensor(labels, dtype=torch.float32) / 255.0
+        
+        # Add channel dimension: (T, H, W) -> (C, T, H, W)
+        images = images.unsqueeze(0)
+        labels = labels.unsqueeze(0)
+        
+        return images, labels
     
     def eval(self):
         self.visualisation_mode = True
@@ -990,28 +994,13 @@ class MyDataset(torch.utils.data.Dataset):
         valid_frames_mask = np.any(np.all(clip_vein_polyline_mask, axis=2), axis=1)
         num_veins = clip_vein_polyline.shape[1]
         num_vein_points = clip_vein_polyline.shape[2]
-        my_vein_mask = np.ones(shape=(num_veins, num_vein_points), dtype=bool)
         if not np.any(valid_frames_mask):
-            return clip_points, my_vein_mask
-        
-        padded = np.concatenate(([False], valid_frames_mask, [False]))
-        runs = np.where(np.diff(padded))[0]
-        run_lengths = runs[1::2] - runs[::2]
-        if len(run_lengths) > 0:
-            longest_run_idx = np.argmax(run_lengths)
-            start_idx = runs[::2][longest_run_idx]
-            end_idx = runs[1::2][longest_run_idx]
-        else:
-            start_idx = 0
-            end_idx = 0
-
-        lower_disp_c = self.avs_disp_c[self.difficulty_level]
+            return clip_points, clip_vein_polyline
+        # lower_disp_c = self.avs_disp_c[self.difficulty_level]
         # disp_c = random.uniform(lower_disp_c, 0.5)
         disp_c = 1.0
 
         if self.difficulty_level == 2:
-            my_vein_mask = np.zeros(shape=(num_veins, num_vein_points), dtype=bool)
-            # Generate random start indices for all veins at once
             target_num_vein_points = np.random.randint(
                 int(1/5*num_vein_points), 
                 int(num_vein_points) + 1, 
@@ -1019,29 +1008,23 @@ class MyDataset(torch.utils.data.Dataset):
             )
             max_start_indices = num_vein_points - target_num_vein_points
             start_indices = np.random.randint(0, max_start_indices + 1)
-            
-            # Create indices array for each vein
             row_indices = np.arange(num_veins)[:, np.newaxis]
             col_indices = np.arange(num_vein_points)[np.newaxis, :]
-            
-            # Set True for the selected ranges
             my_vein_mask = (col_indices >= start_indices[:, np.newaxis]) & \
                                  (col_indices < (start_indices[:, np.newaxis] + target_num_vein_points[:, np.newaxis]))
+        else:
+            my_vein_mask = np.ones(shape=(num_veins, num_vein_points), dtype=bool)
+        clip_vein_polyline_mask &= my_vein_mask[np.newaxis, :, :]
 
-        for j in range(start_idx, end_idx):
-            points = clip_points[j]
+        for t in range(clip_points.shape[0]):
+            points = clip_points[t]
             x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
-            frame_vein_polyline = clip_vein_polyline[j] 
-            frame_vein_polyline_mask = clip_vein_polyline_mask[j]
-            valid_veins = np.all(frame_vein_polyline_mask, axis=1)
-            frame_vein_polyline = frame_vein_polyline[valid_veins]
-            
-            for k in range(frame_vein_polyline.shape[0]):
-                vein_polyline = frame_vein_polyline[k]
-                vein_polyline = vein_polyline[my_vein_mask[k]]
-
+            for v in range(clip_vein_polyline[t].shape[0]):
+                tv_polyline = clip_vein_polyline[t, v, :, :][clip_vein_polyline_mask[t, v, :]]
+                if tv_polyline.size == 0:
+                    continue
                 # Calculate vectors for all points at once
-                vecs = SyntheticImageGenerator.vector_point_to_polynomial(vein_polyline, points)
+                vecs = SyntheticImageGenerator.vector_point_to_polynomial(tv_polyline, points)
                 x = np.linalg.norm(vecs, axis=1)
                 
                 # Calculate displacements based on conditions
@@ -1057,9 +1040,9 @@ class MyDataset(torch.utils.data.Dataset):
                 vec_normalized = vecs[mask] / x[mask, np.newaxis]
                 points[mask] = points[mask] + vec_normalized * displacement[mask, np.newaxis] * disp_c
 
-            clip_points[j] = points
+            clip_points[t] = points
 
-        return clip_points, my_vein_mask
+        return clip_points, clip_vein_polyline_mask
 
     def augmentation_artificial_vein_signal_unvectorised(self, clip_points, clip_vein_polyline, clip_vein_polyline_mask):
         valid_frames_mask = np.any(np.all(clip_vein_polyline_mask, axis=2), axis=1)

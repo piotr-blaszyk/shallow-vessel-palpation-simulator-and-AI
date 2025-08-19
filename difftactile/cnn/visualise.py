@@ -599,6 +599,8 @@ class Visualisation:
                     current_frame = max(0, current_frame - 1)
                 elif key == ord('k'):  # Next frame
                     current_frame = min(num_frames - 1, current_frame + 1)
+                elif key == ord('d'):
+                    foo = 7
 
     def test_data_loader(self):
         BATCH_SIZE = 16
