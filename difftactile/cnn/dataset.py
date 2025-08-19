@@ -52,7 +52,7 @@ class MyDataset(torch.utils.data.Dataset):
         # self.h_scaled = 1080
         self.avg_call_time = 0.0
         self.num_calls = 0
-        self.difficulty_level = 2
+        self.difficulty_level = 0
 
         self.randomly_remove_k = [0, 6, 13]
         self.avs_disp_c = [0.4, 0.3, 0.2]
