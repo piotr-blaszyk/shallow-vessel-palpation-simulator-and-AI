@@ -366,7 +366,7 @@ class MyDataModule(pl.LightningDataModule):
         self.current_train_indices = np.random.choice(
             len_train,
             train_subset_size,
-            replace=False
+            replace=True
         )
         len_val = len(self.val_dataset)
         val_subset_size = min(
@@ -423,7 +423,7 @@ class MyDataModule(pl.LightningDataModule):
 
 def main():
     BATCH_SIZE = 512
-    NUM_EPOCHS = 40
+    NUM_EPOCHS = 8
     NUM_WORKERS = 16
     TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 64
     VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 8
@@ -431,8 +431,7 @@ def main():
 
     logger = TensorBoardLogger("lightning_logs", name="gnn", version=f"run_{time.strftime('%Y%m%d_%H%M%S')}")
     full_dataset = MyDataset(
-        # data_dir=SYSTEM_PARAMS.files.dataset_root_reordered
-        data_dir='difftactile/output/training_data/pickle_always_record_reordered/'
+        data_dir=SYSTEM_PARAMS.files.dataset_root_today_reordered
     )
     train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
         full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
@@ -450,7 +449,9 @@ def main():
     
     init_difficulty = 0.0
     final_difficulty = 1.0
-    train_dataset.set_difficulty_level(init_difficulty)
+    train_dataset.set_difficulty_level(final_difficulty)
+    val_dataset.set_difficulty_level(final_difficulty)
+    test_dataset.set_difficulty_level(final_difficulty)
     train_dataset.set_stats(all_stats[final_difficulty])
     val_dataset.set_stats(all_stats[final_difficulty])
     test_dataset.set_stats(all_stats[final_difficulty])
@@ -474,9 +475,9 @@ def main():
     with open(SYSTEM_PARAMS.files.test_loader_gnn, 'wb') as f:
         pickle.dump(test_data, f)
     
-    return
 
     model = GNN(lr=LR)
+    model.set_stats(all_stats[final_difficulty])
 
     checkpoint_cb = ModelCheckpoint(
         monitor="val_fg_iou",
@@ -500,7 +501,7 @@ def main():
         callbacks=[
             checkpoint_cb, 
             # early_stopping,
-            CurriculumCallback(data_module, all_stats)
+            # CurriculumCallback(data_module, all_stats)
         ],
         reload_dataloaders_every_n_epochs=1
     )

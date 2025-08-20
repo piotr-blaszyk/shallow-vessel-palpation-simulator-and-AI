@@ -421,6 +421,7 @@ class Visualisation:
             full_dataset = MyDataset(
                 data_dir=SYSTEM_PARAMS.files.dataset_root_today_reordered
             )
+            full_dataset.set_difficulty_level(1.0)
             full_dataset.eval()
             data_loader = DataLoader(
                 full_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS

@@ -24,7 +24,7 @@ class MyDataset(torch.utils.data.Dataset):
         start_time = time.perf_counter()
         self.data_dir = data_dir
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
-        self.data_points_per_trajectory = 4
+        self.data_points_per_trajectory = 1024
         self.mode = mode
         self.files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)])
         self.file_vein_masks = []
@@ -94,6 +94,7 @@ class MyDataset(torch.utils.data.Dataset):
         for key, value in stats.items():
             if key not in bad_keys:
                 setattr(self, key, value)
+        foo = 7
 
     def populate_clips(self):
         dilations = [1, 2, 4]
@@ -344,22 +345,22 @@ class MyDataset(torch.utils.data.Dataset):
         labels = labels[frame_ix:frame_ix + dilated_clip_len:dilation]
         labels_mask = labels_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
         
-        # images, labels_signal_mask = self.augmentation_artificial_vein_signal_vectorised(
-        #     images, labels, labels_mask
-        # )
-        # labels_mask &= labels_signal_mask
-        # discrete_angles = [0, 60, 120, 180, 240, 300]
-        # rotation_angle_deg = random.choice(discrete_angles)
-        # images = self.augmentation_rotation(images, rotation_angle_deg)
-        # labels = self.augmentation_rotation(labels, rotation_angle_deg)
-        # angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
-        # magnitude = random.uniform(0, 10)
-        # images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
-        # labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
-        # angle_x = math.radians(random.uniform(-5, 5))
-        # angle_y = math.radians(random.uniform(-5, 5))
-        # images = self.rotate_xy(images, angle_x, angle_y)
-        # labels = self.rotate_xy(labels, angle_x, angle_y)
+        images, labels_signal_mask = self.augmentation_artificial_vein_signal_vectorised(
+            images, labels, labels_mask
+        )
+        labels_mask &= labels_signal_mask
+        discrete_angles = [0, 60, 120, 180, 240, 300]
+        rotation_angle_deg = random.choice(discrete_angles)
+        images = self.augmentation_rotation(images, rotation_angle_deg)
+        labels = self.augmentation_rotation(labels, rotation_angle_deg)
+        angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
+        magnitude = random.uniform(0, 10)
+        images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
+        labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+        angle_x = math.radians(random.uniform(-5, 5))
+        angle_y = math.radians(random.uniform(-5, 5))
+        images = self.rotate_xy(images, angle_x, angle_y)
+        labels = self.rotate_xy(labels, angle_x, angle_y)
 
         points = images
         points_mask = images_mask
