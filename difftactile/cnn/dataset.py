@@ -469,7 +469,7 @@ class MyDataset(torch.utils.data.Dataset):
     def generate_pyg_vectorised(self, clip_points, clip_labels, clip_labels_mask):
         num_frames = clip_points.shape[0]
         num_nodes = clip_points.shape[1]
-        num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features
+        num_edge_features = 3
         num_node_features = SYSTEM_PARAMS.gnn.num_node_features
         pos = np.zeros(shape=(num_frames * num_nodes, 2), dtype=float)
         data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
@@ -593,13 +593,22 @@ class MyDataset(torch.utils.data.Dataset):
         # Initialize node features array with extra feature
         x_features = np.zeros((num_frames * num_nodes, num_node_features))
 
-        # Initialize edge attributes for relative displacement messages
+        # Initialize edge attributes for relative displacement messages and dist_scaled
         edge_attr_rel_disp_message = np.zeros((adjacency_clip.shape[0], 1), dtype=float)
+        edge_attr_dist_scaled_spatial = np.zeros((adjacency_clip.shape[0], 1), dtype=float)
+        edge_attr_dist_scaled_temporal = np.zeros((adjacency_clip.shape[0], 1), dtype=float)
         
         # Calculate local_var for each node
         for t in range(num_frames):
             frame_offset = t * num_nodes
             frame_edges_mask = (adjacency_clip[:, 0] >= frame_offset) & (adjacency_clip[:, 0] < frame_offset + num_nodes) & spatial_edges_mask
+            
+            # Compute mean spatial edge distance for this timestep
+            frame_edge_distances = edge_attr_clip[frame_edges_mask, 0]  # Get distances for spatial edges in this frame
+            mean_edge_dist_timestep_spatial = np.mean(frame_edge_distances) if len(frame_edge_distances) > 0 else 0
+            
+            # Compute dist_scaled for spatial edges in this frame (only for spatial edges)
+            edge_attr_dist_scaled_spatial[frame_edges_mask, 0] = np.abs(mean_edge_dist_timestep_spatial - edge_attr_clip[frame_edges_mask, 0])
             
             # Vectorized calculation of maximum edge_var for each node in the frame
             nodes_in_frame = np.arange(frame_offset, frame_offset + num_nodes)
@@ -637,15 +646,49 @@ class MyDataset(torch.utils.data.Dataset):
             
             # Store the projection magnitudes in the separate array
             edge_attr_rel_disp_message[frame_edges_mask, 0] = projection_magnitudes
+
+        # Handle temporal edges
+        for t in range(num_frames-1):
+            # Get temporal edges between t and t+1
+            t_start = t * num_nodes
+            t_end = (t + 1) * num_nodes
+            temporal_edges_mask = ~spatial_edges_mask & (
+                ((adjacency_clip[:, 0] >= t_start) & (adjacency_clip[:, 0] < t_end)) |
+                ((adjacency_clip[:, 1] >= t_start) & (adjacency_clip[:, 1] < t_end))
+            )
+            
+            # Compute mean temporal edge distance between these timesteps
+            temporal_edge_distances = edge_attr_clip[temporal_edges_mask, 0]
+            edge_dist_timestamp_temporal = np.mean(temporal_edge_distances) if len(temporal_edge_distances) > 0 else 0
+            
+            # Compute dist_scaled for temporal edges (no abs, only for temporal edges)
+            edge_attr_dist_scaled_temporal[temporal_edges_mask, 0] = edge_attr_clip[temporal_edges_mask, 0] - edge_dist_timestamp_temporal
         
         x_features[:, 0] /= global_var
-        edge_attr_clip = np.concatenate([edge_attr_clip, edge_attr_rel_disp_message], axis=1)
-        edge_attr_clip_mask = np.array([True, True, False, True], dtype=bool)
+        
+        # Combine all edge attributes
+        edge_attr_clip = np.concatenate([
+            edge_attr_clip, 
+            edge_attr_rel_disp_message, 
+            edge_attr_dist_scaled_spatial,
+            edge_attr_dist_scaled_temporal
+        ], axis=1)
+        edge_attr_clip_mask = np.array([False, True, False, True, True, True], dtype=bool)  # Keep type, rel_disp_message, dist_scaled_spatial, dist_scaled_temporal
         edge_attr_clip = edge_attr_clip[:, edge_attr_clip_mask]
 
         if not self.warmup:
-            edge_attr_clip[:, 0] = (edge_attr_clip[:, 0] - self.edge_attr_mean[0]) / self.edge_attr_std[0]
-            edge_attr_clip[:, 2] = (edge_attr_clip[:, 2] - self.edge_attr_mean[2]) / self.edge_attr_std[2]
+            edge_attr_clip[:, 1] = (edge_attr_clip[:, 1] - self.edge_attr_mean[1]) / self.edge_attr_std[1]  # rel_disp_message
+            
+            edge_attr_clip[:, 2] = MyDataset.normalise_nonzero(
+                edge_attr_clip[:, 2], 
+                self.spatial_dist_mean_no_zeros,
+                self.spatial_dist_std_no_zeros
+            )
+            edge_attr_clip[:, 3] = MyDataset.normalise_nonzero(
+                edge_attr_clip[:, 3], 
+                self.temporal_dist_mean_no_zeros,
+                self.temporal_dist_std_no_zeros
+            )
 
             # Normalize positions
             pos[:, 0] = (pos[:, 0] - self.pos_mean[0]) / self.pos_std[0]  # x
@@ -664,6 +707,15 @@ class MyDataset(torch.utils.data.Dataset):
         edge_index = torch.tensor(adjacency_clip.T, dtype=torch.long)
         y = torch.tensor(ground_truth_labels_clip[mask], dtype=torch.long)
         return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, mask=mask, pos=pos)
+
+    @staticmethod
+    def normalise_nonzero(vals, nonzero_mean, nonzero_std):
+        nonzero_mask = vals != 0
+        nonzero_vals = vals[nonzero_mask]
+        normalized = np.zeros_like(vals)
+        if len(nonzero_vals) > 0 and nonzero_std > 0:
+            normalized[nonzero_mask] = (vals[nonzero_mask] - nonzero_mean) / nonzero_std
+        return normalized
 
     @staticmethod
     def generate_pyg_unvectorised(clip_points, clip_labels, clip_labels_mask):

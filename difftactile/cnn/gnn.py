@@ -630,6 +630,18 @@ def compute_stats(dataset, batch_size):
     x_std = np.std(x_all, axis=0)
     pos_std = np.std(pos_all, axis=0)
 
+    edge_attr_dist_scaled_spatial = edge_attr_all[:, 2]
+    edge_attr_dist_scaled_temporal = edge_attr_all[:, 3]
+
+    # Compute stats excluding zeros
+    spatial_nonzero = edge_attr_dist_scaled_spatial[edge_attr_dist_scaled_spatial != 0]
+    temporal_nonzero = edge_attr_dist_scaled_temporal[edge_attr_dist_scaled_temporal != 0]
+    
+    spatial_mean_no_zeros = np.mean(spatial_nonzero) if len(spatial_nonzero) > 0 else 0
+    spatial_std_no_zeros = np.std(spatial_nonzero) if len(spatial_nonzero) > 0 else 0
+    temporal_mean_no_zeros = np.mean(temporal_nonzero) if len(temporal_nonzero) > 0 else 0
+    temporal_std_no_zeros = np.std(temporal_nonzero) if len(temporal_nonzero) > 0 else 0
+
     return {
         'alpha_pos': alpha_pos,
         'alpha_neg': alpha_neg,
@@ -641,5 +653,10 @@ def compute_stats(dataset, batch_size):
         'edge_attr_std': edge_attr_std,
         'x_std': x_std,
         'pos_std': pos_std,
+
+        'spatial_dist_mean_no_zeros': spatial_mean_no_zeros,
+        'spatial_dist_std_no_zeros': spatial_std_no_zeros,
+        'temporal_dist_mean_no_zeros': temporal_mean_no_zeros,
+        'temporal_dist_std_no_zeros': temporal_std_no_zeros,
     }
 
