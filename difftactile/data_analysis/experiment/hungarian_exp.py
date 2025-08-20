@@ -9,8 +9,8 @@ from difftactile.main.constants import *
 class HungarianExp:
     @staticmethod
     def reorder_exp_points():
-        input_path = SYSTEM_PARAMS.files.exp_video_npz_test
-        output_path = SYSTEM_PARAMS.files.exp_video_npz_reordered
+        input_path = SYSTEM_PARAMS.files.exp_simple_straight_npz
+        output_path = SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered
         data = np.load(input_path)
         points = data['markers']
         points_mask = data['markers_mask']
@@ -82,7 +82,7 @@ class HungarianExp:
     
     @staticmethod
     def visualise_reordered_point_connectivity():
-        output_path = SYSTEM_PARAMS.files.exp_video_npz_reordered
+        output_path = SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered
         data = np.load(output_path)
         all_points = data['markers']
         all_points_mask = data['markers_mask']
@@ -174,17 +174,8 @@ class HungarianExp:
         tracked_points = np.zeros((num_frames, num_desired_points, 2))
         tracked_points_mask = np.zeros((num_frames, num_desired_points), dtype=bool)
         
-        # Match first frame to base points
-        valid_points_first = points[9][points_mask[9]]
-        cost_matrix = cdist(valid_points_first, base_points, metric='sqeuclidean')
-        row_ind, col_ind = linear_sum_assignment(cost_matrix)
-        
-        # Initialize first frame tracking
-        tracked_points[0] = np.zeros((num_desired_points, 2))
-        tracked_points_mask[0] = np.zeros(num_desired_points, dtype=bool)
-        for detected_idx, base_idx in zip(row_ind, col_ind):
-            tracked_points[0, base_idx] = valid_points_first[detected_idx]
-            tracked_points_mask[0, base_idx] = True
+        tracked_points[0] = base_points
+        tracked_points_mask[0] = True
             
         # Process subsequent frames
         for t in range(1, num_frames):
@@ -252,5 +243,5 @@ class HungarianExp:
 
 
 def main():
-    # HungarianExp.reorder_exp_points()
+    HungarianExp.reorder_exp_points()
     HungarianExp.visualise_reordered_point_connectivity()

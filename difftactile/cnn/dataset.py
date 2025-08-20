@@ -141,8 +141,8 @@ class MyDataset(torch.utils.data.Dataset):
                         while clips_found < self.data_points_per_trajectory and attempts < max_attempts:
                             start_idx = random.randrange(num_possible_starts)
                             if (
-                                valid_frames[start_idx:start_idx + dilated_clip_len:dilation].all() and
-                                self.clip_contains_vein(i, start_idx, dilation)
+                                valid_frames[start_idx:start_idx + dilated_clip_len:dilation].all()
+                                and self.clip_contains_vein(i, start_idx, dilation)
                             ):
                                 self.data_points.append((file_path, start_idx, dilation))
                                 clips_found += 1
@@ -587,8 +587,8 @@ class MyDataset(torch.utils.data.Dataset):
         # Apply convolution to all nodes at once using array operations
         relative_displacement_magnitude = np.array([np.convolve(node_magnitudes, kernel, mode='full')[:num_frames] 
                                                  for node_magnitudes in displacement_magnitudes_T]).T
-        relative_displacement_magnitude[0, :] *= 2
-        relative_displacement_magnitude[-1, :] *= 2
+        # relative_displacement_magnitude[0, :] *= 2
+        # relative_displacement_magnitude[-1, :] *= 2
 
         # Initialize node features array with extra feature
         x_features = np.zeros((num_frames * num_nodes, num_node_features))
@@ -793,9 +793,9 @@ class MyDataset(torch.utils.data.Dataset):
 
         return images[self.clip_len // 2, :, :]
 
-    def get_clip(self, data, clip_len, dilation, start_ix):
-        points = data['markers']
-        points_mask = data['markers_mask']
+    def get_clip(self, markers, markers_mask, clip_len, dilation, start_ix):
+        points = markers
+        points_mask = markers_mask
 
         dilated_clip_len = clip_len * dilation
         points = points[start_ix:start_ix + dilated_clip_len:dilation]
@@ -1247,4 +1247,42 @@ class MyDataset(torch.utils.data.Dataset):
         if match:
             return int(match.group(1))
         raise ValueError(f"Could not extract trajectory number from {file_path}")
-    
+
+
+class MyDatasetExpIterator:
+    def __init__(
+            self, 
+            dataset: MyDataset, 
+            npz_path
+        ):
+        self.dataset = dataset
+        data = np.load(npz_path)
+        markers = data['markers']
+        markers_mask = data['markers_mask']
+        if False and start_ix is not None and end_ix is not None:
+            markers = markers[start_ix:end_ix]
+            markers_mask = markers_mask[start_ix:end_ix]
+        self.num_frames = markers.shape[0]
+        self.markers = markers
+        self.markers_mask = markers_mask
+        self.clip_len = SYSTEM_PARAMS.cnn.clip_len
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        # dilation = random.choice(self.dilations)
+        dilation = 10
+        dilated_clip_len = self.clip_len * dilation
+        min_start_ix = 0
+        max_start_ix = self.num_frames - dilated_clip_len
+        start_ix = random.randint(min_start_ix, max_start_ix)
+        pyg = self.dataset.get_clip(
+            self.markers,
+            self.markers_mask,
+            self.clip_len,
+            dilation,
+            start_ix=155
+        )
+        labels = torch.empty(0)
+        return pyg, labels

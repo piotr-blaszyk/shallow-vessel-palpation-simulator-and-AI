@@ -94,6 +94,9 @@ class PreProcessSimData:
                 vein_polyline_mask=labels_mask,
                 target_id_array=target_id_array
             )
+    
+    def rename_npz():
+        pass
 
 
 def main():

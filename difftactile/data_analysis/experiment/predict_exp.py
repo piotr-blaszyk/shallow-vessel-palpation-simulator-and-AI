@@ -141,7 +141,7 @@ class PredictExp:
         self.camera_h_big = 1080
 
     def compute_all_3d_positions(self):
-        n = self.data['markers'].shape[0]
+        n = self.markers.shape[0]
 
         positions = self.poses[:, :3]
         all_positions = np.zeros(shape=(n, 3))
@@ -168,22 +168,27 @@ class PredictExp:
         n = len(marker_tracker.frame_markers)
         markers_array, markers_mask = SyntheticImageGenerator.create_padded_array_with_mask(marker_tracker.frame_markers)
         vein_data = [np.array([]) for i in range(n)]
-        veins_array, veins_mask = SyntheticImageGenerator.create_padded_array_with_mask(vein_data)
+        vein_polyline, vein_polyline_mask = SyntheticImageGenerator.create_padded_array_with_mask(vein_data)
+        target_id_array = np.zeros(shape=(0, 1), dtype=int)
         np.savez(
             path,
             markers=markers_array,
             markers_mask=markers_mask,
-            labels=veins_array,
-            labels_mask=veins_mask
+            vein_polyline=vein_polyline,
+            vein_polyline_mask=vein_polyline_mask,
+            target_id_array=target_id_array
         )
     
     def load_npz(self):
         path = SYSTEM_PARAMS.files.exp_video_npz_test
-        self.data = np.load(path)
+        data = np.load(path)
+        self.markers = data['markers']
+        self.markers_mask = data['markers_mask']
     
     def predict_clip(self, i):
         pyg = self.dataset.get_clip(
-            self.data,
+            self.markers,
+            self.markers_mask,
             self.clip_len,
             self.dilation,
             i
@@ -233,7 +238,7 @@ class PredictExp:
                 self.bin_count[x_A, y_A] += 1
         
     def predict_all_clips(self):
-        n = self.data['markers'].shape[0]
+        n = self.markers.shape[0]
         for i in tqdm(range(0, n - self.dilated_clip_len), desc="clip inference"):
             self.predict_clip(i)
         
@@ -283,7 +288,7 @@ class PredictExp:
         PredictExp.compute_npz_helper(
             video_in=SYSTEM_PARAMS.files.video_in_straight,
             video_out=SYSTEM_PARAMS.files.video_out_straight,
-            npz_out=SYSTEM_PARAMS.files.npz_out_straight
+            npz_out=SYSTEM_PARAMS.files.exp_simple_straight_npz
         )
 
     @staticmethod
@@ -386,6 +391,6 @@ class PredictExp:
 
 
 def main():
-    predict_exp = PredictExp()
-    predict_exp.go()
-    # PredictExp.compute_npz_test()
+    # predict_exp = PredictExp()
+    # predict_exp.go()
+    PredictExp.compute_npz_straight()

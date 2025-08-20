@@ -59,7 +59,7 @@ class Visualisation:
             npz_path = SYSTEM_PARAMS.files.exp_video_npz
             video_path = SYSTEM_PARAMS.files.vein_slide_across_extracted_markers
         elif mode == 'straight':
-            npz_path = SYSTEM_PARAMS.files.npz_out_straight
+            npz_path = SYSTEM_PARAMS.files.exp_simple_straight_npz
             video_path = SYSTEM_PARAMS.files.video_out_straight
 
         self.exp_data = np.load(npz_path)
@@ -373,7 +373,7 @@ class Visualisation:
                     cv2.destroyAllWindows()
                     break
     
-    def visualise_gnn(self, mode):
+    def visualise_gnn(self, mode, data_source):
         """
         Visualize GNN predictions and ground truth segmentation masks.
         Shows images per frame:
@@ -398,33 +398,50 @@ class Visualisation:
         adjacency_matrix = base_graph_data['adjacency_matrix']
 
         if mode == 'predictions':
-            # Load test data
-            with open(self.test_loader, 'rb') as f:
-                test_data = pickle.load(f)
-            dataset = test_data['dataset']
-            dataset.eval()
-            dataset.set_difficulty_level(1.0)
-            data_loader = DataLoader(
-                dataset,
-                batch_size=BATCH_SIZE,
-                shuffle=True,
-                num_workers=NUM_WORKERS
-            )
-            
             # Initialize model
             model = GNN(lr=-1)
             model.load_state_dict(torch.load(self.model_path))
             model.eval()
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model = model.to(device)
-        else:  # dataset mode
-            full_dataset = MyDataset(
-                data_dir=SYSTEM_PARAMS.files.dataset_root_today_reordered
+
+        # Load test data
+        with open(self.test_loader, 'rb') as f:
+            test_data = pickle.load(f)
+        all_stats = test_data['dataset_stats']
+        final_difficulty = 1.0
+        stats = all_stats[final_difficulty]
+        if data_source == 'pickled_test_dataset':
+            dataset = test_data['dataset']
+            dataset.set_stats(stats)
+            dataset.set_difficulty_level(1.0)
+            dataset.eval()
+            data_loader = DataLoader(
+                dataset,
+                batch_size=BATCH_SIZE,
+                shuffle=True,
+                num_workers=NUM_WORKERS
             )
+        elif data_source == 'fresh_dataset':  # dataset mode
+            full_dataset = MyDataset(
+                data_dir=SYSTEM_PARAMS.files.exp_trajectories
+            )
+            full_dataset.set_stats(stats)
             full_dataset.set_difficulty_level(1.0)
             full_dataset.eval()
             data_loader = DataLoader(
                 full_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+            )
+        elif data_source == 'exp_npz':
+            dataset = MyDataset(
+                data_dir=SYSTEM_PARAMS.files.empty_data_dir
+            )
+            dataset.set_stats(stats)
+            dataset.set_difficulty_level(1.0)
+            dataset.eval()
+            data_loader = MyDatasetExpIterator(
+                dataset=dataset,
+                npz_path=SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered
             )
 
         data_iter = iter(data_loader)
@@ -438,17 +455,24 @@ class Visualisation:
                 data_iter = iter(data_loader)
                 continue
             
-            labels_images = labels_images.numpy()[0, ...]
+            ground_truth_labels_present = labels_images.numel() != 0
+            
+            num_frames = SYSTEM_PARAMS.cnn.clip_len
+            if ground_truth_labels_present:
+                labels_images = labels_images.numpy()[0, ...]
+                labels_h = labels_images.shape[1] // LABELS_DOWNSIZE
+                labels_w = labels_images.shape[2] // LABELS_DOWNSIZE
+            else:
+                labels_h = 270
+                labels_w = 480
+                labels_images = np.zeros((num_frames, labels_h * LABELS_DOWNSIZE, labels_w * LABELS_DOWNSIZE), dtype=np.uint8)
 
             # Get number of frames from the mask
             num_nodes_per_frame = SYSTEM_PARAMS.vitactip.num_markers
-            num_frames = SYSTEM_PARAMS.cnn.clip_len
             central_frame = num_frames // 2
 
             # Pre-compute image dimensions
             h, w = 400, 400
-            labels_h = labels_images.shape[1] // LABELS_DOWNSIZE
-            labels_w = labels_images.shape[2] // LABELS_DOWNSIZE
             MARKER_SIZE = 6
             MARKER_RADIUS = MARKER_SIZE // 2
 
@@ -515,7 +539,7 @@ class Visualisation:
                 for point_idx, point in enumerate(points):
                     if 0 <= point[0] < w and 0 <= point[1] < h:
                         center = (int(point[0]), int(point[1]))
-                        if ground_truth[point_idx] == 1:
+                        if ground_truth_labels_present and ground_truth[point_idx] == 1:
                             # Magenta (BGR = (255, 0, 255)) for positive class
                             cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
                         else:
@@ -547,17 +571,21 @@ class Visualisation:
                             cv2.circle(soft_prediction_stack[frame_idx], center, MARKER_RADIUS, (intensity, intensity, intensity), -1, cv2.LINE_AA)
 
                 # Get and process labels image for current frame
-                labels_image = labels_images[frame_idx]
-                # Convert labels_image to BGR for visualization
-                labels_display = np.zeros((labels_image.shape[0], labels_image.shape[1], 3), dtype=np.uint8)
-                # Convert torch tensor to numpy and scale back to [0, 255]
-                labels_np = (labels_image * 255).astype(np.uint8)
-                labels_display[..., 0] = labels_np  # Set blue channel
-                labels_display[..., 1] = labels_np  # Set green channel
-                labels_display[..., 2] = labels_np  # Set red channel
+                if ground_truth_labels_present:
+                    labels_image = labels_images[frame_idx]
+                    # Convert labels_image to BGR for visualization
+                    labels_display = np.zeros((labels_image.shape[0], labels_image.shape[1], 3), dtype=np.uint8)
+                    # Convert torch tensor to numpy and scale back to [0, 255]
+                    labels_np = (labels_image * 255).astype(np.uint8)
+                    labels_display[..., 0] = labels_np  # Set blue channel
+                    labels_display[..., 1] = labels_np  # Set green channel
+                    labels_display[..., 2] = labels_np  # Set red channel
 
-                # Downscale by factor of 4 using INTER_AREA interpolation
-                labels_stack[frame_idx] = cv2.resize(labels_display, (labels_w, labels_h), interpolation=cv2.INTER_AREA)
+                    # Downscale by factor of 4 using INTER_AREA interpolation
+                    labels_stack[frame_idx] = cv2.resize(labels_display, (labels_w, labels_h), interpolation=cv2.INTER_AREA)
+                else:
+                    # Keep the black image for labels_stack when no ground truth is present
+                    pass
 
             # Display loop
             current_frame = 0
@@ -707,7 +735,10 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn(mode='predictions')
+    v.visualise_gnn(
+        mode='predictions', 
+        data_source='exp_npz'
+    )
 
 
 if __name__ == "__main__":

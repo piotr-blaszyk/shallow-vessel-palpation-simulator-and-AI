@@ -301,9 +301,11 @@
         "exp_overlay": "difftactile/output/exp_overlay.png",
         "video_in_straight": "difftactile/manual_or_experimental_data/domain-adaptation-vascular-videos/mkv/traj_1_trimmed.mkv",
         "video_out_straight": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_1_out.mkv",
-        "npz_out_straight": "difftactile/output/exp_video_straight.npz",
-        "dummy_data_dir": "difftactile/output/dummy_data_dir",
-        
+        "exp_simple_straight_npz": "difftactile/output/exp_video_straight.npz",
+        "exp_simple_straight_npz_reordered": "difftactile/output/exp_video_straight_reordered.npz",
+        "exp_trajectories": "difftactile/output/exp_trajectories",
+        "empty_data_dir": "difftactile/output/empty_data_dir",
+
         "dataset_root": "difftactile/output/training_data/pickle",
         "dataset_root_today": "difftactile/output/training_data/pickle_today",
         "dataset_root_today_reordered": "difftactile/output/training_data/pickle_today_reordered",
