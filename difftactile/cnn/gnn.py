@@ -431,7 +431,8 @@ def main():
 
     logger = TensorBoardLogger("lightning_logs", name="gnn", version=f"run_{time.strftime('%Y%m%d_%H%M%S')}")
     full_dataset = MyDataset(
-        data_dir=SYSTEM_PARAMS.files.dataset_root_reordered
+        # data_dir=SYSTEM_PARAMS.files.dataset_root_reordered
+        data_dir='difftactile/output/training_data/pickle_always_record_reordered/'
     )
     train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
         full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
@@ -446,6 +447,7 @@ def main():
         alpha_neg = stats['alpha_neg']
         alpha_pos = stats['alpha_pos']
         print(f'difficulty: {difficulty}; pos:neg = {alpha_neg:.2f}:{alpha_pos:.2f}')
+    
     init_difficulty = 0.0
     final_difficulty = 1.0
     train_dataset.set_difficulty_level(init_difficulty)
@@ -594,8 +596,9 @@ def compute_stats(dataset, batch_size):
     )
     num_pos = 0
     num_neg = 0
-    edge_attrs = []
-    points = []
+    edge_attr_all = []
+    x_all = []
+    pos_all = []
     for ix in tqdm(ixs, desc="Computing stats"):
         pyg, _ = dataset[ix]
         y = pyg.y.cpu().numpy()
@@ -603,32 +606,43 @@ def compute_stats(dataset, batch_size):
         neg = y.shape[0] - pos
         num_pos += pos
         num_neg += neg
-        edge_attr = pyg.edge_attr.cpu().numpy()[:, 0]
-        edge_attrs.append(edge_attr)
-        edge_attr = pyg.edge_attr.cpu().numpy()[:, 0]
-        points_batch = pyg.pos.cpu().numpy()
-        points.append(points_batch)
+
+        x = pyg.x.cpu().numpy()
+        edge_attr = pyg.edge_attr.cpu().numpy()
+        pos = pyg.pos.cpu().numpy()
+        x_all.append(x)
+        edge_attr_all.append(edge_attr)
+        pos_all.append(pos)
+
     alpha_pos = num_neg / (num_neg + num_pos)
     alpha_neg = num_pos / (num_neg + num_pos)
-    edge_attrs = np.hstack(edge_attrs)
-    edge_dist_mean = edge_attrs.mean()
-    edge_dist_std = edge_attrs.std()
-    points = np.vstack(points)
-    x = points[:, 0]
-    y = points[:, 1]
-    x_mean = x.mean()
-    x_std = x.std()
-    y_mean = y.mean()
-    y_std = y.std()
+
+    edge_attr_all = np.array(edge_attr_all)
+    x_all = np.array(x_all)
+    pos_all = np.array(pos_all)
+
+    edge_attr_all = edge_attr_all.reshape((-1, edge_attr_all.shape[-1]))
+    x_all = x_all.reshape((-1, x_all.shape[-1]))
+    pos_all = pos_all.reshape((-1, edge_attr_all.shape[-1]))
+
+    edge_attr_mean = np.mean(edge_attr_all, axis=0)
+    x_mean = np.mean(x_all, axis=0)
+    pos_mean = np.mean(pos_all, axis=0)
+
+    edge_attr_std = np.std(edge_attr_all, axis=0)
+    x_std = np.std(x_all, axis=0)
+    pos_std = np.std(pos_all, axis=0)
 
     return {
         'alpha_pos': alpha_pos,
         'alpha_neg': alpha_neg,
-        'edge_dist_mean': edge_dist_mean,
-        'edge_dist_std': edge_dist_std,
+
+        'edge_attr_mean': edge_attr_mean,
         'x_mean': x_mean,
+        'pos_mean': pos_mean,
+
+        'edge_attr_std': edge_attr_std,
         'x_std': x_std,
-        'y_mean': y_mean,
-        'y_std': y_std
+        'pos_std': pos_std,
     }
 

@@ -93,12 +93,10 @@ class MyDataset(torch.utils.data.Dataset):
             stats
     ):
         self.warmup = False
-        self.edge_dist_mean = stats['edge_dist_mean']
-        self.edge_dist_std = stats['edge_dist_std']
-        self.x_mean = stats['x_mean']
-        self.x_std = stats['x_std']
-        self.y_mean = stats['y_mean']
-        self.y_std = stats['y_std']
+        bad_keys = {'alpha_pos', 'alpha_neg'}
+        for key, value in stats.items():
+            if key not in bad_keys:
+                setattr(self, key, value)
 
     def populate_clips(self):
         if True or SYSTEM_PARAMS.meta.cnn_gnn == 0:
@@ -490,7 +488,7 @@ class MyDataset(torch.utils.data.Dataset):
         num_nodes = clip_points.shape[1]
         num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features
         num_node_features = SYSTEM_PARAMS.gnn.num_node_features
-        x_clip = np.zeros(shape=(num_frames * num_nodes, 2), dtype=float)
+        pos = np.zeros(shape=(num_frames * num_nodes, 2), dtype=float)
         data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_adjacency_matrix = data['adjacency_matrix']
         num_edges_single_frame = base_adjacency_matrix.shape[0]
@@ -501,6 +499,18 @@ class MyDataset(torch.utils.data.Dataset):
         frame_displacements = clip_points[1:] - clip_points[:-1]
         mean_frame_displacements = np.mean(frame_displacements, axis=1)
 
+        # Pre-compute edge distances for all frames to calculate variance
+        edge_distances = np.zeros((num_frames, num_edges_single_frame))
+        for t in range(num_frames):
+            points = clip_points[t]
+            me_points = points[adjacency[:, 0]]
+            neighbor_points = points[adjacency[:, 1]]
+            vec = neighbor_points - me_points
+            edge_distances[t] = np.linalg.norm(vec, axis=1)
+
+        # Calculate edge variance for spatial edges
+        edge_var = np.var(edge_distances, axis=0)
+
         adjacency_clip_list = []
         edge_attr_clip_list = []
 
@@ -509,18 +519,16 @@ class MyDataset(torch.utils.data.Dataset):
             labels = clip_labels[t]
             labels_mask = clip_labels_mask[t]
             labels_filtered = labels[labels_mask]
-            x_clip[t*num_nodes:(t+1)*num_nodes, 0:2] = points
+            pos[t*num_nodes:(t+1)*num_nodes, 0:2] = points
             
-            # edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
             edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
-            # Vectorized computation replacing the loop
             me_points = points[adjacency[:, 0]]
             neighbor_points = points[adjacency[:, 1]]
             vec = neighbor_points - me_points
             dist = np.linalg.norm(vec, axis=1)
-            # Not using sin_theta and cos_theta in final edge_attr, so we can skip computing them
             edge_attr[:, 0] = dist
             edge_attr[:, 1] = spatial
+            edge_attr[:, 2] = edge_var  # Add edge variance feature
             edge_attr_clip_list.append(edge_attr)
             adjacency_frame = adjacency + t*num_nodes
             adjacency_clip_list.append(adjacency_frame)
@@ -545,17 +553,22 @@ class MyDataset(torch.utils.data.Dataset):
                     src = (t+1)*num_nodes + np.arange(num_nodes)
                     dst = t*num_nodes + np.arange(num_nodes)
                 
-                # Compute displacement vector and subtract mean frame displacement
-                vec = x_clip[dst, 0:2] - x_clip[src, 0:2]
+                vec = pos[dst, 0:2] - pos[src, 0:2]
                 if direction == 0:
                     vec = vec - mean_frame_displacements[t]
                 else:
-                    vec = vec + mean_frame_displacements[t]  # Add because we're going backwards
+                    vec = vec + mean_frame_displacements[t]
                 
                 dist = np.linalg.norm(vec, axis=1)
                 
+                # Add temporal edges with dummy value (0) for edge_var
+                edge_attr_temporal = np.zeros((len(dist), num_edge_features))
+                edge_attr_temporal[:, 0] = dist
+                edge_attr_temporal[:, 1] = temporal
+                edge_attr_temporal[:, 2] = 0  # Dummy value for edge_var
+                
                 adjacency_clip_temporal_list.append(np.column_stack([src, dst]))
-                edge_attr_clip_temporal_list.append(np.column_stack([dist, np.full_like(dist, temporal)]))
+                edge_attr_clip_temporal_list.append(edge_attr_temporal)
             
         if len(adjacency_clip_temporal_list) > 0:
             adjacency_clip_temporal = np.vstack(adjacency_clip_temporal_list)
@@ -566,15 +579,47 @@ class MyDataset(torch.utils.data.Dataset):
         adjacency_clip = np.vstack(adjacency_clip_list)
         edge_attr_clip = np.vstack(edge_attr_clip_list)
 
-        pos = x_clip[:, :2].copy()
+        # Calculate local_var and global_var for each node
+        spatial_edges_mask = edge_attr_clip[:, 1] == spatial
+        spatial_edge_vars = edge_attr_clip[spatial_edges_mask, 2]
+        global_var = np.mean(spatial_edge_vars)
+
+        # Initialize node features array
+        x_features = np.zeros((num_frames * num_nodes, num_node_features))
+        
+        # Calculate local_var for each node
+        for t in range(num_frames):
+            frame_offset = t * num_nodes
+            frame_edges_mask = (adjacency_clip[:, 0] >= frame_offset) & (adjacency_clip[:, 0] < frame_offset + num_nodes) & spatial_edges_mask
+            
+            # Group edges by source node and get maximum edge_var
+            for node in range(num_nodes):
+                node_idx = frame_offset + node
+                node_edges_mask = (adjacency_clip[:, 0] == node_idx) & frame_edges_mask
+                if np.any(node_edges_mask):
+                    x_features[node_idx, 0] = np.max(edge_attr_clip[node_edges_mask, 2])
+                
+            # Set global_var for all nodes in the frame
+            x_features[frame_offset:frame_offset + num_nodes, 1] = global_var
+        
+        x_features[:, 0] /= global_var
+
+        edge_attr_clip = edge_attr_clip[:, 0:1]
         if not self.warmup:
-            edge_attr_clip[:, 0] = (edge_attr_clip[:, 0] - self.edge_dist_mean) / self.edge_dist_std
-            x_clip[:, 0] = (x_clip[:, 0] - self.x_mean) / self.x_std
-            x_clip[:, 1] = (x_clip[:, 1] - self.y_mean) / self.y_std
+            # Normalize edge attributes
+            edge_attr_clip[:, 0] = (edge_attr_clip[:, 0] - self.edge_attr_mean[0]) / self.edge_attr_std[0]  # dist
+            # edge_attr_clip[:, 2] = (edge_attr_clip[:, 2] - self.edge_attr_mean[2]) / self.edge_attr_std[2]  # var
+
+            # Normalize positions
+            pos[:, 0] = (pos[:, 0] - self.pos_mean[0]) / self.pos_std[0]  # x
+            pos[:, 1] = (pos[:, 1] - self.pos_mean[1]) / self.pos_std[1]  # y
+
+            # Normalize node features
+            x_features[:, 0] = (x_features[:, 0] - self.x_mean[0]) / self.x_std[0]  # local_var
+            x_features[:, 1] = (x_features[:, 1] - self.x_mean[1]) / self.x_std[1]  # global_var
 
         edge_attr = torch.tensor(edge_attr_clip, dtype=torch.float)
-        x_clip_const = np.zeros(shape=(num_frames * num_nodes, 1), dtype=float)
-        x = torch.tensor(x_clip_const, dtype=torch.float)
+        x = torch.tensor(x_features, dtype=torch.float)
         mask = np.ones(shape=(num_frames * num_nodes,), dtype=bool)
         mask = torch.tensor(mask, dtype=torch.bool)
         pos = torch.tensor(pos, dtype=torch.float)
