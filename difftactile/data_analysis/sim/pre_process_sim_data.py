@@ -19,10 +19,10 @@ import re
 
 
 class PreProcessSimData:
-    @classmethod
+    @staticmethod
     def sim_marker_tracker():
-        input_dir = SYSTEM_PARAMS.files.dataset_root
-        output_dir = SYSTEM_PARAMS.files.dataset_root_reordered
+        input_dir = SYSTEM_PARAMS.files.dataset_root_today
+        output_dir = SYSTEM_PARAMS.files.dataset_root_today_reordered
         base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_points = base_graph_data['points']
         file_paths = sorted([os.path.join(input_dir, f) for f in os.listdir(input_dir)])
@@ -32,6 +32,7 @@ class PreProcessSimData:
             points_mask = data['markers_mask']
             labels = data['vein_polyline']
             labels_mask = data['vein_polyline_mask']
+            target_id_array = data['target_id_array']
 
             file_base_points = points[0]
             cost_matrix = cdist(file_base_points, base_points, metric='sqeuclidean')
@@ -48,17 +49,16 @@ class PreProcessSimData:
                 markers=points_reordered,
                 markers_mask=points_mask_reordered,
                 vein_polyline=labels,
-                vein_polyline_mask=labels_mask
+                vein_polyline_mask=labels_mask,
+                target_id_array=target_id_array
             )
     
-    @classmethod
+    @staticmethod
     def smooth():
-        input_dir = SYSTEM_PARAMS.files.dataset_root_reordered
-        output_dir = SYSTEM_PARAMS.files.dataset_root_reordered_smoothed
+        input_dir = SYSTEM_PARAMS.files.dataset_root_yesterday_reordered
+        output_dir = SYSTEM_PARAMS.files.dataset_root_yesterday_reordered_smoothed
         file_paths = sorted([os.path.join(input_dir, f) for f in os.listdir(input_dir)])
         os.makedirs(output_dir, exist_ok=True)
-        k = 3
-        kernel = np.ones(k) / k
         
         for file_path in tqdm(file_paths, desc="Processing marker data files"):
             data = np.load(file_path)
@@ -66,15 +66,24 @@ class PreProcessSimData:
             points_mask = data['markers_mask']
             labels = data['vein_polyline']
             labels_mask = data['vein_polyline_mask']
-            # target_id_array = data['target_id_array']
+            target_id_array = data['target_id_array']
             
             num_frames, num_points, _ = points.shape
-            smoothed_points = np.zeros_like(points)
+            k = min(11, num_frames)
+            kernel = np.ones(k) / k
+            smoothed_points = np.zeros((num_frames - k + 1, num_points, 2))  # Adjusted size for 'valid' mode
+            
             for i in range(num_points):
                 x_coords = points[:, i, 0]
-                smoothed_points[:, i, 0] = np.convolve(x_coords, kernel, mode='same')
+                smoothed_points[:, i, 0] = np.convolve(x_coords, kernel, mode='valid')
                 y_coords = points[:, i, 1]
-                smoothed_points[:, i, 1] = np.convolve(y_coords, kernel, mode='same')
+                smoothed_points[:, i, 1] = np.convolve(y_coords, kernel, mode='valid')
+
+            # Trim other arrays to match the smoothed points range
+            valid_frames = slice(k - 1, num_frames)  # The range where valid convolution results exist
+            points_mask = points_mask[valid_frames]
+            labels = labels[valid_frames]
+            labels_mask = labels_mask[valid_frames]
 
             output_path = os.path.join(output_dir, os.path.basename(file_path))
             np.savez(
@@ -83,7 +92,7 @@ class PreProcessSimData:
                 markers_mask=points_mask,
                 vein_polyline=labels,
                 vein_polyline_mask=labels_mask,
-                # target_id_array=target_id_array
+                target_id_array=target_id_array
             )
 
 

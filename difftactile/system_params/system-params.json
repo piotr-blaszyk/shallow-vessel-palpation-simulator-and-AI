@@ -290,9 +290,6 @@
         "training_data_contact_folder": "difftactile/output/training_data/contact",
         "training_data_markers_folder": "difftactile/output/training_data/markers",
         "training_data_segmentation_mask_folder": "difftactile/output/training_data/segmentation_mask",
-        "dataset_root": "difftactile/output/training_data/pickle",
-        "dataset_root_reordered": "difftactile/output/training_data/pickle_reordered",
-        "dataset_root_reordered_smoothed": "difftactile/output/training_data/pickle_reordered_smoothed",
         "dataset_data_point": "trajectory_{:04d}.npz",
         "test_loader": "difftactile/output/test_loader.pickle",
         "test_loader_gnn": "difftactile/output/test_loader_gnn.pickle",
@@ -305,6 +302,13 @@
         "video_in_straight": "difftactile/manual_or_experimental_data/domain-adaptation-vascular-videos/mkv/traj_1_trimmed.mkv",
         "video_out_straight": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_1_out.mkv",
         "npz_out_straight": "difftactile/output/exp_video_straight.npz",
-        "dummy_data_dir": "difftactile/output/dummy_data_dir"
+        "dummy_data_dir": "difftactile/output/dummy_data_dir",
+        
+        "dataset_root": "difftactile/output/training_data/pickle",
+        "dataset_root_today": "difftactile/output/training_data/pickle_today",
+        "dataset_root_today_reordered": "difftactile/output/training_data/pickle_today_reordered",
+        "dataset_root_yesterday": "difftactile/output/training_data/pickle_yesterday",
+        "dataset_root_yesterday_reordered": "difftactile/output/training_data/pickle_yesterday_reordered",
+        "dataset_root_yesterday_reordered_smoothed": "difftactile/output/training_data/pickle_yesterday_reordered_smoothed"
     }
 }

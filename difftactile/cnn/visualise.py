@@ -419,7 +419,7 @@ class Visualisation:
             model = model.to(device)
         else:  # dataset mode
             full_dataset = MyDataset(
-                data_dir=SYSTEM_PARAMS.files.dataset_root
+                data_dir=SYSTEM_PARAMS.files.dataset_root_today_reordered
             )
             full_dataset.eval()
             data_loader = DataLoader(
