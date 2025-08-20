@@ -431,7 +431,7 @@ def main():
 
     logger = TensorBoardLogger("lightning_logs", name="gnn", version=f"run_{time.strftime('%Y%m%d_%H%M%S')}")
     full_dataset = MyDataset(
-        data_dir=SYSTEM_PARAMS.files.dataset_root_test
+        data_dir=SYSTEM_PARAMS.files.dataset_root_reordered
     )
     train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
         full_dataset, train_size=0.70, val_size=0.15, test_size=0.15

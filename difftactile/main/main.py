@@ -101,6 +101,7 @@ class Contact:
         self.marker_data = []
         self.vein_polyline_data = []
         self.vein_polyline_mask_data = []
+        self.target_id_data = []
         self.vein_cx_A = None
         self.target_3_ts = 12
         self.target_4_ts = 226
@@ -1394,6 +1395,11 @@ class Contact:
         self.vein_polyline_data.append(vein_polyline_np)
         self.vein_polyline_mask_data.append(vein_polyline_mask)
 
+        target_id_arr = np.array([
+            self.current_target_idx[None]
+        ])
+        self.target_id_data.append(target_id_arr)
+
         if training_iteration == 0:
             cv2.imwrite(contact_file, markers_mask)
             cv2.imwrite(markers_file, markers_img)
@@ -1456,18 +1462,21 @@ class Contact:
         markers_array, markers_mask = SyntheticImageGenerator.create_padded_array_with_mask(self.marker_data)
         vein_polyline_array = np.array(self.vein_polyline_data)
         vein_polyline_mask = np.array(self.vein_polyline_mask_data)
+        target_id_array = np.array(self.target_id_data)
 
         np.savez(
             path,
             markers=markers_array,
             markers_mask=markers_mask,
             vein_polyline=vein_polyline_array,
-            vein_polyline_mask=vein_polyline_mask
+            vein_polyline_mask=vein_polyline_mask,
+            target_id_array=target_id_array
         )
         
         self.marker_data = []
         self.vein_polyline_data = []
         self.vein_polyline_mask_data = []
+        self.target_id_data = []
 
     def take_2d_markers_snapshot(self, k):
         self.take_snapshot_1(k)
@@ -2371,7 +2380,7 @@ class Contact:
         self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
-            for k in range(0, 2):
+            for k in range(0, 1):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
                 for i in range(0, 1):
@@ -2405,7 +2414,8 @@ class Contact:
                         self.visualisation_update_gui(ts)
                         target = self.current_target_idx[None]
                         if (
-                            target >= 4 and (target - 4) % 3 == 0
+                            target > 2
+                            and ts % 2 == 0
                         ):
                             self.record_training_data_point(j, ts)
                         if self.last_target_reached[None] == 1:

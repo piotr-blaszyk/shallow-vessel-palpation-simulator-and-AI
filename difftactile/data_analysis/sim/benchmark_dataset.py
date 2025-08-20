@@ -16,7 +16,7 @@ from difftactile.data_analysis.experiment.adjacency import Adjacency
 
 def main():
     dataset = MyDataset(
-        data_dir=SYSTEM_PARAMS.files.dataset_root_test
+        data_dir=SYSTEM_PARAMS.files.dataset_root_reordered
     )
 
     start_time = time.perf_counter()
