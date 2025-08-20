@@ -575,19 +575,19 @@ class MyDataset(torch.utils.data.Dataset):
             frame_offset = t * num_nodes
             frame_edges_mask = (adjacency_clip[:, 0] >= frame_offset) & (adjacency_clip[:, 0] < frame_offset + num_nodes) & spatial_edges_mask
             
-            # Group edges by source node and get maximum edge_var
-            for node in range(num_nodes):
-                node_idx = frame_offset + node
-                node_edges_mask = (adjacency_clip[:, 0] == node_idx) & frame_edges_mask
-                if np.any(node_edges_mask):
-                    x_features[node_idx, 0] = np.max(edge_attr_clip[node_edges_mask, 2])
-                
+            # Vectorized calculation of maximum edge_var for each node in the frame
+            nodes_in_frame = np.arange(frame_offset, frame_offset + num_nodes)
+            node_edge_vars = [edge_attr_clip[
+                (adjacency_clip[:, 0] == node_idx) & frame_edges_mask, 2
+            ] for node_idx in nodes_in_frame]
+            max_vars = np.array([np.max(vars) if len(vars) > 0 else 0 for vars in node_edge_vars])
+            x_features[frame_offset:frame_offset + num_nodes, 0] = max_vars
+            
             # Set global_var for all nodes in the frame
             x_features[frame_offset:frame_offset + num_nodes, 1] = global_var
         
         x_features[:, 0] /= global_var
 
-        edge_attr_clip = edge_attr_clip[:, 0:1]
         if not self.warmup:
             # Normalize edge attributes
             edge_attr_clip[:, 0] = (edge_attr_clip[:, 0] - self.edge_attr_mean[0]) / self.edge_attr_std[0]  # dist
