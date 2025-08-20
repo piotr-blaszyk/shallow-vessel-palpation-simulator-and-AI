@@ -580,8 +580,11 @@ class MyDataset(torch.utils.data.Dataset):
         # Use convolution to expand to full sequence
         kernel = np.array([0.5, 0.5])
         relative_displacement_magnitude = np.zeros((num_frames, num_nodes))
-        for n in range(num_nodes):
-            relative_displacement_magnitude[:, n] = np.convolve(displacement_magnitudes[:, n], kernel, mode='full')[:num_frames]
+        # Reshape displacement_magnitudes to (num_nodes, num_frames-1) for convolution
+        displacement_magnitudes_T = displacement_magnitudes.T
+        # Apply convolution to all nodes at once using array operations
+        relative_displacement_magnitude = np.array([np.convolve(node_magnitudes, kernel, mode='full')[:num_frames] 
+                                                 for node_magnitudes in displacement_magnitudes_T]).T
         relative_displacement_magnitude[0, :] *= 2
         relative_displacement_magnitude[-1, :] *= 2
 
@@ -608,6 +611,7 @@ class MyDataset(torch.utils.data.Dataset):
             x_features[frame_offset:frame_offset + num_nodes, 2] = relative_displacement_magnitude[t]
         
         x_features[:, 0] /= global_var
+        edge_attr = edge_attr[:, 0:2]
 
         if not self.warmup:
             # Normalize edge attributes
