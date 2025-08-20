@@ -424,11 +424,11 @@ def main():
     LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="gnn", version=f"run_{time.strftime('%Y%m%d_%H%M%S')}")
-    full_dataset = MyDataset(
-        data_dir=SYSTEM_PARAMS.files.dataset_root_today_reordered
-    )
-    train_dataset, val_dataset, test_dataset = MyDataset.create_splits(
-        full_dataset, train_size=0.70, val_size=0.15, test_size=0.15
+    full_dataset = MyDataset()
+    train_dataset, val_dataset, test_dataset = full_dataset.create_splits(
+        train_size=0.7,
+        val_size=0.15,
+        test_size=0.15
     )
     all_stats = {}
     for i in range(11):
@@ -471,7 +471,6 @@ def main():
     with open(SYSTEM_PARAMS.files.test_loader_gnn, 'wb') as f:
         pickle.dump(test_data, f)
     
-
     model = GNN(lr=LR)
     model.set_stats(all_stats[final_difficulty])
 

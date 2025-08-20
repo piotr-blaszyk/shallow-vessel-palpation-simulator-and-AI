@@ -423,14 +423,17 @@ class Visualisation:
                 num_workers=NUM_WORKERS
             )
         elif data_source == 'fresh_dataset':  # dataset mode
-            full_dataset = MyDataset(
-                data_dir=SYSTEM_PARAMS.files.exp_trajectories
+            full_dataset = MyDataset()
+            train_dataset, _, _ = full_dataset.create_splits(
+                train_size=1.0,
+                val_size=0.0,
+                test_size=0.0
             )
-            full_dataset.set_stats(stats)
-            full_dataset.set_difficulty_level(1.0)
-            full_dataset.eval()
+            train_dataset.set_stats(stats)
+            train_dataset.set_difficulty_level(1.0)
+            train_dataset.eval()
             data_loader = DataLoader(
-                full_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+                train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
             )
         elif data_source == 'exp_npz':
             dataset = MyDataset(
