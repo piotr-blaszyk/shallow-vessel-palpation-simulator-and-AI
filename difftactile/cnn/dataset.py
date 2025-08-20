@@ -469,8 +469,8 @@ class MyDataset(torch.utils.data.Dataset):
     def generate_pyg_vectorised(self, clip_points, clip_labels, clip_labels_mask):
         num_frames = clip_points.shape[0]
         num_nodes = clip_points.shape[1]
-        num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features+1
-        num_node_features = SYSTEM_PARAMS.gnn.num_node_features
+        num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features
+        num_node_features = SYSTEM_PARAMS.gnn.num_node_features + 1  # Adding one more feature
         pos = np.zeros(shape=(num_frames * num_nodes, 2), dtype=float)
         data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_adjacency_matrix = data['adjacency_matrix']
@@ -577,15 +577,16 @@ class MyDataset(torch.utils.data.Dataset):
         # Calculate magnitude of displacement differences
         displacement_magnitudes = np.linalg.norm(displacement_diff, axis=2)  # Shape: (num_frames-1, num_nodes)
         
-        # Initialize pre and post displacement arrays
-        relative_displacement_magnitude_pre = np.zeros((num_frames, num_nodes))
-        relative_displacement_magnitude_post = np.zeros((num_frames, num_nodes))
-        
-        # Set pre displacements (t-1 to t) - shift forward
-        relative_displacement_magnitude_pre[1:] = displacement_magnitudes
-        
-        # Set post displacements (t to t+1) - shift backward
-        relative_displacement_magnitude_post[:-1] = displacement_magnitudes
+        # Use convolution to expand to full sequence
+        kernel = np.array([0.5, 0.5])
+        relative_displacement_magnitude = np.zeros((num_frames, num_nodes))
+        # Reshape displacement_magnitudes to (num_nodes, num_frames-1) for convolution
+        displacement_magnitudes_T = displacement_magnitudes.T
+        # Apply convolution to all nodes at once using array operations
+        relative_displacement_magnitude = np.array([np.convolve(node_magnitudes, kernel, mode='full')[:num_frames] 
+                                                 for node_magnitudes in displacement_magnitudes_T]).T
+        relative_displacement_magnitude[0, :] *= 2
+        relative_displacement_magnitude[-1, :] *= 2
 
         # Initialize node features array with extra feature
         x_features = np.zeros((num_frames * num_nodes, num_node_features))
@@ -606,16 +607,16 @@ class MyDataset(torch.utils.data.Dataset):
             # Set global_var for all nodes in the frame
             x_features[frame_offset:frame_offset + num_nodes, 1] = global_var
             
-            # Set pre and post displacement magnitudes for all nodes in the frame
-            x_features[frame_offset:frame_offset + num_nodes, 2] = relative_displacement_magnitude_pre[t]
-            x_features[frame_offset:frame_offset + num_nodes, 3] = relative_displacement_magnitude_post[t]
+            # Set relative_displacement_magnitude for all nodes in the frame
+            x_features[frame_offset:frame_offset + num_nodes, 2] = relative_displacement_magnitude[t]
         
         x_features[:, 0] /= global_var
-        edge_attr_clip = edge_attr_clip[:, 0:2]
+        edge_attr = edge_attr[:, 0:2]
 
         if not self.warmup:
             # Normalize edge attributes
             edge_attr_clip[:, 0] = (edge_attr_clip[:, 0] - self.edge_attr_mean[0]) / self.edge_attr_std[0]  # dist
+            # edge_attr_clip[:, 2] = (edge_attr_clip[:, 2] - self.edge_attr_mean[2]) / self.edge_attr_std[2]  # var
 
             # Normalize positions
             pos[:, 0] = (pos[:, 0] - self.pos_mean[0]) / self.pos_std[0]  # x
@@ -624,8 +625,7 @@ class MyDataset(torch.utils.data.Dataset):
             # Normalize node features
             x_features[:, 0] = (x_features[:, 0] - self.x_mean[0]) / self.x_std[0]  # local_var
             x_features[:, 1] = (x_features[:, 1] - self.x_mean[1]) / self.x_std[1]  # global_var
-            x_features[:, 2] = (x_features[:, 2] - self.x_mean[2]) / self.x_std[2]  # relative_displacement_magnitude_pre
-            x_features[:, 3] = (x_features[:, 3] - self.x_mean[3]) / self.x_std[3]  # relative_displacement_magnitude_post
+            x_features[:, 2] = (x_features[:, 2] - self.x_mean[2]) / self.x_std[2]  # relative_displacement_magnitude
 
         edge_attr = torch.tensor(edge_attr_clip, dtype=torch.float)
         x = torch.tensor(x_features, dtype=torch.float)
