@@ -359,10 +359,11 @@ class MyDataModule(pl.LightningDataModule):
 
     def _select_new_subset(self):
         len_train = len(self.train_dataset)
-        train_subset_size = min(
-            len_train,
-            self.train_subset_size
-        )
+        # train_subset_size = min(
+        #     len_train,
+        #     self.train_subset_size
+        # )
+        train_subset_size = self.train_subset_size
         self.current_train_indices = np.random.choice(
             len_train,
             train_subset_size,
@@ -423,9 +424,9 @@ class MyDataModule(pl.LightningDataModule):
 
 def main():
     BATCH_SIZE = 512
-    NUM_EPOCHS = 8
+    NUM_EPOCHS = 4
     NUM_WORKERS = 16
-    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 64
+    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 16
     VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 8
     LR = 1e-3
 
