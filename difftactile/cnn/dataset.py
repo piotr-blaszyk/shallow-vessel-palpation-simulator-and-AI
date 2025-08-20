@@ -1263,6 +1263,7 @@ class MyDatasetExpIterator:
             markers = markers[start_ix:end_ix]
             markers_mask = markers_mask[start_ix:end_ix]
         self.num_frames = markers.shape[0]
+        print(f'num frames: {self.num_frames}')
         self.markers = markers
         self.markers_mask = markers_mask
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
@@ -1272,17 +1273,18 @@ class MyDatasetExpIterator:
 
     def __next__(self):
         # dilation = random.choice(self.dilations)
-        dilation = 10
+        dilation = 2
         dilated_clip_len = self.clip_len * dilation
         min_start_ix = 0
         max_start_ix = self.num_frames - dilated_clip_len
         start_ix = random.randint(min_start_ix, max_start_ix)
+        # start_ix = 155
         pyg = self.dataset.get_clip(
             self.markers,
             self.markers_mask,
             self.clip_len,
             dilation,
-            start_ix=155
+            start_ix
         )
         labels = torch.empty(0)
         return pyg, labels

@@ -441,7 +441,8 @@ class Visualisation:
             dataset.eval()
             data_loader = MyDatasetExpIterator(
                 dataset=dataset,
-                npz_path=SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered
+                # npz_path=SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered
+                npz_path=SYSTEM_PARAMS.files.exp_video_npz_reordered
             )
 
         data_iter = iter(data_loader)
