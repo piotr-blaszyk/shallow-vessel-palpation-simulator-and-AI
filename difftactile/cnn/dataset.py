@@ -470,7 +470,7 @@ class MyDataset(torch.utils.data.Dataset):
         num_frames = clip_points.shape[0]
         num_nodes = clip_points.shape[1]
         num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features
-        num_node_features = SYSTEM_PARAMS.gnn.num_node_features + 1  # Adding one more feature
+        num_node_features = SYSTEM_PARAMS.gnn.num_node_features
         pos = np.zeros(shape=(num_frames * num_nodes, 2), dtype=float)
         data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_adjacency_matrix = data['adjacency_matrix']
@@ -576,7 +576,9 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Calculate magnitude of displacement differences
         displacement_magnitudes = np.linalg.norm(displacement_diff, axis=2)  # Shape: (num_frames-1, num_nodes)
-        
+        # Store the relative displacement vectors for each node and frame
+        relative_displacement_vectors = np.zeros((num_frames, num_nodes, 2))
+        relative_displacement_vectors[1:] = -displacement_diff  # t-1 to t vectors
         # Use convolution to expand to full sequence
         kernel = np.array([0.5, 0.5])
         relative_displacement_magnitude = np.zeros((num_frames, num_nodes))
@@ -590,6 +592,9 @@ class MyDataset(torch.utils.data.Dataset):
 
         # Initialize node features array with extra feature
         x_features = np.zeros((num_frames * num_nodes, num_node_features))
+
+        # Initialize edge attributes for relative displacement messages
+        edge_attr_rel_disp_message = np.zeros((adjacency_clip.shape[0], 1), dtype=float)
         
         # Calculate local_var for each node
         for t in range(num_frames):
@@ -609,14 +614,38 @@ class MyDataset(torch.utils.data.Dataset):
             
             # Set relative_displacement_magnitude for all nodes in the frame
             x_features[frame_offset:frame_offset + num_nodes, 2] = relative_displacement_magnitude[t]
+
+            # Compute edge vectors and relative displacement messages for this frame
+            frame_edges = adjacency_clip[frame_edges_mask]
+            frame_edge_attr = edge_attr_clip[frame_edges_mask]
+            
+            # Get source nodes for edges in this frame
+            src_nodes = frame_edges[:, 0] - frame_offset
+            
+            # Compute edge vectors using positions
+            edge_vectors = pos[frame_edges[:, 1]] - pos[frame_edges[:, 0]]  # Shape: (num_frame_edges, 2)
+            edge_lengths = np.linalg.norm(edge_vectors, axis=1, keepdims=True)
+            edge_directions = edge_vectors / (edge_lengths + 1e-10)  # Normalized edge vectors
+            
+            # Get displacement vectors for source nodes
+            src_displacements = relative_displacement_vectors[t, src_nodes]  # Shape: (num_frame_edges, 2)
+            
+            # Project displacement vectors onto edge directions
+            # projection = dot(displacement, edge_direction) * edge_direction
+            # We only need the signed magnitude, which is just the dot product
+            projection_magnitudes = np.sum(src_displacements * edge_directions, axis=1)
+            
+            # Store the projection magnitudes in the separate array
+            edge_attr_rel_disp_message[frame_edges_mask, 0] = projection_magnitudes
         
         x_features[:, 0] /= global_var
-        edge_attr = edge_attr[:, 0:2]
+        edge_attr_clip = np.concatenate([edge_attr_clip, edge_attr_rel_disp_message], axis=1)
+        edge_attr_clip_mask = np.array([True, True, False, True], dtype=bool)
+        edge_attr_clip = edge_attr_clip[:, edge_attr_clip_mask]
 
         if not self.warmup:
-            # Normalize edge attributes
-            edge_attr_clip[:, 0] = (edge_attr_clip[:, 0] - self.edge_attr_mean[0]) / self.edge_attr_std[0]  # dist
-            # edge_attr_clip[:, 2] = (edge_attr_clip[:, 2] - self.edge_attr_mean[2]) / self.edge_attr_std[2]  # var
+            edge_attr_clip[:, 0] = (edge_attr_clip[:, 0] - self.edge_attr_mean[0]) / self.edge_attr_std[0]
+            edge_attr_clip[:, 2] = (edge_attr_clip[:, 2] - self.edge_attr_mean[2]) / self.edge_attr_std[2]
 
             # Normalize positions
             pos[:, 0] = (pos[:, 0] - self.pos_mean[0]) / self.pos_std[0]  # x

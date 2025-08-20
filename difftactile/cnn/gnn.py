@@ -300,22 +300,15 @@ class GNN(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = {
-            "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
+            "scheduler": torch.optim.lr_scheduler.StepLR(
                 optimizer,
-                mode='max',           # Maximize the monitored quantity (validation IoU)
-                factor=0.1,          # Multiply LR by this factor when reducing
-                patience=3,          # Number of epochs with no improvement after which LR will be reduced
-                min_lr=1e-6,        # Don't reduce LR below this value
-                cooldown=1,         # Number of epochs to wait before resuming normal operation after LR has been reduced
-                threshold=1e-4,
-                threshold_mode='rel'
+                step_size=8,  # Number of batches before reducing LR
+                gamma=0.5,    # Multiply LR by this factor (0.5 = reduce by half)
             ),
-            "monitor": "val_fg_iou",   # Quantity to monitor
-            "interval": "epoch",
+            "interval": "step",  # Call scheduler every batch instead of epoch
             "frequency": 1
         }
-        # return {"optimizer": optimizer, "lr_scheduler": scheduler}
-        return {"optimizer": optimizer}
+        return {"optimizer": optimizer, "lr_scheduler": scheduler}
 
     def on_train_epoch_start(self):
         # Get current learning rate
@@ -359,10 +352,11 @@ class MyDataModule(pl.LightningDataModule):
 
     def _select_new_subset(self):
         len_train = len(self.train_dataset)
-        train_subset_size = min(
-            len_train,
-            self.train_subset_size
-        )
+        # train_subset_size = min(
+        #     len_train,
+        #     self.train_subset_size
+        # )
+        train_subset_size = self.train_subset_size
         self.current_train_indices = np.random.choice(
             len_train,
             train_subset_size,
@@ -422,10 +416,10 @@ class MyDataModule(pl.LightningDataModule):
 
 
 def main():
-    BATCH_SIZE = 512
-    NUM_EPOCHS = 8
+    BATCH_SIZE = 256
+    NUM_EPOCHS = 4
     NUM_WORKERS = 16
-    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 64
+    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 16
     VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 8
     LR = 1e-3
 
