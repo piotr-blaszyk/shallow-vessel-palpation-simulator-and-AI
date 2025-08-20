@@ -1,5 +1,17 @@
-for j in range(4):
-    for k in range(0, 2):
-        for i in range(0, 2):
-            file_num = j * 4 + k * 2 + i
-            print(f'file_num: {file_num}; j: {j}; k: {k}; i: {i}')
+import numpy as np
+
+num_time_steps = 10
+data_points = np.arange(num_time_steps, dtype=float)
+
+# Differences
+diffs = np.diff(data_points)  # shape (num_time_steps - 1,)
+
+# Example kernel to "spread" each diff across two time steps
+kernel = np.array([0.5, 0.5])  
+
+# Convolve with 'full' and then trim/pad
+reconstructed = np.convolve(diffs, kernel, mode="full")[:num_time_steps]
+
+print("Original shape:", data_points.shape)
+print("Diffs shape:", diffs.shape)
+print("Reconstructed shape:", reconstructed.shape)

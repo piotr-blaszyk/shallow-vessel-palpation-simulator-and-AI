@@ -468,7 +468,7 @@ class Visualisation:
                     mask = data.mask
                     out = out[mask]
                     probs = torch.sigmoid(out)
-                    pred = (probs > 0.55).float()
+                    pred = (probs > 0.5).float()
                     
                     probs = probs.cpu().numpy().astype(np.float32)
                     pred = pred.cpu().numpy().astype(int)
@@ -482,10 +482,9 @@ class Visualisation:
                 start_idx = frame_idx * num_nodes_per_frame
                 end_idx = (frame_idx + 1) * num_nodes_per_frame
                 frame_points = data.pos[start_idx:end_idx].cpu().numpy()[:, :2]
-                frame_points = MyDataset.normalise_gnn_points(frame_points)
                 
                 # Transform from (-1,1) to (0,200) range
-                points = (frame_points + 1) / 2 * w  # Now in range (0,200)
+                points = (frame_points + 3) / 6 * w  # Now in range (0,200)
                 points = points.astype(np.float32)  # Keep as float for draw_point
                 
                 # Create graph connectivity visualization
@@ -708,7 +707,7 @@ def main():
     # v.visualize_experiment(mode='curved')
     # v.visualise('predictions')
     # v.graph()
-    v.visualise_gnn(mode='dataset')
+    v.visualise_gnn(mode='predictions')
 
 
 if __name__ == "__main__":

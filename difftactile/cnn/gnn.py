@@ -438,6 +438,8 @@ def main():
     )
     all_stats = {}
     for i in range(11):
+        if i != 10:
+            continue
         difficulty = i / 10
         train_dataset.set_difficulty_level(difficulty)
         stats = compute_stats(train_dataset, BATCH_SIZE)
@@ -624,7 +626,7 @@ def compute_stats(dataset, batch_size):
 
     edge_attr_all = edge_attr_all.reshape((-1, edge_attr_all.shape[-1]))
     x_all = x_all.reshape((-1, x_all.shape[-1]))
-    pos_all = pos_all.reshape((-1, edge_attr_all.shape[-1]))
+    pos_all = pos_all.reshape((-1, pos_all.shape[-1]))
 
     edge_attr_mean = np.mean(edge_attr_all, axis=0)
     x_mean = np.mean(x_all, axis=0)

@@ -470,7 +470,7 @@ class MyDataset(torch.utils.data.Dataset):
         num_frames = clip_points.shape[0]
         num_nodes = clip_points.shape[1]
         num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features
-        num_node_features = SYSTEM_PARAMS.gnn.num_node_features
+        num_node_features = SYSTEM_PARAMS.gnn.num_node_features + 1  # Adding one more feature
         pos = np.zeros(shape=(num_frames * num_nodes, 2), dtype=float)
         data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_adjacency_matrix = data['adjacency_matrix']
@@ -567,7 +567,25 @@ class MyDataset(torch.utils.data.Dataset):
         spatial_edge_vars = edge_attr_clip[spatial_edges_mask, 2]
         global_var = np.mean(spatial_edge_vars)
 
-        # Initialize node features array
+        # Calculate individual node displacements and mean displacements
+        node_displacements = clip_points[1:] - clip_points[:-1]  # Shape: (num_frames-1, num_nodes, 2)
+        mean_displacements = np.mean(node_displacements, axis=1, keepdims=True)  # Shape: (num_frames-1, 1, 2)
+        
+        # Compute difference between individual and mean displacements
+        displacement_diff = node_displacements - mean_displacements  # Shape: (num_frames-1, num_nodes, 2)
+        
+        # Calculate magnitude of displacement differences
+        displacement_magnitudes = np.linalg.norm(displacement_diff, axis=2)  # Shape: (num_frames-1, num_nodes)
+        
+        # Use convolution to expand to full sequence
+        kernel = np.array([0.5, 0.5])
+        relative_displacement_magnitude = np.zeros((num_frames, num_nodes))
+        for n in range(num_nodes):
+            relative_displacement_magnitude[:, n] = np.convolve(displacement_magnitudes[:, n], kernel, mode='full')[:num_frames]
+        relative_displacement_magnitude[0, :] *= 2
+        relative_displacement_magnitude[-1, :] *= 2
+
+        # Initialize node features array with extra feature
         x_features = np.zeros((num_frames * num_nodes, num_node_features))
         
         # Calculate local_var for each node
@@ -585,6 +603,9 @@ class MyDataset(torch.utils.data.Dataset):
             
             # Set global_var for all nodes in the frame
             x_features[frame_offset:frame_offset + num_nodes, 1] = global_var
+            
+            # Set relative_displacement_magnitude for all nodes in the frame
+            x_features[frame_offset:frame_offset + num_nodes, 2] = relative_displacement_magnitude[t]
         
         x_features[:, 0] /= global_var
 
@@ -600,6 +621,7 @@ class MyDataset(torch.utils.data.Dataset):
             # Normalize node features
             x_features[:, 0] = (x_features[:, 0] - self.x_mean[0]) / self.x_std[0]  # local_var
             x_features[:, 1] = (x_features[:, 1] - self.x_mean[1]) / self.x_std[1]  # global_var
+            x_features[:, 2] = (x_features[:, 2] - self.x_mean[2]) / self.x_std[2]  # relative_displacement_magnitude
 
         edge_attr = torch.tensor(edge_attr_clip, dtype=torch.float)
         x = torch.tensor(x_features, dtype=torch.float)
