@@ -308,7 +308,10 @@ class GNN(pl.LightningModule):
             "interval": "step",  # Call scheduler every batch instead of epoch
             "frequency": 1
         }
-        return {"optimizer": optimizer, "lr_scheduler": scheduler}
+        return {
+            "optimizer": optimizer, 
+            # "lr_scheduler": scheduler
+        }
 
     def on_train_epoch_start(self):
         # Get current learning rate
@@ -420,7 +423,7 @@ def main():
     NUM_EPOCHS = 4
     NUM_WORKERS = 16
     TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 16
-    VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 8
+    VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 4
     LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="gnn", version=f"run_{time.strftime('%Y%m%d_%H%M%S')}")

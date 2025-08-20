@@ -220,7 +220,7 @@ class MyDataset(torch.utils.data.Dataset):
 
             trajectory_to_indices = {}
             for i, data_point in enumerate(data_points):
-                file_path = data_point[1]
+                file_path = data_point[2]
                 trajectory_to_indices.setdefault(file_path, []).append(i)
             trajectories = list(trajectory_to_indices.keys())
             trajectories.sort()

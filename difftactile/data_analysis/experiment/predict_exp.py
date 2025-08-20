@@ -83,9 +83,7 @@ class PredictExp:
         self.init_model()
         self.init_camera_params()
         self.compute_mapping_2d_3d()
-        self.dataset = MyDataset(
-            data_dir=SYSTEM_PARAMS.files.dummy_data_dir
-        )
+        self.dataset = MyDataset()
         with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
             test_data = pickle.load(f)
         self.stats = test_data['dataset_stats'][1.0]
@@ -260,7 +258,7 @@ class PredictExp:
     
     def generate_mask_image(self):
         res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
-        threshold = np.percentile(res, 95)
+        threshold = np.percentile(res, 50)
         res_binary = (res > threshold).astype(np.int32)
 
         img = (res_binary * 255).astype(np.uint8)
@@ -381,16 +379,16 @@ class PredictExp:
         plt.close()
 
     def go(self):
-        self.load_npz()
-        self.compute_all_3d_positions()
-        self.predict_all_clips()
-        self.write_probs_to_npz()
+        # self.load_npz()
+        # self.compute_all_3d_positions()
+        # self.predict_all_clips()
+        # self.write_probs_to_npz()
         self.load_probs_from_npz()
         self.generate_mask_image()
         self.evaluate()
 
 
 def main():
-    # predict_exp = PredictExp()
-    # predict_exp.go()
-    PredictExp.compute_npz_straight()
+    predict_exp = PredictExp()
+    predict_exp.go()
+    # PredictExp.compute_npz_straight()

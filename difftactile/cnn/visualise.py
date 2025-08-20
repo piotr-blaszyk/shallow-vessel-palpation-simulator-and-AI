@@ -741,7 +741,7 @@ def main():
     # v.graph()
     v.visualise_gnn(
         mode='predictions', 
-        data_source='exp_npz'
+        data_source='pickled_test_dataset'
     )
 
 
