@@ -74,7 +74,7 @@ class PredictExp:
         self.max_x = self.min_x + self.phantom_length_x
         self.min_y = self.poses[16][1] - self.sensor_radius
         self.max_y = self.min_y + self.phantom_length_y
-        self.bin_size = 1
+        self.bin_size = 5
         self.bin_num_x = math.ceil(self.phantom_length_x / self.bin_size)
         self.bin_num_y = math.ceil(self.phantom_length_y / self.bin_size)
         self.bins = np.zeros(shape=(2, self.bin_num_x, self.bin_num_y), dtype=int)
@@ -92,6 +92,12 @@ class PredictExp:
         self.stats = test_data['dataset_stats'][1.0]
         self.dataset.set_stats(self.stats)
         self.dataset.set_difficulty_level(1.0)
+
+        self.ground_truth_img_path = SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask
+        self.ground_truth_img_downsampled_path = SYSTEM_PARAMS.files.ground_truth_labels_downsampled
+        self.prediction_img_path = SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask
+        self.sensor_trajectory_img_path = SYSTEM_PARAMS.files.sensor_trajectory
+        self.ground_truth_feasible_img_path = SYSTEM_PARAMS.files.ground_truth_feasible
     
     def z_unnormalise(self, points):
         x_mean = self.stats['x_mean']
@@ -219,9 +225,8 @@ class PredictExp:
                 z
             )
             for j in range(127):
-                # prob = probs[t, j]
-                # pred = preds[t, j]
-                pred = 1
+                prob = probs[t, j]
+                pred = preds[t, j]
                 x, y = points[t, j]
                 pos_E = self.map_2d_3d[int(x), int(y)]
                 pos_E_homogeneous = np.append(pos_E, 1)
@@ -267,13 +272,18 @@ class PredictExp:
     
     def generate_mask_image(self):
         res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
-        # threshold = np.percentile(res, 95)
-        # res_binary = (res > threshold).astype(np.int32)
-        res_binary = (res > 1e-2).astype(np.int32)
+        # threshold = np.percentile(res, 50)
+        threshold = 1e-6
 
+        res_binary = (self.bin_prob_sum > 1e-6).astype(np.int32)
         img = (res_binary * 255).astype(np.uint8)
         img = np.flip(np.flip(img, axis=0), axis=1)
-        cv2.imwrite(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, img)
+        cv2.imwrite(self.prediction_img_path, img)
+
+        feasible_binary = (self.bin_count > 0).astype(np.int32)
+        img = (feasible_binary * 255).astype(np.uint8)
+        img = np.flip(np.flip(img, axis=0), axis=1)
+        cv2.imwrite(self.sensor_trajectory_img_path, img)
     
     @staticmethod
     def compute_npz():
@@ -326,57 +336,149 @@ class PredictExp:
             path=npz_out
         )
     
-    def convert_image_to_bins(self, image_path):
-        input_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    def downsample_ground_truth_image_to_prediction_shape(self):
+        ground_truth_path = self.ground_truth_img_path
+        prediction_path = self.prediction_img_path
+        sensor_trajectory_path = self.sensor_trajectory_img_path
+        ground_truth_feasible = self.ground_truth_feasible_img_path
         
-        # Convert to binary (just in case)
-        input_image = (input_image == 255).astype(np.uint8) * 255
-        
-        # Get target dimensions
-        target_height = self.bin_num_y
-        target_width = self.bin_num_x
-        target_aspect_ratio = target_width / target_height
-        
-        # Get current dimensions
-        height, width = input_image.shape
-        current_aspect_ratio = width / height
-        
-        # Calculate padding needed to match target aspect ratio
-        if current_aspect_ratio > target_aspect_ratio:
-            # Image is too wide, add vertical padding
-            new_height = int(width / target_aspect_ratio)
-            pad_top = (new_height - height) // 2
-            pad_bottom = new_height - height - pad_top
-            padded_image = cv2.copyMakeBorder(input_image, pad_top, pad_bottom, 0, 0, 
-                                            cv2.BORDER_CONSTANT, value=0)
-        else:
-            # Image is too tall, add horizontal padding
-            new_width = int(height * target_aspect_ratio)
-            pad_left = (new_width - width) // 2
-            pad_right = new_width - width - pad_left
-            padded_image = cv2.copyMakeBorder(input_image, 0, 0, pad_left, pad_right, 
-                                            cv2.BORDER_CONSTANT, value=0)
-        
-        # Resize to target dimensions using INTER_AREA for downsampling
-        resized_image = cv2.resize(padded_image, (target_width, target_height), 
-                                 interpolation=cv2.INTER_AREA)
-        
-        # Normalize back to binary values
-        resized_image = (resized_image > 127).astype(np.uint8) * 255
-        
-        return resized_image
-
-    def evaluate(self):
-        ground_truth_path = SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask
-        ground_truth_bins_path = SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask_bins
-        prediction_path = SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask
-
-        ground_truth_bins = self.convert_image_to_bins(ground_truth_path)
-        cv2.imwrite(ground_truth_bins_path, ground_truth_bins)
-
+        # Load both images
         ground_truth = cv2.imread(ground_truth_path, cv2.IMREAD_GRAYSCALE)
         prediction = cv2.imread(prediction_path, cv2.IMREAD_GRAYSCALE)
+        sensor_trajectory = cv2.imread(sensor_trajectory_path, cv2.IMREAD_GRAYSCALE)
+        
+        if ground_truth is None or prediction is None or sensor_trajectory is None:
+            raise ValueError("Failed to load ground truth, prediction, or sensor trajectory image")
+            
+        # Binarize images if they aren't already (assuming 0 and 255 values)
+        ground_truth = (ground_truth > 127).astype(np.float32)
+        
+        target_height, target_width = prediction.shape
+        
+        # Calculate scaling factors
+        scale_y = ground_truth.shape[0] / target_height
+        scale_x = ground_truth.shape[1] / target_width
+        
+        # Initialize output array
+        downsampled = np.zeros((target_height, target_width), dtype=np.float32)
+        
+        # Perform block majority voting
+        for y in range(target_height):
+            for x in range(target_width):
+                # Calculate block boundaries
+                y_start = int(y * scale_y)
+                y_end = int((y + 1) * scale_y)
+                x_start = int(x * scale_x)
+                x_end = int((x + 1) * scale_x)
+                
+                # Handle edge cases
+                y_end = min(y_end, ground_truth.shape[0])
+                x_end = min(x_end, ground_truth.shape[1])
+                
+                # Extract block and compute majority vote
+                block = ground_truth[y_start:y_end, x_start:x_end]
+                block_mean = np.mean(block)
+                downsampled[y, x] = 1.0 if block_mean > 0.5 else 0.0
+        
+        # Convert to uint8 image format and save
+        downsampled_image = (downsampled * 255).astype(np.uint8)
+        cv2.imwrite(self.ground_truth_img_downsampled_path, downsampled_image)
+        
+        # Compute intersection with sensor trajectory
+        sensor_trajectory_binary = (sensor_trajectory > 127)
+        downsampled_binary = (downsampled_image > 127)
+        intersection = np.logical_and(sensor_trajectory_binary, downsampled_binary).astype(np.uint8) * 255
+        cv2.imwrite(ground_truth_feasible, intersection)
+        
+        return downsampled
 
+    def evaluate_downscaled(self):
+        # Load prediction and feasible ground truth images
+        prediction = cv2.imread(self.prediction_img_path, cv2.IMREAD_GRAYSCALE)
+        ground_truth = cv2.imread(self.ground_truth_feasible_img_path, cv2.IMREAD_GRAYSCALE)
+        
+        if prediction is None or ground_truth is None:
+            raise ValueError("Failed to load prediction or ground truth image")
+        
+        # Convert to binary format
+        prediction = (prediction > 127).astype(np.uint8)
+        ground_truth = (ground_truth > 127).astype(np.uint8)
+        
+        # Compute IoU scores
+        prediction_tensor = torch.from_numpy(prediction).float().unsqueeze(0).unsqueeze(0)
+        ground_truth_tensor = torch.from_numpy(ground_truth).float().unsqueeze(0).unsqueeze(0)
+        metrics = Common.iou_score(prediction_tensor, ground_truth_tensor)
+        print("IoU Metrics (downscaled):", metrics)
+        
+        # Create confusion matrix overlay
+        confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth, prediction)
+        
+        # Load all images for visualization
+        images = {
+            'Original Ground Truth': cv2.imread(self.ground_truth_img_path, cv2.IMREAD_GRAYSCALE),
+            'Downsampled Ground Truth': cv2.imread(self.ground_truth_img_downsampled_path, cv2.IMREAD_GRAYSCALE),
+            'Sensor Trajectory': cv2.imread(self.sensor_trajectory_img_path, cv2.IMREAD_GRAYSCALE),
+            'Feasible Ground Truth': cv2.imread(self.ground_truth_feasible_img_path, cv2.IMREAD_GRAYSCALE),
+            'Prediction': cv2.imread(self.prediction_img_path, cv2.IMREAD_GRAYSCALE),
+            'Confusion Overlay': (confusion_overlay * 255).astype(np.uint8)
+        }
+        
+        # Check if all images were loaded successfully
+        if any(img is None for img in images.values()):
+            raise ValueError("Failed to load one or more images for visualization")
+        
+        # Define target size for each image
+        k = 4
+        target_width = 180 * k
+        target_height = 105 * k
+        
+        # Resize all images to the target size
+        resized_images = []
+        for name, img in images.items():
+            if len(img.shape) == 2:  # Grayscale image
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            resized = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_NEAREST)
+            resized_images.append(resized)
+        
+        # Create a 2x3 grid
+        grid = np.zeros((target_height * 2, target_width * 3, 3), dtype=np.uint8)
+        
+        # Place images in the grid
+        for idx, img in enumerate(resized_images):
+            row = idx // 3
+            col = idx % 3
+            grid[row * target_height:(row + 1) * target_height, 
+                 col * target_width:(col + 1) * target_width] = img
+        
+        # Display the grid
+        plt.figure(figsize=(30, 10))
+        manager = plt.get_current_fig_manager()
+        manager.full_screen_toggle()  # toggles fullscreen mode
+        plt.imshow(cv2.cvtColor(grid, cv2.COLOR_BGR2RGB))
+        plt.axis('off')
+        
+        # Add titles for each subplot
+        titles = list(images.keys())
+        for idx, title in enumerate(titles):
+            row = idx // 3
+            col = idx % 3
+            plt.text(col * target_width + target_width/2, 
+                    row * target_height + 20, 
+                    title,
+                    horizontalalignment='center',
+                    color='white',
+                    fontsize=10,
+                    bbox=dict(facecolor='black', alpha=0.7))
+        
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+
+    def evaluate_upscaled(self):
+        ground_truth_path = self.ground_truth_img_path
+        prediction_path = self.prediction_img_path
+        ground_truth = cv2.imread(ground_truth_path, cv2.IMREAD_GRAYSCALE)
+        prediction = cv2.imread(prediction_path, cv2.IMREAD_GRAYSCALE)
         ground_truth = (ground_truth == 255).astype(np.uint8)
         prediction = (prediction == 255).astype(np.uint8)
         
@@ -398,19 +500,9 @@ class PredictExp:
         padded_prediction[pad_top:pad_top+scaled_height, pad_left:pad_left+scaled_width] = scaled_prediction
         prediction = padded_prediction
 
-        combined_path = SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask_feasible
-        ground_truth_binary = ground_truth == 1
-        prediction_binary = prediction == 1
-        combined_mask = np.logical_and(ground_truth_binary, prediction_binary)
-        combined_image = combined_mask.astype(np.uint8) * 255
-        cv2.imwrite(combined_path, combined_image)
-        ground_truth = combined_image
-        ground_truth = (ground_truth == 255).astype(np.uint8)
-
         # Convert numpy arrays to PyTorch tensors with correct shape [B, T, H, W]
         prediction_tensor = torch.from_numpy(prediction).float().unsqueeze(0).unsqueeze(0)
         ground_truth_tensor = torch.from_numpy(ground_truth).float().unsqueeze(0).unsqueeze(0)
-
         metrics = Common.iou_score(prediction_tensor, ground_truth_tensor)
         confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth, prediction)
         print(metrics)
@@ -428,7 +520,6 @@ class PredictExp:
         plt.imshow(confusion_overlay)
         plt.title(f'Overlay')
         plt.axis('off')
-        
         legend_elements = [
             plt.Rectangle((0, 0), 1, 1, fc='black', label='True Negative'),
             plt.Rectangle((0, 0), 1, 1, fc='white', label='True Positive'),
@@ -448,7 +539,9 @@ class PredictExp:
         self.write_probs_to_npz()
         self.load_probs_from_npz()
         self.generate_mask_image()
-        self.evaluate()
+        self.downsample_ground_truth_image_to_prediction_shape()
+        self.evaluate_downscaled()
+        # self.evaluate_upscaled()
 
 
 def main():
