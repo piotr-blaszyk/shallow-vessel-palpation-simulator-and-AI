@@ -427,7 +427,7 @@ def main():
     LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="gnn", version=f"run_{time.strftime('%Y%m%d_%H%M%S')}")
-    full_dataset = MyDataset()
+    full_dataset = MyDataset(scheme='new')
     train_dataset, val_dataset, test_dataset = full_dataset.create_splits(
         train_size=0.7,
         val_size=0.15,
@@ -473,6 +473,8 @@ def main():
     }
     with open(SYSTEM_PARAMS.files.test_loader_gnn, 'wb') as f:
         pickle.dump(test_data, f)
+    
+    return
     
     model = GNN(lr=LR)
     model.set_stats(all_stats[final_difficulty])

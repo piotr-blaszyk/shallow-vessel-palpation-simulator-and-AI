@@ -151,6 +151,7 @@ class MyDataset(torch.utils.data.Dataset):
         foo = 7
 
     def populate_clips_old_scheme(self):
+        return
         self.file_today_vein_masks = []
         self.file_today_contains_vein = []
         for i in range(len(self.files_today)):
@@ -241,16 +242,16 @@ class MyDataset(torch.utils.data.Dataset):
             targets = targets[:, 0]
             valid_frames = (targets >= 3) & np.isin((targets - 2) % 3, [1, 2])
 
-            displacement_vectors = np.diff(points, axis=0)
-            displacement_magnitudes = np.linalg.norm(displacement_vectors, axis=2)
-            mean_displacement = np.mean(displacement_magnitudes, axis=1)
-            padded_displacement = np.pad(mean_displacement, (1, 1), mode='edge')
-            kernel = np.ones(2) / 2.0
-            smoothed_displacement = np.convolve(padded_displacement, kernel, mode='valid')
-            threshold = np.percentile(smoothed_displacement, 10)
-            static_frames = smoothed_displacement < threshold
+            # displacement_vectors = np.diff(points, axis=0)
+            # displacement_magnitudes = np.linalg.norm(displacement_vectors, axis=2)
+            # mean_displacement = np.mean(displacement_magnitudes, axis=1)
+            # padded_displacement = np.pad(mean_displacement, (1, 1), mode='edge')
+            # kernel = np.ones(2) / 2.0
+            # smoothed_displacement = np.convolve(padded_displacement, kernel, mode='valid')
+            # threshold = np.percentile(smoothed_displacement, 10)
+            # static_frames = smoothed_displacement < threshold
             
-            valid_frames &= static_frames
+            # valid_frames &= static_frames
 
             for dilation in dilations:
                 dilated_clip_len = self.clip_len * dilation
@@ -269,6 +270,8 @@ class MyDataset(torch.utils.data.Dataset):
                             clips_found += 1
                         attempts += 1
         
+        dilations = [4, 8, 16, 32]
+
         for i in range(len(self.new_files)):
             file_path = self.new_files[i]
             file_num = MyDataset.extract_trajectory_number(file_path)
@@ -481,13 +484,38 @@ class MyDataset(torch.utils.data.Dataset):
 
     def clip_contains_vein(self, file_ix, start, dilation):
         if self.scheme == 'old':
-            vein_masks = self.file_today_vein_masks
+            markers, veins, contains_vein = self.file_today_vein_masks[file_ix]
         elif self.scheme == 'new':
-            vein_masks = self.vein_masks_new_scheme
+            markers, veins, contains_vein = self.vein_masks_new_scheme[file_ix]
         dilated_clip_len = self.clip_len * dilation
-        clip_vein_mask = vein_masks[file_ix][start : start+dilated_clip_len : dilation]
-        res = clip_vein_mask.sum() > 0
-        return res
+        
+        # Get the clip masks and vein data
+        clip_vein_mask = contains_vein[start : start+dilated_clip_len : dilation]  # shape: (clip_len, num_veins)
+        clip_veins = veins[start : start+dilated_clip_len : dilation]  # shape: (clip_len, num_veins, num_points, 2)
+        
+        # Find veins present in all frames
+        veins_present = np.all(clip_vein_mask, axis=0)  # shape: (num_veins,)
+        
+        if not np.any(veins_present):
+            return False
+            
+        # For veins present in all frames, compute displacement
+        first_frame = clip_veins[0]    # shape: (num_veins, num_points, 2)
+        last_frame = clip_veins[-1]    # shape: (num_veins, num_points, 2)
+        
+        # Compute displacement magnitude for each point in each vein
+        displacement = np.linalg.norm(last_frame - first_frame, axis=2)  # shape: (num_veins, num_points)
+        
+        # Compute mean displacement for each vein
+        mean_displacement = np.mean(displacement, axis=1)  # shape: (num_veins,)
+        
+        # Check which veins meet the displacement threshold
+        meets_displacement = mean_displacement >= 168
+        
+        # A vein must be both present throughout and meet displacement threshold
+        valid_veins = veins_present & meets_displacement
+        
+        return np.any(valid_veins)
 
     def video_contains_vein(self, file_path):
         data = np.load(file_path)
@@ -514,10 +542,10 @@ class MyDataset(torch.utils.data.Dataset):
         
         labels_mask &= in_circle
         
-        # Reduce to (num_video_frames,) by checking if any point in each frame is True
-        contains_vein = np.any(labels_mask, axis=(1,2))  # shape: (num_video_frames,)
+        # Reduce to (num_video_frames, num_veins) by checking if any point in each vein is True
+        contains_vein = np.any(labels_mask, axis=2)  # shape: (num_video_frames, num_veins)
         
-        return contains_vein
+        return (markers, labels, contains_vein)
 
     def frame_contains_vein(self, data, ix):
         markers = data['markers'][ix]
@@ -566,51 +594,85 @@ class MyDataset(torch.utils.data.Dataset):
             spawn_vein = pos_neg_str == 'pos'
         
         data = np.load(file_path)
-        images = data['markers']
-        images_mask = data['markers_mask']
-        labels = data['vein_polyline']
-        labels_mask = data['vein_polyline_mask']
+        markers = data['markers']
+        markers_mask = data['markers_mask']
+        veins = data['vein_polyline']
+        veins_mask = data['vein_polyline_mask']
         if not spawn_vein:
-            labels_mask = np.zeros_like(labels_mask, dtype=bool)
+            veins_mask = np.zeros_like(veins_mask, dtype=bool)
         
         dilated_clip_len = self.clip_len * dilation
-        images = images[frame_ix:frame_ix + dilated_clip_len:dilation]
-        images_mask = images_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
-        labels = labels[frame_ix:frame_ix + dilated_clip_len:dilation]
-        labels_mask = labels_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
+        markers = markers[frame_ix:frame_ix + dilated_clip_len:dilation]
+        markers_mask = markers_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
+        veins = veins[frame_ix:frame_ix + dilated_clip_len:dilation]
+        veins_mask = veins_mask[frame_ix:frame_ix + dilated_clip_len:dilation]
         
-        images, labels_signal_mask = self.augmentation_artificial_vein_signal_vectorised(
-            images, labels, labels_mask
+        # Find veins that are present in all frames
+        # A vein is "present" if it has at least one valid point in a frame
+        vein_present_per_frame = np.any(veins_mask, axis=2)  # shape: (clip_len, num_veins)
+        vein_present_all_frames = np.all(vein_present_per_frame, axis=0)  # shape: (num_veins,)
+        
+        # If multiple veins are present in all frames, randomly select one
+        if np.sum(vein_present_all_frames) > 1:
+            present_vein_indices = np.where(vein_present_all_frames)[0]
+            selected_vein_idx = np.random.choice(present_vein_indices)
+            vein_present_all_frames[:] = False
+            vein_present_all_frames[selected_vein_idx] = True
+        
+        # Mask out veins that aren't present in all frames
+        veins_mask &= vein_present_all_frames[np.newaxis, :, np.newaxis]
+        
+        if spawn_vein:
+            freeze_markers = True
+        else:
+            freeze_markers = random.uniform(0, 1) < 0.2
+
+        if freeze_markers:
+            # Compute mean marker displacement relative to first frame
+            first_frame_markers = markers[0]  # shape: (num_markers, 2)
+            # Compute displacement for each marker relative to first frame
+            marker_displacements = markers - first_frame_markers[np.newaxis, :, :]  # shape: (num_frames, num_markers, 2)
+            # Compute mean displacement across all markers for each frame
+            mean_marker_displacement = np.mean(marker_displacements, axis=1)  # shape: (num_frames, 2)
+            
+            # Set all marker positions to their positions in first frame
+            markers = np.tile(first_frame_markers[np.newaxis, :, :], (markers.shape[0], 1, 1))
+            
+            # Adjust vein positions by subtracting mean marker displacement
+            veins -= mean_marker_displacement[:, np.newaxis, np.newaxis, :]  # Broadcasting to (num_frames, num_veins, num_points, 2)
+
+        markers, labels_signal_mask = self.augmentation_artificial_vein_signal_vectorised(
+            markers, veins, veins_mask
         )
-        labels_mask &= labels_signal_mask
+        veins_mask &= labels_signal_mask
         discrete_angles = [0, 60, 120, 180, 240, 300]
         rotation_angle_deg = random.choice(discrete_angles)
-        images = self.augmentation_rotation(images, rotation_angle_deg)
-        labels = self.augmentation_rotation(labels, rotation_angle_deg)
+        markers = self.augmentation_rotation(markers, rotation_angle_deg)
+        veins = self.augmentation_rotation(veins, rotation_angle_deg)
         angle_uniform_shift_rad = random.uniform(0, 2 * math.pi)
         magnitude = random.uniform(0, 10)
-        images = self.uniform_shift(images, angle_uniform_shift_rad, magnitude)
-        labels = self.uniform_shift(labels, angle_uniform_shift_rad, magnitude)
+        markers = self.uniform_shift(markers, angle_uniform_shift_rad, magnitude)
+        veins = self.uniform_shift(veins, angle_uniform_shift_rad, magnitude)
         angle_x = math.radians(random.uniform(-5, 5))
         angle_y = math.radians(random.uniform(-5, 5))
-        images = self.rotate_xy(images, angle_x, angle_y)
-        labels = self.rotate_xy(labels, angle_x, angle_y)
+        markers = self.rotate_xy(markers, angle_x, angle_y)
+        veins = self.rotate_xy(veins, angle_x, angle_y)
 
-        points = images
-        points_mask = images_mask
+        points = markers
+        points_mask = markers_mask
 
-        pyg = self.generate_pyg_vectorised(points, labels, labels_mask)
+        pyg = self.generate_pyg_vectorised(points, veins, veins_mask)
         if self.visualisation_mode:
-            labels = MyDataset.generate_vein_image(
+            veins = MyDataset.generate_vein_image(
                 self.h_camera_big, 
                 self.w_camera_big, 
-                labels,
-                labels_mask
+                veins,
+                veins_mask
             )
-            labels = torch.tensor(labels, dtype=torch.float32) / 255.0
+            veins = torch.tensor(veins, dtype=torch.float32) / 255.0
         else:
-            labels = torch.empty(0)
-        return pyg, labels
+            veins = torch.empty(0)
+        return pyg, veins
     
     def eval(self):
         self.visualisation_mode = True
@@ -618,7 +680,7 @@ class MyDataset(torch.utils.data.Dataset):
     def get_points(self, idx):
         day, traj_type, file_path, frame_ix, dilation = self.data_points[idx]
         data = np.load(file_path)
-        points = data['markers'][start_idx]
+        points = data['markers'][start_ix]
         return points
 
     @staticmethod
@@ -764,8 +826,8 @@ class MyDataset(torch.utils.data.Dataset):
         # Apply convolution to all nodes at once using array operations
         relative_displacement_magnitude = np.array([np.convolve(node_magnitudes, kernel, mode='full')[:num_frames] 
                                                  for node_magnitudes in displacement_magnitudes_T]).T
-        # relative_displacement_magnitude[0, :] *= 2
-        # relative_displacement_magnitude[-1, :] *= 2
+        relative_displacement_magnitude[0, :] *= 2
+        relative_displacement_magnitude[-1, :] *= 2
 
         # Initialize node features array with extra feature
         x_features = np.zeros((num_frames * num_nodes, num_node_features))
@@ -815,6 +877,17 @@ class MyDataset(torch.utils.data.Dataset):
             # Store the projection magnitudes in the separate array
             edge_attr_rel_disp_message[frame_edges_mask, 0] = projection_magnitudes
         
+        # Calculate total displacement magnitude for each node across all frames
+        node_total_displacement = np.zeros(num_nodes)
+        for t in range(1, num_frames):
+            displacement_vectors = clip_points[t] - clip_points[t-1]  # shape: (num_nodes, 2)
+            displacement_magnitudes = np.linalg.norm(displacement_vectors, axis=1)  # shape: (num_nodes,)
+            node_total_displacement += displacement_magnitudes
+        node_total_displacement_sum = node_total_displacement.sum()
+        node_total_displacement_mean = node_total_displacement_sum / (num_nodes * (num_frames-1))
+
+        x_features[:, 3] = node_total_displacement_mean
+        
         x_features[:, 0] /= global_var
         edge_attr_clip = np.concatenate([edge_attr_clip, edge_attr_rel_disp_message], axis=1)
         edge_attr_clip_mask = np.array([True, True, False, True], dtype=bool)
@@ -832,6 +905,12 @@ class MyDataset(torch.utils.data.Dataset):
             x_features[:, 0] = (x_features[:, 0] - self.x_mean[0]) / self.x_std[0]  # local_var
             x_features[:, 1] = (x_features[:, 1] - self.x_mean[1]) / self.x_std[1]  # global_var
             x_features[:, 2] = (x_features[:, 2] - self.x_mean[2]) / self.x_std[2]  # relative_displacement_magnitude
+            x_features[:, 3] = (x_features[:, 3] - self.x_mean[3]) / self.x_std[3]  # node_total_displacement_mean 
+
+        # Add the total displacement as the last feature, repeating for each frame
+        for t in range(num_frames):
+            frame_offset = t * num_nodes
+            x_features[frame_offset:frame_offset + num_nodes, 3] = node_total_displacement
 
         edge_attr = torch.tensor(edge_attr_clip, dtype=torch.float)
         x = torch.tensor(x_features, dtype=torch.float)

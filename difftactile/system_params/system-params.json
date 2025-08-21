@@ -150,7 +150,7 @@
     },
     "gnn": {
         "num_edge_features": 3,
-        "num_node_features": 3,
+        "num_node_features": 4,
         "num_hidden_channels": 256
     },
     "cnn": {
