@@ -78,16 +78,17 @@ class PredictExp:
         self.bin_prob_sum = np.zeros(shape=(self.phantom_length_x, self.phantom_length_y), dtype=float)
         self.bin_count = np.zeros(shape=(self.phantom_length_x, self.phantom_length_y), dtype=int)
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
-        self.dilation = 1
+        self.dilation = 2
         self.dilated_clip_len = self.clip_len * self.dilation
         self.init_model()
         self.init_camera_params()
         self.compute_mapping_2d_3d()
-        self.dataset = MyDataset()
+        self.dataset = MyDataset(mode='dummy')
         with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
             test_data = pickle.load(f)
         self.stats = test_data['dataset_stats'][1.0]
         self.dataset.set_stats(self.stats)
+        self.dataset.set_difficulty_level(1.0)
     
     def z_unnormalise(self, points):
         x_mean = self.stats['x_mean']
@@ -178,7 +179,7 @@ class PredictExp:
         )
     
     def load_npz(self):
-        path = SYSTEM_PARAMS.files.exp_video_npz_test
+        path = SYSTEM_PARAMS.files.exp_video_npz_reordered
         data = np.load(path)
         self.markers = data['markers']
         self.markers_mask = data['markers_mask']
@@ -198,10 +199,13 @@ class PredictExp:
             mask = pyg.mask
             out = out[mask]
             probs = torch.sigmoid(out)
+            preds = (probs > 0.9).float()
             probs = probs.cpu().numpy().astype(np.float32)
+            preds = preds.cpu().numpy().astype(np.float32)
         points = pyg.pos.cpu().numpy().astype(np.float32)
         points = points.reshape((self.clip_len, 127, 2))
         probs = probs.reshape((self.clip_len, 127,))
+        preds = preds.reshape((self.clip_len, 127,))
 
         for t in range(self.clip_len):
             x, y, z = self.all_positions[i + t*self.dilation]
@@ -212,7 +216,8 @@ class PredictExp:
                 z
             )
             for j in range(127):
-                prob = probs[t, j]
+                # prob = probs[t, j]
+                pred = preds[t, j]
                 x, y = points[t, j]
                 pos_E = self.map_2d_3d[int(x), int(y)]
                 pos_E_homogeneous = np.append(pos_E, 1)
@@ -232,7 +237,7 @@ class PredictExp:
                 )
                 if not succ:
                     continue
-                self.bin_prob_sum[x_A, y_A] += prob
+                self.bin_prob_sum[x_A, y_A] += pred
                 self.bin_count[x_A, y_A] += 1
         
     def predict_all_clips(self):
@@ -257,9 +262,10 @@ class PredictExp:
         self.bin_count = data['bin_count']
     
     def generate_mask_image(self):
-        res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
-        threshold = np.percentile(res, 50)
-        res_binary = (res > threshold).astype(np.int32)
+        # res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
+        # threshold = np.percentile(res, 95)
+        # res_binary = (res > threshold).astype(np.int32)
+        res_binary = (self.bin_prob_sum > 1e-6).astype(np.int32)
 
         img = (res_binary * 255).astype(np.uint8)
         img = np.flip(np.flip(img, axis=0), axis=1)
@@ -379,10 +385,10 @@ class PredictExp:
         plt.close()
 
     def go(self):
-        # self.load_npz()
-        # self.compute_all_3d_positions()
-        # self.predict_all_clips()
-        # self.write_probs_to_npz()
+        self.load_npz()
+        self.compute_all_3d_positions()
+        self.predict_all_clips()
+        self.write_probs_to_npz()
         self.load_probs_from_npz()
         self.generate_mask_image()
         self.evaluate()

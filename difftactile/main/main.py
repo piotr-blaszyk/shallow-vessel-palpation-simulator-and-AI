@@ -1452,7 +1452,7 @@ class Contact:
         
         return endpoints
 
-    def write_training_data_to_file(self, training_iteration):
+    def write_training_data_to_file(self, training_iteration, traj_ix):
         directory = SYSTEM_PARAMS.files.dataset_root
         file = SYSTEM_PARAMS.files.dataset_data_point.format(
             training_iteration
@@ -1463,6 +1463,7 @@ class Contact:
         vein_polyline_array = np.array(self.vein_polyline_data)
         vein_polyline_mask = np.array(self.vein_polyline_mask_data)
         target_id_array = np.array(self.target_id_data)
+        trajectory_type = np.array([traj_ix], dtype=int)
 
         np.savez(
             path,
@@ -1470,7 +1471,8 @@ class Contact:
             markers_mask=markers_mask,
             vein_polyline=vein_polyline_array,
             vein_polyline_mask=vein_polyline_mask,
-            target_id_array=target_id_array
+            target_id_array=target_id_array,
+            trajectory_type=trajectory_type
         )
         
         self.marker_data = []
@@ -2377,13 +2379,13 @@ class Contact:
 
     def collect_training_data(self):
         self.clear_temp_images()
-        self.clear_npz()
+        # self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for k in range(0, 1):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(0, 1):
+                for i in range(0, 2):
                     # self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     self.set_up_initial_positions_state_and_trajectory()
@@ -2421,7 +2423,7 @@ class Contact:
                         if self.last_target_reached[None] == 1:
                             break
                     file_num = j * 4 + k * 2 + i
-                    self.write_training_data_to_file(file_num)
+                    # self.write_training_data_to_file(file_num, i)
                     
                     self.reset_loss()
                     self.batch_loss.fill(0.0)

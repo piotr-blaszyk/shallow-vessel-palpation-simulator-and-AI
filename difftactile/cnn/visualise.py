@@ -437,7 +437,7 @@ class Visualisation:
             )
         elif data_source == 'exp_npz':
             dataset = MyDataset(
-                data_dir=SYSTEM_PARAMS.files.empty_data_dir
+                mode='dummy'
             )
             dataset.set_stats(stats)
             dataset.set_difficulty_level(1.0)
@@ -496,7 +496,7 @@ class Visualisation:
                     mask = data.mask
                     out = out[mask]
                     probs = torch.sigmoid(out)
-                    pred = (probs > 0.5).float()
+                    pred = (probs > 0.9).float()
                     
                     probs = probs.cpu().numpy().astype(np.float32)
                     pred = pred.cpu().numpy().astype(int)
@@ -623,7 +623,9 @@ class Visualisation:
                 
                 if key == ord('q'):  # Quit visualization
                     cv2.destroyAllWindows()
-                    cv2.waitKey(1)
+                    # Force destruction of all windows and clear any pending events
+                    for i in range(10):  # Multiple calls to handle race conditions
+                        cv2.waitKey(1)
                     return
                 elif key == ord('c'):  # Close current sequence and load next
                     sequence_idx += 1
@@ -741,7 +743,7 @@ def main():
     # v.graph()
     v.visualise_gnn(
         mode='predictions', 
-        data_source='pickled_test_dataset'
+        data_source='exp_npz'
     )
 
 

@@ -59,7 +59,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.data_points = []
         if mode == 'root':
             self.populate_clips()
-        else:
+        elif mode != 'dummy':
             self.compute_data_points()
         end_time = time.perf_counter()
         if mode == 'root':
@@ -1244,6 +1244,7 @@ class MyDatasetExpIterator:
 
     def __next__(self):
         # dilation = random.choice(self.dilations)
+        # dilation = 10
         dilation = 2
         dilated_clip_len = self.clip_len * dilation
         min_start_ix = 0

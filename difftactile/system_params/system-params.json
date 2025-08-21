@@ -143,7 +143,7 @@
         "max_num_veins": 4,
         "num_trajectories": 4,
         "max_num_trajectory_points": 1500,
-        "max_timesteps_per_trajectory": 6000,
+        "max_timesteps_per_trajectory": 1000,
         "polyline_num": 25,
         "cnn_gnn": 1,
         "vein_px_thickness": 30
@@ -305,12 +305,11 @@
         "exp_simple_straight_npz_reordered": "difftactile/output/exp_video_straight_reordered.npz",
         "exp_trajectories": "difftactile/output/exp_trajectories",
         "empty_data_dir": "difftactile/output/empty_data_dir",
-
         "dataset_root": "difftactile/output/training_data/pickle",
-        "dataset_root_today": "difftactile/output/training_data/pickle_today",
-        "dataset_root_today_reordered": "difftactile/output/training_data/pickle_today_reordered",
-        "dataset_root_yesterday": "difftactile/output/training_data/pickle_yesterday",
-        "dataset_root_yesterday_reordered": "difftactile/output/training_data/pickle_yesterday_reordered",
-        "dataset_root_yesterday_reordered_smoothed": "difftactile/output/training_data/pickle_yesterday_reordered_smoothed"
+        "dataset_root_today": "difftactile/output/training_data/pickle_2025_08_20",
+        "dataset_root_today_reordered": "difftactile/output/training_data/pickle_2025_08_20_reordered",
+        "dataset_root_yesterday": "difftactile/output/training_data/pickle_2025_08_19",
+        "dataset_root_yesterday_reordered": "difftactile/output/training_data/pickle_2025_08_19_reordered",
+        "dataset_root_yesterday_reordered_smoothed": "difftactile/output/training_data/pickle_2025_08_19_reordered_smoothed"
     }
 }
