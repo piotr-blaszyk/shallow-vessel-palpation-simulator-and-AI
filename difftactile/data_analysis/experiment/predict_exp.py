@@ -74,9 +74,12 @@ class PredictExp:
         self.max_x = self.min_x + self.phantom_length_x
         self.min_y = self.poses[16][1] - self.sensor_radius
         self.max_y = self.min_y + self.phantom_length_y
-        self.bins = np.zeros(shape=(2, self.phantom_length_x, self.phantom_length_y), dtype=int)
-        self.bin_prob_sum = np.zeros(shape=(self.phantom_length_x, self.phantom_length_y), dtype=float)
-        self.bin_count = np.zeros(shape=(self.phantom_length_x, self.phantom_length_y), dtype=int)
+        self.bin_size = 1
+        self.bin_num_x = math.ceil(self.phantom_length_x / self.bin_size)
+        self.bin_num_y = math.ceil(self.phantom_length_y / self.bin_size)
+        self.bins = np.zeros(shape=(2, self.bin_num_x, self.bin_num_y), dtype=int)
+        self.bin_prob_sum = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=float)
+        self.bin_count = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=int)
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         self.dilation = 2
         self.dilated_clip_len = self.clip_len * self.dilation
@@ -217,7 +220,8 @@ class PredictExp:
             )
             for j in range(127):
                 # prob = probs[t, j]
-                pred = preds[t, j]
+                # pred = preds[t, j]
+                pred = 1
                 x, y = points[t, j]
                 pos_E = self.map_2d_3d[int(x), int(y)]
                 pos_E_homogeneous = np.append(pos_E, 1)
@@ -227,16 +231,16 @@ class PredictExp:
                 y_A = pos_A[1]
                 x_A -= self.min_x
                 y_A -= self.min_y
-                x_A = int(x_A)
-                y_A = int(y_A)
                 succ = (
                     x_A >= 0 and
-                    x_A < 105 and
+                    x_A < self.phantom_length_x and
                     y_A >= 0 and
-                    y_A < 180
+                    y_A < self.phantom_length_y
                 )
                 if not succ:
                     continue
+                x_A = int(x_A // self.bin_size)
+                y_A = int(y_A // self.bin_size)
                 self.bin_prob_sum[x_A, y_A] += pred
                 self.bin_count[x_A, y_A] += 1
         
@@ -262,10 +266,10 @@ class PredictExp:
         self.bin_count = data['bin_count']
     
     def generate_mask_image(self):
-        # res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
+        res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
         # threshold = np.percentile(res, 95)
         # res_binary = (res > threshold).astype(np.int32)
-        res_binary = (self.bin_prob_sum > 1e-6).astype(np.int32)
+        res_binary = (res > 1e-2).astype(np.int32)
 
         img = (res_binary * 255).astype(np.uint8)
         img = np.flip(np.flip(img, axis=0), axis=1)
@@ -321,14 +325,58 @@ class PredictExp:
             marker_tracker=marker_tracker,
             path=npz_out
         )
+    
+    def convert_image_to_bins(self, image_path):
+        input_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        
+        # Convert to binary (just in case)
+        input_image = (input_image == 255).astype(np.uint8) * 255
+        
+        # Get target dimensions
+        target_height = self.bin_num_y
+        target_width = self.bin_num_x
+        target_aspect_ratio = target_width / target_height
+        
+        # Get current dimensions
+        height, width = input_image.shape
+        current_aspect_ratio = width / height
+        
+        # Calculate padding needed to match target aspect ratio
+        if current_aspect_ratio > target_aspect_ratio:
+            # Image is too wide, add vertical padding
+            new_height = int(width / target_aspect_ratio)
+            pad_top = (new_height - height) // 2
+            pad_bottom = new_height - height - pad_top
+            padded_image = cv2.copyMakeBorder(input_image, pad_top, pad_bottom, 0, 0, 
+                                            cv2.BORDER_CONSTANT, value=0)
+        else:
+            # Image is too tall, add horizontal padding
+            new_width = int(height * target_aspect_ratio)
+            pad_left = (new_width - width) // 2
+            pad_right = new_width - width - pad_left
+            padded_image = cv2.copyMakeBorder(input_image, 0, 0, pad_left, pad_right, 
+                                            cv2.BORDER_CONSTANT, value=0)
+        
+        # Resize to target dimensions using INTER_AREA for downsampling
+        resized_image = cv2.resize(padded_image, (target_width, target_height), 
+                                 interpolation=cv2.INTER_AREA)
+        
+        # Normalize back to binary values
+        resized_image = (resized_image > 127).astype(np.uint8) * 255
+        
+        return resized_image
 
     def evaluate(self):
-        ground_truth = cv2.imread(SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask, cv2.IMREAD_GRAYSCALE)
-        prediction = cv2.imread(SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask, cv2.IMREAD_GRAYSCALE)
-        if ground_truth is None:
-            raise ValueError(f"Failed to read ground truth mask from {SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask}")
-        if prediction is None:
-            raise ValueError(f"Failed to read prediction mask from {SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask}")
+        ground_truth_path = SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask
+        ground_truth_bins_path = SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask_bins
+        prediction_path = SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask
+
+        ground_truth_bins = self.convert_image_to_bins(ground_truth_path)
+        cv2.imwrite(ground_truth_bins_path, ground_truth_bins)
+
+        ground_truth = cv2.imread(ground_truth_path, cv2.IMREAD_GRAYSCALE)
+        prediction = cv2.imread(prediction_path, cv2.IMREAD_GRAYSCALE)
+
         ground_truth = (ground_truth == 255).astype(np.uint8)
         prediction = (prediction == 255).astype(np.uint8)
         
@@ -349,6 +397,15 @@ class PredictExp:
         padded_prediction = np.zeros((gt_height, gt_width), dtype=np.uint8)
         padded_prediction[pad_top:pad_top+scaled_height, pad_left:pad_left+scaled_width] = scaled_prediction
         prediction = padded_prediction
+
+        combined_path = SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask_feasible
+        ground_truth_binary = ground_truth == 1
+        prediction_binary = prediction == 1
+        combined_mask = np.logical_and(ground_truth_binary, prediction_binary)
+        combined_image = combined_mask.astype(np.uint8) * 255
+        cv2.imwrite(combined_path, combined_image)
+        ground_truth = combined_image
+        ground_truth = (ground_truth == 255).astype(np.uint8)
 
         # Convert numpy arrays to PyTorch tensors with correct shape [B, T, H, W]
         prediction_tensor = torch.from_numpy(prediction).float().unsqueeze(0).unsqueeze(0)
