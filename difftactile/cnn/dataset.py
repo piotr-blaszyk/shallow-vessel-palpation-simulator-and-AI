@@ -19,17 +19,29 @@ import re
 
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, mode='root', data_points_today=[], data_points_yesterday=[]):
+    def __init__(
+            self, 
+            scheme, 
+            mode='root', 
+            data_points_today=[], 
+            data_points_yesterday=[],
+            data_points_pos=[],
+            data_points_neg=[],
+        ):
         super().__init__()
         start_time = time.perf_counter()
+        self.scheme = scheme
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         self.data_points_per_trajectory = 1024
         self.mode = mode
 
-        self.today_data_dir = SYSTEM_PARAMS.files.dataset_root_today_reordered
-        self.yesterday_data_dir = SYSTEM_PARAMS.files.dataset_root_yesterday_reordered_smoothed
-        self.files_today = sorted([os.path.join(self.today_data_dir, f) for f in os.listdir(self.today_data_dir)])
-        self.files_yesterday = sorted([os.path.join(self.yesterday_data_dir, f) for f in os.listdir(self.yesterday_data_dir)])
+        today_data_dir = SYSTEM_PARAMS.files.dataset_root_today_reordered
+        yesterday_data_dir = SYSTEM_PARAMS.files.dataset_root_yesterday_reordered_smoothed
+        self.files_today = MyDataset.get_folder_files(today_data_dir)
+        self.files_yesterday = MyDataset.get_folder_files(yesterday_data_dir)
+
+        new_data_dir = SYSTEM_PARAMS.files.dataset_root_2025_08_21_reordered
+        self.new_files = MyDataset.get_folder_files(new_data_dir)
         
         self.w_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
         self.h_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
@@ -56,17 +68,29 @@ class MyDataset(torch.utils.data.Dataset):
 
         self.data_points_today = data_points_today
         self.data_points_yesterday = data_points_yesterday
+        self.data_points_pos = data_points_pos
+        self.data_points_neg = data_points_neg
         self.data_points = []
         if mode == 'root':
-            self.populate_clips()
+            if scheme == 'old':
+                self.populate_clips_old_scheme()
+            elif scheme == 'new':
+                self.populate_clips_new_scheme()
         elif mode != 'dummy':
-            self.compute_data_points()
+            if scheme == 'old':
+                self.compute_data_points_old_scheme()
+            elif scheme == 'new':
+                self.compute_data_points_new_scheme()
         end_time = time.perf_counter()
         if mode == 'root':
             print(f"Time taken to initialise dataset: {end_time - start_time:.2f} seconds")
             print(f"num data points: {len(self.data_points):,}")
+    
+    @staticmethod
+    def get_folder_files(path):
+        return sorted([os.path.join(path, f) for f in os.listdir(path)])
 
-    def compute_data_points(self):
+    def compute_data_points_old_scheme(self):
         # Shuffle both datasets independently
         random.shuffle(self.data_points_today)
         random.shuffle(self.data_points_yesterday)
@@ -90,6 +114,30 @@ class MyDataset(torch.utils.data.Dataset):
         
         # Final shuffle to mix today and yesterday elements
         random.shuffle(self.data_points)
+    
+    def compute_data_points_new_scheme(self):
+        # Shuffle both datasets independently
+        random.shuffle(self.data_points_pos)
+        random.shuffle(self.data_points_neg)
+        
+        # Calculate how many elements we can take while maintaining 2:1 ratio
+        # For every 3 elements, we need 2 from pos and 1 from neg
+        num_triplets = min(len(self.data_points_pos), len(self.data_points_neg))
+        
+        # Select the elements
+        pos_elements = self.data_points_pos[:num_triplets]
+        neg_elements = self.data_points_neg[:num_triplets]
+        
+        # Combine the elements
+        self.data_points = []
+        for i in range(num_triplets):
+            # Add 1 element from pos
+            self.data_points.append(pos_elements[i])
+            # Add 1 element from neg
+            self.data_points.append(neg_elements[i])
+        
+        # Final shuffle to mix pos and neg elements
+        random.shuffle(self.data_points)
 
     def set_stats(
             self,
@@ -102,7 +150,7 @@ class MyDataset(torch.utils.data.Dataset):
                 setattr(self, key, value)
         foo = 7
 
-    def populate_clips(self):
+    def populate_clips_old_scheme(self):
         self.file_today_vein_masks = []
         self.file_today_contains_vein = []
         for i in range(len(self.files_today)):
@@ -175,6 +223,77 @@ class MyDataset(torch.utils.data.Dataset):
 
         print("clips have now been populated!")
 
+    def populate_clips_new_scheme(self):
+        self.vein_masks_new_scheme = []
+        for i in range(len(self.new_files)):
+            self.vein_masks_new_scheme.append(
+                self.video_contains_vein(self.new_files[i])
+            )
+
+        dilations = [1, 2, 4]
+        
+        for i in range(len(self.new_files)):
+            file_path = self.new_files[i]
+            data = np.load(file_path)
+            points = data['markers']
+            total_frames = points.shape[0]
+            targets = data['target_id_array']
+            targets = targets[:, 0]
+            valid_frames = (targets >= 3) & np.isin((targets - 2) % 3, [1, 2])
+
+            displacement_vectors = np.diff(points, axis=0)
+            displacement_magnitudes = np.linalg.norm(displacement_vectors, axis=2)
+            mean_displacement = np.mean(displacement_magnitudes, axis=1)
+            padded_displacement = np.pad(mean_displacement, (1, 1), mode='edge')
+            kernel = np.ones(2) / 2.0
+            smoothed_displacement = np.convolve(padded_displacement, kernel, mode='valid')
+            threshold = np.percentile(smoothed_displacement, 10)
+            static_frames = smoothed_displacement < threshold
+            
+            valid_frames &= static_frames
+
+            for dilation in dilations:
+                dilated_clip_len = self.clip_len * dilation
+                if total_frames >= dilated_clip_len:
+                    num_possible_starts = total_frames - dilated_clip_len + 1
+                    clips_found = 0
+                    max_attempts = num_possible_starts * 2
+                    attempts = 0
+                    while clips_found < self.data_points_per_trajectory and attempts < max_attempts:
+                        start_idx = random.randrange(num_possible_starts)
+                        if (
+                            valid_frames[start_idx:start_idx + dilated_clip_len:dilation].all()
+                            and self.clip_contains_vein(i, start_idx, dilation)
+                        ):
+                            self.data_points_pos.append(('pos', file_path, start_idx, dilation))
+                            clips_found += 1
+                        attempts += 1
+        
+        for i in range(len(self.new_files)):
+            file_path = self.new_files[i]
+            file_num = MyDataset.extract_trajectory_number(file_path)
+            if file_num % 2 == 0:
+                traj_type = 'grid_search'
+            else:
+                traj_type = 'random'
+            if traj_type == 'random':
+                continue
+            data = np.load(file_path)
+            points = data['markers']
+            total_frames = points.shape[0]
+            for dilation in dilations:
+                dilated_clip_len = self.clip_len * dilation
+                if total_frames >= dilated_clip_len:
+                    num_possible_starts = total_frames - dilated_clip_len + 1
+                    start_indices = sorted(random.sample(
+                        range(num_possible_starts), 
+                        min(self.data_points_per_trajectory, num_possible_starts)
+                    ))
+                    for start_idx in start_indices:
+                        self.data_points_neg.append(('neg', file_path, start_idx, dilation))
+
+        print("clips have now been populated!")
+
     def __len__(self):
         return len(self.data_points)
 
@@ -202,7 +321,13 @@ class MyDataset(torch.utils.data.Dataset):
         )
         self.difficulty_fyi = difficulty
 
-    def create_splits(
+    def create_splits(self, *args, **kwargs):
+        if self.scheme == 'old':
+            return self.create_splits_old_scheme(*args, **kwargs)
+        elif self.scheme == 'new':
+            return self.create_splits_new_scheme(*args, **kwargs)
+    
+    def create_splits_old_scheme(
         self, train_size, val_size, test_size
     ):
         """Split dataset while ensuring all clips from the same trajectory stay together"""
@@ -251,19 +376,93 @@ class MyDataset(torch.utils.data.Dataset):
         test_yesterday = [self.data_points_yesterday[i] for i in yesterday['test_indices']]
 
         train_dataset = MyDataset(
+            scheme=self.scheme,
             mode='train',
             data_points_today=train_today,
             data_points_yesterday=train_yesterday
         )
         val_dataset = MyDataset(
+            scheme=self.scheme,
             mode='val',
             data_points_today=val_today,
             data_points_yesterday=val_yesterday
         )
         test_dataset = MyDataset(
+            scheme=self.scheme,
             mode='test',
             data_points_today=test_today,
             data_points_yesterday=test_yesterday
+        )
+        
+        res = (train_dataset, val_dataset, test_dataset)
+        print(f'split len: {[len(x) for x in res]}')
+        return res
+    
+    def create_splits_new_scheme(
+        self, train_size, val_size, test_size
+    ):
+        """Split dataset while ensuring all clips from the same trajectory stay together"""
+        assert abs(train_size + val_size + test_size - 1.0) < 1e-10, (
+            "Split proportions must sum to 1"
+        )
+
+        all_data_points = [
+            self.data_points_pos,
+            self.data_points_neg,
+        ]
+        all_indices = []
+        for i in range(len(all_data_points)):
+            data_points = all_data_points[i]
+
+            trajectory_to_indices = {}
+            for i, data_point in enumerate(data_points):
+                file_path = data_point[2]
+                trajectory_to_indices.setdefault(file_path, []).append(i)
+            trajectories = list(trajectory_to_indices.keys())
+            trajectories.sort()
+            
+            n = len(trajectories)
+            train_split = int(n * train_size)
+            val_split = int(n * (train_size + val_size))
+            train_trajectories = trajectories[:train_split]
+            val_trajectories = trajectories[train_split:val_split]
+            test_trajectories = trajectories[val_split:]
+            
+            train_indices = [i for traj in train_trajectories for i in trajectory_to_indices[traj]]
+            val_indices = [i for traj in val_trajectories for i in trajectory_to_indices[traj]]
+            test_indices = [i for traj in test_trajectories for i in trajectory_to_indices[traj]]
+            all_indices.append({
+                'train_indices': train_indices,
+                'val_indices': val_indices,
+                'test_indices': test_indices,
+            })
+        
+        pos = all_indices[0]
+        neg = all_indices[1]
+        train_pos = [self.data_points_pos[i] for i in pos['train_indices']]
+        train_neg = [self.data_points_neg[i] for i in neg['train_indices']]
+        val_pos = [self.data_points_pos[i] for i in pos['val_indices']]
+        val_neg = [self.data_points_neg[i] for i in neg['val_indices']]
+        test_pos = [self.data_points_pos[i] for i in pos['test_indices']]
+        test_neg = [self.data_points_neg[i] for i in neg['test_indices']]
+
+        train_dataset = MyDataset(
+            scheme=self.scheme,
+            mode='train',
+            data_points_pos=train_pos,
+            data_points_neg=train_neg
+        )
+        val_dataset = MyDataset(
+            scheme=self.scheme,
+            mode='val',
+            data_points_pos=val_pos,
+            data_points_neg=val_neg
+        )
+        test_dataset = MyDataset(
+            scheme=self.scheme,
+            mode='test',
+            data_points_pos=test_pos,
+            data_points_neg=test_neg
         )
         
         res = (train_dataset, val_dataset, test_dataset)
@@ -281,8 +480,12 @@ class MyDataset(torch.utils.data.Dataset):
         return (file_num % 4) < 2
 
     def clip_contains_vein(self, file_ix, start, dilation):
+        if self.scheme == 'old':
+            vein_masks = self.file_today_vein_masks
+        elif self.scheme == 'new':
+            vein_masks = self.vein_masks_new_scheme
         dilated_clip_len = self.clip_len * dilation
-        clip_vein_mask = self.file_today_vein_masks[file_ix][start : start+dilated_clip_len : dilation]
+        clip_vein_mask = vein_masks[file_ix][start : start+dilated_clip_len : dilation]
         res = clip_vein_mask.sum() > 0
         return res
 
@@ -351,13 +554,16 @@ class MyDataset(torch.utils.data.Dataset):
             return np.array([-1., -1.])  # Return invalid marker position if no valid data
 
     def __getitem__(self, idx):
-        day, traj_type, file_path, frame_ix, dilation = self.data_points[idx]
-
-        if day == 'today':
-            rng = random.uniform(0, 1)
-            spawn_vein = rng < 0.75
-        else:
-            spawn_vein = False
+        if self.scheme == 'old':
+            day, traj_type, file_path, frame_ix, dilation = self.data_points[idx]
+            if day == 'today':
+                rng = random.uniform(0, 1)
+                spawn_vein = rng < 0.75
+            else:
+                spawn_vein = False
+        elif self.scheme == 'new':
+            pos_neg_str, file_path, frame_ix, dilation = self.data_points[idx]
+            spawn_vein = pos_neg_str == 'pos'
         
         data = np.load(file_path)
         images = data['markers']

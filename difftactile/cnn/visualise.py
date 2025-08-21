@@ -423,7 +423,7 @@ class Visualisation:
                 num_workers=NUM_WORKERS
             )
         elif data_source == 'fresh_dataset':  # dataset mode
-            full_dataset = MyDataset()
+            full_dataset = MyDataset(scheme='new')
             train_dataset, _, _ = full_dataset.create_splits(
                 train_size=1.0,
                 val_size=0.0,
@@ -742,8 +742,8 @@ def main():
     # v.visualise('predictions')
     # v.graph()
     v.visualise_gnn(
-        mode='predictions', 
-        data_source='exp_npz'
+        mode='dataset', 
+        data_source='fresh_dataset'
     )
 
 

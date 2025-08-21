@@ -310,6 +310,8 @@
         "dataset_root_today_reordered": "difftactile/output/training_data/pickle_2025_08_20_reordered",
         "dataset_root_yesterday": "difftactile/output/training_data/pickle_2025_08_19",
         "dataset_root_yesterday_reordered": "difftactile/output/training_data/pickle_2025_08_19_reordered",
-        "dataset_root_yesterday_reordered_smoothed": "difftactile/output/training_data/pickle_2025_08_19_reordered_smoothed"
+        "dataset_root_yesterday_reordered_smoothed": "difftactile/output/training_data/pickle_2025_08_19_reordered_smoothed",
+        "dataset_root_2025_08_21": "difftactile/output/training_data/pickle_2025_08_21",
+        "dataset_root_2025_08_21_reordered": "difftactile/output/training_data/pickle_2025_08_21_reordered"
     }
 }
