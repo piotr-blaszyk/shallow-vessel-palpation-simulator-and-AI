@@ -83,7 +83,7 @@ class PredictExp:
         self.init_model()
         self.init_camera_params()
         self.compute_mapping_2d_3d()
-        self.dataset = MyDataset(mode='dummy')
+        self.dataset = MyDataset(mode='dummy', scheme='new')
         with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
             test_data = pickle.load(f)
         self.stats = test_data['dataset_stats'][1.0]
@@ -199,7 +199,7 @@ class PredictExp:
             mask = pyg.mask
             out = out[mask]
             probs = torch.sigmoid(out)
-            preds = (probs > 0.9).float()
+            preds = (probs > 0.5).float()
             probs = probs.cpu().numpy().astype(np.float32)
             preds = preds.cpu().numpy().astype(np.float32)
         points = pyg.pos.cpu().numpy().astype(np.float32)

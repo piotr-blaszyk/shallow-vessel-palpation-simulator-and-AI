@@ -302,7 +302,7 @@ class GNN(pl.LightningModule):
         scheduler = {
             "scheduler": torch.optim.lr_scheduler.StepLR(
                 optimizer,
-                step_size=8,  # Number of batches before reducing LR
+                step_size=64,  # Number of batches before reducing LR
                 gamma=0.5,    # Multiply LR by this factor (0.5 = reduce by half)
             ),
             "interval": "step",  # Call scheduler every batch instead of epoch
@@ -419,10 +419,10 @@ class MyDataModule(pl.LightningDataModule):
 
 
 def main():
-    BATCH_SIZE = 256
+    BATCH_SIZE = 128
     NUM_EPOCHS = 4
     NUM_WORKERS = 16
-    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 16
+    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 64
     VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 4
     LR = 1e-3
 
@@ -473,8 +473,6 @@ def main():
     }
     with open(SYSTEM_PARAMS.files.test_loader_gnn, 'wb') as f:
         pickle.dump(test_data, f)
-    
-    return
     
     model = GNN(lr=LR)
     model.set_stats(all_stats[final_difficulty])

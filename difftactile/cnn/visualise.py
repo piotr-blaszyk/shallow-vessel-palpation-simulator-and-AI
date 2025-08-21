@@ -411,6 +411,7 @@ class Visualisation:
         all_stats = test_data['dataset_stats']
         final_difficulty = 1.0
         stats = all_stats[final_difficulty]
+
         if data_source == 'pickled_test_dataset':
             dataset = test_data['dataset']
             dataset.set_stats(stats)
@@ -437,7 +438,8 @@ class Visualisation:
             )
         elif data_source == 'exp_npz':
             dataset = MyDataset(
-                mode='dummy'
+                mode='dummy',
+                scheme='new'
             )
             dataset.set_stats(stats)
             dataset.set_difficulty_level(1.0)
@@ -496,7 +498,7 @@ class Visualisation:
                     mask = data.mask
                     out = out[mask]
                     probs = torch.sigmoid(out)
-                    pred = (probs > 0.9).float()
+                    pred = (probs > 0.5).float()
                     
                     probs = probs.cpu().numpy().astype(np.float32)
                     pred = pred.cpu().numpy().astype(int)
@@ -742,8 +744,8 @@ def main():
     # v.visualise('predictions')
     # v.graph()
     v.visualise_gnn(
-        mode='dataset', 
-        data_source='fresh_dataset'
+        mode='predictions', 
+        data_source='exp_npz'
     )
 
 

@@ -887,8 +887,6 @@ class MyDataset(torch.utils.data.Dataset):
         node_total_displacement_mean = node_total_displacement_sum / (num_nodes * (num_frames-1))
 
         x_features[:, 3] = node_total_displacement_mean
-        
-        x_features[:, 0] /= global_var
         edge_attr_clip = np.concatenate([edge_attr_clip, edge_attr_rel_disp_message], axis=1)
         edge_attr_clip_mask = np.array([True, True, False, True], dtype=bool)
         edge_attr_clip = edge_attr_clip[:, edge_attr_clip_mask]
