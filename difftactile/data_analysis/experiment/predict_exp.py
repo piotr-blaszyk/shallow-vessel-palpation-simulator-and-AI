@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import pickle
 import math
 from scipy.interpolate import interp1d
+import sys
 
 from difftactile.data_analysis.experiment.marker_tracker import *
 from difftactile.data_analysis.experiment.hungarian_exp import *
@@ -32,10 +33,15 @@ class PredictExp:
         self.sensor_radius = 20
         self.phantom_length_x = 105
         self.phantom_length_y = 180
-        self.min_x = np.min(self.poses_interpolated[:, 0]) - self.sensor_radius
-        self.max_x = self.min_x + self.phantom_length_x
-        self.min_y = np.min(self.poses_interpolated[:, 1]) - self.sensor_radius
-        self.max_y = self.min_y + self.phantom_length_y
+        x_start = np.min(self.poses_interpolated[:, 0]) - self.sensor_radius
+        x_end = x_start + self.phantom_length_x
+        y_start = np.max(self.poses_interpolated[:, 1]) + self.sensor_radius
+        y_end = y_start - self.phantom_length_y
+        self.x_min = min(x_start, x_end)
+        self.x_max = max(x_start, x_end)
+        self.y_min = min(y_start, y_end)
+        self.y_max = max(y_start, y_end)
+
         self.bin_size = 1
         self.bin_num_x = math.ceil(self.phantom_length_x / self.bin_size)
         self.bin_num_y = math.ceil(self.phantom_length_y / self.bin_size)
@@ -63,6 +69,69 @@ class PredictExp:
         self.sensor_trajectory_img_path = SYSTEM_PARAMS.files.sensor_trajectory
         self.ground_truth_feasible_img_path = SYSTEM_PARAMS.files.ground_truth_feasible
         self.ground_truth_from_video_img_path = SYSTEM_PARAMS.files.experiment_ground_truth_from_video_img_path
+
+        self.set_up_keypoints()
+
+    def set_up_keypoints(self):
+        # visible_vein_frame_ixs = np.array([
+        #     32,
+        #     50,
+        #     84,
+        #     121,
+        #     129,
+        #     135,
+        #     167,
+        #     170,
+        #     179,
+        #     210,
+        #     220,
+        #     256,
+        #     # 259,
+        #     297,
+        #     313
+        #     ], dtype=int
+        # )
+        # visible_vein_frame_ixs = np.array([32], dtype=int)
+        # visible_vein_frame_ixs = np.array([
+        #     [38, 16],
+        #     [53, 16],
+        #     [87, 2],
+        #     [124, 32], # barely visible
+        #     [130, 2],
+        #     [137, 2],
+        #     [168, 0],
+        #     [173, 2],
+        #     [181, 2],
+        #     [212, 0],
+        #     [222, 0],
+        #     [257, 2],
+        #     [301, 33], # barely visible
+        #     [309, 39]
+        # ], dtype=int)
+
+        visible_vein_frame_ixs_original = np.array([
+            [39, 1],
+            [53, 22],
+            [92, 22],
+            [134, 2],
+            [139, 23],
+            [171, 22],
+            [177, 1],
+            [217, 17],
+            [222, 1],
+            [261, 1],
+            [306, 32],
+            [352, 60] # barely visible
+        ])
+        
+        # Map frame indices using markers_index_mapping
+        visible_vein_frame_ixs = np.array([
+            [self.markers_index_mapping[frame_ix], marker_ix] 
+            for frame_ix, marker_ix in visible_vein_frame_ixs_original 
+            if frame_ix in self.markers_index_mapping
+        ])
+        assert visible_vein_frame_ixs_original.shape == visible_vein_frame_ixs.shape
+        self.visible_vein_frame_ixs = visible_vein_frame_ixs
     
     def z_unnormalise(self, points):
         x_mean = self.stats['x_mean']
@@ -163,7 +232,6 @@ class PredictExp:
         self.markers_mask = self.markers_mask[valid_mask]
         self.frame_mapping = self.frame_mapping[valid_mask]
         self.ground_truth_labels = self.ground_truth_labels[valid_mask]
-        foo = 7
 
     @staticmethod
     def write_video_to_npz_file(marker_tracker, path):
@@ -218,65 +286,6 @@ class PredictExp:
         assert points.min() > 0
         assert points.max() > 100
 
-        # visible_vein_frame_ixs = np.array([
-        #     32,
-        #     50,
-        #     84,
-        #     121,
-        #     129,
-        #     135,
-        #     167,
-        #     170,
-        #     179,
-        #     210,
-        #     220,
-        #     256,
-        #     # 259,
-        #     297,
-        #     313
-        #     ], dtype=int
-        # )
-        # visible_vein_frame_ixs = np.array([32], dtype=int)
-        # visible_vein_frame_ixs = np.array([
-        #     [38, 16],
-        #     [53, 16],
-        #     [87, 2],
-        #     [124, 32], # barely visible
-        #     [130, 2],
-        #     [137, 2],
-        #     [168, 0],
-        #     [173, 2],
-        #     [181, 2],
-        #     [212, 0],
-        #     [222, 0],
-        #     [257, 2],
-        #     [301, 33], # barely visible
-        #     [309, 39]
-        # ], dtype=int)
-
-        visible_vein_frame_ixs_original = np.array([
-            [39, 1],
-            [53, 22],
-            [92, 22],
-            [134, 2],
-            [139, 23],
-            [171, 22],
-            [177, 1],
-            [217, 17],
-            [222, 1],
-            [261, 1],
-            [306, 32],
-            [352, 60] # barely visible
-        ])
-        
-        # Map frame indices using markers_index_mapping
-        visible_vein_frame_ixs = np.array([
-            [self.markers_index_mapping[frame_ix], marker_ix] 
-            for frame_ix, marker_ix in visible_vein_frame_ixs_original 
-            if frame_ix in self.markers_index_mapping
-        ])
-        assert visible_vein_frame_ixs_original.shape == visible_vein_frame_ixs.shape
-
         for t in range(self.clip_len):
             frame_ix = i + t*self.dilation
             x, y, z = self.poses_interpolated[frame_ix][:3]
@@ -286,8 +295,6 @@ class PredictExp:
                 y,
                 z
             )
-            if frame_ix == 34:
-                foo = 7
             for j in range(127):
                 prob = probs[t, j]
                 pred = preds[t, j]
@@ -298,8 +305,8 @@ class PredictExp:
                 pos_A = pos_A_homogeneous[:3]
                 x_A = pos_A[0]
                 y_A = pos_A[1]
-                x_A -= self.min_x
-                y_A -= self.min_y
+                x_A -= self.x_min
+                y_A -= self.y_min
                 succ = (
                     x_A >= 0 and
                     x_A < self.phantom_length_x and
@@ -307,7 +314,7 @@ class PredictExp:
                     y_A < self.phantom_length_y
                 )
                 frame_ix_marker_ix = np.array([frame_ix, j], dtype=int)
-                is_present = np.any(np.all(visible_vein_frame_ixs == frame_ix_marker_ix, axis=1))
+                is_present = np.any(np.all(self.visible_vein_frame_ixs == frame_ix_marker_ix, axis=1))
                 # succ &= is_present
                 if not succ:
                     continue
@@ -321,7 +328,7 @@ class PredictExp:
                 self.bin_count[x_A, y_A] += 1
                 if self.ground_truth_labels[frame_ix, j] == 1:
                     self.bins_ground_truth[x_A, y_A] += 1
-        
+
     def predict_all_clips(self):
         n = self.markers.shape[0]
         # step_size = self.dilated_clip_len
@@ -335,11 +342,26 @@ class PredictExp:
         
         self.write_probs_to_npz()
     
-    def debug_projection(self):
-        pass
+    def debug(self):
+        points = self.poses_interpolated[:, :3]
+        path = SYSTEM_PARAMS.files.experiment_2025_08_22_filtered_positions_npz
+        np.savez(
+            path,
+            points=points,
+        )
+
+    @staticmethod
+    def transform_image(img):
+        img = img.T
+        img = img[::-1, :]
+        img = img[:, ::-1]
+        return img
     
     def write_probs_to_npz(self):
         path = SYSTEM_PARAMS.files.exp_probs_npz
+        self.bin_prob_sum = PredictExp.transform_image(self.bin_prob_sum)
+        self.bin_count = PredictExp.transform_image(self.bin_count)
+        self.bins_ground_truth = PredictExp.transform_image(self.bins_ground_truth)
         np.savez(
             path,
             bin_prob_sum=self.bin_prob_sum,
@@ -499,7 +521,7 @@ class PredictExp:
                 
                 # Extract block and compute majority vote
                 block = ground_truth[y_start:y_end, x_start:x_end]
-                block_mean = np.mean(block)
+                block_mean = np.mean(block) if block.size > 0 else 0.0
                 downsampled[y, x] = 1.0 if block_mean > 0.5 else 0.0
         
         # Convert to uint8 image format and save
@@ -540,7 +562,7 @@ class PredictExp:
         images = {
             'Original Ground Truth': cv2.imread(self.ground_truth_img_path, cv2.IMREAD_GRAYSCALE),
             'Downsampled Ground Truth': cv2.imread(self.ground_truth_img_downsampled_path, cv2.IMREAD_GRAYSCALE),
-            'Ground Truth from Video': ground_truth_from_video,
+            'Ground Truth from Video': (ground_truth_from_video * 255).astype(np.uint8),
             'Sensor Trajectory': cv2.imread(self.sensor_trajectory_img_path, cv2.IMREAD_GRAYSCALE),
             'Feasible Ground Truth': cv2.imread(self.ground_truth_feasible_img_path, cv2.IMREAD_GRAYSCALE),
             'Prediction': cv2.imread(self.prediction_img_path, cv2.IMREAD_GRAYSCALE),

@@ -17,5 +17,6 @@ uv pip install matplotlib
 uv pip install -U 'tensorboardX'
 uv pip install -U 'tensorboard'
 uv pip install seaborn
+uv pip install open3d
 
 echo "All dependencies installed successfully!" 
