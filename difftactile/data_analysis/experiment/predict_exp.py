@@ -23,8 +23,11 @@ class PredictExp:
         self.fisheye_model = FisheyeModelNoTaichi()
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        data = np.load(SYSTEM_PARAMS.files.experiment_2025_08_22_output_npz)
-        self.frames_poses = data['output']
+        frames_poses_data = np.load(SYSTEM_PARAMS.files.experiment_2025_08_22_output_npz)
+        self.frames_poses = frames_poses_data['output']
+        ground_truth_labels_path = SYSTEM_PARAMS.files.experiment_2025_08_22_ground_truth_labels_npz
+        ground_truth_labels_data = np.load(ground_truth_labels_path)
+        self.ground_truth_labels = ground_truth_labels_data['labels']
         self.interpolate_poses()
         self.sensor_radius = 20
         self.phantom_length_x = 105
@@ -39,8 +42,10 @@ class PredictExp:
         self.bins = np.zeros(shape=(2, self.bin_num_x, self.bin_num_y), dtype=int)
         self.bin_prob_sum = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=float)
         self.bin_count = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=int)
+        self.bins_ground_truth = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=int)
+        self.debug_bins = np.zeros(shape=(self.markers.shape[0]), dtype=int)
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
-        self.dilation = 2
+        self.dilation = 1
         self.dilated_clip_len = self.clip_len * self.dilation
         self.init_model()
         self.init_camera_params()
@@ -57,6 +62,7 @@ class PredictExp:
         self.prediction_img_path = SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask
         self.sensor_trajectory_img_path = SYSTEM_PARAMS.files.sensor_trajectory
         self.ground_truth_feasible_img_path = SYSTEM_PARAMS.files.ground_truth_feasible
+        self.ground_truth_from_video_img_path = SYSTEM_PARAMS.files.experiment_ground_truth_from_video_img_path
     
     def z_unnormalise(self, points):
         x_mean = self.stats['x_mean']
@@ -156,6 +162,7 @@ class PredictExp:
         self.markers = self.markers[valid_mask]
         self.markers_mask = self.markers_mask[valid_mask]
         self.frame_mapping = self.frame_mapping[valid_mask]
+        self.ground_truth_labels = self.ground_truth_labels[valid_mask]
         foo = 7
 
     @staticmethod
@@ -279,8 +286,8 @@ class PredictExp:
                 y,
                 z
             )
-            # if frame_ix in visible_vein_frame_ixs:
-            #     print('hello')
+            if frame_ix == 34:
+                foo = 7
             for j in range(127):
                 prob = probs[t, j]
                 pred = preds[t, j]
@@ -304,6 +311,7 @@ class PredictExp:
                 # succ &= is_present
                 if not succ:
                     continue
+                self.debug_bins[frame_ix] += 1
                 x_A = int(x_A / self.bin_size)
                 y_A = int(y_A / self.bin_size)
 
@@ -311,12 +319,18 @@ class PredictExp:
                 foo = 1 if j == 0 else 0
                 self.bin_prob_sum[x_A, y_A] += foo
                 self.bin_count[x_A, y_A] += 1
+                if self.ground_truth_labels[frame_ix, j] == 1:
+                    self.bins_ground_truth[x_A, y_A] += 1
         
     def predict_all_clips(self):
         n = self.markers.shape[0]
         # step_size = self.dilated_clip_len
         step_size = 1
-        for i in tqdm(range(0, n - self.dilated_clip_len, step_size), desc="clip inference"):
+        for i in (
+            tqdm(
+                range(0, n - self.dilated_clip_len, step_size)
+                , desc="clip inference")
+            ):
             self.predict_clip(i)
         
         self.write_probs_to_npz()
@@ -329,7 +343,8 @@ class PredictExp:
         np.savez(
             path,
             bin_prob_sum=self.bin_prob_sum,
-            bin_count=self.bin_count
+            bin_count=self.bin_count,
+            bins_ground_truth=self.bins_ground_truth
         )
     
     def load_probs_from_npz(self):
@@ -337,6 +352,7 @@ class PredictExp:
         data = np.load(path)
         self.bin_prob_sum = data['bin_prob_sum']
         self.bin_count = data['bin_count']
+        self.bins_ground_truth = data['bins_ground_truth']
     
     def generate_mask_image(self):
         res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
@@ -352,6 +368,11 @@ class PredictExp:
         img = (feasible_binary * 255).astype(np.uint8)
         img = np.flip(np.flip(img, axis=0), axis=1)
         cv2.imwrite(self.sensor_trajectory_img_path, img)
+
+        bins_ground_truth_binary = (self.bins_ground_truth > 0).astype(np.int32)
+        img = (bins_ground_truth_binary * 255).astype(np.uint8)
+        img = np.flip(np.flip(img, axis=0), axis=1)
+        cv2.imwrite(self.ground_truth_from_video_img_path, img)
     
     @staticmethod
     def compute_npz():
@@ -498,14 +519,13 @@ class PredictExp:
         prediction = cv2.imread(self.prediction_img_path, cv2.IMREAD_GRAYSCALE)
         ground_truth = cv2.imread(self.ground_truth_feasible_img_path, cv2.IMREAD_GRAYSCALE)
         ground_truth_og = cv2.imread(self.ground_truth_img_downsampled_path, cv2.IMREAD_GRAYSCALE)
-        
-        if prediction is None or ground_truth is None:
-            raise ValueError("Failed to load prediction or ground truth image")
+        ground_truth_from_video = cv2.imread(self.ground_truth_from_video_img_path, cv2.IMREAD_GRAYSCALE)
         
         # Convert to binary format
         prediction = (prediction > 127).astype(np.uint8)
         ground_truth = (ground_truth > 127).astype(np.uint8)
         ground_truth_og = (ground_truth_og > 127).astype(np.uint8)
+        ground_truth_from_video = (ground_truth_from_video > 127).astype(np.uint8)
         
         # Compute IoU scores
         prediction_tensor = torch.from_numpy(prediction).float().unsqueeze(0).unsqueeze(0)
@@ -520,10 +540,11 @@ class PredictExp:
         images = {
             'Original Ground Truth': cv2.imread(self.ground_truth_img_path, cv2.IMREAD_GRAYSCALE),
             'Downsampled Ground Truth': cv2.imread(self.ground_truth_img_downsampled_path, cv2.IMREAD_GRAYSCALE),
+            'Ground Truth from Video': ground_truth_from_video,
             'Sensor Trajectory': cv2.imread(self.sensor_trajectory_img_path, cv2.IMREAD_GRAYSCALE),
             'Feasible Ground Truth': cv2.imread(self.ground_truth_feasible_img_path, cv2.IMREAD_GRAYSCALE),
             'Prediction': cv2.imread(self.prediction_img_path, cv2.IMREAD_GRAYSCALE),
-            'Confusion Overlay': (confusion_overlay * 255).astype(np.uint8)
+            'Confusion Overlay': (confusion_overlay * 255).astype(np.uint8),
         }
         
         # Check if all images were loaded successfully
@@ -543,8 +564,8 @@ class PredictExp:
             resized = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_NEAREST)
             resized_images.append(resized)
         
-        # Create a 2x3 grid
-        grid = np.zeros((target_height * 2, target_width * 3, 3), dtype=np.uint8)
+        # Create a 3x3 grid
+        grid = np.zeros((target_height * 3, target_width * 3, 3), dtype=np.uint8)
         
         # Place images in the grid
         for idx, img in enumerate(resized_images):
@@ -646,6 +667,6 @@ class PredictExp:
 
 
 def main():
-    # predict_exp = PredictExp()
-    # predict_exp.go()
-    PredictExp.compute_npz_2025_08_22()
+    predict_exp = PredictExp()
+    predict_exp.go()
+    # PredictExp.compute_npz_2025_08_22()

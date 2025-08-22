@@ -399,7 +399,7 @@ class VideoPlayer:
         distances = np.sqrt(np.sum((markers_frame - np.array([mouse_x, mouse_y])) ** 2, axis=1))
         
         # Update labels for markers within 10 pixels
-        mask = distances < 10
+        mask = distances < SYSTEM_PARAMS.meta.vein_px_thickness
         self.labels[self.current_frame][mask] = label_value
         
         # Redraw frame

@@ -325,6 +325,7 @@
         "experiment_2025_08_22_markers_npz": "difftactile/output/experiment_2025_08_22_markers.npz",
         "experiment_2025_08_22_markers_reordered_npz": "difftactile/output/experiment_2025_08_22_markers_reordered.npz",
         "experiment_2025_08_22_frame_mapping_npz": "difftactile/output/experiment_2025_08_22_frame_mapping.npz",
-        "experiment_2025_08_22_ground_truth_labels_npz": "difftactile/output/experiment_2025_08_22_ground_truth_labels.npz"
+        "experiment_2025_08_22_ground_truth_labels_npz": "difftactile/output/experiment_2025_08_22_ground_truth_labels.npz",
+        "experiment_ground_truth_from_video_img_path": "difftactile/output/ground_truth_from_video_img_path.jpg"
     }
 }
