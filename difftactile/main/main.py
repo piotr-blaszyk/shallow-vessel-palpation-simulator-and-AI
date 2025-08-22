@@ -2379,14 +2379,14 @@ class Contact:
 
     def collect_training_data(self):
         self.clear_temp_images()
-        # self.clear_npz()
+        self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for k in range(0, 1):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(0, 2):
-                    # self.randomise_contact_params()
+                for i in range(0, 1):
+                    self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     self.set_up_initial_positions_state_and_trajectory()
                     self.vein_sparse_to_dense()
@@ -2417,13 +2417,13 @@ class Contact:
                         target = self.current_target_idx[None]
                         if (
                             target > 2
-                            and ts % 2 == 0
+                            and ts % 4 == 0
                         ):
                             self.record_training_data_point(j, ts)
                         if self.last_target_reached[None] == 1:
                             break
                     file_num = j * 4 + k * 2 + i
-                    # self.write_training_data_to_file(file_num, i)
+                    self.write_training_data_to_file(file_num, i)
                     
                     self.reset_loss()
                     self.batch_loss.fill(0.0)

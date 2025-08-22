@@ -74,7 +74,7 @@ class PredictExp:
         self.max_x = self.min_x + self.phantom_length_x
         self.min_y = self.poses[16][1] - self.sensor_radius
         self.max_y = self.min_y + self.phantom_length_y
-        self.bin_size = 5
+        self.bin_size = 1
         self.bin_num_x = math.ceil(self.phantom_length_x / self.bin_size)
         self.bin_num_y = math.ceil(self.phantom_length_y / self.bin_size)
         self.bins = np.zeros(shape=(2, self.bin_num_x, self.bin_num_y), dtype=int)
@@ -216,14 +216,40 @@ class PredictExp:
         probs = probs.reshape((self.clip_len, 127,))
         preds = preds.reshape((self.clip_len, 127,))
 
+        assert points.min() > 0
+        assert points.max() > 100
+
+        # visible_vein_frame_ixs = np.array([
+        #     32,
+        #     50,
+        #     84,
+        #     121,
+        #     129,
+        #     135,
+        #     167,
+        #     170,
+        #     179,
+        #     210,
+        #     220,
+        #     256,
+        #     # 259,
+        #     297,
+        #     313
+        #     ], dtype=int
+        # )
+        visible_vein_frame_ixs = np.array([32], dtype=int)
+
         for t in range(self.clip_len):
-            x, y, z = self.all_positions[i + t*self.dilation]
+            frame_ix = i + t*self.dilation
+            x, y, z = self.all_positions[frame_ix]
             t_EA = self.get_T_EA(
                 np.deg2rad(SYSTEM_PARAMS.geometry.camera_rotation_angle),
                 x,
                 y,
                 z
             )
+            if frame_ix in visible_vein_frame_ixs:
+                print('hello')
             for j in range(127):
                 prob = probs[t, j]
                 pred = preds[t, j]
@@ -242,19 +268,26 @@ class PredictExp:
                     y_A >= 0 and
                     y_A < self.phantom_length_y
                 )
+                if frame_ix in visible_vein_frame_ixs:
+                    bar = 7
                 if not succ:
                     continue
-                x_A = int(x_A // self.bin_size)
-                y_A = int(y_A // self.bin_size)
-                self.bin_prob_sum[x_A, y_A] += pred
+                x_A = int(x_A / self.bin_size)
+                y_A = int(y_A / self.bin_size)
+
+                foo = 1 if frame_ix in visible_vein_frame_ixs else 0
+                self.bin_prob_sum[x_A, y_A] += foo
                 self.bin_count[x_A, y_A] += 1
         
     def predict_all_clips(self):
         n = self.markers.shape[0]
-        for i in tqdm(range(0, n - self.dilated_clip_len), desc="clip inference"):
+        for i in tqdm(range(0, n - self.dilated_clip_len, self.dilated_clip_len), desc="clip inference"):
             self.predict_clip(i)
         
         self.write_probs_to_npz()
+    
+    def debug_projection(self):
+        pass
     
     def write_probs_to_npz(self):
         path = SYSTEM_PARAMS.files.exp_probs_npz
@@ -313,28 +346,31 @@ class PredictExp:
     def compute_npz_helper(
         video_in,
         video_out,
-        npz_out
+        npz_out,
+        video_from_cache=True
     ):
-        marker_tracker = MarkerTracker(
-            # start_frame_ix=1000,
-            # end_frame_ix=1050
-        )
-        marker_tracker.extract_frames(
-            video_in
-        )
-        marker_tracker.create_visualization(
-            out_path=video_out,
-            mode="unpaired-markers",
-            base_from_file=False
-        )
+        if not video_from_cache:
+            marker_tracker = MarkerTracker(
+                # start_frame_ix=1000,
+                # end_frame_ix=1050
+            )
+            marker_tracker.extract_frames(
+                video_in
+            )
+            marker_tracker.create_visualization(
+                out_path=video_out,
+                mode="unpaired-markers",
+                base_from_file=False
+            )
         player = VideoPlayer(
             in_path=video_out
         )
         player.run()
-        PredictExp.write_video_to_npz_file(
-            marker_tracker=marker_tracker,
-            path=npz_out
-        )
+        if not video_from_cache:
+            PredictExp.write_video_to_npz_file(
+                marker_tracker=marker_tracker,
+                path=npz_out
+            )
     
     def downsample_ground_truth_image_to_prediction_shape(self):
         ground_truth_path = self.ground_truth_img_path
@@ -484,8 +520,8 @@ class PredictExp:
         
         gt_height, gt_width = ground_truth.shape
         pred_height, pred_width = prediction.shape
-        scale_x = gt_width // pred_width
-        scale_y = gt_height // pred_height
+        scale_x = int(gt_width / pred_width)
+        scale_y = int(gt_height / pred_height)
         scale_factor = min(scale_x, scale_y)
         scale_factor = max(1, scale_factor)
         scaled_prediction = cv2.resize(prediction, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
@@ -547,4 +583,4 @@ class PredictExp:
 def main():
     predict_exp = PredictExp()
     predict_exp.go()
-    # PredictExp.compute_npz_straight()
+    # PredictExp.compute_npz_test()

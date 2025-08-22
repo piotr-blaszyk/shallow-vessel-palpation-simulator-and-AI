@@ -895,10 +895,6 @@ class MyDataset(torch.utils.data.Dataset):
             edge_attr_clip[:, 0] = (edge_attr_clip[:, 0] - self.edge_attr_mean[0]) / self.edge_attr_std[0]
             edge_attr_clip[:, 2] = (edge_attr_clip[:, 2] - self.edge_attr_mean[2]) / self.edge_attr_std[2]
 
-            # Normalize positions
-            pos[:, 0] = (pos[:, 0] - self.pos_mean[0]) / self.pos_std[0]  # x
-            pos[:, 1] = (pos[:, 1] - self.pos_mean[1]) / self.pos_std[1]  # y
-
             # Normalize node features
             x_features[:, 0] = (x_features[:, 0] - self.x_mean[0]) / self.x_std[0]  # local_var
             x_features[:, 1] = (x_features[:, 1] - self.x_mean[1]) / self.x_std[1]  # global_var
