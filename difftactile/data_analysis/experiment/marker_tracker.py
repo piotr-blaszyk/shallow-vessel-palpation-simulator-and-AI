@@ -309,21 +309,56 @@ class MarkerTracker:
 
 
 class VideoPlayer:
-    def __init__(self, in_path):
-        self.cap = cv2.VideoCapture(str(in_path))
+    def __init__(
+            self, 
+            video_in_path,
+            markers_in_path_npz=None,
+            labels_out_path_npz=None,
+            labels_in_path_npz=None
+        ):
+        self.markers = None
+        self.labels = None
+        self.edit_mode = False
+        self.labels_out_path = labels_out_path_npz
+        
+        if markers_in_path_npz is not None:
+            data_markers = np.load(markers_in_path_npz)
+            self.markers = data_markers['markers']
+            if labels_in_path_npz is not None:
+                data_labels = np.load(labels_in_path_npz)
+                self.labels = data_labels['labels']
+            elif labels_out_path_npz is not None:
+                # Initialize labels as all negative
+                self.labels = np.zeros((self.markers.shape[0], self.markers.shape[1]), dtype=np.int32)
+
+        self.cap = cv2.VideoCapture(str(video_in_path))
         self.current_frame = 0
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         if SYSTEM_PARAMS.files.traj_id == 1:
             self.save_specific_frames([103, 179])
+            
         self.root = tk.Tk()
         self.root.title("Marker Tracking Viewer")
         self.canvas = tk.Canvas(self.root)
         self.canvas.pack()
         self.frame_label = tk.Label(self.root, text=f"Frame: 0/{self.total_frames}")
         self.frame_label.pack()
+        
+        # Add edit mode label
+        self.edit_mode_label = tk.Label(self.root, text="Edit Mode: ON")
+        self.edit_mode_label.pack()
+        
+        # Bind keyboard events
         self.root.bind("<Left>", self.prev_frame)
         self.root.bind("<Right>", self.next_frame)
         self.root.bind("<Escape>", self.quit)
+        self.root.bind("s", self.save_labels)
+        self.root.bind("e", self.toggle_edit_mode)
+        
+        # Bind mouse events
+        self.canvas.bind("<B1-Motion>", self.label_positive)
+        self.canvas.bind("<B3-Motion>", self.label_negative)
+        
         self.show_frame()
 
     def show_frame(self):
@@ -336,9 +371,60 @@ class VideoPlayer:
             self.canvas.config(width=img.width, height=img.height)
             self.canvas.create_image(0, 0, image=photo, anchor=tk.NW)
             self.canvas.image = photo
-            self.frame_label.config(
-                text=f"Frame: {self.current_frame}/{self.total_frames}"
-            )
+            
+            # Draw markers if available
+            if self.markers is not None and self.labels is not None:
+                markers_frame = self.markers[self.current_frame]
+                labels_frame = self.labels[self.current_frame]
+                
+                for marker_idx, (x, y) in enumerate(markers_frame):
+                    color = "#FF00FF" if labels_frame[marker_idx] == 1 else "#00FFFF"  # Magenta for positive, cyan for negative
+                    self.canvas.create_oval(
+                        x - 3, y - 3, x + 3, y + 3,
+                        fill=color, outline=color
+                    )
+            
+            self.frame_label.config(text=f"Frame: {self.current_frame}/{self.total_frames}")
+            self.edit_mode_label.config(text=f"Edit Mode: {'ON' if self.edit_mode else 'OFF'}")
+
+    def label_markers(self, event, label_value):
+        if not self.edit_mode or self.markers is None or self.labels is None:
+            return
+            
+        mouse_x = event.x
+        mouse_y = event.y
+        markers_frame = self.markers[self.current_frame]
+        
+        # Calculate distances to all markers in current frame
+        distances = np.sqrt(np.sum((markers_frame - np.array([mouse_x, mouse_y])) ** 2, axis=1))
+        
+        # Update labels for markers within 10 pixels
+        mask = distances < 10
+        self.labels[self.current_frame][mask] = label_value
+        
+        # Redraw frame
+        self.show_frame()
+
+    def label_positive(self, event):
+        self.label_markers(event, 1)
+
+    def label_negative(self, event):
+        self.label_markers(event, 0)
+
+    def toggle_edit_mode(self, event):
+        if self.markers is not None and self.labels is not None:
+            self.edit_mode = not self.edit_mode
+            self.show_frame()
+
+    def save_labels(self, event):
+        if self.labels_out_path is not None and self.labels is not None:
+            np.savez(self.labels_out_path, labels=self.labels)
+            print(f"Labels saved to {self.labels_out_path}")
+
+    def quit(self, event):
+        if self.labels_out_path is not None and self.labels is not None:
+            self.save_labels(event)
+        self.root.quit()
 
     def next_frame(self, event):
         if self.current_frame < self.total_frames - 1:
@@ -349,9 +435,6 @@ class VideoPlayer:
         if self.current_frame > 0:
             self.current_frame -= 1
             self.show_frame()
-
-    def quit(self, event):
-        self.root.quit()
 
     def run(self):
         self.root.mainloop()
@@ -369,10 +452,11 @@ class VideoPlayer:
                 cv2.imwrite(output_path, frame)
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, current_pos)
 
+
 def main():
     tracker = MarkerTracker()
     tracker.process_video()
     player = VideoPlayer(
-        in_path=SYSTEM_PARAMS.files.traj_out.format(SYSTEM_PARAMS.files.traj_id)
+        video_in_path=SYSTEM_PARAMS.files.traj_out.format(SYSTEM_PARAMS.files.traj_id)
     )
     player.run()

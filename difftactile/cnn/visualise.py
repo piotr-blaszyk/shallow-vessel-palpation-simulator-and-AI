@@ -447,7 +447,8 @@ class Visualisation:
             data_loader = MyDatasetExpIterator(
                 dataset=dataset,
                 # npz_path=SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered
-                npz_path=SYSTEM_PARAMS.files.exp_video_npz_reordered
+                npz_path=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_reordered_npz,
+                labels_path=SYSTEM_PARAMS.files.experiment_2025_08_22_ground_truth_labels_npz
             )
 
         data_iter = iter(data_loader)
@@ -545,7 +546,7 @@ class Visualisation:
                 for point_idx, point in enumerate(points):
                     if 0 <= point[0] < w and 0 <= point[1] < h:
                         center = (int(point[0]), int(point[1]))
-                        if ground_truth_labels_present and ground_truth[point_idx] == 1:
+                        if ground_truth[point_idx] == 1:
                             # Magenta (BGR = (255, 0, 255)) for positive class
                             cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
                         else:

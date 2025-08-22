@@ -27,6 +27,7 @@ class MyDataset(torch.utils.data.Dataset):
             data_points_yesterday=[],
             data_points_pos=[],
             data_points_neg=[],
+            normalise_pos=True
         ):
         super().__init__()
         start_time = time.perf_counter()
@@ -64,6 +65,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.adjacency_matrix = base_graph_data['adjacency_matrix']
         self.warmup = True
         self.difficulty_fyi = None
+        self.normalise_pos = normalise_pos
         self.set_difficulty_level(0.0)
 
         self.data_points_today = data_points_today
@@ -705,7 +707,7 @@ class MyDataset(torch.utils.data.Dataset):
         points += principal_point
         return points
 
-    def generate_pyg_vectorised(self, clip_points, clip_labels, clip_labels_mask):
+    def generate_pyg_vectorised(self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in=None):
         num_frames = clip_points.shape[0]
         num_nodes = clip_points.shape[1]
         num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features
@@ -895,6 +897,10 @@ class MyDataset(torch.utils.data.Dataset):
             edge_attr_clip[:, 0] = (edge_attr_clip[:, 0] - self.edge_attr_mean[0]) / self.edge_attr_std[0]
             edge_attr_clip[:, 2] = (edge_attr_clip[:, 2] - self.edge_attr_mean[2]) / self.edge_attr_std[2]
 
+            if self.normalise_pos:
+                pos[:, 0] = (pos[:, 0] - self.pos_mean[0]) / self.pos_std[0]
+                pos[:, 1] = (pos[:, 1] - self.pos_mean[1]) / self.pos_std[1]
+
             # Normalize node features
             x_features[:, 0] = (x_features[:, 0] - self.x_mean[0]) / self.x_std[0]  # local_var
             x_features[:, 1] = (x_features[:, 1] - self.x_mean[1]) / self.x_std[1]  # global_var
@@ -905,6 +911,9 @@ class MyDataset(torch.utils.data.Dataset):
         for t in range(num_frames):
             frame_offset = t * num_nodes
             x_features[frame_offset:frame_offset + num_nodes, 3] = node_total_displacement
+
+        if ground_truth_labels_in is not None:
+            ground_truth_labels_clip = ground_truth_labels_in.reshape((num_frames * num_nodes,)).astype(int)
 
         edge_attr = torch.tensor(edge_attr_clip, dtype=torch.float)
         x = torch.tensor(x_features, dtype=torch.float)
@@ -1043,7 +1052,7 @@ class MyDataset(torch.utils.data.Dataset):
 
         return images[self.clip_len // 2, :, :]
 
-    def get_clip(self, markers, markers_mask, clip_len, dilation, start_ix):
+    def get_clip(self, markers, markers_mask, clip_len, dilation, start_ix, ground_truth_labels_in=None):
         points = markers
         points_mask = markers_mask
 
@@ -1063,7 +1072,7 @@ class MyDataset(torch.utils.data.Dataset):
             0
         ), dtype=bool)
         
-        pyg = self.generate_pyg_vectorised(points, labels, labels_mask)
+        pyg = self.generate_pyg_vectorised(points, labels, labels_mask, ground_truth_labels_in)
         return pyg
 
     @staticmethod
@@ -1503,7 +1512,8 @@ class MyDatasetExpIterator:
     def __init__(
             self, 
             dataset: MyDataset, 
-            npz_path
+            npz_path,
+            labels_path=None
         ):
         self.dataset = dataset
         data = np.load(npz_path)
@@ -1517,6 +1527,12 @@ class MyDatasetExpIterator:
         self.markers = markers
         self.markers_mask = markers_mask
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
+        if labels_path is not None:
+            data_labels = np.load(labels_path)
+            labels = data_labels['labels']
+        else:
+            labels = None
+        self.labels = labels
 
     def __iter__(self):
         return self
@@ -1524,18 +1540,20 @@ class MyDatasetExpIterator:
     def __next__(self):
         # dilation = random.choice(self.dilations)
         # dilation = 10
-        dilation = 2
+        dilation = 1
         dilated_clip_len = self.clip_len * dilation
         min_start_ix = 0
         max_start_ix = self.num_frames - dilated_clip_len
         start_ix = random.randint(min_start_ix, max_start_ix)
-        # start_ix = 155
+        start_ix = 0
+        ground_truth_labels_in = self.labels[start_ix:start_ix+dilated_clip_len:dilation]
         pyg = self.dataset.get_clip(
             self.markers,
             self.markers_mask,
             self.clip_len,
             dilation,
-            start_ix
+            start_ix,
+            ground_truth_labels_in
         )
         labels = torch.empty(0)
         return pyg, labels

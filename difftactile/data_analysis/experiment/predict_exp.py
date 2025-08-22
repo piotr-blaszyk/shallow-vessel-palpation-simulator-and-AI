@@ -45,7 +45,7 @@ class PredictExp:
         self.init_model()
         self.init_camera_params()
         self.compute_mapping_2d_3d()
-        self.dataset = MyDataset(mode='dummy', scheme='new')
+        self.dataset = MyDataset(mode='dummy', scheme='new', normalise_pos=False)
         with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
             test_data = pickle.load(f)
         self.stats = test_data['dataset_stats'][1.0]
@@ -386,7 +386,9 @@ class PredictExp:
             npz_out_reordered=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_reordered_npz,
             frame_mapping_npz_out=SYSTEM_PARAMS.files.experiment_2025_08_22_frame_mapping_npz,
             video_from_cache=True,
-            npz_in=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_reordered_npz
+            npz_in=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_reordered_npz,
+            labels_out=SYSTEM_PARAMS.files.experiment_2025_08_22_ground_truth_labels_npz,
+            labels_in=SYSTEM_PARAMS.files.experiment_2025_08_22_ground_truth_labels_npz,
         )
 
     @staticmethod
@@ -398,7 +400,9 @@ class PredictExp:
         video_from_cache=False,
         # npz_in=SYSTEM_PARAMS.files.exp_video_npz_reordered
         npz_in=None,
-        frame_mapping_npz_out=None
+        frame_mapping_npz_out=None,
+        labels_out=None,
+        labels_in=None,
     ):
         if not video_from_cache:
             marker_tracker = MarkerTracker(
@@ -416,7 +420,10 @@ class PredictExp:
                 npz_in=npz_in
             )
         player = VideoPlayer(
-            in_path=video_out
+            video_in_path=video_out,
+            markers_in_path_npz=npz_in,
+            labels_out_path_npz=labels_out,
+            labels_in_path_npz=labels_in
         )
         player.run()
         if False and not video_from_cache:
@@ -639,6 +646,6 @@ class PredictExp:
 
 
 def main():
-    predict_exp = PredictExp()
-    predict_exp.go()
-    # PredictExp.compute_npz_2025_08_22()
+    # predict_exp = PredictExp()
+    # predict_exp.go()
+    PredictExp.compute_npz_2025_08_22()
