@@ -206,7 +206,7 @@ class ComputeEdges:
             cv2.circle(img, (x, y), radius=3, color=(0, 0, 255), thickness=-1)  # Red filled circle
             
             degree = neighbour_counts[i]
-            cv2.putText(img, str(degree), (x + 5, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 
+            cv2.putText(img, str(i), (x + 5, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 
                         fontScale=0.5, color=(0, 255, 0), thickness=1)  # Green text
 
         # Draw edges between connected nodes
@@ -233,7 +233,13 @@ class ComputeEdges:
     
     @staticmethod
     def validate_graph_connectivity_algorithm():
-        dataset = MyDataset(data_dir=SYSTEM_PARAMS.files.dataset_root)
+        dataset = MyDataset(mode='dummy', scheme='new')
+        with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
+            test_data = pickle.load(f)
+        stats = test_data['dataset_stats'][1.0]
+        dataset.set_stats(stats)
+        dataset.set_difficulty_level(1.0)
+
         n = len(dataset)
         k = 2
         
@@ -309,8 +315,8 @@ class ComputeEdges:
 
 
 def main():
-    # ComputeEdges.compute_base_graph_connectivity()
-    ComputeEdges.validate_graph_connectivity_algorithm()
+    ComputeEdges.compute_base_graph_connectivity()
+    # ComputeEdges.validate_graph_connectivity_algorithm()
 
 
 if __name__ == '__main__':

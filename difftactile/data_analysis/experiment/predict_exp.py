@@ -237,7 +237,23 @@ class PredictExp:
         #     313
         #     ], dtype=int
         # )
-        visible_vein_frame_ixs = np.array([32], dtype=int)
+        # visible_vein_frame_ixs = np.array([32], dtype=int)
+        visible_vein_frame_ixs = np.array([
+            [38, 16],
+            [53, 16],
+            [87, 2],
+            [124, 32], # barely visible
+            [130, 2],
+            [137, 2],
+            [168, 0],
+            [173, 2],
+            [181, 2],
+            [212, 0],
+            [222, 0],
+            [257, 2],
+            [301, 33], # barely visible
+            [309, 39]
+        ], dtype=int)
 
         for t in range(self.clip_len):
             frame_ix = i + t*self.dilation
@@ -248,8 +264,8 @@ class PredictExp:
                 y,
                 z
             )
-            if frame_ix in visible_vein_frame_ixs:
-                print('hello')
+            # if frame_ix in visible_vein_frame_ixs:
+            #     print('hello')
             for j in range(127):
                 prob = probs[t, j]
                 pred = preds[t, j]
@@ -268,8 +284,9 @@ class PredictExp:
                     y_A >= 0 and
                     y_A < self.phantom_length_y
                 )
-                if frame_ix in visible_vein_frame_ixs:
-                    bar = 7
+                frame_ix_marker_ix = np.array([frame_ix, j], dtype=int)
+                is_present = np.any(np.all(visible_vein_frame_ixs == frame_ix_marker_ix, axis=1))
+                succ &= is_present
                 if not succ:
                     continue
                 x_A = int(x_A / self.bin_size)
@@ -281,7 +298,9 @@ class PredictExp:
         
     def predict_all_clips(self):
         n = self.markers.shape[0]
-        for i in tqdm(range(0, n - self.dilated_clip_len, self.dilated_clip_len), desc="clip inference"):
+        # step_size = self.dilated_clip_len
+        step_size = 1
+        for i in tqdm(range(0, n - self.dilated_clip_len, step_size), desc="clip inference"):
             self.predict_clip(i)
         
         self.write_probs_to_npz()
@@ -347,7 +366,8 @@ class PredictExp:
         video_in,
         video_out,
         npz_out,
-        video_from_cache=True
+        video_from_cache=False,
+        npz_in=SYSTEM_PARAMS.files.exp_video_npz_reordered
     ):
         if not video_from_cache:
             marker_tracker = MarkerTracker(
@@ -360,7 +380,8 @@ class PredictExp:
             marker_tracker.create_visualization(
                 out_path=video_out,
                 mode="unpaired-markers",
-                base_from_file=False
+                base_from_file=False,
+                npz_in=npz_in
             )
         player = VideoPlayer(
             in_path=video_out
@@ -432,6 +453,7 @@ class PredictExp:
         # Load prediction and feasible ground truth images
         prediction = cv2.imread(self.prediction_img_path, cv2.IMREAD_GRAYSCALE)
         ground_truth = cv2.imread(self.ground_truth_feasible_img_path, cv2.IMREAD_GRAYSCALE)
+        ground_truth_og = cv2.imread(self.ground_truth_img_downsampled_path, cv2.IMREAD_GRAYSCALE)
         
         if prediction is None or ground_truth is None:
             raise ValueError("Failed to load prediction or ground truth image")
@@ -439,6 +461,7 @@ class PredictExp:
         # Convert to binary format
         prediction = (prediction > 127).astype(np.uint8)
         ground_truth = (ground_truth > 127).astype(np.uint8)
+        ground_truth_og = (ground_truth_og > 127).astype(np.uint8)
         
         # Compute IoU scores
         prediction_tensor = torch.from_numpy(prediction).float().unsqueeze(0).unsqueeze(0)
@@ -447,7 +470,7 @@ class PredictExp:
         print("IoU Metrics (downscaled):", metrics)
         
         # Create confusion matrix overlay
-        confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth, prediction)
+        confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth_og, prediction)
         
         # Load all images for visualization
         images = {

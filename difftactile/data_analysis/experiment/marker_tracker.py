@@ -143,7 +143,12 @@ class MarkerTracker:
             
             self.base_frame_mappings.append(mapping)
 
-    def create_visualization(self, out_path, mode, base_from_file):
+    def create_visualization(self, out_path, mode, base_from_file, npz_in=None):
+        if npz_in is not None:
+            data = np.load(npz_in)
+            self.markers = data['markers']
+            self.markers_mask = data['markers_mask']
+
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
         first_frame = self.frames[0]
         out = cv2.VideoWriter(
@@ -224,7 +229,12 @@ class MarkerTracker:
                         )
                 out.write(blended)
             elif mode == "unpaired-markers":
-                frame = draw_markers(frame, self.frame_markers[frame_idx], (0, 255, 0))
+                if npz_in is None:
+                    frame = draw_markers(frame, self.frame_markers[frame_idx], (0, 255, 0))
+                else:
+                    markers = self.markers[frame_idx]
+                    assert self.markers_mask[frame_idx].all()
+                    frame = draw_markers(frame, markers, (0, 255, 0), show_text=True)
                 out.write(frame)
             elif mode == "raw-video":
                 out.write(frame)

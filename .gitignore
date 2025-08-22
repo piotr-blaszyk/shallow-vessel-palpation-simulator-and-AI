@@ -18,3 +18,5 @@ saved_models/
 *.mp4
 *.avi
 tac_vgnn/
+*.npz
+*.avi
