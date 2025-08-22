@@ -567,7 +567,21 @@ class PredictExp:
             'Prediction': cv2.imread(self.prediction_img_path, cv2.IMREAD_GRAYSCALE),
             'Confusion Overlay': (confusion_overlay * 255).astype(np.uint8),
         }
+
+        # Create GBR overlay image
+        trajectory = cv2.imread(self.sensor_trajectory_img_path, cv2.IMREAD_GRAYSCALE)
+        prediction_img = cv2.imread(self.prediction_img_path, cv2.IMREAD_GRAYSCALE)
         
+        # Create a 3-channel image (BGR format)
+        gbr_overlay = np.zeros((trajectory.shape[0], trajectory.shape[1], 3), dtype=np.uint8)
+        
+        # Set cyan (G=255, B=255) for trajectory and magenta (B=255, R=255) for prediction
+        gbr_overlay[trajectory > 127] = [255, 255, 0]  # Cyan in BGR
+        gbr_overlay[prediction_img > 127] = [255, 0, 255]  # Magenta in BGR
+        
+        # Add GBR overlay to images dictionary
+        images['GBR Overlay'] = gbr_overlay
+
         # Check if all images were loaded successfully
         if any(img is None for img in images.values()):
             raise ValueError("Failed to load one or more images for visualization")
@@ -616,6 +630,7 @@ class PredictExp:
                     bbox=dict(facecolor='black', alpha=0.7))
         
         plt.tight_layout()
+        plt.savefig(SYSTEM_PARAMS.files.exp_overlay_downscaled)
         plt.show()
         plt.close()
 
@@ -673,7 +688,7 @@ class PredictExp:
         ]
         plt.figlegend(handles=legend_elements, loc='center right')
         plt.tight_layout()
-        plt.savefig(SYSTEM_PARAMS.files.exp_overlay)
+        plt.savefig(SYSTEM_PARAMS.files.exp_overlay_upscaled)
         plt.show()
         plt.close()
 
