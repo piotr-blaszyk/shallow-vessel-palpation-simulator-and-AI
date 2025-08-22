@@ -146,11 +146,17 @@ class PredictExp:
         # Create a boolean mask for rows without NaN values
         valid_mask = ~np.isnan(self.poses_interpolated).any(axis=1)
         
+        # Create index mapping from original to filtered indices
+        original_indices = np.arange(num_video_frames)
+        filtered_indices = np.cumsum(valid_mask) - 1  # -1 to make 0-based
+        self.markers_index_mapping = {orig_idx: filt_idx for orig_idx, filt_idx in zip(original_indices[valid_mask], filtered_indices[valid_mask])}
+        
         # Filter the arrays using the mask
         self.poses_interpolated = self.poses_interpolated[valid_mask]
         self.markers = self.markers[valid_mask]
         self.markers_mask = self.markers_mask[valid_mask]
         self.frame_mapping = self.frame_mapping[valid_mask]
+        foo = 7
 
     @staticmethod
     def write_video_to_npz_file(marker_tracker, path):
@@ -224,22 +230,45 @@ class PredictExp:
         #     ], dtype=int
         # )
         # visible_vein_frame_ixs = np.array([32], dtype=int)
+        # visible_vein_frame_ixs = np.array([
+        #     [38, 16],
+        #     [53, 16],
+        #     [87, 2],
+        #     [124, 32], # barely visible
+        #     [130, 2],
+        #     [137, 2],
+        #     [168, 0],
+        #     [173, 2],
+        #     [181, 2],
+        #     [212, 0],
+        #     [222, 0],
+        #     [257, 2],
+        #     [301, 33], # barely visible
+        #     [309, 39]
+        # ], dtype=int)
+
+        visible_vein_frame_ixs_original = np.array([
+            [39, 1],
+            [53, 22],
+            [92, 22],
+            [134, 2],
+            [139, 23],
+            [171, 22],
+            [177, 1],
+            [217, 17],
+            [222, 1],
+            [261, 1],
+            [306, 32],
+            [352, 60] # barely visible
+        ])
+        
+        # Map frame indices using markers_index_mapping
         visible_vein_frame_ixs = np.array([
-            [38, 16],
-            [53, 16],
-            [87, 2],
-            [124, 32], # barely visible
-            [130, 2],
-            [137, 2],
-            [168, 0],
-            [173, 2],
-            [181, 2],
-            [212, 0],
-            [222, 0],
-            [257, 2],
-            [301, 33], # barely visible
-            [309, 39]
-        ], dtype=int)
+            [self.markers_index_mapping[frame_ix], marker_ix] 
+            for frame_ix, marker_ix in visible_vein_frame_ixs_original 
+            if frame_ix in self.markers_index_mapping
+        ])
+        assert visible_vein_frame_ixs_original.shape == visible_vein_frame_ixs.shape
 
         for t in range(self.clip_len):
             frame_ix = i + t*self.dilation
@@ -272,13 +301,14 @@ class PredictExp:
                 )
                 frame_ix_marker_ix = np.array([frame_ix, j], dtype=int)
                 is_present = np.any(np.all(visible_vein_frame_ixs == frame_ix_marker_ix, axis=1))
-                succ &= is_present
+                # succ &= is_present
                 if not succ:
                     continue
                 x_A = int(x_A / self.bin_size)
                 y_A = int(y_A / self.bin_size)
 
-                foo = 1 if frame_ix in visible_vein_frame_ixs else 0
+                # foo = 1 if frame_ix in visible_vein_frame_ixs else 0
+                foo = 1 if j == 0 else 0
                 self.bin_prob_sum[x_A, y_A] += foo
                 self.bin_count[x_A, y_A] += 1
         
@@ -354,7 +384,9 @@ class PredictExp:
             video_out=SYSTEM_PARAMS.files.experiment_2025_08_22_processed_video,
             npz_out=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_npz,
             npz_out_reordered=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_reordered_npz,
-            frame_mapping_npz_out=SYSTEM_PARAMS.files.experiment_2025_08_22_frame_mapping_npz
+            frame_mapping_npz_out=SYSTEM_PARAMS.files.experiment_2025_08_22_frame_mapping_npz,
+            video_from_cache=True,
+            npz_in=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_reordered_npz
         )
 
     @staticmethod
@@ -387,7 +419,7 @@ class PredictExp:
             in_path=video_out
         )
         player.run()
-        if not video_from_cache:
+        if False and not video_from_cache:
             PredictExp.write_video_to_npz_file(
                 marker_tracker=marker_tracker,
                 path=npz_out
