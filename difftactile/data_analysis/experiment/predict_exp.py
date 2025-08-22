@@ -121,7 +121,7 @@ class PredictExp:
             [222, 1],
             [261, 1],
             [306, 32],
-            [352, 60] # barely visible
+            # [352, 60] # barely visible
         ])
         
         # Map frame indices using markers_index_mapping
@@ -313,19 +313,18 @@ class PredictExp:
                     y_A >= 0 and
                     y_A < self.phantom_length_y
                 )
-                frame_ix_marker_ix = np.array([frame_ix, j], dtype=int)
-                is_present = np.any(np.all(self.visible_vein_frame_ixs == frame_ix_marker_ix, axis=1))
-                # succ &= is_present
                 if not succ:
                     continue
-                self.debug_bins[frame_ix] += 1
                 x_A = int(x_A / self.bin_size)
                 y_A = int(y_A / self.bin_size)
-
+                self.debug_bins[frame_ix] += 1
+                self.bin_count[x_A, y_A] += (1 if j == 0 else 0)
+                frame_ix_marker_ix = np.array([frame_ix, j], dtype=int)
+                ground_truth_vein_present_at_marker = np.any(np.all(self.visible_vein_frame_ixs == frame_ix_marker_ix, axis=1))
+                if not ground_truth_vein_present_at_marker:
+                    continue
                 # foo = 1 if frame_ix in visible_vein_frame_ixs else 0
-                foo = 1 if j == 0 else 0
-                self.bin_prob_sum[x_A, y_A] += foo
-                self.bin_count[x_A, y_A] += 1
+                self.bin_prob_sum[x_A, y_A] += 1
                 if self.ground_truth_labels[frame_ix, j] == 1:
                     self.bins_ground_truth[x_A, y_A] += 1
 
@@ -381,13 +380,13 @@ class PredictExp:
         # threshold = np.percentile(res, 50)
         threshold = 1e-6
 
-        res_binary = (self.bin_prob_sum > 1e-6).astype(np.int32)
-        img = (res_binary * 255).astype(np.uint8)
+        bin_prob_sum_binary = (self.bin_prob_sum > 1e-6).astype(np.int32)
+        img = (bin_prob_sum_binary * 255).astype(np.uint8)
         img = np.flip(np.flip(img, axis=0), axis=1)
         cv2.imwrite(self.prediction_img_path, img)
 
-        feasible_binary = (self.bin_count > 0).astype(np.int32)
-        img = (feasible_binary * 255).astype(np.uint8)
+        bin_count_binary = (self.bin_count > 0).astype(np.int32)
+        img = (bin_count_binary * 255).astype(np.uint8)
         img = np.flip(np.flip(img, axis=0), axis=1)
         cv2.imwrite(self.sensor_trajectory_img_path, img)
 
