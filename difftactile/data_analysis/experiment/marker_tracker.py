@@ -24,11 +24,16 @@ class MarkerTracker:
             criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
         )
 
-    def extract_frames(self, input_path):
+    def extract_frames(
+            self, 
+            input_path, 
+            frame_mapping_npz_out=None
+        ):
         cap = cv2.VideoCapture(str(input_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
         frame_interval = int(fps * SYSTEM_PARAMS.marker_tracker.seconds_per_frame)
         frame_idx = 0
+        frame_mapping = []
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -44,8 +49,17 @@ class MarkerTracker:
                         self.frame_markers.append(markers)
                     else:
                         self.frame_markers.append(np.array([]))
+                    frame_mapping.append(
+                        frame_idx
+                    )
             frame_idx += 1
         cap.release()
+        frame_mapping = np.array(frame_mapping, dtype=int)
+        if frame_mapping_npz_out is not None:
+            np.savez(
+                frame_mapping_npz_out,
+                frame_mapping=frame_mapping,
+            )
         print(f"marker tracker: extracted {len(self.frame_markers)} frames from range {self.start_frame_ix} to {self.end_frame_ix if self.end_frame_ix is not None else 'end'}")
 
     def match_consecutive_frames(self):

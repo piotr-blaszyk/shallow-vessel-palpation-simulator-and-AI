@@ -4,8 +4,11 @@ import torch
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import pickle
+import math
+from scipy.interpolate import interp1d
 
 from difftactile.data_analysis.experiment.marker_tracker import *
+from difftactile.data_analysis.experiment.hungarian_exp import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.main.constants import *
 from difftactile.main.synthetic_image_generator import SyntheticImageGenerator
@@ -16,63 +19,19 @@ from difftactile.cnn.common import Common
 
 class PredictExp:
     def __init__(self):
+        self.load_npz()
         self.fisheye_model = FisheyeModelNoTaichi()
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.poses = np.array([
-            [-382.1576,   85.3686,   28.0000,   180.0,   0.0,   0.0],  # target 0
-            [-382.1576,   85.3686,   24.0000,   180.0,   0.0,   0.0],  # target 1
-            [-317.1576,   85.3686,   24.0000,   180.0,   0.0,   0.0],  # target 2
-            [-317.1576,   65.3686,   24.0000,   180.0,   0.0,   0.0],  # target 3
-            [-382.1576,   65.3686,   24.0000,   180.0,   0.0,   0.0],  # target 4
-            [-382.1576,   45.3686,   24.0000,   180.0,   0.0,   0.0],  # target 5
-            [-317.1576,   45.3686,   24.0000,   180.0,   0.0,   0.0],  # target 6
-            [-317.1576,   25.3686,   24.0000,   180.0,   0.0,   0.0],  # target 7
-            [-382.1576,   25.3686,   24.0000,   180.0,   0.0,   0.0],  # target 8
-            [-382.1576,    5.3686,   24.0000,   180.0,   0.0,   0.0],  # target 9
-            [-317.1576,    5.3686,   24.0000,   180.0,   0.0,   0.0],  # target 10
-            [-317.1576,  -14.6314,   24.0000,   180.0,   0.0,   0.0],  # target 11
-            [-382.1576,  -14.6314,   24.0000,   180.0,   0.0,   0.0],  # target 12
-            [-382.1576,  -34.6314,   24.0000,   180.0,   0.0,   0.0],  # target 13
-            [-317.1576,  -34.6314,   24.0000,   180.0,   0.0,   0.0],  # target 14
-            [-317.1576,  -54.6314,   24.0000,   180.0,   0.0,   0.0],  # target 15
-            [-382.1576,  -54.6314,   24.0000,   180.0,   0.0,   0.0],  # target 16
-            [-382.1576,  -74.6314,   24.0000,   180.0,   0.0,   0.0],  # target 17
-            [-317.1576,  -74.6314,   24.0000,   180.0,   0.0,   0.0],  # target 18
-            [-317.1576,  -94.6314,   24.0000,   180.0,   0.0,   0.0],  # target 19
-        ], dtype=float)
-        # og video has 1305 frames - so if I now use a video /w fewer frames, I just map a different range to the range (0, 1304)
-        self.video_frames = np.array([
-            60,    # target 0
-            77,    # target 1
-            169,   # target 2
-            205,   # target 3
-            297,   # target 4
-            333,   # target 5
-            425,   # target 6
-            461,   # target 7
-            554,   # target 8
-            590,   # target 9
-            683,   # target 10
-            719,   # target 11
-            812,   # target 12
-            849,   # target 13
-            941,   # target 14
-            978,   # target 15
-            1077,  # target 16
-            1114,  # target 17
-            1207,  # target 18
-            1243,  # target 19
-        ], dtype=int)
-        self.video_frames //= 3
-        self.start_ix = 77
-        self.end_ix = 1077
+        data = np.load(SYSTEM_PARAMS.files.experiment_2025_08_22_output_npz)
+        self.frames_poses = data['output']
+        self.interpolate_poses()
         self.sensor_radius = 20
         self.phantom_length_x = 105
         self.phantom_length_y = 180
-        self.min_x = self.poses[1][0] - self.sensor_radius
+        self.min_x = np.min(self.poses_interpolated[:, 0]) - self.sensor_radius
         self.max_x = self.min_x + self.phantom_length_x
-        self.min_y = self.poses[16][1] - self.sensor_radius
+        self.min_y = np.min(self.poses_interpolated[:, 1]) - self.sensor_radius
         self.max_y = self.min_y + self.phantom_length_y
         self.bin_size = 1
         self.bin_num_x = math.ceil(self.phantom_length_x / self.bin_size)
@@ -148,28 +107,50 @@ class PredictExp:
         self.camera_w_big = 1920
         self.camera_h_big = 1080
 
-    def compute_all_3d_positions(self):
-        n = self.markers.shape[0]
+    def interpolate_poses(self):
+        # Get the total number of video frames from markers shape
+        num_video_frames = self.markers.shape[0]
+        
+        # Extract frame indices and poses
+        frame_indices = self.frames_poses[:, 0]
+        poses = self.frames_poses[:, 1:7]
+        
+        # Sort frame indices and poses together
+        sort_idx = np.argsort(frame_indices)
+        frame_indices = frame_indices[sort_idx]
+        poses = poses[sort_idx]
+        
+        # Remove duplicates and very close indices
+        eps = 1e-10  # Small threshold for considering indices as duplicates
+        unique_mask = np.concatenate(([True], np.diff(frame_indices) > eps))
+        frame_indices = frame_indices[unique_mask]
+        poses = poses[unique_mask]
+        
+        # Create interpolation function for each pose dimension
+        interpolators = []
+        for dim in range(6):
+            interpolator = interp1d(frame_indices, poses[:, dim], 
+                                  kind='linear',
+                                  fill_value=np.nan,  # Set values outside range to NaN
+                                  bounds_error=False)  # Allow setting to NaN outside bounds
+            interpolators.append(interpolator)
+        
+        # Initialize the interpolated poses array
+        self.poses_interpolated = np.zeros((num_video_frames, 6))
+        
+        # Interpolate each dimension using the frame mapping
+        for dim in range(6):
+            # Only interpolate for frame indices within the known range
+            self.poses_interpolated[:, dim] = interpolators[dim](self.frame_mapping)
 
-        positions = self.poses[:, :3]
-        all_positions = np.zeros(shape=(n, 3))
-        all_positions[self.video_frames] = positions
+        # Create a boolean mask for rows without NaN values
+        valid_mask = ~np.isnan(self.poses_interpolated).any(axis=1)
         
-        for i in range(len(self.video_frames) - 1):
-            start_frame = self.video_frames[i]
-            end_frame = self.video_frames[i + 1]
-            start_pos = positions[i]
-            end_pos = positions[i + 1]
-            
-            num_frames = end_frame - start_frame
-            
-            for j in range(1, num_frames):
-                t = j / num_frames
-                interpolated_pos = (1 - t) * start_pos + t * end_pos
-                all_positions[start_frame + j] = interpolated_pos
-        
-        self.all_positions = all_positions
-        print(f"interpolated positions length: {len(self.all_positions)}")
+        # Filter the arrays using the mask
+        self.poses_interpolated = self.poses_interpolated[valid_mask]
+        self.markers = self.markers[valid_mask]
+        self.markers_mask = self.markers_mask[valid_mask]
+        self.frame_mapping = self.frame_mapping[valid_mask]
 
     @staticmethod
     def write_video_to_npz_file(marker_tracker, path):
@@ -188,10 +169,15 @@ class PredictExp:
         )
     
     def load_npz(self):
-        path = SYSTEM_PARAMS.files.exp_video_npz_reordered
+        path = SYSTEM_PARAMS.files.experiment_2025_08_22_markers_reordered_npz
         data = np.load(path)
         self.markers = data['markers']
         self.markers_mask = data['markers_mask']
+
+        path_fm = SYSTEM_PARAMS.files.experiment_2025_08_22_frame_mapping_npz
+        data_fm = np.load(path_fm)
+        self.frame_mapping = data_fm['frame_mapping']
+        
     
     def predict_clip(self, i):
         pyg = self.dataset.get_clip(
@@ -257,7 +243,7 @@ class PredictExp:
 
         for t in range(self.clip_len):
             frame_ix = i + t*self.dilation
-            x, y, z = self.all_positions[frame_ix]
+            x, y, z = self.poses_interpolated[frame_ix][:3]
             t_EA = self.get_T_EA(
                 np.deg2rad(SYSTEM_PARAMS.geometry.camera_rotation_angle),
                 x,
@@ -360,14 +346,27 @@ class PredictExp:
             video_out=SYSTEM_PARAMS.files.video_out_straight,
             npz_out=SYSTEM_PARAMS.files.exp_simple_straight_npz
         )
+    
+    @staticmethod
+    def compute_npz_2025_08_22():
+        PredictExp.compute_npz_helper(
+            video_in=SYSTEM_PARAMS.files.experiment_2025_08_22_raw_video,
+            video_out=SYSTEM_PARAMS.files.experiment_2025_08_22_processed_video,
+            npz_out=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_npz,
+            npz_out_reordered=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_reordered_npz,
+            frame_mapping_npz_out=SYSTEM_PARAMS.files.experiment_2025_08_22_frame_mapping_npz
+        )
 
     @staticmethod
     def compute_npz_helper(
         video_in,
         video_out,
         npz_out,
+        npz_out_reordered=None,
         video_from_cache=False,
-        npz_in=SYSTEM_PARAMS.files.exp_video_npz_reordered
+        # npz_in=SYSTEM_PARAMS.files.exp_video_npz_reordered
+        npz_in=None,
+        frame_mapping_npz_out=None
     ):
         if not video_from_cache:
             marker_tracker = MarkerTracker(
@@ -375,7 +374,8 @@ class PredictExp:
                 # end_frame_ix=1050
             )
             marker_tracker.extract_frames(
-                video_in
+                video_in,
+                frame_mapping_npz_out
             )
             marker_tracker.create_visualization(
                 out_path=video_out,
@@ -392,6 +392,11 @@ class PredictExp:
                 marker_tracker=marker_tracker,
                 path=npz_out
             )
+            if npz_out_reordered is not None:
+                HungarianExp.reorder_exp_points(
+                    input_path=npz_out,
+                    output_path=npz_out_reordered
+                )
     
     def downsample_ground_truth_image_to_prediction_shape(self):
         ground_truth_path = self.ground_truth_img_path
@@ -592,8 +597,6 @@ class PredictExp:
         plt.close()
 
     def go(self):
-        self.load_npz()
-        self.compute_all_3d_positions()
         self.predict_all_clips()
         self.write_probs_to_npz()
         self.load_probs_from_npz()
@@ -606,4 +609,4 @@ class PredictExp:
 def main():
     predict_exp = PredictExp()
     predict_exp.go()
-    # PredictExp.compute_npz_test()
+    # PredictExp.compute_npz_2025_08_22()

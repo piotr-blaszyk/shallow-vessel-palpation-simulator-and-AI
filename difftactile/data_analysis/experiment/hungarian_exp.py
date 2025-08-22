@@ -8,9 +8,10 @@ from difftactile.main.constants import *
 
 class HungarianExp:
     @staticmethod
-    def reorder_exp_points():
-        input_path = SYSTEM_PARAMS.files.exp_simple_straight_npz
-        output_path = SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered
+    def reorder_exp_points(
+        input_path,
+        output_path
+    ):
         data = np.load(input_path)
         points = data['markers']
         points_mask = data['markers_mask']
@@ -81,8 +82,9 @@ class HungarianExp:
 
     
     @staticmethod
-    def visualise_reordered_point_connectivity():
-        output_path = SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered
+    def visualise_reordered_point_connectivity(
+        output_path
+    ):
         data = np.load(output_path)
         all_points = data['markers']
         all_points_mask = data['markers_mask']
@@ -243,5 +245,10 @@ class HungarianExp:
 
 
 def main():
-    HungarianExp.reorder_exp_points()
-    HungarianExp.visualise_reordered_point_connectivity()
+    HungarianExp.reorder_exp_points(
+        input_path=SYSTEM_PARAMS.files.exp_simple_straight_npz,
+        output_path=SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered,
+    )
+    HungarianExp.visualise_reordered_point_connectivity(
+        output_path=SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered
+    )

@@ -318,6 +318,12 @@
         "dataset_root_yesterday_reordered": "difftactile/output/training_data/pickle_2025_08_19_reordered",
         "dataset_root_yesterday_reordered_smoothed": "difftactile/output/training_data/pickle_2025_08_19_reordered_smoothed",
         "dataset_root_2025_08_21": "difftactile/output/training_data/pickle_2025_08_21",
-        "dataset_root_2025_08_21_reordered": "difftactile/output/training_data/pickle_2025_08_21_reordered"
+        "dataset_root_2025_08_21_reordered": "difftactile/output/training_data/pickle_2025_08_21_reordered",
+        "experiment_2025_08_22_raw_video": "difftactile/manual_or_experimental_data/experiment_2025_08_22/robot_video_20250822-155608.avi",
+        "experiment_2025_08_22_processed_video": "difftactile/output/robot_video_processed_20250822-155608.avi",
+        "experiment_2025_08_22_output_npz": "difftactile/manual_or_experimental_data/experiment_2025_08_22/output_20250822-155608.npz",
+        "experiment_2025_08_22_markers_npz": "difftactile/output/experiment_2025_08_22_markers.npz",
+        "experiment_2025_08_22_markers_reordered_npz": "difftactile/output/experiment_2025_08_22_markers_reordered.npz",
+        "experiment_2025_08_22_frame_mapping_npz": "difftactile/output/experiment_2025_08_22_frame_mapping.npz"
     }
 }
