@@ -20,19 +20,15 @@ from difftactile.cnn.common import Common
 
 class PredictExp:
     def __init__(self):
-        self.load_npz()
         self.fisheye_model = FisheyeModelNoTaichi()
         self.synthetic_image_generator = SyntheticImageGenerator()
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        frames_poses_data = np.load(SYSTEM_PARAMS.files.experiment_og_frames_poses_npz)
-        self.frames_poses = frames_poses_data['output']
-        ground_truth_labels_path = SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz
-        ground_truth_labels_data = np.load(ground_truth_labels_path)
-        self.ground_truth_labels = ground_truth_labels_data['labels']
-        self.interpolate_poses()
         self.sensor_radius = 20
         self.phantom_length_x = 105
         self.phantom_length_y = 180
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.load_filter_save_data()
+
         x_start = np.min(self.poses_interpolated[:, 0]) - self.sensor_radius
         x_end = x_start + self.phantom_length_x
         y_start = np.max(self.poses_interpolated[:, 1]) + self.sensor_radius
@@ -42,26 +38,35 @@ class PredictExp:
         self.y_min = min(y_start, y_end)
         self.y_max = max(y_start, y_end)
 
-        self.bin_size = 1
-        self.bin_num_x = math.ceil(self.phantom_length_x / self.bin_size)
-        self.bin_num_y = math.ceil(self.phantom_length_y / self.bin_size)
-        self.bins = np.zeros(shape=(2, self.bin_num_x, self.bin_num_y), dtype=int)
-        self.bin_prob_sum = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=float)
-        self.bin_count = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=int)
-        self.bins_ground_truth = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=int)
-        self.debug_bins = np.zeros(shape=(self.markers.shape[0]), dtype=int)
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         self.dilation = 1
         self.dilated_clip_len = self.clip_len * self.dilation
-        self.init_model()
-        self.init_camera_params()
-        self.compute_mapping_2d_3d()
-        self.dataset = MyDataset(mode='dummy', scheme='new', normalise_pos=False)
+        self.dataset = MyDataset(
+            mode='exp',
+            exp_markers_npz=SYSTEM_PARAMS.files.experiment_og_markers_reordered_filtered_npz,
+            exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_filtered_npz,
+            exp_dilation=self.dilation,
+            scheme='new',
+            normalise_pos=False
+        )
         with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
             test_data = pickle.load(f)
         self.stats = test_data['dataset_stats'][1.0]
         self.dataset.set_stats(self.stats)
         self.dataset.set_difficulty_level(1.0)
+
+        self.init_model()
+        self.init_camera_params()
+        self.compute_mapping_2d_3d()
+
+        self.bin_size = 1
+        self.bin_num_x = math.ceil(self.phantom_length_x / self.bin_size)
+        self.bin_num_y = math.ceil(self.phantom_length_y / self.bin_size)
+        self.bins = np.zeros(shape=(2, self.bin_num_x, self.bin_num_y), dtype=int)
+        self.bin_pred = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=float)
+        self.bin_count = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=int)
+        self.bins_ground_truth = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=int)
+        self.debug_bins = np.zeros(shape=(len(self.dataset)), dtype=int)
 
         self.ground_truth_img_path = SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask
         self.ground_truth_img_downsampled_path = SYSTEM_PARAMS.files.ground_truth_labels_downsampled
@@ -133,9 +138,24 @@ class PredictExp:
         self.camera_w_big = 1920
         self.camera_h_big = 1080
 
-    def interpolate_poses(self):
+    def load_filter_save_data(self):
+        path = SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz
+        data = np.load(path)
+        markers = data['markers']
+        self.markers_mask = data['markers_mask']
+
+        path_fm = SYSTEM_PARAMS.files.experiment_og_frame_mapping_npz
+        data_fm = np.load(path_fm)
+        frame_mapping = data_fm['frame_mapping']
+
+        frames_poses_data = np.load(SYSTEM_PARAMS.files.experiment_og_frames_poses_npz)
+        self.frames_poses = frames_poses_data['output']
+        ground_truth_labels_path = SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz
+        ground_truth_labels_data = np.load(ground_truth_labels_path)
+        ground_truth_labels = ground_truth_labels_data['labels']
+
         # Get the total number of video frames from markers shape
-        num_video_frames = self.markers.shape[0]
+        num_video_frames = markers.shape[0]
         
         # Extract frame indices and poses
         frame_indices = self.frames_poses[:, 0]
@@ -167,7 +187,7 @@ class PredictExp:
         # Interpolate each dimension using the frame mapping
         for dim in range(6):
             # Only interpolate for frame indices within the known range
-            self.poses_interpolated[:, dim] = interpolators[dim](self.frame_mapping)
+            self.poses_interpolated[:, dim] = interpolators[dim](frame_mapping)
 
         # Create a boolean mask for rows without NaN values
         valid_mask = ~np.isnan(self.poses_interpolated).any(axis=1)
@@ -179,10 +199,21 @@ class PredictExp:
         
         # Filter the arrays using the mask
         self.poses_interpolated = self.poses_interpolated[valid_mask]
-        self.markers = self.markers[valid_mask]
+        markers = markers[valid_mask]
         self.markers_mask = self.markers_mask[valid_mask]
-        self.frame_mapping = self.frame_mapping[valid_mask]
-        self.ground_truth_labels = self.ground_truth_labels[valid_mask]
+        frame_mapping = frame_mapping[valid_mask]
+        ground_truth_labels = ground_truth_labels[valid_mask]
+
+        markers_filtered_path = SYSTEM_PARAMS.files.experiment_og_markers_reordered_filtered_npz
+        ground_truth_labels_filtered_path = SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_filtered_npz
+        np.savez(
+            markers_filtered_path,
+            markers=markers
+        )
+        np.savez(
+            ground_truth_labels_filtered_path,
+            labels=ground_truth_labels
+        )
 
     @staticmethod
     def write_video_to_npz_file(marker_tracker, path):
@@ -200,24 +231,8 @@ class PredictExp:
             target_id_array=target_id_array
         )
     
-    def load_npz(self):
-        path = SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz
-        data = np.load(path)
-        self.markers = data['markers']
-        self.markers_mask = data['markers_mask']
-
-        path_fm = SYSTEM_PARAMS.files.experiment_og_frame_mapping_npz
-        data_fm = np.load(path_fm)
-        self.frame_mapping = data_fm['frame_mapping']
-        
-    
     def predict_clip(self, i):
-        pyg = self.dataset.get_clip(
-            self.markers,
-            self.clip_len,
-            self.dilation,
-            i
-        )
+        pyg, _ = self.dataset[i]
         with torch.no_grad():
             pyg = pyg.to(self.device)
             out = self.model(pyg.x, pyg.edge_index, pyg.edge_attr)
@@ -229,7 +244,9 @@ class PredictExp:
             probs = probs.cpu().numpy().astype(np.float32)
             preds = preds.cpu().numpy().astype(np.float32)
         points = pyg.pos.cpu().numpy().astype(np.float32)
+        labels = pyg.y.cpu().numpy().astype(int)
         points = points.reshape((self.clip_len, 127, 2))
+        labels = labels.reshape((self.clip_len, 127))
         probs = probs.reshape((self.clip_len, 127,))
         preds = preds.reshape((self.clip_len, 127,))
 
@@ -249,6 +266,7 @@ class PredictExp:
                 prob = probs[t, j]
                 pred = preds[t, j]
                 x, y = points[t, j]
+                label = labels[t, j]
 
                 pos_E = self.map_2d_3d[int(x), int(y)]
                 pos_E_homogeneous = np.append(pos_E, 1)
@@ -271,19 +289,14 @@ class PredictExp:
 
                 self.debug_bins[frame_ix] += 1
                 self.bin_count[x_A, y_A] += (1 if j == 0 else 0)
-                self.bin_prob_sum[x_A, y_A] += 1
-                if self.ground_truth_labels[frame_ix, j] == 1:
+                self.bin_pred[x_A, y_A] += pred
+                if label == 1:
                     self.bins_ground_truth[x_A, y_A] += 1
 
     def predict_all_clips(self):
-        n = self.markers.shape[0]
-        # step_size = self.dilated_clip_len
+        n = len(self.dataset)
         step_size = 1
-        for i in (
-            tqdm(
-                range(0, n - self.dilated_clip_len, step_size)
-                , desc="clip inference")
-            ):
+        for i in (tqdm(range(0, n - self.dilated_clip_len, step_size), desc="clip inference")):
             self.predict_clip(i)
         
         self.write_probs_to_npz()
@@ -305,12 +318,12 @@ class PredictExp:
     
     def write_probs_to_npz(self):
         path = SYSTEM_PARAMS.files.exp_probs_npz
-        self.bin_prob_sum = PredictExp.transform_image(self.bin_prob_sum)
+        self.bin_pred = PredictExp.transform_image(self.bin_pred)
         self.bin_count = PredictExp.transform_image(self.bin_count)
         self.bins_ground_truth = PredictExp.transform_image(self.bins_ground_truth)
         np.savez(
             path,
-            bin_prob_sum=self.bin_prob_sum,
+            bin_prob_sum=self.bin_pred,
             bin_count=self.bin_count,
             bins_ground_truth=self.bins_ground_truth
         )
@@ -318,16 +331,16 @@ class PredictExp:
     def load_probs_from_npz(self):
         path = SYSTEM_PARAMS.files.exp_probs_npz
         data = np.load(path)
-        self.bin_prob_sum = data['bin_prob_sum']
+        self.bin_pred = data['bin_prob_sum']
         self.bin_count = data['bin_count']
         self.bins_ground_truth = data['bins_ground_truth']
     
     def generate_mask_image(self):
-        res = np.divide(self.bin_prob_sum, self.bin_count, where=self.bin_count != 0)
+        res = np.divide(self.bin_pred, self.bin_count, where=self.bin_count != 0)
         # threshold = np.percentile(res, 50)
         threshold = 1e-6
 
-        bin_prob_sum_binary = (self.bin_prob_sum > 1e-6).astype(np.int32)
+        bin_prob_sum_binary = (self.bin_pred > 1e-6).astype(np.int32)
         img = (bin_prob_sum_binary * 255).astype(np.uint8)
         img = np.flip(np.flip(img, axis=0), axis=1)
         cv2.imwrite(self.prediction_img_path, img)
@@ -499,7 +512,7 @@ class PredictExp:
         print("IoU Metrics (downscaled):", metrics)
         
         # Create confusion matrix overlay
-        confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth_og, ground_truth_from_video)
+        confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth_from_video, prediction)
         
         # Load all images for visualization
         images = {

@@ -336,6 +336,8 @@
         "experiment_og_markers_reordered_npz": "difftactile/output/experiment_og_markers_reordered.npz",
         "experiment_og_frame_mapping_npz": "difftactile/output/experiment_og_frame_mapping.npz",
         "experiment_og_raw_video": "difftactile/manual_or_experimental_data/vein_slide_across.avi",
-        "experiment_og_processed_video": "difftactile/output/experiment_og_processed_video.avi"
+        "experiment_og_processed_video": "difftactile/output/experiment_og_processed_video.avi",
+        "experiment_og_markers_reordered_filtered_npz": "difftactile/output/experiment_og_markers_reordered_filtered.npz",
+        "experiment_og_ground_truth_labels_filtered_npz": "difftactile/output/experiment_og_ground_truth_labels_filtered.npz"
     }
 }

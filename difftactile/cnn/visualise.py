@@ -438,7 +438,7 @@ class Visualisation:
             )
         elif data_source == 'exp_npz':
             dataset = MyDataset(
-                mode='dummy',
+                mode='exp',
                 exp_markers_npz=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
                 exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz,
                 exp_dilation=1,

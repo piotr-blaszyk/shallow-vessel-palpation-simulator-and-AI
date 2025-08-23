@@ -434,7 +434,7 @@ def main():
         test_size=0.15
     )
     exp_test_dataset = MyDataset(
-        mode='dummy',
+        mode='exp',
         exp_markers_npz=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
         exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz,
         exp_dilation=1,

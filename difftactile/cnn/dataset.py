@@ -35,7 +35,7 @@ class MyDataset(torch.utils.data.Dataset):
         super().__init__()
         start_time = time.perf_counter()
 
-        if mode == 'dummy':
+        if mode == 'exp':
             markers_data = np.load(exp_markers_npz)
             self.exp_markers = markers_data['markers']
             ground_truth_label_data = np.load(exp_ground_truth_labels_npz)
@@ -81,9 +81,9 @@ class MyDataset(torch.utils.data.Dataset):
                 self.populate_clips_old_scheme()
             elif scheme == 'new':
                 self.populate_clips_new_scheme()
-        elif mode == 'dummy':
+        elif mode == 'exp':
             self.compute_data_points_exp()
-        else:
+        elif mode != 'dummy':
             if scheme == 'old':
                 self.compute_data_points_old_scheme()
             elif scheme == 'new':
@@ -601,7 +601,7 @@ class MyDataset(torch.utils.data.Dataset):
             return np.array([-1., -1.])  # Return invalid marker position if no valid data
 
     def __getitem__(self, idx):
-        if self.mode == 'dummy':
+        if self.mode == 'exp':
             frame_ix = self.data_points[idx]
             pyg = self.get_clip(
                 markers=self.exp_markers,
