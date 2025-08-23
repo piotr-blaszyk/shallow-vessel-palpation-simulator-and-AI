@@ -18,5 +18,6 @@ uv pip install -U 'tensorboardX'
 uv pip install -U 'tensorboard'
 uv pip install seaborn
 uv pip install open3d
+uv pip install torch_geometric_temporal
 
 echo "All dependencies installed successfully!" 

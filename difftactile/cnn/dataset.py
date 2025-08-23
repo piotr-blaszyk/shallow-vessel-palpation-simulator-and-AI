@@ -741,7 +741,8 @@ class MyDataset(torch.utils.data.Dataset):
         points += principal_point
         return points
 
-    def generate_pyg_vectorised(self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in=None):
+    def generate_pyg_vectorised_complicated(self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in=None):
+        return
         num_frames = clip_points.shape[0]
         num_nodes = clip_points.shape[1]
         num_edge_features = SYSTEM_PARAMS.gnn.num_edge_features
@@ -958,8 +959,115 @@ class MyDataset(torch.utils.data.Dataset):
         y = torch.tensor(ground_truth_labels_clip[mask], dtype=torch.long)
         return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, mask=mask, pos=pos)
 
+    def generate_pyg_vectorised(self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in=None):
+        # The method gets passed clip_points - a numpy array of shape (num_video_clip_frames, num_poins, 2), clip_labels - a numpy array of shape (num_video_clip_frames, num_veins, num_vein_points, 2), clip_labels_mask - a numpy array of shape (num_video_clip_frames, num_veins, num_vein_points)
+        num_frames = clip_points.shape[0]
+        num_nodes = clip_points.shape[1]
+        num_node_features = 2  # x, y positions
+        num_edge_features = 5  # length, dx, dy, cos(theta), sin(theta)
+        pos = np.zeros(shape=(num_frames * num_nodes, 2), dtype=float)
+        data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
+        base_adjacency_matrix = data['adjacency_matrix']
+        ring_ixs = data['ring_ixs']
+        angles = data['angles']
+        num_edges_single_frame = base_adjacency_matrix.shape[0]
+        ground_truth_labels_clip = np.zeros(shape=(num_frames * num_nodes,), dtype=int)
+        adjacency = self.adjacency_matrix
+        
+        adjacency_clip_list = []
+        edge_attr_clip_list = []
+        node_features_list = []
+
+        for t in range(num_frames):
+            points = clip_points[t]
+            labels = clip_labels[t]
+            labels_mask = clip_labels_mask[t]
+            labels_filtered = labels[labels_mask]
+            pos[t*num_nodes:(t+1)*num_nodes, 0:2] = points
+            
+            # Node features: x, y positions
+            node_features = points.copy()  # Shape: [num_nodes, 2]
+            node_features_list.append(node_features)
+            
+            # Edge features
+            edge_attr = np.zeros(shape=(num_edges_single_frame, num_edge_features), dtype=float)
+            me_points = points[adjacency[:, 0]]
+            neighbor_points = points[adjacency[:, 1]]
+            vec = neighbor_points - me_points  # Shape: [num_edges, 2]
+            
+            # Edge length
+            dist = np.linalg.norm(vec, axis=1)
+            edge_attr[:, 0] = dist
+            
+            # dx, dy
+            edge_attr[:, 1:3] = vec  # dx, dy
+            
+            # cos(theta), sin(theta)
+            # Normalize vectors for angle calculation
+            vec_normalized = vec / dist[:, np.newaxis]
+            edge_attr[:, 3] = vec_normalized[:, 0]  # cos(theta) = dx/length
+            edge_attr[:, 4] = vec_normalized[:, 1]  # sin(theta) = dy/length
+            
+            edge_attr_clip_list.append(edge_attr)
+            adjacency_frame = adjacency + t*num_nodes
+            adjacency_clip_list.append(adjacency_frame)
+            
+            if labels_filtered.size > 0:
+                distances = cdist(points, labels_filtered)
+                min_distances = np.min(distances, axis=1)
+                px_threshold = SYSTEM_PARAMS.meta.vein_px_thickness
+                ground_truth_labels = min_distances < px_threshold
+            else:
+                ground_truth_labels = np.zeros(shape=(num_nodes,), dtype=int)
+            ground_truth_labels_clip[t*num_nodes:(t+1)*num_nodes] = ground_truth_labels
+        
+        adjacency_clip = np.vstack(adjacency_clip_list)
+        edge_attr_clip = np.vstack(edge_attr_clip_list)
+        node_features_clip = np.vstack(node_features_list)  # Stack all node features
+
+        if not self.warmup:
+            if self.normalise_pos:
+                MyDataset.normalise(
+                    self.pos_mean, 
+                    self.pos_std,
+                    pos,
+                    [0, 1]
+                )
+            MyDataset.normalise(
+                self.x_mean, 
+                self.x_std,
+                node_features_clip,
+                [0, 1]
+            )
+            MyDataset.normalise(
+                self.edge_attr_mean, 
+                self.edge_attr_std,
+                edge_attr_clip,
+                [0, 1, 2]
+            )
+
+        if ground_truth_labels_in is not None:
+            ground_truth_labels_clip = ground_truth_labels_in.reshape((num_frames * num_nodes,)).astype(int)
+
+        # Convert to PyTorch tensors
+        edge_attr = torch.tensor(edge_attr_clip, dtype=torch.float)  # [num_frames * num_edges, 5]
+        x = torch.tensor(node_features_clip, dtype=torch.float)  # [num_frames * num_nodes, 2]
+        mask = np.ones(shape=(num_frames * num_nodes,), dtype=bool)
+        mask = torch.tensor(mask, dtype=torch.bool)
+        pos = torch.tensor(pos, dtype=torch.float)
+        edge_index = torch.tensor(adjacency_clip.T, dtype=torch.long)
+        y = torch.tensor(ground_truth_labels_clip[mask], dtype=torch.long)
+        
+        return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, mask=mask, pos=pos)
+
+    @staticmethod
+    def normalise(means, stds, xs, ixs):
+        ixs = np.array(ixs)
+        xs[:, ixs] = (xs[:, ixs] - means[ixs]) / stds[ixs]
+
     @staticmethod
     def generate_pyg_unvectorised(clip_points, clip_labels, clip_labels_mask):
+        return
         num_frames = clip_points.shape[0]
         central_frame = num_frames // 2
         num_nodes = clip_points.shape[1]

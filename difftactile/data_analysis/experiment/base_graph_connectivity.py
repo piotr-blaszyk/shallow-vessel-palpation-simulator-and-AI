@@ -185,11 +185,32 @@ class ComputeEdges:
         # Convert to numpy array
         adjacency_matrix = np.array(edges, dtype=int)
 
+        ring_ixs_all = np.zeros(shape=(127,), dtype=int)
+        ix = 0
+        for i in range(len(rings)):
+            ring_size = rings[i]
+            for j in range(ring_size):
+                ring_ixs_all[ix] = i
+                ix += 1
+        
+        # Compute angles relative to points[0]
+        vectors = points - points[0]  # Get vectors from points[0] to each point
+        angles = np.zeros((len(points), 2))  # Will store (cos(θ), sin(θ))
+        
+        # Skip points[0] as it should remain (0,0)
+        norms = np.linalg.norm(vectors[1:], axis=1)
+        normalized_vectors = vectors[1:] / norms[:, np.newaxis]
+        
+        # cos(θ) is x/r, sin(θ) is y/r after normalization
+        angles[1:] = normalized_vectors  # Already normalized so x=cos(θ), y=sin(θ)
+
         # Save adjacency matrix and points to npz file
         np.savez(
             SYSTEM_PARAMS.files.base_graph_connectivity,
             adjacency_matrix=adjacency_matrix,
-            points=points
+            points=points,
+            ring_ixs=ring_ixs_all,
+            angles=angles,
         )
 
         # Load the default state image

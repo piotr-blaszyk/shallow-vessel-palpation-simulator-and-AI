@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch_geometric.data import Data
 from torch_geometric.nn import GINEConv, Linear
+from torch_geometric_temporal.nn.recurrent import GConvGRU
 from torch_geometric.loader import DataLoader
 import numpy as np
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -123,13 +124,10 @@ class GNN(pl.LightningModule):
     def __init__(
             self, 
             lr,
-            node_channels=SYSTEM_PARAMS.gnn.num_node_features,
-            # node_channels=1,
-            edge_channels=SYSTEM_PARAMS.gnn.num_edge_features,
-            # edge_channels=2,
-            hidden_channels=SYSTEM_PARAMS.gnn.num_hidden_channels,
+            node_channels=2,
+            edge_channels=5,
+            hidden_channels=32,
             out_channels=1,
-            num_layers=2,
             tversky_weight=0.0,
             focal_weight=1.0,
         ):
@@ -138,22 +136,36 @@ class GNN(pl.LightningModule):
         # Add previous_lr attribute to track changes
         self._previous_lr = None
         
-        # Node networks for GINEConv
-        self.node_net1 = nn.Sequential(
+        # Explicit node and edge projections to latent space
+        self.node_proj = nn.Sequential(
             nn.Linear(node_channels, hidden_channels),
             nn.ReLU(),
             nn.Linear(hidden_channels, hidden_channels)
         )
         
-        self.node_net2 = nn.Sequential(
+        self.edge_proj = nn.Sequential(
+            nn.Linear(edge_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Linear(hidden_channels, hidden_channels)
+        )
+        
+        # Spatial encoder (GINEConv uses projected features)
+        self.gine = GINEConv(nn.Sequential(
             nn.Linear(hidden_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Linear(hidden_channels, hidden_channels)
+        ), edge_dim=hidden_channels)
+        
+        # Bidirectional temporal encoders with projected edge features
+        self.gru_fwd = GConvGRU(hidden_channels, hidden_channels, K=2)
+        self.gru_bwd = GConvGRU(hidden_channels, hidden_channels, K=2)
+        
+        # Classifier head takes concatenated forward+backward states
+        self.classifier = nn.Sequential(
+            nn.Linear(2 * hidden_channels, hidden_channels),
             nn.ReLU(),
             nn.Linear(hidden_channels, out_channels)
         )
-        
-        # GINEConv layers
-        self.conv1 = GINEConv(self.node_net1, edge_dim=edge_channels)
-        self.conv2 = GINEConv(self.node_net2, edge_dim=edge_channels)
         
         # Initialize loss functions
         self.tversky_loss = GNNTverskyLoss()
@@ -168,6 +180,203 @@ class GNN(pl.LightningModule):
         
         # Save hyperparameters for logging
         self.save_hyperparameters()
+
+    def forward(self, x_seq, edge_index_seq, edge_attr_seq):
+        """
+        Forward pass through the bidirectional spatio-temporal GNN.
+        
+        Args:
+            x_seq: [B, T, N, F_node] tensor (sequence of node features)
+            edge_index_seq: list of T tensors, each [2, E] (E edges per timestep)
+            edge_attr_seq: list of T tensors, each [E, F_edge]
+            
+        Returns:
+            out_seq: [B, T, N] logits per node per timestep per batch
+        """
+        B, T, N, _ = x_seq.shape
+        
+        # Process each batch independently
+        batch_outputs = []
+        for b in range(B):
+            # Project nodes and edges into latent space for current batch
+            x_seq_latent = [self.node_proj(x_seq[b, t]) for t in range(T)]
+            edge_seq_latent = [self.edge_proj(edge_attr_seq[b][t]) for t in range(T)]
+            
+            # Forward pass (left → right)
+            h_fwd = None
+            out_fwd = []
+            for t in range(T):
+                # Get latent features for current timestep
+                x_lat = x_seq_latent[t]
+                edge_lat = edge_seq_latent[t]
+                edge_index = edge_index_seq[b][t]
+                
+                # Spatial encoding with GINE using latent features
+                x_lat = self.gine(x=x_lat, edge_index=edge_index, edge_attr=edge_lat)
+                
+                # Temporal encoding with forward GRU
+                h_fwd = self.gru_fwd(X=x_lat, edge_index=edge_index, H=h_fwd)
+                out_fwd.append(h_fwd)
+            
+            # Backward pass (right → left)
+            h_bwd = None
+            out_bwd = []
+            for t in reversed(range(T)):
+                # Get latent features for current timestep
+                x_lat = x_seq_latent[t]
+                edge_lat = edge_seq_latent[t]
+                edge_index = edge_index_seq[b][t]
+                
+                # Spatial encoding with GINE using latent features
+                x_lat = self.gine(x=x_lat, edge_index=edge_index, edge_attr=edge_lat)
+                
+                # Temporal encoding with backward GRU
+                h_bwd = self.gru_bwd(X=x_lat, edge_index=edge_index, H=h_bwd)
+                out_bwd.append(h_bwd)
+            out_bwd = list(reversed(out_bwd))  # align order with forward
+            
+            # Concatenate forward + backward hidden states at each timestep
+            h_cat = [torch.cat([f, b], dim=-1) for f, b in zip(out_fwd, out_bwd)]
+            h_cat = torch.stack(h_cat, dim=0)  # [T, N, 2*hidden_channels]
+            
+            # Per-node classification at each timestep
+            out_seq = self.classifier(h_cat).squeeze(-1)  # [T, N]
+            batch_outputs.append(out_seq)
+        
+        # Stack all batch outputs
+        out_seq = torch.stack(batch_outputs, dim=0)  # [B, T, N]
+        return out_seq
+
+    def shared_step(self, batch, stage):
+        batch, _ = batch
+        # Reshape inputs for temporal processing
+        # Assuming batch.x is [B*T, N, F] where B is batch size, T is sequence length
+        B = len(batch.ptr) - 1  # Number of graphs in batch
+        T = 5
+        N = 127
+        F = 2
+        
+        # Reshape to [T, N, F] for temporal processing
+        x_seq = batch.x.view(B, T, N, F)
+        
+        # Create sequences of edge indices and attributes per batch and timestep
+        num_edges_per_graph = batch.edge_index.shape[1] // (B * T)  # Number of edges per graph per timestep
+        edge_index_seq = []
+        edge_attr_seq = []
+        
+        # Process each batch
+        for b in range(B):
+            batch_edge_index = []
+            batch_edge_attr = []
+            
+            # Split edges into timesteps for current batch
+            for t in range(T):
+                # Calculate indices for current batch and timestep
+                start_idx = (b * T + t) * num_edges_per_graph
+                end_idx = start_idx + num_edges_per_graph
+                
+                # Get edges and attributes
+                edge_index = batch.edge_index[:, start_idx:end_idx]
+                edge_attr = batch.edge_attr[start_idx:end_idx]
+                
+                # Adjust edge indices to point to correct nodes within this timestep
+                edge_index = edge_index - (b * T + t) * N
+                
+                batch_edge_index.append(edge_index)
+                batch_edge_attr.append(edge_attr)
+            
+            edge_index_seq.append(batch_edge_index)
+            edge_attr_seq.append(batch_edge_attr)
+        
+        # Forward pass with temporal data - returns predictions for each timestep
+        out_seq = self(x_seq, edge_index_seq, edge_attr_seq)  # [B, T, N]
+        
+        # Reshape output to match mask
+        out = out_seq.reshape(-1)[batch.mask]  # Flatten and mask predictions
+        
+        # Calculate losses
+        tversky_loss = self.tversky_loss(out, batch.y.float())
+        focal_loss = self.focal_loss(out, batch.y.float())
+        
+        # Combine losses using weights
+        loss = self.tversky_weight * tversky_loss + self.focal_weight * focal_loss
+        
+        # Calculate predictions
+        probs = torch.sigmoid(out)
+        preds = (probs > 0.5).float()
+        
+        # Calculate IoU metrics per graph in batch
+        B = batch.num_graphs
+        batch_metrics = {
+            'fg_iou': torch.zeros(B, device=preds.device),
+            'bg_iou': torch.zeros(B, device=preds.device),
+            'macro_iou': torch.zeros(B, device=preds.device)
+        }
+        
+        # Calculate IoU for each graph separately
+        for i in range(B):
+            # Get predictions and targets for current graph
+            iou_mask = batch.batch[batch.mask] == i
+            graph_preds = preds[iou_mask]
+            graph_targets = batch.y[iou_mask]
+            
+            # Calculate IoU scores
+            metrics = self.iou_score(graph_preds, graph_targets)
+            batch_metrics['fg_iou'][i] = metrics['fg_iou']
+            batch_metrics['bg_iou'][i] = metrics['bg_iou']
+            batch_metrics['macro_iou'][i] = metrics['macro_iou']
+        
+        # Average metrics across batch
+        metrics = {k: v.mean() for k, v in batch_metrics.items()}
+        
+        is_val_stage = f'{stage}' == 'val'
+
+        # Log all metrics
+        self.log(f"{stage}_tversky_loss", tversky_loss, prog_bar=False, batch_size=batch.num_graphs)
+        self.log(f"{stage}_focal_loss", focal_loss, prog_bar=False, batch_size=batch.num_graphs)
+        self.log(f"{stage}_combined_loss", loss, prog_bar=False, batch_size=batch.num_graphs)
+        self.log(f"{stage}_fg_iou", metrics['fg_iou'], prog_bar=True, batch_size=batch.num_graphs)
+        self.log(f"{stage}_bg_iou", metrics['bg_iou'], prog_bar=True, batch_size=batch.num_graphs)
+        self.log(f"{stage}_macro_iou", metrics['macro_iou'], prog_bar=False, batch_size=batch.num_graphs)
+        
+        return loss
+
+    def training_step(self, batch, batch_idx):
+        return self.shared_step(batch, "train")
+
+    def validation_step(self, batch, batch_idx):
+        return self.shared_step(batch, "val")
+
+    def test_step(self, batch, batch_idx):
+        return self.shared_step(batch, "test")
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        scheduler = {
+            "scheduler": torch.optim.lr_scheduler.StepLR(
+                optimizer,
+                step_size=64,  # Number of batches before reducing LR
+                gamma=0.5,    # Multiply LR by this factor (0.5 = reduce by half)
+            ),
+            "interval": "step",  # Call scheduler every batch instead of epoch
+            "frequency": 1
+        }
+        return {
+            "optimizer": optimizer, 
+            # "lr_scheduler": scheduler
+        }
+
+    def on_train_epoch_start(self):
+        # Get current learning rate
+        current_lr = self.optimizers().param_groups[0]['lr']
+        
+        # Print only if learning rate has changed
+        if self._previous_lr != current_lr:
+            print(f"\nLearning rate changed from {self._previous_lr} to {current_lr:.2e}")
+            self._previous_lr = current_lr
+            
+        # Still log to tensorboard but don't show in progress bar
+        self.log('learning_rate', current_lr, prog_bar=False)
     
     def set_stats(self, stats):
         self.focal_loss.alpha = stats['alpha_pos']
@@ -226,104 +435,6 @@ class GNN(pl.LightningModule):
             'bg_iou': bg_iou,
             'macro_iou': (fg_iou + bg_iou) / 2
         }
-
-    def forward(self, x, edge_index, edge_attr):
-        # First GINEConv layer
-        x = self.conv1(x, edge_index, edge_attr)
-        x = F.relu(x)
-        
-        # Second GINEConv layer
-        out = self.conv2(x, edge_index, edge_attr)
-        return out
-
-    def shared_step(self, batch, stage):
-        batch, _ = batch
-        # Forward pass with edge features
-        out = self(batch.x, batch.edge_index, batch.edge_attr)
-        out = out.squeeze(-1)  # Remove the channel dimension
-        mask = batch.mask
-        out = out[mask]
-        
-        # Calculate losses
-        tversky_loss = self.tversky_loss(out, batch.y.float())
-        focal_loss = self.focal_loss(out, batch.y.float())
-        
-        # Combine losses using weights
-        loss = self.tversky_weight * tversky_loss + self.focal_weight * focal_loss
-        
-        # Calculate predictions
-        probs = torch.sigmoid(out)
-        preds = (probs > 0.5).float()
-        
-        # Calculate IoU metrics per graph in batch
-        B = batch.num_graphs
-        batch_metrics = {
-            'fg_iou': torch.zeros(B, device=preds.device),
-            'bg_iou': torch.zeros(B, device=preds.device),
-            'macro_iou': torch.zeros(B, device=preds.device)
-        }
-        
-        # Calculate IoU for each graph separately
-        for i in range(B):
-            iou_mask = batch.batch[mask] == i
-            graph_preds = preds[iou_mask]
-            graph_targets = batch.y[iou_mask]
-            metrics = self.iou_score(graph_preds, graph_targets)
-            batch_metrics['fg_iou'][i] = metrics['fg_iou']
-            batch_metrics['bg_iou'][i] = metrics['bg_iou']
-            batch_metrics['macro_iou'][i] = metrics['macro_iou']
-        
-        # Average metrics across batch
-        metrics = {k: v.mean() for k, v in batch_metrics.items()}
-        
-        is_val_stage = f'{stage}' == 'val'
-
-        # Log all metrics
-        self.log(f"{stage}_tversky_loss", tversky_loss, prog_bar=False, batch_size=batch.num_graphs)
-        self.log(f"{stage}_focal_loss", focal_loss, prog_bar=False, batch_size=batch.num_graphs)
-        self.log(f"{stage}_combined_loss", loss, prog_bar=False, batch_size=batch.num_graphs)
-        self.log(f"{stage}_fg_iou", metrics['fg_iou'], prog_bar=True, batch_size=batch.num_graphs)
-        self.log(f"{stage}_bg_iou", metrics['bg_iou'], prog_bar=True, batch_size=batch.num_graphs)
-        self.log(f"{stage}_macro_iou", metrics['macro_iou'], prog_bar=False, batch_size=batch.num_graphs)
-        
-        return loss
-
-    def training_step(self, batch, batch_idx):
-        return self.shared_step(batch, "train")
-
-    def validation_step(self, batch, batch_idx):
-        return self.shared_step(batch, "val")
-
-    def test_step(self, batch, batch_idx):
-        return self.shared_step(batch, "test")
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = {
-            "scheduler": torch.optim.lr_scheduler.StepLR(
-                optimizer,
-                step_size=64,  # Number of batches before reducing LR
-                gamma=0.5,    # Multiply LR by this factor (0.5 = reduce by half)
-            ),
-            "interval": "step",  # Call scheduler every batch instead of epoch
-            "frequency": 1
-        }
-        return {
-            "optimizer": optimizer, 
-            # "lr_scheduler": scheduler
-        }
-
-    def on_train_epoch_start(self):
-        # Get current learning rate
-        current_lr = self.optimizers().param_groups[0]['lr']
-        
-        # Print only if learning rate has changed
-        if self._previous_lr != current_lr:
-            print(f"\nLearning rate changed from {self._previous_lr} to {current_lr:.2e}")
-            self._previous_lr = current_lr
-            
-        # Still log to tensorboard but don't show in progress bar
-        self.log('learning_rate', current_lr, prog_bar=False)
 
 
 class MyDataModule(pl.LightningDataModule):
@@ -419,7 +530,7 @@ class MyDataModule(pl.LightningDataModule):
 
 
 def main():
-    BATCH_SIZE = 128
+    BATCH_SIZE = 1
     NUM_EPOCHS = 4
     NUM_WORKERS = 16
     TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 64

@@ -1,18 +1,3 @@
-I want to use the following hardware settings for my camera.
+I have a data pre-processing method for my GNN: generate_pyg_vectorised. Modify this method. Currently, the method includes a minimal setup that computes the adjacency data and a single edge feature: edge length (also a single node feature but it's just set to 0). The method gets passed clip_points - a numpy array of shape (num_video_clip_frames, num_poins, 2), clip_labels - a numpy array of shape (num_video_clip_frames, num_veins, num_vein_points, 2), clip_labels_mask - a numpy array of shape (num_video_clip_frames, num_veins, num_vein_points).
 
-camera hardware settings
-- brightness: -64 (-64, 64)
-- contrast: 48 (0, 64)
-- saturation: 0 (0, 128)
-- hue: 0 (-40, 40)
-- white balance, automatic: false (false, true)
-- gamma: 100 (72, 500)
-- gain: 0 (0, 100)
-- power line frequency: 50 Hz (disabled, 50 Hz, 60 Hz)
-- white balance temperature: 5000 (2800, 6500)
-- sharpness: 3 (0, 6)
-- backlight compensation: 0 (0, 2)
-- auto exposure: manual mode (manual mode, aperture priority mode)
-- exposure time, absolute: 100 (1, 5000)
-- exposure, dynamic framerate: false (false, true)
-- resolution: 1920 x 1080
+I want to compute the following node features: x_position, y_position. I want to compute the following edge features: edge length (already computed), dx, dy, cos(theta), sin(theta).
