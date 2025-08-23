@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import os
 import tkinter as tk
 from PIL import Image, ImageTk
 from scipy.optimize import linear_sum_assignment
@@ -324,7 +325,7 @@ class VideoPlayer:
         if markers_in_path_npz is not None:
             data_markers = np.load(markers_in_path_npz)
             self.markers = data_markers['markers']
-            if labels_in_path_npz is not None:
+            if labels_in_path_npz is not None and os.path.exists(labels_in_path_npz):
                 data_labels = np.load(labels_in_path_npz)
                 self.labels = data_labels['labels']
             elif labels_out_path_npz is not None:

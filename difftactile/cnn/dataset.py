@@ -35,14 +35,6 @@ class MyDataset(torch.utils.data.Dataset):
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         self.data_points_per_trajectory = 1024
         self.mode = mode
-
-        today_data_dir = SYSTEM_PARAMS.files.dataset_root_today_reordered
-        yesterday_data_dir = SYSTEM_PARAMS.files.dataset_root_yesterday_reordered_smoothed
-        self.files_today = MyDataset.get_folder_files(today_data_dir)
-        self.files_yesterday = MyDataset.get_folder_files(yesterday_data_dir)
-
-        new_data_dir = SYSTEM_PARAMS.files.dataset_root_2025_08_21_reordered
-        self.new_files = MyDataset.get_folder_files(new_data_dir)
         
         self.w_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
         self.h_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
@@ -154,6 +146,10 @@ class MyDataset(torch.utils.data.Dataset):
 
     def populate_clips_old_scheme(self):
         return
+        today_data_dir = SYSTEM_PARAMS.files.dataset_root_today_reordered
+        yesterday_data_dir = SYSTEM_PARAMS.files.dataset_root_yesterday_reordered_smoothed
+        self.files_today = MyDataset.get_folder_files(today_data_dir)
+        self.files_yesterday = MyDataset.get_folder_files(yesterday_data_dir)
         self.file_today_vein_masks = []
         self.file_today_contains_vein = []
         for i in range(len(self.files_today)):
@@ -227,6 +223,8 @@ class MyDataset(torch.utils.data.Dataset):
         print("clips have now been populated!")
 
     def populate_clips_new_scheme(self):
+        new_data_dir = SYSTEM_PARAMS.files.dataset_root_2025_08_21_reordered
+        self.new_files = MyDataset.get_folder_files(new_data_dir)
         self.vein_masks_new_scheme = []
         for i in range(len(self.new_files)):
             self.vein_masks_new_scheme.append(
