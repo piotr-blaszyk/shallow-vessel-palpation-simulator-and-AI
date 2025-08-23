@@ -246,9 +246,9 @@ class HungarianExp:
 
 def main():
     HungarianExp.reorder_exp_points(
-        input_path=SYSTEM_PARAMS.files.exp_simple_straight_npz,
-        output_path=SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered,
+        input_path=SYSTEM_PARAMS.files.experiment_straight_markers_npz,
+        output_path=SYSTEM_PARAMS.files.experiment_straight_markers_npz_reordered,
     )
     HungarianExp.visualise_reordered_point_connectivity(
-        output_path=SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered
+        output_path=SYSTEM_PARAMS.files.experiment_straight_markers_npz_reordered
     )

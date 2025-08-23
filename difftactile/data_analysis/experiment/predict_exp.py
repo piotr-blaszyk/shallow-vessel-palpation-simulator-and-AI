@@ -372,9 +372,16 @@ class PredictExp:
     @staticmethod
     def compute_npz_straight():
         PredictExp.compute_npz_helper(
-            video_in=SYSTEM_PARAMS.files.video_in_straight,
-            video_out=SYSTEM_PARAMS.files.video_out_straight,
-            npz_out=SYSTEM_PARAMS.files.exp_simple_straight_npz
+            video_in=SYSTEM_PARAMS.files.experiment_straight_raw_video,
+            video_out=SYSTEM_PARAMS.files.experiment_straight_processed_video,
+            npz_out=SYSTEM_PARAMS.files.experiment_straight_markers_npz,
+            npz_out_reordered=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
+            frame_mapping_npz_out=SYSTEM_PARAMS.files.experiment_straight_frame_mapping_npz,
+            video_from_cache=False,
+            npz_in=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
+            labels_out=SYSTEM_PARAMS.files.experiment_straight_ground_truth_labels_npz,
+            labels_in=SYSTEM_PARAMS.files.experiment_straight_ground_truth_labels_npz,
+            seconds_per_frame=1e0
         )
     
     @staticmethod
@@ -403,15 +410,14 @@ class PredictExp:
         frame_mapping_npz_out=None,
         labels_out=None,
         labels_in=None,
+        seconds_per_frame=None,
     ):
         if not video_from_cache:
-            marker_tracker = MarkerTracker(
-                # start_frame_ix=1000,
-                # end_frame_ix=1050
-            )
+            marker_tracker = MarkerTracker()
             marker_tracker.extract_frames(
                 video_in,
-                frame_mapping_npz_out
+                frame_mapping_npz_out,
+                seconds_per_frame=seconds_per_frame
             )
             PredictExp.write_video_to_npz_file(
                 marker_tracker=marker_tracker,
@@ -660,6 +666,6 @@ class PredictExp:
 
 
 def main():
-    predict_exp = PredictExp()
-    predict_exp.go()
-    # PredictExp.compute_npz_grid_search_og()
+    # predict_exp = PredictExp()
+    # predict_exp.go()
+    PredictExp.compute_npz_straight()

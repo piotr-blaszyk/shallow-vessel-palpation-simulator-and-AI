@@ -28,11 +28,14 @@ class MarkerTracker:
     def extract_frames(
             self, 
             input_path, 
-            frame_mapping_npz_out=None
+            frame_mapping_npz_out=None,
+            seconds_per_frame=None
         ):
         cap = cv2.VideoCapture(str(input_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_interval = int(fps * SYSTEM_PARAMS.marker_tracker.seconds_per_frame)
+        if seconds_per_frame is None:
+            seconds_per_frame = SYSTEM_PARAMS.marker_tracker.seconds_per_frame
+        frame_interval = int(fps * seconds_per_frame)
         frame_idx = 0
         frame_mapping = []
         while cap.isOpened():

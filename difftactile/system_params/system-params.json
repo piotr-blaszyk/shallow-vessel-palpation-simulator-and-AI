@@ -306,10 +306,6 @@
         "exp_probs_npz": "difftactile/output/exp_probs.npz",
         "exp_overlay_upscaled": "difftactile/output/exp_overlay_upscaled.png",
         "exp_overlay_downscaled": "difftactile/output/exp_overlay_downscaled.png",
-        "video_in_straight": "difftactile/manual_or_experimental_data/domain-adaptation-vascular-videos/mkv/traj_1_trimmed.mkv",
-        "video_out_straight": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_1_out.mkv",
-        "exp_simple_straight_npz": "difftactile/output/exp_video_straight.npz",
-        "exp_simple_straight_npz_reordered": "difftactile/output/exp_video_straight_reordered.npz",
         "exp_trajectories": "difftactile/output/exp_trajectories",
         "empty_data_dir": "difftactile/output/empty_data_dir",
         "dataset_root": "difftactile/output/training_data/pickle",
@@ -338,6 +334,13 @@
         "experiment_og_raw_video": "difftactile/manual_or_experimental_data/vein_slide_across.avi",
         "experiment_og_processed_video": "difftactile/output/experiment_og_processed_video.avi",
         "experiment_og_markers_reordered_filtered_npz": "difftactile/output/experiment_og_markers_reordered_filtered.npz",
-        "experiment_og_ground_truth_labels_filtered_npz": "difftactile/output/experiment_og_ground_truth_labels_filtered.npz"
+        "experiment_og_ground_truth_labels_filtered_npz": "difftactile/output/experiment_og_ground_truth_labels_filtered.npz",
+
+        "experiment_straight_raw_video": "difftactile/manual_or_experimental_data/domain-adaptation-vascular-videos/mkv/traj_1_trimmed.mkv",
+        "experiment_straight_processed_video": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_1_out.mkv",
+        "experiment_straight_markers_npz": "difftactile/output/exp_video_straight.npz",
+        "experiment_straight_markers_reordered_npz": "difftactile/output/exp_video_straight_reordered.npz",
+        "experiment_straight_frame_mapping_npz": "difftactile/output/experiment_straight_frame_mapping.npz",
+        "experiment_straight_ground_truth_labels_npz": "difftactile/output/experiment_straight_ground_truth_labels.npz"
     }
 }

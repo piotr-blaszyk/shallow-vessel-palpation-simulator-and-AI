@@ -433,10 +433,17 @@ def main():
         val_size=0.15,
         test_size=0.15
     )
-    exp_test_dataset = MyDataset(
+    exp_test_dataset_grid_search = MyDataset(
         mode='exp',
         exp_markers_npz=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
         exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz,
+        exp_dilation=2,
+        scheme='new',
+    )
+    exp_test_dataset_straight_line_slide = MyDataset(
+        mode='exp',
+        exp_markers_npz=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
+        exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_straight_ground_truth_labels_npz,
         exp_dilation=1,
         scheme='new',
     )
@@ -455,14 +462,18 @@ def main():
     
     init_difficulty = 0.0
     final_difficulty = 1.0
+
     train_dataset.set_difficulty_level(final_difficulty)
     val_dataset.set_difficulty_level(final_difficulty)
     test_dataset.set_difficulty_level(final_difficulty)
-    exp_test_dataset.set_difficulty_level(final_difficulty)
+    exp_test_dataset_grid_search.set_difficulty_level(final_difficulty)
+    exp_test_dataset_straight_line_slide.set_difficulty_level(final_difficulty)
+
     train_dataset.set_stats(all_stats[final_difficulty])
     val_dataset.set_stats(all_stats[final_difficulty])
     test_dataset.set_stats(all_stats[final_difficulty])
-    exp_test_dataset.set_stats(all_stats[final_difficulty])
+    exp_test_dataset_grid_search.set_stats(all_stats[final_difficulty])
+    exp_test_dataset_straight_line_slide.set_stats(all_stats[final_difficulty])
 
     # Create a single datamodule for training, validation and testing
     data_module = MyDataModule(
@@ -514,8 +525,15 @@ def main():
     )
 
     # Create DataLoader for experimental dataset
-    exp_test_loader = DataLoader(
-        exp_test_dataset,
+    exp_test_loader_grid_search = DataLoader(
+        exp_test_dataset_grid_search,
+        batch_size=BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+        pin_memory=False,
+        persistent_workers=False
+    )
+    exp_test_loader_straight_line_slide = DataLoader(
+        exp_test_dataset_straight_line_slide,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=False,
@@ -525,13 +543,14 @@ def main():
     start = time.perf_counter()
     trainer.fit(model, datamodule=data_module)
     
-    # Test on simulation data
     print("\nTesting on simulation data:")
     trainer.test(model, datamodule=data_module)
     
-    # Test on experimental data
-    print("\nTesting on experimental data:")
-    trainer.test(model, dataloaders=exp_test_loader)
+    print("\nTesting on experimental data (grid search trajectory):")
+    trainer.test(model, dataloaders=exp_test_loader_grid_search)
+    
+    print("\nTesting on experimental data (straight line slide):")
+    trainer.test(model, dataloaders=exp_test_loader_straight_line_slide)
     
     end = time.perf_counter()
     duration = end - start

@@ -59,8 +59,8 @@ class Visualisation:
             npz_path = SYSTEM_PARAMS.files.exp_video_npz
             video_path = SYSTEM_PARAMS.files.vein_slide_across_extracted_markers
         elif mode == 'straight':
-            npz_path = SYSTEM_PARAMS.files.exp_simple_straight_npz
-            video_path = SYSTEM_PARAMS.files.video_out_straight
+            npz_path = SYSTEM_PARAMS.files.experiment_straight_markers_npz
+            video_path = SYSTEM_PARAMS.files.experiment_straight_processed_video
 
         self.exp_data = np.load(npz_path)
         
@@ -437,13 +437,21 @@ class Visualisation:
                 train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
             )
         elif data_source == 'exp_npz':
-            dataset = MyDataset(
+            exp_test_dataset_grid_search = MyDataset(
                 mode='exp',
                 exp_markers_npz=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
                 exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz,
+                exp_dilation=2,
+                scheme='new',
+            )
+            exp_test_dataset_straight_line_slide = MyDataset(
+                mode='exp',
+                exp_markers_npz=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
+                exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_straight_ground_truth_labels_npz,
                 exp_dilation=1,
                 scheme='new',
             )
+            dataset = exp_test_dataset_straight_line_slide
             dataset.set_stats(stats)
             dataset.set_difficulty_level(1.0)
             data_loader = DataLoader(
