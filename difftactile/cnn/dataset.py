@@ -587,8 +587,8 @@ class MyDataset(torch.utils.data.Dataset):
         if self.scheme == 'old':
             day, traj_type, file_path, frame_ix, dilation = self.data_points[idx]
             if day == 'today':
-                rng = random.uniform(0, 1)
-                spawn_vein = rng < 0.75
+                random_num = random.uniform(0, 1)
+                spawn_vein = random_num < 0.75
             else:
                 spawn_vein = False
         elif self.scheme == 'new':
