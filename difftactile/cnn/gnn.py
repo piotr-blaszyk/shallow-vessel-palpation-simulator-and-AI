@@ -181,116 +181,73 @@ class GNN(pl.LightningModule):
         # Save hyperparameters for logging
         self.save_hyperparameters()
 
-    def forward(self, x_seq, edge_index_seq, edge_attr_seq):
-        """
-        Forward pass through the bidirectional spatio-temporal GNN.
+    def forward(self, x, edge_index, edge_attr):
+        B, T, N, F = x.shape
+        num_edges = edge_index.shape[3]
+        E = edge_attr.shape[3]
         
-        Args:
-            x_seq: [B, T, N, F_node] tensor (sequence of node features)
-            edge_index_seq: list of T tensors, each [2, E] (E edges per timestep)
-            edge_attr_seq: list of T tensors, each [E, F_edge]
-            
-        Returns:
-            out_seq: [B, T, N] logits per node per timestep per batch
-        """
-        B, T, N, _ = x_seq.shape
+        x_flat = x.view(B * T, N, F)
+        x_latent = self.node_proj(x_flat)
+        x_latent = x_latent.view(B, T, N, -1)
+        latent_dim = x_latent.shape[3]
+
+        edge_attr_flat = edge_attr.view(B * T, num_edges, E)
+        edge_attr_latent = self.edge_proj(edge_attr_flat)
+        edge_attr_latent = edge_attr_latent.view(B, T, num_edges, latent_dim)
+
+        edge_index = edge_index.permute(2, 0, 1, 3)
+        edge_index = edge_index.view(T, 2, -1)
+        x_latent = x_latent.permute(1, 0, 2, 3)
+        x_latent = x_latent.view(T, B * N, latent_dim)
+        edge_attr_latent = edge_attr_latent.permute(1, 0, 2, 3)
+        edge_attr_latent = edge_attr_latent.view(T, B * num_edges, latent_dim)
         
-        # Process each batch independently
-        batch_outputs = []
-        for b in range(B):
-            # Project nodes and edges into latent space for current batch
-            x_seq_latent = [self.node_proj(x_seq[b, t]) for t in range(T)]
-            edge_seq_latent = [self.edge_proj(edge_attr_seq[b][t]) for t in range(T)]
-            
-            # Forward pass (left → right)
-            h_fwd = None
-            out_fwd = []
-            for t in range(T):
-                # Get latent features for current timestep
-                x_lat = x_seq_latent[t]
-                edge_lat = edge_seq_latent[t]
-                edge_index = edge_index_seq[b][t]
-                
-                # Spatial encoding with GINE using latent features
-                x_lat = self.gine(x=x_lat, edge_index=edge_index, edge_attr=edge_lat)
-                
-                # Temporal encoding with forward GRU
-                h_fwd = self.gru_fwd(X=x_lat, edge_index=edge_index, H=h_fwd)
-                out_fwd.append(h_fwd)
-            
-            # Backward pass (right → left)
-            h_bwd = None
-            out_bwd = []
-            for t in reversed(range(T)):
-                # Get latent features for current timestep
-                x_lat = x_seq_latent[t]
-                edge_lat = edge_seq_latent[t]
-                edge_index = edge_index_seq[b][t]
-                
-                # Spatial encoding with GINE using latent features
-                x_lat = self.gine(x=x_lat, edge_index=edge_index, edge_attr=edge_lat)
-                
-                # Temporal encoding with backward GRU
-                h_bwd = self.gru_bwd(X=x_lat, edge_index=edge_index, H=h_bwd)
-                out_bwd.append(h_bwd)
-            out_bwd = list(reversed(out_bwd))  # align order with forward
-            
-            # Concatenate forward + backward hidden states at each timestep
-            h_cat = [torch.cat([f, b], dim=-1) for f, b in zip(out_fwd, out_bwd)]
-            h_cat = torch.stack(h_cat, dim=0)  # [T, N, 2*hidden_channels]
-            
-            # Per-node classification at each timestep
-            out_seq = self.classifier(h_cat).squeeze(-1)  # [T, N]
-            batch_outputs.append(out_seq)
+        h_fwd = None
+        out_fwd = []
+        for t in range(T):
+            xl = x_latent[t]
+            eal = edge_attr_latent[t]
+            ei = edge_index[t]
+            xl = self.gine(x=xl, edge_index=ei, edge_attr=eal)
+            h_fwd = self.gru_fwd(X=xl, edge_index=ei, H=h_fwd)
+            out_fwd.append(h_fwd)
         
-        # Stack all batch outputs
-        out_seq = torch.stack(batch_outputs, dim=0)  # [B, T, N]
+        h_bwd = None
+        out_bwd = []
+        for t in reversed(range(T)):
+            xl = x_latent[t]
+            eal = edge_attr_latent[t]
+            ei = edge_index[t]
+            xl = self.gine(x=xl, edge_index=ei, edge_attr=eal)
+            h_bwd = self.gru_bwd(X=xl, edge_index=ei, H=h_bwd)
+            out_bwd.append(h_bwd)
+        out_bwd = list(reversed(out_bwd))
+        
+        h_fwd_stack = torch.stack(out_fwd, dim=1)
+        h_bwd_stack = torch.stack(out_bwd, dim=1)
+        h_cat = torch.cat([h_fwd_stack, h_bwd_stack], dim=-1)
+        
+        out_seq = self.classifier(h_cat).squeeze(-1)
         return out_seq
 
     def shared_step(self, batch, stage):
         batch, _ = batch
-        # Reshape inputs for temporal processing
-        # Assuming batch.x is [B*T, N, F] where B is batch size, T is sequence length
-        B = len(batch.ptr) - 1  # Number of graphs in batch
+        B = len(batch.ptr) - 1
         T = 5
         N = 127
         F = 2
+        E = 5
         
-        # Reshape to [T, N, F] for temporal processing
-        x_seq = batch.x.view(B, T, N, F)
-        
-        # Create sequences of edge indices and attributes per batch and timestep
-        num_edges_per_graph = batch.edge_index.shape[1] // (B * T)  # Number of edges per graph per timestep
-        edge_index_seq = []
-        edge_attr_seq = []
-        
-        # Process each batch
-        for b in range(B):
-            batch_edge_index = []
-            batch_edge_attr = []
-            
-            # Split edges into timesteps for current batch
-            for t in range(T):
-                # Calculate indices for current batch and timestep
-                start_idx = (b * T + t) * num_edges_per_graph
-                end_idx = start_idx + num_edges_per_graph
-                
-                # Get edges and attributes
-                edge_index = batch.edge_index[:, start_idx:end_idx]
-                edge_attr = batch.edge_attr[start_idx:end_idx]
-                
-                # Adjust edge indices to point to correct nodes within this timestep
-                edge_index = edge_index - (b * T + t) * N
-                
-                batch_edge_index.append(edge_index)
-                batch_edge_attr.append(edge_attr)
-            
-            edge_index_seq.append(batch_edge_index)
-            edge_attr_seq.append(batch_edge_attr)
+        x = batch.x.view(B, T, N, F)
+        edge_attr = batch.edge_attr.view(B, T, -1, E)
+        edge_index = batch.edge_index.view(2, B, T, -1)
+        y = batch.y.view(B, T, N)
+        pos = batch.pos.view(B, T, N, 2)
+        mask = batch.mask.view(B, T, N)
         
         # Forward pass with temporal data - returns predictions for each timestep
-        out_seq = self(x_seq, edge_index_seq, edge_attr_seq)  # [B, T, N]
-        
+        out_seq = self(x, edge_index, edge_attr)
+
         # Reshape output to match mask
         out = out_seq.reshape(-1)[batch.mask]  # Flatten and mask predictions
         
@@ -530,9 +487,9 @@ class MyDataModule(pl.LightningDataModule):
 
 
 def main():
-    BATCH_SIZE = 1
+    BATCH_SIZE = 8
     NUM_EPOCHS = 4
-    NUM_WORKERS = 16
+    NUM_WORKERS = 1
     TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 64
     VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 4
     LR = 1e-3
