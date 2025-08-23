@@ -260,7 +260,7 @@ class Visualisation:
                     image_input = image.to(device)
                     logits = model(image_input)
                     probs = torch.sigmoid(logits)
-                    pred = (probs > 0.9).float()
+                    pred = (probs > 0.5).float()
                     pred = pred.cpu()
 
             # Convert tensors to numpy arrays
@@ -439,16 +439,15 @@ class Visualisation:
         elif data_source == 'exp_npz':
             dataset = MyDataset(
                 mode='dummy',
-                scheme='new'
+                exp_markers_npz=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
+                exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz,
+                exp_dilation=1,
+                scheme='new',
             )
             dataset.set_stats(stats)
             dataset.set_difficulty_level(1.0)
-            dataset.eval()
-            data_loader = MyDatasetExpIterator(
-                dataset=dataset,
-                # npz_path=SYSTEM_PARAMS.files.exp_simple_straight_npz_reordered
-                npz_path=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_reordered_npz,
-                labels_path=SYSTEM_PARAMS.files.experiment_2025_08_22_ground_truth_labels_npz
+            data_loader = DataLoader(
+                dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
             )
 
         data_iter = iter(data_loader)
@@ -741,9 +740,6 @@ class Visualisation:
 
 def main():
     v = Visualisation()
-    # v.visualize_experiment(mode='curved')
-    # v.visualise('predictions')
-    # v.graph()
     v.visualise_gnn(
         mode='predictions', 
         data_source='exp_npz'
