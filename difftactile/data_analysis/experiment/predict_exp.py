@@ -214,7 +214,6 @@ class PredictExp:
     def predict_clip(self, i):
         pyg = self.dataset.get_clip(
             self.markers,
-            self.markers_mask,
             self.clip_len,
             self.dilation,
             i

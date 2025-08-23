@@ -27,10 +27,21 @@ class MyDataset(torch.utils.data.Dataset):
             data_points_yesterday=[],
             data_points_pos=[],
             data_points_neg=[],
-            normalise_pos=True
+            normalise_pos=True,
+            exp_markers_npz=None,
+            exp_ground_truth_labels_npz=None,
+            exp_dilation=None
         ):
         super().__init__()
         start_time = time.perf_counter()
+
+        if mode == 'dummy':
+            markers_data = np.load(exp_markers_npz)
+            self.exp_markers = markers_data['markers']
+            ground_truth_label_data = np.load(exp_ground_truth_labels_npz)
+            self.exp_ground_truth_labels = ground_truth_label_data['labels']
+            self.exp_dilation = exp_dilation
+
         self.scheme = scheme
         self.clip_len = SYSTEM_PARAMS.cnn.clip_len
         self.data_points_per_trajectory = 1024
@@ -70,7 +81,9 @@ class MyDataset(torch.utils.data.Dataset):
                 self.populate_clips_old_scheme()
             elif scheme == 'new':
                 self.populate_clips_new_scheme()
-        elif mode != 'dummy':
+        elif mode == 'dummy':
+            self.compute_data_points_exp()
+        else:
             if scheme == 'old':
                 self.compute_data_points_old_scheme()
             elif scheme == 'new':
@@ -83,6 +96,12 @@ class MyDataset(torch.utils.data.Dataset):
     @staticmethod
     def get_folder_files(path):
         return sorted([os.path.join(path, f) for f in os.listdir(path)])
+
+    def compute_data_points_exp(self):
+        num_video_frames = self.exp_markers.shape[0]
+        dilated_clip_len = self.clip_len * self.exp_dilation
+        for i in range(num_video_frames - dilated_clip_len + 1):
+            self.data_points.append(i)
 
     def compute_data_points_old_scheme(self):
         # Shuffle both datasets independently
@@ -582,16 +601,28 @@ class MyDataset(torch.utils.data.Dataset):
             return np.array([-1., -1.])  # Return invalid marker position if no valid data
 
     def __getitem__(self, idx):
-        if self.scheme == 'old':
-            day, traj_type, file_path, frame_ix, dilation = self.data_points[idx]
-            if day == 'today':
-                random_num = random.uniform(0, 1)
-                spawn_vein = random_num < 0.75
-            else:
-                spawn_vein = False
-        elif self.scheme == 'new':
-            pos_neg_str, file_path, frame_ix, dilation = self.data_points[idx]
-            spawn_vein = pos_neg_str == 'pos'
+        if self.mode == 'dummy':
+            frame_ix = self.data_points[idx]
+            pyg = self.get_clip(
+                markers=self.exp_markers,
+                clip_len=self.clip_len,
+                dilation=self.exp_dilation,
+                start_ix=frame_ix,
+                ground_truth_labels_in=self.exp_ground_truth_labels
+            )
+            veins = torch.empty(0)
+            return pyg, veins
+        else:
+            if self.scheme == 'old':
+                day, traj_type, file_path, frame_ix, dilation = self.data_points[idx]
+                if day == 'today':
+                    random_num = random.uniform(0, 1)
+                    spawn_vein = random_num < 0.75
+                else:
+                    spawn_vein = False
+            elif self.scheme == 'new':
+                pos_neg_str, file_path, frame_ix, dilation = self.data_points[idx]
+                spawn_vein = pos_neg_str == 'pos'
         
         data = np.load(file_path)
         markers = data['markers']
@@ -661,7 +692,12 @@ class MyDataset(torch.utils.data.Dataset):
         points = markers
         points_mask = markers_mask
 
-        pyg = self.generate_pyg_vectorised(points, veins, veins_mask)
+        pyg = self.generate_pyg_vectorised(
+            points, 
+            veins, 
+            veins_mask, 
+            ground_truth_labels_in=None
+        )
         if self.visualisation_mode:
             veins = MyDataset.generate_vein_image(
                 self.h_camera_big, 
@@ -1050,13 +1086,12 @@ class MyDataset(torch.utils.data.Dataset):
 
         return images[self.clip_len // 2, :, :]
 
-    def get_clip(self, markers, markers_mask, clip_len, dilation, start_ix, ground_truth_labels_in=None):
+    def get_clip(self, markers, clip_len, dilation, start_ix, ground_truth_labels_in=None):
         points = markers
-        points_mask = markers_mask
 
         dilated_clip_len = clip_len * dilation
         points = points[start_ix:start_ix + dilated_clip_len:dilation]
-        points_mask = points_mask[start_ix:start_ix + dilated_clip_len:dilation]
+        ground_truth_labels_in = ground_truth_labels_in[start_ix:start_ix + dilated_clip_len:dilation]
 
         labels = np.zeros(shape=(
             points.shape[0],
@@ -1547,7 +1582,6 @@ class MyDatasetExpIterator:
         ground_truth_labels_in = self.labels[start_ix:start_ix+dilated_clip_len:dilation]
         pyg = self.dataset.get_clip(
             self.markers,
-            self.markers_mask,
             self.clip_len,
             dilation,
             start_ix,

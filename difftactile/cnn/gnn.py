@@ -433,6 +433,13 @@ def main():
         val_size=0.15,
         test_size=0.15
     )
+    exp_test_dataset = MyDataset(
+        mode='dummy',
+        exp_markers_npz=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
+        exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz,
+        exp_dilation=1,
+        scheme='new',
+    )
     all_stats = {}
     for i in range(11):
         if i != 10:
@@ -451,9 +458,11 @@ def main():
     train_dataset.set_difficulty_level(final_difficulty)
     val_dataset.set_difficulty_level(final_difficulty)
     test_dataset.set_difficulty_level(final_difficulty)
+    exp_test_dataset.set_difficulty_level(final_difficulty)
     train_dataset.set_stats(all_stats[final_difficulty])
     val_dataset.set_stats(all_stats[final_difficulty])
     test_dataset.set_stats(all_stats[final_difficulty])
+    exp_test_dataset.set_stats(all_stats[final_difficulty])
 
     # Create a single datamodule for training, validation and testing
     data_module = MyDataModule(
@@ -504,12 +513,29 @@ def main():
         reload_dataloaders_every_n_epochs=1
     )
 
+    # Create DataLoader for experimental dataset
+    exp_test_loader = DataLoader(
+        exp_test_dataset,
+        batch_size=BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+        pin_memory=False,
+        persistent_workers=False
+    )
+
     start = time.perf_counter()
     trainer.fit(model, datamodule=data_module)
+    
+    # Test on simulation data
+    print("\nTesting on simulation data:")
     trainer.test(model, datamodule=data_module)
+    
+    # Test on experimental data
+    print("\nTesting on experimental data:")
+    trainer.test(model, dataloaders=exp_test_loader)
+    
     end = time.perf_counter()
     duration = end - start
-    print(f"Training and testing completed in {duration:.2f} seconds ({duration/60:.2f} minutes)")
+    print(f"\nTraining and testing completed in {duration:.2f} seconds ({duration/60:.2f} minutes)")
 
     os.makedirs("saved_models", exist_ok=True)
     torch.save(model.state_dict(), SYSTEM_PARAMS.files.final_segmentation_model_gnn)
