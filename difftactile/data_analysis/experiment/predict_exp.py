@@ -73,58 +73,9 @@ class PredictExp:
         self.set_up_keypoints()
 
     def set_up_keypoints(self):
-        # visible_vein_frame_ixs = np.array([
-        #     32,
-        #     50,
-        #     84,
-        #     121,
-        #     129,
-        #     135,
-        #     167,
-        #     170,
-        #     179,
-        #     210,
-        #     220,
-        #     256,
-        #     # 259,
-        #     297,
-        #     313
-        #     ], dtype=int
-        # )
-        # visible_vein_frame_ixs = np.array([32], dtype=int)
-        # visible_vein_frame_ixs = np.array([
-        #     [38, 16],
-        #     [53, 16],
-        #     [87, 2],
-        #     [124, 32], # barely visible
-        #     [130, 2],
-        #     [137, 2],
-        #     [168, 0],
-        #     [173, 2],
-        #     [181, 2],
-        #     [212, 0],
-        #     [222, 0],
-        #     [257, 2],
-        #     [301, 33], # barely visible
-        #     [309, 39]
-        # ], dtype=int)
 
-        visible_vein_frame_ixs_original = np.array([
-            [39, 1],
-            [53, 22],
-            [92, 22],
-            [134, 2],
-            [139, 23],
-            [171, 22],
-            [177, 1],
-            [217, 17],
-            [222, 1],
-            [261, 1],
-            [306, 32],
-            # [352, 60] # barely visible
-        ])
+        visible_vein_frame_ixs_original = np.array([])
         
-        # Map frame indices using markers_index_mapping
         visible_vein_frame_ixs = np.array([
             [self.markers_index_mapping[frame_ix], marker_ix] 
             for frame_ix, marker_ix in visible_vein_frame_ixs_original 
@@ -299,6 +250,7 @@ class PredictExp:
                 prob = probs[t, j]
                 pred = preds[t, j]
                 x, y = points[t, j]
+
                 pos_E = self.map_2d_3d[int(x), int(y)]
                 pos_E_homogeneous = np.append(pos_E, 1)
                 pos_A_homogeneous = t_EA @ pos_E_homogeneous
@@ -317,13 +269,9 @@ class PredictExp:
                     continue
                 x_A = int(x_A / self.bin_size)
                 y_A = int(y_A / self.bin_size)
+
                 self.debug_bins[frame_ix] += 1
                 self.bin_count[x_A, y_A] += (1 if j == 0 else 0)
-                frame_ix_marker_ix = np.array([frame_ix, j], dtype=int)
-                ground_truth_vein_present_at_marker = np.any(np.all(self.visible_vein_frame_ixs == frame_ix_marker_ix, axis=1))
-                if not ground_truth_vein_present_at_marker:
-                    continue
-                # foo = 1 if frame_ix in visible_vein_frame_ixs else 0
                 self.bin_prob_sum[x_A, y_A] += 1
                 if self.ground_truth_labels[frame_ix, j] == 1:
                     self.bins_ground_truth[x_A, y_A] += 1
@@ -552,7 +500,7 @@ class PredictExp:
         print("IoU Metrics (downscaled):", metrics)
         
         # Create confusion matrix overlay
-        confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth_og, prediction)
+        confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth_og, ground_truth_from_video)
         
         # Load all images for visualization
         images = {
