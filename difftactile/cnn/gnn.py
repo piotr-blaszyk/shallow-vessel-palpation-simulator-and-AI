@@ -181,69 +181,61 @@ class GNN(pl.LightningModule):
         # Save hyperparameters for logging
         self.save_hyperparameters()
 
+        self.clip_len = SYSTEM_PARAMS.cnn.clip_len
+        self.num_nodes = SYSTEM_PARAMS.vitactip.num_markers
+        self.hidden_channels = hidden_channels
+
     def forward(self, x, edge_index, edge_attr):
-        B, T, N, F = x.shape
-        num_edges = edge_index.shape[3]
-        E = edge_attr.shape[3]
-        
-        x_flat = x.view(B * T, N, F)
-        x_latent = self.node_proj(x_flat)
-        x_latent = x_latent.view(B, T, N, -1)
-        latent_dim = x_latent.shape[3]
+        T, N, _ = x.shape
 
-        edge_attr_flat = edge_attr.view(B * T, num_edges, E)
-        edge_attr_latent = self.edge_proj(edge_attr_flat)
-        edge_attr_latent = edge_attr_latent.view(B, T, num_edges, latent_dim)
-
-        edge_index = edge_index.permute(2, 0, 1, 3)
-        edge_index = edge_index.view(T, 2, -1)
-        x_latent = x_latent.permute(1, 0, 2, 3)
-        x_latent = x_latent.view(T, B * N, latent_dim)
-        edge_attr_latent = edge_attr_latent.permute(1, 0, 2, 3)
-        edge_attr_latent = edge_attr_latent.view(T, B * num_edges, latent_dim)
-        
+        x_seq_latent = [self.node_proj(x[b, t]) for t in range(T)]
+        edge_seq_latent = [self.edge_proj(edge_attr[b, t]) for t in range(T)]
         h_fwd = None
         out_fwd = []
         for t in range(T):
-            xl = x_latent[t]
-            eal = edge_attr_latent[t]
-            ei = edge_index[t]
-            xl = self.gine(x=xl, edge_index=ei, edge_attr=eal)
+            xl = x_seq_latent[t]
+            ea = edge_seq_latent[t]
+            ei = edge_index[:, b, t, :]
+            xl = self.gine(x=xl, edge_index=ei, edge_attr=ea)
             h_fwd = self.gru_fwd(X=xl, edge_index=ei, H=h_fwd)
             out_fwd.append(h_fwd)
         
         h_bwd = None
         out_bwd = []
         for t in reversed(range(T)):
-            xl = x_latent[t]
-            eal = edge_attr_latent[t]
-            ei = edge_index[t]
-            xl = self.gine(x=xl, edge_index=ei, edge_attr=eal)
+            xl = x_seq_latent[t]
+            ea = edge_seq_latent[t]
+            ei = edge_index[:, b, t, :]
+            xl = self.gine(x=xl, edge_index=ei, edge_attr=ea)
             h_bwd = self.gru_bwd(X=xl, edge_index=ei, H=h_bwd)
             out_bwd.append(h_bwd)
         out_bwd = list(reversed(out_bwd))
         
-        h_fwd_stack = torch.stack(out_fwd, dim=1)
-        h_bwd_stack = torch.stack(out_bwd, dim=1)
-        h_cat = torch.cat([h_fwd_stack, h_bwd_stack], dim=-1)
+        # Concatenate forward + backward hidden states at each timestep
+        h_cat = [torch.cat([f, b], dim=-1) for f, b in zip(out_fwd, out_bwd)]
+        h_cat = torch.stack(h_cat, dim=0)  # [T, N, 2*hidden_channels]
         
-        out_seq = self.classifier(h_cat).squeeze(-1)
+        # Per-node classification at each timestep
+        out_seq = self.classifier(h_cat).squeeze(-1)  # [T, N]
+
         return out_seq
 
-    def shared_step(self, batch, stage):
-        batch, _ = batch
+    def shared_step(self, data, stage):
+        batch, _ = data
         B = len(batch.ptr) - 1
-        T = 5
-        N = 127
-        F = 2
-        E = 5
+        T = self.clip_len
+        N = self.num_nodes
+
+        # for i in range(B):
+        #     start_idx = data.ptr[i].item()
+        #     end_idx = data.ptr[i+1].item()
         
-        x = batch.x.view(B, T, N, F)
-        edge_attr = batch.edge_attr.view(B, T, -1, E)
-        edge_index = batch.edge_index.view(2, B, T, -1)
-        y = batch.y.view(B, T, N)
-        pos = batch.pos.view(B, T, N, 2)
-        mask = batch.mask.view(B, T, N)
+        x = batch.x[0]
+        edge_attr = batch.edge_attr[0]
+        edge_index = batch.edge_index[0]
+        y = batch.y[0]
+        pos = batch.pos[0]
+        mask = batch.mask[0]
         
         # Forward pass with temporal data - returns predictions for each timestep
         out_seq = self(x, edge_index, edge_attr)
@@ -489,7 +481,7 @@ class MyDataModule(pl.LightningDataModule):
 def main():
     BATCH_SIZE = 8
     NUM_EPOCHS = 4
-    NUM_WORKERS = 1
+    NUM_WORKERS = 16
     TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 64
     VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 4
     LR = 1e-3
