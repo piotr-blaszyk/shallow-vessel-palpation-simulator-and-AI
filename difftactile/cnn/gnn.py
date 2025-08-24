@@ -127,6 +127,7 @@ class GNN(pl.LightningModule):
         node_dim = SYSTEM_PARAMS.gnn.node_dim
         spatial_edge_dim = SYSTEM_PARAMS.gnn.spatial_edge_dim
         temporal_edge_dim = SYSTEM_PARAMS.gnn.temporal_edge_dim
+        global_temporal_edge_dim = SYSTEM_PARAMS.gnn.global_temporal_edge_dim
         input_dim = SYSTEM_PARAMS.gnn.input_dim
         latent_dim = SYSTEM_PARAMS.gnn.latent_dim
         output_dim = SYSTEM_PARAMS.gnn.output_dim
@@ -140,6 +141,7 @@ class GNN(pl.LightningModule):
         self.tversky_loss = MyTverskyLoss()
         self.focal_loss = MyFocalLoss()
         self.global_node = nn.Parameter(torch.randn(1, input_dim))
+        self.regular_global_edge = nn.Parameter(torch.randn(1, input_dim))
 
         self.node_mlp = nn.Sequential(
             nn.Linear(node_dim, input_dim),
@@ -153,6 +155,11 @@ class GNN(pl.LightningModule):
         )
         self.temporal_edge_mlp = nn.Sequential(
             nn.Linear(temporal_edge_dim, input_dim),
+            nn.ReLU(),
+            nn.Linear(input_dim, input_dim)
+        )
+        self.global_temporal_edge_mlp = nn.Sequential(
+            nn.Linear(global_temporal_edge_dim, input_dim),
             nn.ReLU(),
             nn.Linear(input_dim, input_dim)
         )
