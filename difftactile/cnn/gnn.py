@@ -38,7 +38,7 @@ class CurriculumCallback(pl.Callback):
             datasets[i].set_difficulty_level(difficulty)
         pl_module.set_stats(self.all_stats[difficulty])
 
-class GNNTverskyLoss(nn.Module):
+class MyTverskyLoss(nn.Module):
     def __init__(self, alpha=1.0, beta=0.25, smooth=1e-6):
         """Tversky Loss for GNN node classification with imbalanced data.
         
@@ -81,7 +81,7 @@ class GNNTverskyLoss(nn.Module):
         return 1 - tversky
 
 
-class GNNFocalLoss(nn.Module):
+class MyFocalLoss(nn.Module):
     def __init__(self, alpha=0.5, gamma=3.0):
         """Focal Loss for GNN node classification.
         
@@ -137,8 +137,9 @@ class GNN(pl.LightningModule):
         self.clip_len = SYSTEM_PARAMS.gnn.clip_len
         self.num_nodes = SYSTEM_PARAMS.vitactip.num_markers
         self.hidden_channels = latent_dim
-        self.tversky_loss = GNNTverskyLoss()
-        self.focal_loss = GNNFocalLoss()
+        self.tversky_loss = MyTverskyLoss()
+        self.focal_loss = MyFocalLoss()
+        self.global_node = nn.Parameter(torch.randn(1, input_dim))
 
         self.node_mlp = nn.Sequential(
             nn.Linear(node_dim, input_dim),
@@ -697,6 +698,8 @@ def compute_stats(dataset, batch_size):
         'x',
         'edge_attr_spatial',
         'edge_attr_temporal',
+        'edge_attr_global_spatial',
+        'edge_attr_global_temporal',
     ]
     for key in keys:
         res |= compute_mean_std(dataset, ixs, key)

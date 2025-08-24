@@ -735,12 +735,18 @@ class MyDataset(torch.utils.data.Dataset):
         edge_attr_spatial = self.get_spatial_edge_dist_dx_dy_cos_sin(clip_points)
         edge_index_temporal = self.get_edge_index_temporal()
         edge_attr_temporal = self.get_edge_attr_temporal()
+        edge_index_global_spatial = self.get_edge_index_global_spatial()
+        edge_attr_global_spatial = self.get_edge_attr_global_spatial()
+        edge_index_global_temporal = self.get_edge_index_global_temporal()
+        edge_attr_global_temporal = self.get_edge_attr_global_temporal()
 
         self.normalise(
             pos,
             x,
             edge_attr_spatial,
             edge_attr_temporal,
+            edge_attr_global_spatial,
+            edge_attr_global_temporal,
         )
         pyg_data = self.get_pyg_data(
             pos=pos,
@@ -751,6 +757,10 @@ class MyDataset(torch.utils.data.Dataset):
             edge_attr_spatial=edge_attr_spatial, 
             edge_index_temporal=edge_index_temporal,
             edge_attr_temporal=edge_attr_temporal,
+            edge_index_global_spatial=edge_index_global_spatial,
+            edge_attr_global_spatial=edge_attr_global_spatial,
+            edge_index_global_temporal=edge_index_global_temporal,
+            edge_attr_global_temporal=edge_attr_global_temporal,
         )
         return pyg_data
     
@@ -830,8 +840,56 @@ class MyDataset(torch.utils.data.Dataset):
     
     def get_edge_attr_temporal(self):
         return np.zeros(shape=(0, 0), dtype=float)
+    
+    def get_edge_index_global_spatial(self):
+        num_regular_nodes = self.num_nodes * self.clip_len
+        ix = num_regular_nodes
 
-    def normalise(self, pos, x, edge_attr_spatial, edge_attr_temporal):
+        adjacency_clip_list = []
+        for t in range(self.clip_len):
+            global_regular = self.adjacency.copy()
+            global_regular[:, 0] = ix
+            regular_global = self.adjacency.copy()
+            regular_global[:, 1] = ix
+            adjacency_clip_list.append(global_regular)
+            adjacency_clip_list.append(regular_global)
+            ix += 1
+        adjacency_clip = np.vstack(adjacency_clip_list)
+        adjacency_clip = adjacency_clip.T
+        return adjacency_clip
+
+    def get_edge_attr_global_spatial(self):
+        num_regular_nodes = self.num_nodes * self.clip_len
+        return np.zeros(shape=(num_regular_nodes*2, 0), dtype=float)
+
+    def get_edge_index_global_temporal(self):
+        num_regular_nodes = self.num_nodes * self.clip_len
+        ix = num_regular_nodes
+
+        adjacency_clip_list = []
+        for t in range(self.clip_len-1):
+            connections = np.array([
+                [t, t+1],
+                [t+1, t]
+            ], dtype=int)
+            adjacency_clip_list.append(connections)
+            ix += 1
+        adjacency_clip = np.vstack(adjacency_clip_list)
+        adjacency_clip = adjacency_clip.T
+        return adjacency_clip
+
+    def get_edge_attr_global_temporal(self):
+        return np.zeros(shape=((self.clip_len-1)*2, 0), dtype=float)
+
+    def normalise(
+        self, 
+        pos, 
+        x, 
+        edge_attr_spatial, 
+        edge_attr_temporal,
+        edge_attr_global_spatial,
+        edge_attr_global_temporal,
+    ):
         if not self.warmup:
             if self.normalise_pos:
                 MyDataset.normalise_single(
@@ -856,6 +914,18 @@ class MyDataset(torch.utils.data.Dataset):
                 self.edge_attr_temporal_mean, 
                 self.edge_attr_temporal_std,
                 edge_attr_temporal,
+                []
+            )
+            MyDataset.normalise_single(
+                self.edge_attr_global_spatial_mean, 
+                self.edge_attr_global_spatial_std,
+                edge_attr_global_spatial,
+                []
+            )
+            MyDataset.normalise_single(
+                self.edge_attr_global_temporal_mean, 
+                self.edge_attr_global_temporal_std,
+                edge_attr_global_temporal,
                 []
             )
     
