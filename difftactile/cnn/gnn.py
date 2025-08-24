@@ -142,6 +142,8 @@ class GNN(pl.LightningModule):
         self.focal_loss = MyFocalLoss()
         self.global_node = nn.Parameter(torch.randn(1, input_dim))
         self.regular_global_edge = nn.Parameter(torch.randn(1, input_dim))
+        self.num_entity_types = SYSTEM_PARAMS.gnn.num_entity_types
+        self.entity_tag_one_hot = torch.eye(self.num_entity_types, dtype=float)
 
         self.node_mlp = nn.Sequential(
             nn.Linear(node_dim, input_dim),

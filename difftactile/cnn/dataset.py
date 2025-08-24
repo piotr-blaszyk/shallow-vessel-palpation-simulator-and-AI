@@ -37,14 +37,14 @@ class MyDataset(torch.utils.data.Dataset):
 
         self.clip_len = SYSTEM_PARAMS.gnn.clip_len
         self.num_nodes = SYSTEM_PARAMS.vitactip.num_markers
-        self.node_dim = SYSTEM_PARAMS.gnn.node_dim
-        self.spatial_edge_dim = SYSTEM_PARAMS.gnn.spatial_edge_dim
         base_graph_connectivity_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         self.adjacency = base_graph_connectivity_data['adjacency_matrix']
         self.ring_ixs = base_graph_connectivity_data['ring_ixs']
         self.angles = base_graph_connectivity_data['angles']
         self.dist_from_centre = base_graph_connectivity_data['dist_from_centre']
         self.num_edges_single_frame = self.adjacency.shape[0]
+        self.num_entity_types = SYSTEM_PARAMS.gnn.num_entity_types
+        self.entity_tag_one_hot = np.eye(self.num_entity_types, dtype=int)
 
         if mode == 'exp':
             markers_data = np.load(exp_markers_npz)
@@ -730,6 +730,7 @@ class MyDataset(torch.utils.data.Dataset):
             clip_labels_mask, 
             ground_truth_labels_in,
         )
+
         node_xy = self.get_node_xy()
         node_base_graph_polar_coords = self.get_node_base_graph_polar_coords()
         node_one_hot_encoding = self.get_node_one_hot_encoding()
@@ -740,20 +741,29 @@ class MyDataset(torch.utils.data.Dataset):
             node_one_hot_encoding,
             time_one_hot_encoding,
         ], axis=1)
+
         edge_index_spatial = self.get_edge_index_spatial()
         spatial_edge_dist_dx_dy_cos_sin = self.get_spatial_edge_dist_dx_dy_cos_sin(clip_points)
         edge_attr_spatial = np.concatenate([
             spatial_edge_dist_dx_dy_cos_sin,
         ], axis=1)
-        edge_index_temporal = self.get_empty_edge_index_temporal()
+
+        edge_index_temporal = self.get_edge_index_temporal()
         temporal_edge_dist_dx_dy_cos_sin = self.get_temporal_edge_dist_dx_dy_cos_sin(clip_points)
+        temporal_edge_time_direction = self.get_temporal_edge_time_direction()
         edge_attr_temporal = np.concatenate([
             temporal_edge_dist_dx_dy_cos_sin,
+            temporal_edge_time_direction,
         ], axis=1)
+
         edge_index_global_spatial = self.get_edge_index_global_spatial()
         edge_attr_global_spatial = self.get_empty_edge_attr_global_spatial()
+
         edge_index_global_temporal = self.get_edge_index_global_temporal()
-        edge_attr_global_temporal = self.get_empty_edge_attr_global_temporal()
+        global_temporal_edge_time_direction = self.get_global_temporal_edge_time_direction()
+        edge_attr_global_temporal = np.concatenate([
+            global_temporal_edge_time_direction,
+        ], axis=1)
 
         self.normalise(
             pos,
@@ -768,8 +778,8 @@ class MyDataset(torch.utils.data.Dataset):
             mask=mask,
             y=y,
             x=x,
-            edge_index_spatial=edge_index_spatial, 
-            edge_attr_spatial=edge_attr_spatial, 
+            edge_index_spatial=edge_index_spatial,
+            edge_attr_spatial=edge_attr_spatial,
             edge_index_temporal=edge_index_temporal,
             edge_attr_temporal=edge_attr_temporal,
             edge_index_global_spatial=edge_index_global_spatial,
@@ -863,7 +873,7 @@ class MyDataset(torch.utils.data.Dataset):
 
         for t in range(self.clip_len):
             points = clip_points[t]
-            edge_attr = np.zeros(shape=(self.num_edges_single_frame, self.spatial_edge_dim), dtype=float)
+            edge_attr = np.zeros(shape=(self.num_edges_single_frame, 5), dtype=float)
             me_points = points[self.adjacency[:, 0]]
             neighbor_points = points[self.adjacency[:, 1]]
             vec = neighbor_points - me_points
@@ -881,24 +891,66 @@ class MyDataset(torch.utils.data.Dataset):
     def get_empty_edge_index_temporal(self):
         return np.zeros(shape=(2, 0), dtype=int)
     
+    def get_edge_index_temporal(self):
+        adjacency_clip_list = []
+
+        for t in range(self.clip_len-1):
+            src_dst = np.array([
+                [t, t+1],
+                [t+1, t]
+            ], dtype=int)
+            for i in range(src_dst.shape[0]):
+                src, dst = src_dst[i]
+                src = src*self.num_nodes + np.arange(self.num_nodes)
+                dst = dst*self.num_nodes + np.arange(self.num_nodes)
+                edge_index_single = np.concatenate((src[:, np.newaxis], dst[:, np.newaxis]), axis=1)
+                adjacency_clip_list.append(edge_index_single)
+        
+        adjacency_clip = np.concatenate(adjacency_clip_list, axis=0)
+        adjacency_clip = adjacency_clip.T
+        return adjacency_clip
+    
     def get_temporal_edge_dist_dx_dy_cos_sin(self, clip_points):
-        # todo
-        return
         edge_attr_clip_list = []
 
-        for t in range(self.clip_len):
-            points = clip_points[t]
-            edge_attr = np.zeros(shape=(self.num_edges_single_frame, self.spatial_edge_dim), dtype=float)
-            me_points = points[self.adjacency[:, 0]]
-            neighbor_points = points[self.adjacency[:, 1]]
-            vec = neighbor_points - me_points
-            dist = np.linalg.norm(vec, axis=1)
-            edge_attr[:, 0] = dist
-            edge_attr[:, 1:3] = vec
-            vec_normalized = vec / dist[:, np.newaxis]
-            edge_attr[:, 3] = vec_normalized[:, 0]
-            edge_attr[:, 4] = vec_normalized[:, 1]
-            edge_attr_clip_list.append(edge_attr)
+        for t in range(self.clip_len-1):
+            src_dst = np.array([
+                [t, t+1],
+                [t+1, t]
+            ], dtype=int)
+            for i in range(src_dst.shape[0]):
+                src, dst = src_dst[i]
+                edge_attr = np.zeros(shape=(self.num_nodes, 5), dtype=float)
+                me_points = clip_points[src]
+                neighbor_points = clip_points[dst]
+                vec = neighbor_points - me_points
+                dist = np.linalg.norm(vec, axis=1)
+                edge_attr[:, 0] = dist
+                edge_attr[:, 1:3] = vec
+                vec_normalized = vec / dist[:, np.newaxis]
+                edge_attr[:, 3] = vec_normalized[:, 0]
+                edge_attr[:, 4] = vec_normalized[:, 1]
+                edge_attr_clip_list.append(edge_attr)
+        
+        edge_attr_clip = np.concatenate(edge_attr_clip_list, axis=0)
+        return edge_attr_clip
+    
+    def get_temporal_edge_time_direction(self):
+        edge_attr_clip_list = []
+
+        for t in range(self.clip_len-1):
+            src_dst = np.array([
+                [t, t+1],
+                [t+1, t]
+            ], dtype=int)
+            for i in range(src_dst.shape[0]):
+                src, dst = src_dst[i]
+                edge_attr = np.zeros(shape=(self.num_nodes, 2), dtype=float)
+                if i == 0:
+                    edge_attr[:, 1] = 1
+                else:
+                    edge_attr[:, 0] = 1
+                edge_attr_clip_list.append(edge_attr)
         
         edge_attr_clip = np.concatenate(edge_attr_clip_list, axis=0)
         return edge_attr_clip
@@ -928,23 +980,45 @@ class MyDataset(torch.utils.data.Dataset):
         return np.zeros(shape=(num_regular_nodes*2, 0), dtype=float)
 
     def get_edge_index_global_temporal(self):
-        num_regular_nodes = self.num_nodes * self.clip_len
-        ix = num_regular_nodes
-
         adjacency_clip_list = []
         for t in range(self.clip_len-1):
-            connections = np.array([
+            src_dst = np.array([
                 [t, t+1],
                 [t+1, t]
             ], dtype=int)
-            adjacency_clip_list.append(connections)
-            ix += 1
+            for i in range(src_dst.shape[0]):
+                adjacency_clip_list.append(src_dst[i])
         adjacency_clip = np.concatenate(adjacency_clip_list, axis=0)
         adjacency_clip = adjacency_clip.T
         return adjacency_clip
 
     def get_empty_edge_attr_global_temporal(self):
         return np.zeros(shape=((self.clip_len-1)*2, 0), dtype=float)
+    
+    def get_global_temporal_edge_time_direction(self):
+        edge_attr_clip_list = []
+
+        for t in range(self.clip_len-1):
+            src_dst = np.array([
+                [t, t+1],
+                [t+1, t]
+            ], dtype=int)
+            for i in range(src_dst.shape[0]):
+                src, dst = src_dst[i]
+                edge_attr = np.zeros(shape=(1, 2), dtype=float)
+                if i == 0:
+                    edge_attr[:, 1] = 1
+                else:
+                    edge_attr[:, 0] = 1
+                edge_attr_clip_list.append(edge_attr)
+        
+        edge_attr_clip = np.concatenate(edge_attr_clip_list, axis=0)
+        return edge_attr_clip
+    
+    def get_entity_tag_one_hot(self, ix, num_entities):
+        one_hot = self.entity_tag_one_hot[ix]
+        res = np.tile(one_hot, (num_entities, 1))
+        return res
 
     def normalise(
         self, 

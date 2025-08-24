@@ -162,7 +162,8 @@
         "num_epochs": 4,
         "num_workers": 16,
         "tversky_weight": 0.0,
-        "focal_weight": 1.0
+        "focal_weight": 1.0,
+        "num_entity_types": 6
     },
     "cnn": {
         "input_width_height": 192
