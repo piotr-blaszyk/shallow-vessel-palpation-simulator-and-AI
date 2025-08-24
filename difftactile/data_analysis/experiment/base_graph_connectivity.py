@@ -204,6 +204,8 @@ class ComputeEdges:
         # cos(θ) is x/r, sin(θ) is y/r after normalization
         angles[1:] = normalized_vectors  # Already normalized so x=cos(θ), y=sin(θ)
 
+        norms_all = np.linalg.norm(vectors, axis=1)
+
         # Save adjacency matrix and points to npz file
         np.savez(
             SYSTEM_PARAMS.files.base_graph_connectivity,
@@ -211,6 +213,7 @@ class ComputeEdges:
             points=points,
             ring_ixs=ring_ixs_all,
             angles=angles,
+            dist_from_centre=norms_all,
         )
 
         # Load the default state image
