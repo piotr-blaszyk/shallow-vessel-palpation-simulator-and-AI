@@ -81,7 +81,7 @@ class Visualisation:
         w = SYSTEM_PARAMS.fisheye_model.crop_width
         h = SYSTEM_PARAMS.fisheye_model.crop_height
         k = SYSTEM_PARAMS.fisheye_model.down_scaling_factor
-        clip_len = SYSTEM_PARAMS.cnn.clip_len
+        clip_len = SYSTEM_PARAMS.gnn.clip_len
         dilation = 8
         dilated_clip_len = clip_len * dilation
         n = self.exp_data['markers'].shape[0]
@@ -471,7 +471,7 @@ class Visualisation:
             
             ground_truth_labels_present = labels_images.numel() != 0
             
-            num_frames = SYSTEM_PARAMS.cnn.clip_len
+            num_frames = SYSTEM_PARAMS.gnn.clip_len
             if ground_truth_labels_present:
                 labels_images = labels_images.numpy()[0, ...]
                 labels_h = labels_images.shape[1] // LABELS_DOWNSIZE

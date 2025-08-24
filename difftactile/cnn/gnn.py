@@ -121,69 +121,63 @@ class GNNFocalLoss(nn.Module):
 
 
 class GNN(pl.LightningModule):
-    def __init__(
-            self, 
-            lr,
-            node_channels=2,
-            edge_channels=5,
-            hidden_channels=32,
-            out_channels=1,
-            tversky_weight=0.0,
-            focal_weight=1.0,
-        ):
+    def __init__(self):
         super().__init__()
-        
-        # Add previous_lr attribute to track changes
+
+        node_dim = SYSTEM_PARAMS.gnn.node_dim
+        spatial_edge_dim = SYSTEM_PARAMS.gnn.spatial_edge_dim
+        temporal_edge_dim = SYSTEM_PARAMS.gnn.temporal_edge_dim
+        input_dim = SYSTEM_PARAMS.gnn.input_dim
+        latent_dim = SYSTEM_PARAMS.gnn.latent_dim
+        output_dim = SYSTEM_PARAMS.gnn.output_dim
+        self.tversky_weight = SYSTEM_PARAMS.gnn.tversky_weight
+        self.focal_weight = SYSTEM_PARAMS.gnn.focal_weight
+        self.lr = SYSTEM_PARAMS.gnn.learning_rate
         self._previous_lr = None
-        
-        # Explicit node and edge projections to latent space
-        self.node_proj = nn.Sequential(
-            nn.Linear(node_channels, hidden_channels),
-            nn.ReLU(),
-            nn.Linear(hidden_channels, hidden_channels)
-        )
-        
-        self.edge_proj = nn.Sequential(
-            nn.Linear(edge_channels, hidden_channels),
-            nn.ReLU(),
-            nn.Linear(hidden_channels, hidden_channels)
-        )
-        
-        # Spatial encoder (GINEConv uses projected features)
-        self.gine = GINEConv(nn.Sequential(
-            nn.Linear(hidden_channels, hidden_channels),
-            nn.ReLU(),
-            nn.Linear(hidden_channels, hidden_channels)
-        ), edge_dim=hidden_channels)
-        
-        # Bidirectional temporal encoders with projected edge features
-        self.gru_fwd = GConvGRU(hidden_channels, hidden_channels, K=2)
-        self.gru_bwd = GConvGRU(hidden_channels, hidden_channels, K=2)
-        
-        # Classifier head takes concatenated forward+backward states
-        self.classifier = nn.Sequential(
-            nn.Linear(2 * hidden_channels, hidden_channels),
-            nn.ReLU(),
-            nn.Linear(hidden_channels, out_channels)
-        )
-        
-        # Initialize loss functions
+        self.clip_len = SYSTEM_PARAMS.gnn.clip_len
+        self.num_nodes = SYSTEM_PARAMS.vitactip.num_markers
+        self.hidden_channels = latent_dim
         self.tversky_loss = GNNTverskyLoss()
         self.focal_loss = GNNFocalLoss()
-        
-        # Loss weights
-        self.tversky_weight = tversky_weight
-        self.focal_weight = focal_weight
-        
-        # Learning rate
-        self.lr = lr
-        
-        # Save hyperparameters for logging
-        self.save_hyperparameters()
 
-        self.clip_len = SYSTEM_PARAMS.cnn.clip_len
-        self.num_nodes = SYSTEM_PARAMS.vitactip.num_markers
-        self.hidden_channels = hidden_channels
+        self.node_mlp = nn.Sequential(
+            nn.Linear(node_dim, input_dim),
+            nn.ReLU(),
+            nn.Linear(input_dim, input_dim)
+        )
+        self.spatial_edge_mlp = nn.Sequential(
+            nn.Linear(spatial_edge_dim, input_dim),
+            nn.ReLU(),
+            nn.Linear(input_dim, input_dim)
+        )
+        self.temporal_edge_mlp = nn.Sequential(
+            nn.Linear(temporal_edge_dim, input_dim),
+            nn.ReLU(),
+            nn.Linear(input_dim, input_dim)
+        )
+
+        self.gine = GINEConv(nn.Sequential(
+            nn.Linear(input_dim, latent_dim),
+            nn.ReLU(),
+            nn.Linear(latent_dim, latent_dim)
+        ), edge_dim=input_dim)
+        self.gru_fwd = GConvGRU(
+            in_channels=latent_dim, 
+            out_channels=latent_dim, 
+            K=2
+        )
+        self.gru_bwd = GConvGRU(
+            in_channels=latent_dim, 
+            out_channels=latent_dim, 
+            K=2
+        )
+        self.classifier = nn.Sequential(
+            nn.Linear(2 * latent_dim, latent_dim),
+            nn.ReLU(),
+            nn.Linear(latent_dim, output_dim)
+        )
+
+        self.save_hyperparameters()
 
     def forward(self, x, edge_index, edge_attr):
         T, N, _ = x.shape
@@ -479,12 +473,11 @@ class MyDataModule(pl.LightningDataModule):
 
 
 def main():
-    BATCH_SIZE = 8
-    NUM_EPOCHS = 4
-    NUM_WORKERS = 16
+    BATCH_SIZE = SYSTEM_PARAMS.gnn.batch_size
+    NUM_EPOCHS = SYSTEM_PARAMS.gnn.num_epochs
+    NUM_WORKERS = SYSTEM_PARAMS.gnn.num_workers
     TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 64
     VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 4
-    LR = 1e-3
 
     logger = TensorBoardLogger("lightning_logs", name="gnn", version=f"run_{time.strftime('%Y%m%d_%H%M%S')}")
     full_dataset = MyDataset(scheme='new')
@@ -554,7 +547,7 @@ def main():
     with open(SYSTEM_PARAMS.files.test_loader_gnn, 'wb') as f:
         pickle.dump(test_data, f)
     
-    model = GNN(lr=LR)
+    model = GNN()
     model.set_stats(all_stats[final_difficulty])
 
     checkpoint_cb = ModelCheckpoint(

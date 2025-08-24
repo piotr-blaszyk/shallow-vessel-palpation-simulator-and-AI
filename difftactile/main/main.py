@@ -2385,7 +2385,7 @@ class Contact:
             for k in range(0, 1):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(1, 2):
+                for i in range(0, 2):
                     self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     self.set_up_initial_positions_state_and_trajectory()

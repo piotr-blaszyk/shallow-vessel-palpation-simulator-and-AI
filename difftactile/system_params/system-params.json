@@ -61,7 +61,7 @@
         "coulomb_friction_coeff": 4.000e-01,
         "num_sub_frames": 125,
         "num_opt_steps": 2,
-        "num_training_trajectories": 100,
+        "num_training_trajectories": 200,
         "pid_max_speed_translation": 5.000e-01,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,
@@ -149,13 +149,22 @@
         "vein_px_thickness": 30
     },
     "gnn": {
-        "num_edge_features": 5,
-        "num_node_features": 2,
-        "num_hidden_channels": 256
+        "spatial_edge_dim": 5,
+        "temporal_edge_dim": 0,
+        "node_dim": 2,
+        "input_dim": 32,
+        "latent_dim": 256,
+        "output_dim": 1,
+        "clip_len": 5,
+        "learning_rate": 1e-3,
+        "batch_size": 8,
+        "num_epochs": 4,
+        "num_workers": 16,
+        "tversky_weight": 0.0,
+        "focal_weight": 1.0
     },
     "cnn": {
-        "input_width_height": 192,
-        "clip_len": 5
+        "input_width_height": 192
     },
     "dataset": {
         "data_points_per_epoch": 128
@@ -325,7 +334,6 @@
         "experiment_2025_08_22_ground_truth_labels_npz": "difftactile/output/experiment_2025_08_22_ground_truth_labels.npz",
         "experiment_ground_truth_from_video_img_path": "difftactile/output/experiment_2025_08_22_ground_truth_from_video.jpg",
         "experiment_2025_08_22_filtered_positions_npz": "difftactile/output/experiment_2025_08_22_filtered_positions.npz",
-
         "experiment_og_frames_poses_npz": "difftactile/output/experiment_og_frames_poses.npz",
         "experiment_og_ground_truth_labels_npz": "difftactile/output/experiment_og_ground_truth_labels.npz",
         "experiment_og_markers_npz": "difftactile/output/experiment_og_markers.npz",
@@ -335,7 +343,6 @@
         "experiment_og_processed_video": "difftactile/output/experiment_og_processed_video.avi",
         "experiment_og_markers_reordered_filtered_npz": "difftactile/output/experiment_og_markers_reordered_filtered.npz",
         "experiment_og_ground_truth_labels_filtered_npz": "difftactile/output/experiment_og_ground_truth_labels_filtered.npz",
-
         "experiment_straight_raw_video": "difftactile/manual_or_experimental_data/domain-adaptation-vascular-videos/mkv/traj_1_trimmed.mkv",
         "experiment_straight_processed_video": "difftactile/output/marker_tracker/domain-adaptation-vascular-videos/traj_1_out.mkv",
         "experiment_straight_markers_npz": "difftactile/output/exp_video_straight.npz",

@@ -38,7 +38,7 @@ class PredictExp:
         self.y_min = min(y_start, y_end)
         self.y_max = max(y_start, y_end)
 
-        self.clip_len = SYSTEM_PARAMS.cnn.clip_len
+        self.clip_len = SYSTEM_PARAMS.gnn.clip_len
         self.dilation = 1
         self.dilated_clip_len = self.clip_len * self.dilation
         self.dataset = MyDataset(
