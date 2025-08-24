@@ -691,55 +691,54 @@ def compute_stats(dataset, batch_size):
         train_subset_size,
         replace=False
     )
+    res = compute_alpha(dataset, ixs)
+    keys = [
+        'pos',
+        'x',
+        'edge_attr_spatial',
+        'edge_attr_temporal',
+    ]
+    for key in keys:
+        res |= compute_mean_std(dataset, ixs, key)
+    return res
+
+
+def compute_alpha(dataset, ixs):
     num_pos = 0
     num_neg = 0
-    edge_attr_all = []
-    x_all = []
-    pos_all = []
-    for ix in tqdm(ixs, desc="Computing stats"):
+    for ix in tqdm(ixs, desc="Computing stats for alpha"):
         pyg, _ = dataset[ix]
         y = pyg.y.cpu().numpy()
         pos = y.sum()
         neg = y.shape[0] - pos
+
         num_pos += pos
         num_neg += neg
-
-        x = pyg.x.cpu().numpy()
-        edge_attr = pyg.edge_attr.cpu().numpy()
-        pos = pyg.pos.cpu().numpy()
-        x_all.append(x)
-        edge_attr_all.append(edge_attr)
-        pos_all.append(pos)
-
     alpha_pos = num_neg / (num_neg + num_pos)
     alpha_neg = num_pos / (num_neg + num_pos)
-
-    edge_attr_all = np.array(edge_attr_all)
-    x_all = np.array(x_all)
-    pos_all = np.array(pos_all)
-
-    edge_attr_all = edge_attr_all.reshape((-1, edge_attr_all.shape[-1]))
-    x_all = x_all.reshape((-1, x_all.shape[-1]))
-    pos_all = pos_all.reshape((-1, pos_all.shape[-1]))
-
-    edge_attr_mean = np.mean(edge_attr_all, axis=0)
-    x_mean = np.mean(x_all, axis=0)
-    pos_mean = np.mean(pos_all, axis=0)
-
-    edge_attr_std = np.std(edge_attr_all, axis=0)
-    x_std = np.std(x_all, axis=0)
-    pos_std = np.std(pos_all, axis=0)
 
     return {
         'alpha_pos': alpha_pos,
         'alpha_neg': alpha_neg,
-
-        'edge_attr_mean': edge_attr_mean,
-        'x_mean': x_mean,
-        'pos_mean': pos_mean,
-
-        'edge_attr_std': edge_attr_std,
-        'x_std': x_std,
-        'pos_std': pos_std,
     }
 
+
+def compute_mean_std(dataset, ixs, key):
+    vals = []
+    for ix in tqdm(ixs, desc=f"Computing stats for {key}"):
+        pyg, _ = dataset[ix]
+        val = pyg[key].cpu().numpy()
+        vals.append(val)
+    vals = np.array(vals)
+    if vals.size == 0:
+        vals_mean = None
+        vals_std = None
+    else:
+        vals = vals.reshape((-1, vals.shape[-1]))
+        vals_mean = np.mean(vals, axis=0)
+        vals_std = np.std(vals, axis=0)
+
+    return {
+        f'{key}_mean': vals_mean,
+        f'{key}_std': vals_std,
+    }
