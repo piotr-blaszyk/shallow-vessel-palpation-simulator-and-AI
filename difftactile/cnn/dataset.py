@@ -631,6 +631,7 @@ class MyDataset(torch.utils.data.Dataset):
             clip_labels_mask,
             ground_truth_labels_in,
         )
+        empty_x = self.get_empty_x()
         node_xy = self.get_node_xy(clip_points)
         node_base_graph_polar_coords = self.get_node_base_graph_polar_coords()
         node_one_hot_encoding = self.get_node_one_hot_encoding()
@@ -690,6 +691,7 @@ class MyDataset(torch.utils.data.Dataset):
             pos=pos,
             mask=mask,
             y=y,
+            empty_x=empty_x,
             regular_nodes=regular_nodes,
             edge_index_spatial=edge_index_spatial,
             edge_attr_spatial=edge_attr_spatial,
@@ -736,6 +738,10 @@ class MyDataset(torch.utils.data.Dataset):
         mask = np.zeros(shape=(self.clip_len * (self.num_nodes + 1),), dtype=bool)
         mask[: self.clip_len * self.num_nodes] = True
         return mask
+    
+    def get_empty_x(self):
+        empty_x = np.zeros(shape=(self.clip_len * (self.num_nodes + 1), 0), dtype=float)
+        return empty_x
 
     def get_node_xy(self, clip_points):
         node_features_list = []
@@ -974,6 +980,7 @@ class MyDataset(torch.utils.data.Dataset):
         pos,
         mask,
         y,
+        empty_x,
         regular_nodes,
         edge_index_spatial,
         edge_attr_spatial,
@@ -987,6 +994,7 @@ class MyDataset(torch.utils.data.Dataset):
         pos = torch.tensor(pos, dtype=torch.float)
         mask = torch.tensor(mask, dtype=torch.bool)
         y = torch.tensor(y, dtype=torch.long)
+        empty_x = torch.tensor(empty_x, dtype=torch.float)
         regular_nodes = torch.tensor(regular_nodes, dtype=torch.float)
         edge_index_spatial = torch.tensor(edge_index_spatial, dtype=torch.long)
         edge_attr_spatial = torch.tensor(edge_attr_spatial, dtype=torch.float)
@@ -1008,6 +1016,7 @@ class MyDataset(torch.utils.data.Dataset):
             pos=pos,
             mask=mask,
             y=y,
+            x=empty_x,
             regular_nodes=regular_nodes,
             edge_index_spatial=edge_index_spatial,
             edge_attr_spatial=edge_attr_spatial,

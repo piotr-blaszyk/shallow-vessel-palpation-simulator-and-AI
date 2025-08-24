@@ -247,7 +247,7 @@ class GNN(pl.LightningModule):
             "macro_iou": torch.zeros(B, device=preds.device),
         }
         for i in range(B):
-            iou_mask = batch.batch == i
+            iou_mask = batch.batch[batch.mask] == i
             graph_preds = preds[iou_mask]
             graph_targets = batch.y[iou_mask]
             metrics = self.iou_score(graph_preds, graph_targets)
