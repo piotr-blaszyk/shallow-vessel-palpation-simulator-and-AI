@@ -443,8 +443,10 @@ def main():
     BATCH_SIZE = SYSTEM_PARAMS.gnn.batch_size
     NUM_EPOCHS = SYSTEM_PARAMS.gnn.num_epochs
     NUM_WORKERS = SYSTEM_PARAMS.gnn.num_workers
-    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * 64
-    VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 4
+    NUM_TRAIN_BATCHES = SYSTEM_PARAMS.gnn.num_train_batches
+    NUM_VAL_BATCHES = SYSTEM_PARAMS.gnn.num_val_batches
+    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * NUM_TRAIN_BATCHES
+    VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * NUM_VAL_BATCHES
     logger = TensorBoardLogger(
         "lightning_logs", name="gnn", version=f"run_{time.strftime('%Y%m%d_%H%M%S')}"
     )
@@ -456,14 +458,14 @@ def main():
         mode="exp",
         exp_markers_npz=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
         exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz,
-        exp_dilation=2,
+        exp_dilation=SYSTEM_PARAMS.gnn.exp_grid_search_dilation,
         scheme="new",
     )
     exp_test_dataset_straight_line_slide = MyDataset(
         mode="exp",
         exp_markers_npz=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
         exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_straight_ground_truth_labels_npz,
-        exp_dilation=1,
+        exp_dilation=SYSTEM_PARAMS.gnn.exp_straight_line_dilation,
         scheme="new",
     )
     all_stats = {}
