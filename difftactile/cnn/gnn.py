@@ -148,7 +148,7 @@ class GNN(pl.LightningModule):
 
     def shared_step(self, batch, stage):
         batch, _ = batch
-        x, edge_index, edge_attr = self.prepare_data(batch)
+        x, edge_index, edge_attr = self.my_prepare_data(batch)
         out = self(x, edge_index, edge_attr)
         out = out.squeeze(-1)
         mask = batch.mask
@@ -173,7 +173,7 @@ class GNN(pl.LightningModule):
         )
         return loss
     
-    def prepare_data(self, batch):
+    def my_prepare_data(self, batch):
         pos = batch.pos
         mask = batch.mask
         y = batch.y
@@ -192,7 +192,7 @@ class GNN(pl.LightningModule):
         edge_attr_global_temporal = batch.edge_attr_global_temporal
 
         regular_nodes = self.regular_node_mlp(regular_nodes)
-        global_nodes = self.global_node.expand(self.clip_len, -1)
+        global_nodes = self.global_node.expand(self.clip_len*batch.num_graphs, -1)
         spatial_edges = self.spatial_edge_mlp(edge_attr_spatial)
         temporal_edges = self.temporal_edge_mlp(edge_attr_temporal)
         n = edge_index_global_spatial.shape[1]
@@ -247,7 +247,7 @@ class GNN(pl.LightningModule):
             "macro_iou": torch.zeros(B, device=preds.device),
         }
         for i in range(B):
-            iou_mask = batch.batch[batch.mask] == i
+            iou_mask = batch.batch == i
             graph_preds = preds[iou_mask]
             graph_targets = batch.y[iou_mask]
             metrics = self.iou_score(graph_preds, graph_targets)
