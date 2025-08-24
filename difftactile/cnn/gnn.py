@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from torch_geometric.data import Data
+from torch_geometric.data import Data, temporal
 from torch_geometric.nn import GINEConv, Linear
 from torch_geometric_temporal.nn.recurrent import GConvGRU
 from torch_geometric.loader import DataLoader
@@ -76,10 +76,12 @@ class MyFocalLoss(nn.Module):
 class GNN(pl.LightningModule):
     def __init__(self):
         super().__init__()
-        node_dim = SYSTEM_PARAMS.gnn.node_dim
-        spatial_edge_dim = SYSTEM_PARAMS.gnn.spatial_edge_dim
-        temporal_edge_dim = SYSTEM_PARAMS.gnn.temporal_edge_dim
-        global_temporal_edge_dim = SYSTEM_PARAMS.gnn.global_temporal_edge_dim
+        self.num_nodes = SYSTEM_PARAMS.vitactip.num_markers
+        self.clip_len = SYSTEM_PARAMS.gnn.clip_len
+        node_dim = 2+3+self.num_nodes+self.clip_len
+        spatial_edge_dim = 5
+        temporal_edge_dim = 5+2
+        global_temporal_edge_dim = 2
         input_dim = SYSTEM_PARAMS.gnn.input_dim
         latent_dim = SYSTEM_PARAMS.gnn.latent_dim
         output_dim = SYSTEM_PARAMS.gnn.output_dim
@@ -87,17 +89,22 @@ class GNN(pl.LightningModule):
         self.focal_weight = SYSTEM_PARAMS.gnn.focal_weight
         self.lr = SYSTEM_PARAMS.gnn.learning_rate
         self._previous_lr = None
-        self.clip_len = SYSTEM_PARAMS.gnn.clip_len
-        self.num_nodes = SYSTEM_PARAMS.vitactip.num_markers
         self.hidden_channels = latent_dim
         self.tversky_loss = MyTverskyLoss()
         self.focal_loss = MyFocalLoss()
-        self.global_node = nn.Parameter(torch.randn(1, input_dim))
-        self.regular_global_edge = nn.Parameter(torch.randn(1, input_dim))
         self.num_entity_types = SYSTEM_PARAMS.gnn.num_entity_types
-        self.entity_tag_one_hot = torch.eye(self.num_entity_types, dtype=float)
-        self.node_mlp = nn.Sequential(
-            nn.Linear(node_dim, input_dim), nn.ReLU(), nn.Linear(input_dim, input_dim)
+
+        self.global_node = nn.Parameter(torch.randn(1, input_dim))
+        self.edge_global_spatial = nn.Parameter(torch.randn(1, input_dim))
+        self.entity_tag_embedding = nn.Embedding(
+            num_embeddings=self.num_entity_types, 
+            embedding_dim=input_dim
+        )
+
+        self.regular_node_mlp = nn.Sequential(
+            nn.Linear(node_dim, input_dim), 
+            nn.ReLU(), 
+            nn.Linear(input_dim, input_dim)
         )
         self.spatial_edge_mlp = nn.Sequential(
             nn.Linear(spatial_edge_dim, input_dim),
@@ -114,6 +121,7 @@ class GNN(pl.LightningModule):
             nn.ReLU(),
             nn.Linear(input_dim, input_dim),
         )
+
         self.gine1 = GINEConv(
             nn.Sequential(
                 nn.Linear(input_dim, latent_dim),
@@ -140,7 +148,8 @@ class GNN(pl.LightningModule):
 
     def shared_step(self, batch, stage):
         batch, _ = batch
-        out = self(batch.x, batch.edge_index, batch.edge_attr)
+        x, edge_index, edge_attr = self.prepare_data(batch)
+        out = self(x, edge_index, edge_attr)
         out = out.squeeze(-1)
         mask = batch.mask
         out = out[mask]
@@ -163,6 +172,53 @@ class GNN(pl.LightningModule):
             metrics=metrics,
         )
         return loss
+    
+    def prepare_data(self, batch):
+        pos = batch.pos
+        mask = batch.mask
+        y = batch.y
+        regular_nodes = batch.regular_nodes
+
+        edge_index_spatial = batch.edge_index_spatial
+        edge_attr_spatial = batch.edge_attr_spatial
+
+        edge_index_temporal = batch.edge_index_temporal
+        edge_attr_temporal = batch.edge_attr_temporal
+
+        edge_index_global_spatial = batch.edge_index_global_spatial
+        edge_attr_global_spatial = batch.edge_attr_global_spatial
+
+        edge_index_global_temporal = batch.edge_index_global_temporal
+        edge_attr_global_temporal = batch.edge_attr_global_temporal
+
+        regular_nodes = self.regular_node_mlp(regular_nodes)
+        global_nodes = self.global_node.expand(self.clip_len, -1)
+        spatial_edges = self.spatial_edge_mlp(edge_attr_spatial)
+        temporal_edges = self.temporal_edge_mlp(edge_attr_temporal)
+        n = edge_index_global_spatial.shape[1]
+        global_spatial_edges = self.edge_global_spatial.expand(n, -1)
+        global_temporal_edges = self.global_temporal_edge_mlp(edge_attr_global_temporal)
+
+        edge_index = torch.cat([
+            edge_index_spatial,
+            edge_index_temporal,
+            edge_index_global_spatial,
+            edge_index_global_temporal,
+        ], dim=1)
+
+        edge_attr = torch.cat([
+            spatial_edges,
+            temporal_edges,
+            global_spatial_edges,
+            global_temporal_edges,
+        ], dim=0)
+
+        x = torch.cat([
+            regular_nodes,
+            global_nodes,
+        ], dim=0)
+
+        return x, edge_index, edge_attr
     
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
@@ -567,9 +623,11 @@ def compute_stats(dataset, batch_size):
     res = compute_alpha(dataset, ixs)
     keys = [
         "pos",
-        "x",
+        "regular_nodes",
+
         "edge_attr_spatial",
         "edge_attr_temporal",
+
         "edge_attr_global_spatial",
         "edge_attr_global_temporal",
     ]

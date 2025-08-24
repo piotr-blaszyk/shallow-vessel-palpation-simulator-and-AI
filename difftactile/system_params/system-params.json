@@ -149,10 +149,6 @@
         "vein_px_thickness": 30
     },
     "gnn": {
-        "spatial_edge_dim": 5,
-        "temporal_edge_dim": 0,
-        "node_dim": 2,
-        "global_temporal_edge_dim": 2,
         "input_dim": 32,
         "latent_dim": 256,
         "output_dim": 1,

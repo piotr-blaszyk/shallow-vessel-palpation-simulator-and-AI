@@ -735,7 +735,7 @@ class MyDataset(torch.utils.data.Dataset):
         node_base_graph_polar_coords = self.get_node_base_graph_polar_coords()
         node_one_hot_encoding = self.get_node_one_hot_encoding()
         time_one_hot_encoding = self.get_time_one_hot_encoding()
-        x = np.concatenate([
+        regular_nodes = np.concatenate([
             node_xy,
             node_base_graph_polar_coords,
             node_one_hot_encoding,
@@ -767,9 +767,11 @@ class MyDataset(torch.utils.data.Dataset):
 
         self.normalise(
             pos,
-            x,
+            regular_nodes,
+
             edge_attr_spatial,
             edge_attr_temporal,
+
             edge_attr_global_spatial,
             edge_attr_global_temporal,
         )
@@ -777,13 +779,18 @@ class MyDataset(torch.utils.data.Dataset):
             pos=pos,
             mask=mask,
             y=y,
-            x=x,
+
+            regular_nodes=regular_nodes,
+
             edge_index_spatial=edge_index_spatial,
             edge_attr_spatial=edge_attr_spatial,
+
             edge_index_temporal=edge_index_temporal,
             edge_attr_temporal=edge_attr_temporal,
+
             edge_index_global_spatial=edge_index_global_spatial,
             edge_attr_global_spatial=edge_attr_global_spatial,
+
             edge_index_global_temporal=edge_index_global_temporal,
             edge_attr_global_temporal=edge_attr_global_temporal,
         )
@@ -819,7 +826,8 @@ class MyDataset(torch.utils.data.Dataset):
             return y
     
     def get_mask(self):
-        mask = np.ones(shape=(self.clip_len * self.num_nodes,), dtype=bool)
+        mask = np.zeros(shape=(self.clip_len * (self.num_nodes+1),), dtype=bool)
+        mask[:self.clip_len*self.num_nodes] = True
         return mask
     
     def get_node_xy(self, clip_points):
@@ -1023,7 +1031,7 @@ class MyDataset(torch.utils.data.Dataset):
     def normalise(
         self, 
         pos, 
-        x, 
+        regular_nodes, 
         edge_attr_spatial, 
         edge_attr_temporal,
         edge_attr_global_spatial,
@@ -1038,10 +1046,10 @@ class MyDataset(torch.utils.data.Dataset):
                     [0, 1]
                 )
             MyDataset.normalise_single(
-                self.x_mean, 
-                self.x_std,
-                x,
-                [0, 1]
+                self.regular_nodes_mean, 
+                self.regular_nodes_std,
+                regular_nodes,
+                [0, 1, 2]
             )
             MyDataset.normalise_single(
                 self.edge_attr_spatial_mean, 
@@ -1053,7 +1061,7 @@ class MyDataset(torch.utils.data.Dataset):
                 self.edge_attr_temporal_mean, 
                 self.edge_attr_temporal_std,
                 edge_attr_temporal,
-                []
+                [0, 1, 2]
             )
             MyDataset.normalise_single(
                 self.edge_attr_global_spatial_mean, 
@@ -1073,31 +1081,54 @@ class MyDataset(torch.utils.data.Dataset):
         pos,
         mask,
         y,
-        x,
+        regular_nodes,
+
         edge_index_spatial,
         edge_attr_spatial,
+
         edge_index_temporal,
         edge_attr_temporal,
+
+        edge_index_global_spatial,
+        edge_attr_global_spatial,
+
+        edge_index_global_temporal,
+        edge_attr_global_temporal,
     ):
         pos = torch.tensor(pos, dtype=torch.float)
         mask = torch.tensor(mask, dtype=torch.bool)
-        y = torch.tensor(y[mask], dtype=torch.long)
-        x = torch.tensor(x, dtype=torch.float)
+        y = torch.tensor(y, dtype=torch.long)
+        regular_nodes = torch.tensor(regular_nodes, dtype=torch.float)
 
         edge_index_spatial = torch.tensor(edge_index_spatial, dtype=torch.long)
         edge_attr_spatial = torch.tensor(edge_attr_spatial, dtype=torch.float)
+
         edge_index_temporal = torch.tensor(edge_index_temporal, dtype=torch.long)
-        edge_attr_temporal = torch.tensor(edge_attr_temporal, dtype=torch.long)
+        edge_attr_temporal = torch.tensor(edge_attr_temporal, dtype=torch.float)
+
+        edge_index_global_spatial = torch.tensor(edge_index_global_spatial, dtype=torch.long)
+        edge_attr_global_spatial = torch.tensor(edge_attr_global_spatial, dtype=torch.float)
+        
+        edge_index_global_temporal = torch.tensor(edge_index_global_temporal, dtype=torch.long)
+        edge_attr_global_temporal = torch.tensor(edge_attr_global_temporal, dtype=torch.float)
         
         pyg_data = Data(
             pos=pos,
             mask=mask,
             y=y,
-            x=x,
+            regular_nodes=regular_nodes,
+
             edge_index_spatial=edge_index_spatial, 
             edge_attr_spatial=edge_attr_spatial, 
+
             edge_index_temporal=edge_index_temporal,
             edge_attr_temporal=edge_attr_temporal,
+
+            edge_index_global_spatial=edge_index_global_spatial,
+            edge_attr_global_spatial=edge_attr_global_spatial,
+
+            edge_index_global_temporal=edge_index_global_temporal,
+            edge_attr_global_temporal=edge_attr_global_temporal,
         )
         return pyg_data
 
