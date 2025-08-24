@@ -631,7 +631,7 @@ class MyDataset(torch.utils.data.Dataset):
             clip_labels_mask,
             ground_truth_labels_in,
         )
-        node_xy = self.get_node_xy()
+        node_xy = self.get_node_xy(clip_points)
         node_base_graph_polar_coords = self.get_node_base_graph_polar_coords()
         node_one_hot_encoding = self.get_node_one_hot_encoding()
         time_one_hot_encoding = self.get_time_one_hot_encoding()
@@ -794,7 +794,8 @@ class MyDataset(torch.utils.data.Dataset):
             dist = np.linalg.norm(vec, axis=1)
             edge_attr[:, 0] = dist
             edge_attr[:, 1:3] = vec
-            vec_normalized = vec / dist[:, np.newaxis]
+            dist_safe = np.maximum(dist[:, np.newaxis], 1e-6)
+            vec_normalized = vec / dist_safe
             edge_attr[:, 3] = vec_normalized[:, 0]
             edge_attr[:, 4] = vec_normalized[:, 1]
             edge_attr_clip_list.append(edge_attr)
@@ -833,7 +834,8 @@ class MyDataset(torch.utils.data.Dataset):
                 dist = np.linalg.norm(vec, axis=1)
                 edge_attr[:, 0] = dist
                 edge_attr[:, 1:3] = vec
-                vec_normalized = vec / dist[:, np.newaxis]
+                dist_safe = np.maximum(dist[:, np.newaxis], 1e-6)
+                vec_normalized = vec / dist_safe
                 edge_attr[:, 3] = vec_normalized[:, 0]
                 edge_attr[:, 4] = vec_normalized[:, 1]
                 edge_attr_clip_list.append(edge_attr)
