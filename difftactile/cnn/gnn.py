@@ -114,7 +114,7 @@ class GNN(pl.LightningModule):
             nn.ReLU(),
             nn.Linear(input_dim, input_dim),
         )
-        self.gine = GINEConv(
+        self.gine1 = GINEConv(
             nn.Sequential(
                 nn.Linear(input_dim, latent_dim),
                 nn.ReLU(),
@@ -122,61 +122,68 @@ class GNN(pl.LightningModule):
             ),
             edge_dim=input_dim,
         )
-        self.gru_fwd = GConvGRU(in_channels=latent_dim, out_channels=latent_dim, K=2)
-        self.gru_bwd = GConvGRU(in_channels=latent_dim, out_channels=latent_dim, K=2)
-        self.classifier = nn.Sequential(
-            nn.Linear(2 * latent_dim, latent_dim),
-            nn.ReLU(),
-            nn.Linear(latent_dim, output_dim),
+        self.gine2 = GINEConv(
+            nn.Sequential(
+                nn.Linear(latent_dim, latent_dim),
+                nn.ReLU(),
+                nn.Linear(latent_dim, output_dim),
+            ),
+            edge_dim=input_dim,
         )
         self.save_hyperparameters()
 
     def forward(self, x, edge_index, edge_attr):
-        T, N, _ = x.shape
-        x_seq_latent = [self.node_proj(x[b, t]) for t in range(T)]
-        edge_seq_latent = [self.edge_proj(edge_attr[b, t]) for t in range(T)]
-        h_fwd = None
-        out_fwd = []
-        for t in range(T):
-            xl = x_seq_latent[t]
-            ea = edge_seq_latent[t]
-            ei = edge_index[:, b, t, :]
-            xl = self.gine(x=xl, edge_index=ei, edge_attr=ea)
-            h_fwd = self.gru_fwd(X=xl, edge_index=ei, H=h_fwd)
-            out_fwd.append(h_fwd)
-        h_bwd = None
-        out_bwd = []
-        for t in reversed(range(T)):
-            xl = x_seq_latent[t]
-            ea = edge_seq_latent[t]
-            ei = edge_index[:, b, t, :]
-            xl = self.gine(x=xl, edge_index=ei, edge_attr=ea)
-            h_bwd = self.gru_bwd(X=xl, edge_index=ei, H=h_bwd)
-            out_bwd.append(h_bwd)
-        out_bwd = list(reversed(out_bwd))
-        h_cat = [torch.cat([f, b], dim=-1) for f, b in zip(out_fwd, out_bwd)]
-        h_cat = torch.stack(h_cat, dim=0)
-        out_seq = self.classifier(h_cat).squeeze(-1)
-        return out_seq
+        x = self.gine1(x, edge_index, edge_attr)
+        x = F.relu(x)
+        out = self.gine2(x, edge_index, edge_attr)
+        return out
 
-    def shared_step(self, data, stage):
-        batch, _ = data
-        B = len(batch.ptr) - 1
-        T = self.clip_len
-        N = self.num_nodes
-        x = batch.x[0]
-        edge_attr = batch.edge_attr[0]
-        edge_index = batch.edge_index[0]
-        y = batch.y[0]
-        pos = batch.pos[0]
-        mask = batch.mask[0]
-        out_seq = self(x, edge_index, edge_attr)
-        out = out_seq.reshape(-1)[batch.mask]
+    def shared_step(self, batch, stage):
+        batch, _ = batch
+        out = self(batch.x, batch.edge_index, batch.edge_attr)
+        out = out.squeeze(-1)
+        mask = batch.mask
+        out = out[mask]
         tversky_loss = self.tversky_loss(out, batch.y.float())
         focal_loss = self.focal_loss(out, batch.y.float())
         loss = self.tversky_weight * tversky_loss + self.focal_weight * focal_loss
         probs = torch.sigmoid(out)
         preds = (probs > 0.5).float()
+
+        metrics = self.compute_metrics(
+            batch=batch,
+            preds=preds,
+        )
+        self.my_log(
+            stage=stage,
+            batch=batch,
+            tversky_loss=tversky_loss,
+            focal_loss=focal_loss,
+            loss=loss,
+            metrics=metrics,
+        )
+        return loss
+    
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        scheduler = {
+            "scheduler": torch.optim.lr_scheduler.StepLR(
+                optimizer,
+                step_size=64,
+                gamma=0.5,
+            ),
+            "interval": "step",
+            "frequency": 1,
+        }
+        return {
+            "optimizer": optimizer,
+        }
+    
+    def compute_metrics(
+        self,
+        batch,
+        preds,
+    ):
         B = batch.num_graphs
         batch_metrics = {
             "fg_iou": torch.zeros(B, device=preds.device),
@@ -192,7 +199,17 @@ class GNN(pl.LightningModule):
             batch_metrics["bg_iou"][i] = metrics["bg_iou"]
             batch_metrics["macro_iou"][i] = metrics["macro_iou"]
         metrics = {k: v.mean() for k, v in batch_metrics.items()}
-        is_val_stage = f"{stage}" == "val"
+        return metrics
+    
+    def my_log(
+        self,
+        stage,
+        batch,
+        tversky_loss,
+        focal_loss,
+        loss,
+        metrics,
+    ):
         self.log(
             f"{stage}_tversky_loss",
             tversky_loss,
@@ -226,7 +243,6 @@ class GNN(pl.LightningModule):
             prog_bar=False,
             batch_size=batch.num_graphs,
         )
-        return loss
 
     def training_step(self, batch, batch_idx):
         return self.shared_step(batch, "train")
@@ -236,21 +252,6 @@ class GNN(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         return self.shared_step(batch, "test")
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = {
-            "scheduler": torch.optim.lr_scheduler.StepLR(
-                optimizer,
-                step_size=64,
-                gamma=0.5,
-            ),
-            "interval": "step",
-            "frequency": 1,
-        }
-        return {
-            "optimizer": optimizer,
-        }
 
     def on_train_epoch_start(self):
         current_lr = self.optimizers().param_groups[0]["lr"]
