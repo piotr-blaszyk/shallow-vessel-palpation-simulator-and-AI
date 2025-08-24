@@ -399,7 +399,7 @@ class Visualisation:
 
         if mode == 'predictions':
             # Initialize model
-            model = GNN(lr=-1)
+            model = GNN()
             model.load_state_dict(torch.load(self.model_path))
             model.eval()
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -749,8 +749,8 @@ class Visualisation:
 def main():
     v = Visualisation()
     v.visualise_gnn(
-        mode='predictions', 
-        data_source='exp_npz'
+        mode='dataset', 
+        data_source='fresh_dataset'
     )
 
 

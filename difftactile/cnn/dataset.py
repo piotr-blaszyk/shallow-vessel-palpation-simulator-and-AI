@@ -862,16 +862,24 @@ class MyDataset(torch.utils.data.Dataset):
 
     def get_edge_index_global_spatial(self):
         num_regular_nodes = self.num_nodes * self.clip_len
-        ix = num_regular_nodes
+        global_node_ixs = np.arange(num_regular_nodes, num_regular_nodes+self.clip_len)
+
         adjacency_clip_list = []
         for t in range(self.clip_len):
-            global_regular = self.adjacency.copy()
-            global_regular[:, 0] = ix
-            regular_global = self.adjacency.copy()
-            regular_global[:, 1] = ix
-            adjacency_clip_list.append(global_regular)
-            adjacency_clip_list.append(regular_global)
-            ix += 1
+            node_ixs = t * self.num_nodes + np.arange(self.num_nodes)
+            global_node_ix = global_node_ixs[t]
+            global_node_ix_arr = np.full(
+                shape=(self.num_nodes,), 
+                fill_value=global_node_ix
+            )
+            reg_glob = np.concatenate(
+                (node_ixs[:, np.newaxis], global_node_ix_arr[:, np.newaxis]), axis=1
+            )
+            adjacency_clip_list.append(reg_glob)
+            glob_reg = np.concatenate(
+                (global_node_ix_arr[:, np.newaxis], node_ixs[:, np.newaxis]), axis=1
+            )
+            adjacency_clip_list.append(glob_reg)
         adjacency_clip = np.concatenate(adjacency_clip_list, axis=0)
         adjacency_clip = adjacency_clip.T
         return adjacency_clip
@@ -881,11 +889,16 @@ class MyDataset(torch.utils.data.Dataset):
         return np.zeros(shape=(num_regular_nodes * 2, 0), dtype=float)
 
     def get_edge_index_global_temporal(self):
+        num_regular_nodes = self.num_nodes * self.clip_len
         adjacency_clip_list = []
         for t in range(self.clip_len - 1):
             src_dst = np.array([[t, t + 1], [t + 1, t]], dtype=int)
             for i in range(src_dst.shape[0]):
-                adjacency_clip_list.append(src_dst[i])
+                arr = src_dst[i]+num_regular_nodes
+                arr = arr[np.newaxis, :]
+                adjacency_clip_list.append(
+                    arr
+                )
         adjacency_clip = np.concatenate(adjacency_clip_list, axis=0)
         adjacency_clip = adjacency_clip.T
         return adjacency_clip
