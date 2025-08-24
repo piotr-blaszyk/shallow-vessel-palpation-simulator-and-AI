@@ -82,8 +82,10 @@ class GNN(pl.LightningModule):
         spatial_edge_dim = 5
         temporal_edge_dim = 5+2
         global_temporal_edge_dim = 2
-        input_dim = SYSTEM_PARAMS.gnn.input_dim
+        entity_type_embedding_dim = SYSTEM_PARAMS.gnn.entity_type_embedding_dim
+        small_input_dim = SYSTEM_PARAMS.gnn.small_input_dim
         latent_dim = SYSTEM_PARAMS.gnn.latent_dim
+        input_dim = latent_dim
         output_dim = SYSTEM_PARAMS.gnn.output_dim
         self.tversky_weight = SYSTEM_PARAMS.gnn.tversky_weight
         self.focal_weight = SYSTEM_PARAMS.gnn.focal_weight
@@ -94,32 +96,32 @@ class GNN(pl.LightningModule):
         self.focal_loss = MyFocalLoss()
         self.num_entity_types = SYSTEM_PARAMS.gnn.num_entity_types
 
-        self.global_node = nn.Parameter(torch.randn(1, input_dim))
-        self.edge_global_spatial = nn.Parameter(torch.randn(1, input_dim))
+        self.global_node = nn.Parameter(torch.randn(1, small_input_dim))
+        self.edge_global_spatial = nn.Parameter(torch.randn(1, small_input_dim))
         self.entity_tag_embedding = nn.Embedding(
             num_embeddings=self.num_entity_types, 
-            embedding_dim=input_dim
+            embedding_dim=entity_type_embedding_dim,
         )
 
         self.regular_node_mlp = nn.Sequential(
-            nn.Linear(node_dim, input_dim), 
+            nn.Linear(node_dim, small_input_dim), 
             nn.ReLU(), 
-            nn.Linear(input_dim, input_dim)
+            nn.Linear(small_input_dim, small_input_dim)
         )
         self.spatial_edge_mlp = nn.Sequential(
-            nn.Linear(spatial_edge_dim, input_dim),
+            nn.Linear(spatial_edge_dim, small_input_dim),
             nn.ReLU(),
-            nn.Linear(input_dim, input_dim),
+            nn.Linear(small_input_dim, small_input_dim),
         )
         self.temporal_edge_mlp = nn.Sequential(
-            nn.Linear(temporal_edge_dim, input_dim),
+            nn.Linear(temporal_edge_dim, small_input_dim),
             nn.ReLU(),
-            nn.Linear(input_dim, input_dim),
+            nn.Linear(small_input_dim, small_input_dim),
         )
         self.global_temporal_edge_mlp = nn.Sequential(
-            nn.Linear(global_temporal_edge_dim, input_dim),
+            nn.Linear(global_temporal_edge_dim, small_input_dim),
             nn.ReLU(),
-            nn.Linear(input_dim, input_dim),
+            nn.Linear(small_input_dim, small_input_dim),
         )
 
         self.gine1 = GINEConv(
@@ -127,16 +129,14 @@ class GNN(pl.LightningModule):
                 nn.Linear(input_dim, latent_dim),
                 nn.ReLU(),
                 nn.Linear(latent_dim, latent_dim),
-            ),
-            edge_dim=input_dim,
+            )
         )
         self.gine2 = GINEConv(
             nn.Sequential(
                 nn.Linear(latent_dim, latent_dim),
                 nn.ReLU(),
                 nn.Linear(latent_dim, output_dim),
-            ),
-            edge_dim=input_dim,
+            )
         )
         self.save_hyperparameters()
 
@@ -199,6 +199,13 @@ class GNN(pl.LightningModule):
         global_spatial_edges = self.edge_global_spatial.expand(n, -1)
         global_temporal_edges = self.global_temporal_edge_mlp(edge_attr_global_temporal)
 
+        regular_nodes = self.cat_entity_tag(regular_nodes, 0)
+        global_nodes = self.cat_entity_tag(global_nodes, 1)
+        spatial_edges = self.cat_entity_tag(spatial_edges, 2)
+        temporal_edges = self.cat_entity_tag(temporal_edges, 3)
+        global_spatial_edges = self.cat_entity_tag(global_spatial_edges, 4)
+        global_temporal_edges = self.cat_entity_tag(global_temporal_edges, 5)
+
         edge_index = torch.cat([
             edge_index_spatial,
             edge_index_temporal,
@@ -219,6 +226,13 @@ class GNN(pl.LightningModule):
         ], dim=0)
 
         return x, edge_index, edge_attr
+    
+    def cat_entity_tag(self, features, entity_ix):
+        ix_tensor = torch.tensor([entity_ix], dtype=torch.long, device=features.device)
+        entity_tag = self.entity_tag_embedding(ix_tensor)
+        entity_tag = entity_tag.expand(features.shape[0], -1)
+        res = torch.cat([features, entity_tag], dim=1)
+        return res
     
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)

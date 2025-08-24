@@ -149,12 +149,13 @@
         "vein_px_thickness": 30
     },
     "gnn": {
-        "input_dim": 32,
+        "entity_type_embedding_dim": 8,
+        "small_input_dim": 248,
         "latent_dim": 256,
         "output_dim": 1,
         "clip_len": 5,
         "learning_rate": 1e-3,
-        "batch_size": 128,
+        "batch_size": 64,
         "num_train_batches": 64,
         "num_val_batches": 4,
         "num_epochs": 2,
