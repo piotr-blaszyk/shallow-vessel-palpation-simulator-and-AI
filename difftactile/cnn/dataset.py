@@ -658,6 +658,9 @@ class MyDataset(torch.utils.data.Dataset):
             elif self.scheme == "new":
                 pos_neg_str, file_path, frame_ix, dilation = self.data_points[idx]
                 spawn_vein = pos_neg_str == "pos"
+            elif self.scheme == "single_dataset":
+                file_path, frame_ix, dilation = self.data_points[idx]
+                spawn_vein = True
         data = np.load(file_path)
         markers = data["markers"]
         markers_mask = data["markers_mask"]
@@ -682,7 +685,7 @@ class MyDataset(torch.utils.data.Dataset):
             freeze_markers = True
         else:
             freeze_markers = NP_RNG.uniform(0, 1) < 0.2
-        if freeze_markers:
+        if False and freeze_markers:
             first_frame_markers = markers[0]
             marker_displacements = markers - first_frame_markers[np.newaxis, :, :]
             mean_marker_displacement = np.mean(marker_displacements, axis=1)
@@ -1439,15 +1442,16 @@ class MyDataset(torch.utils.data.Dataset):
             int(self.max_vein_length * num_vein_points) + 1,
             size=num_veins,
         )
-        max_start_indices = num_vein_points - target_num_vein_points
-        start_indices = NP_RNG.integers(0, max_start_indices + 1)
-        row_indices = np.arange(num_veins)[:, np.newaxis]
-        col_indices = np.arange(num_vein_points)[np.newaxis, :]
-        my_vein_mask = (col_indices >= start_indices[:, np.newaxis]) & (
-            col_indices
-            < (start_indices[:, np.newaxis] + target_num_vein_points[:, np.newaxis])
-        )
-        clip_vein_polyline_mask &= my_vein_mask[np.newaxis, :, :]
+        if False:
+            max_start_indices = num_vein_points - target_num_vein_points
+            start_indices = NP_RNG.integers(0, max_start_indices + 1)
+            row_indices = np.arange(num_veins)[:, np.newaxis]
+            col_indices = np.arange(num_vein_points)[np.newaxis, :]
+            my_vein_mask = (col_indices >= start_indices[:, np.newaxis]) & (
+                col_indices
+                < (start_indices[:, np.newaxis] + target_num_vein_points[:, np.newaxis])
+            )
+            clip_vein_polyline_mask &= my_vein_mask[np.newaxis, :, :]
         for t in range(clip_points.shape[0]):
             points = clip_points[t]
             x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
