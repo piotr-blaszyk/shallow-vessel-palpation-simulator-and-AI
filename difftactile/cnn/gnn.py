@@ -352,9 +352,9 @@ class GNN(pl.LightningModule):
     def iou_score(preds, y):
         preds = preds.float()
         y = y.float()
-        iou_0 = GNN.iou_score_single_class(preds, y, 0)
-        iou_1 = GNN.iou_score_single_class(preds, y, 1)
-        return {"fg_iou": iou_1, "bg_iou": iou_0, "macro_iou": (iou_1 + iou_0) / 2}
+        iou_0 = GNN.iou_score_single_class(preds, y, 0).item()
+        iou_1 = GNN.iou_score_single_class(preds, y, 1).item()
+        return {"fg_iou": iou_1, "bg_iou": iou_0}
     
     @staticmethod
     def iou_score_single_class(
@@ -370,7 +370,7 @@ class GNN(pl.LightningModule):
         area_inter = (pred_mask & true_mask).sum().item()
 
         if area_pred == 0 and area_true == 0:
-            return torch.tensor(1.0)
+            return torch.tensor(float('nan'))
 
         if area_pred == 0 or area_true == 0:
             return torch.tensor(0.0)

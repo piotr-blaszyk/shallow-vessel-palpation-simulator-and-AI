@@ -495,6 +495,7 @@ class Visualisation:
             labels_stack = np.zeros((num_frames, labels_h, labels_w, 3), dtype=np.uint8)
             graph_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)  # New stack for graph visualization
             confusion_matrix_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)  # New stack for confusion matrix visualization
+            stats_stack = np.zeros((num_frames, 200, 400, 3), dtype=np.uint8) + 255  # White background for stats display
 
             if mode == 'predictions':
                 # Get predictions
@@ -512,16 +513,15 @@ class Visualisation:
                     
                     # Compute IoU scores per frame
                     num_nodes_per_frame = SYSTEM_PARAMS.vitactip.num_markers
+                    clip_stats = []
                     for frame_idx in range(num_frames):
                         start_idx = frame_idx * num_nodes_per_frame
                         end_idx = (frame_idx + 1) * num_nodes_per_frame
                         frame_pred = pred[start_idx:end_idx]
                         frame_truth = data.y[start_idx:end_idx]
                         frame_metrics = GNN.iou_score(frame_pred, frame_truth)
-                        print(f"\nFrame {frame_idx} IoU Scores:")
-                        print(f"Foreground IoU: {frame_metrics['fg_iou']:.4f}")
-                        print(f"Background IoU: {frame_metrics['bg_iou']:.4f}")
-                        print(f"Macro IoU: {frame_metrics['macro_iou']:.4f}")
+                        fg_iou = frame_metrics['fg_iou']
+                        bg_iou = frame_metrics['bg_iou']
                         
                         # Compute confusion matrix
                         frame_pred = pred[start_idx:end_idx].cpu().numpy()
@@ -530,11 +530,14 @@ class Visualisation:
                         tn = np.sum((frame_pred == 0) & (frame_truth == 0))
                         fp = np.sum((frame_pred == 1) & (frame_truth == 0))
                         fn = np.sum((frame_pred == 0) & (frame_truth == 1))
-                        print(f"\nFrame {frame_idx} Confusion Matrix:")
-                        print(f"True Positives: {tp}")
-                        print(f"True Negatives: {tn}")
-                        print(f"False Positives: {fp}")
-                        print(f"False Negatives: {fn}")
+                        clip_stats.append({
+                            'fg_iou': fg_iou,
+                            'bg_iou': bg_iou,
+                            'tp': tp,
+                            'tn': tn,
+                            'fp': fp,
+                            'fn': fn,
+                        })
                     
                     probs = probs.cpu().numpy().astype(np.float32)
                     pred = pred.cpu().numpy().astype(int)
@@ -634,6 +637,42 @@ class Visualisation:
                                 color = (255, 0, 0)
                             
                             cv2.circle(confusion_matrix_stack[frame_idx], center, MARKER_RADIUS, color, -1, cv2.LINE_AA)
+                    
+                    # Draw statistics for current frame
+                    stats_img = stats_stack[frame_idx]
+                    frame_stats = clip_stats[frame_idx]
+                    
+                    # Define text positions and font settings
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 0.7
+                    thickness = 2
+                    line_spacing = 30
+                    x_pos = 20
+                    y_pos = 40
+                    
+                    # Draw statistics text
+                    cv2.putText(stats_img, f"Foreground IoU: {frame_stats['fg_iou']:.3f}", (x_pos, y_pos), 
+                              font, font_scale, (0, 0, 0), thickness)
+                    y_pos += line_spacing
+                    
+                    cv2.putText(stats_img, f"Background IoU: {frame_stats['bg_iou']:.3f}", (x_pos, y_pos), 
+                              font, font_scale, (0, 0, 0), thickness)
+                    y_pos += line_spacing
+                    
+                    cv2.putText(stats_img, f"True Positives: {frame_stats['tp']}", (x_pos, y_pos), 
+                              font, font_scale, (0, 0, 0), thickness)
+                    y_pos += line_spacing
+                    
+                    cv2.putText(stats_img, f"True Negatives: {frame_stats['tn']}", (x_pos, y_pos), 
+                              font, font_scale, (0, 0, 0), thickness)
+                    y_pos += line_spacing
+                    
+                    cv2.putText(stats_img, f"False Positives: {frame_stats['fp']}", (x_pos, y_pos), 
+                              font, font_scale, (0, 0, 0), thickness)
+                    y_pos += line_spacing
+                    
+                    cv2.putText(stats_img, f"False Negatives: {frame_stats['fn']}", (x_pos, y_pos), 
+                              font, font_scale, (0, 0, 0), thickness)
 
                 # Get and process labels image for current frame
                 if ground_truth_labels_present:
@@ -664,6 +703,7 @@ class Visualisation:
                     cv2.imshow(f'Hard Prediction {sequence_idx}', prediction_stack[current_frame])
                     cv2.imshow(f'Soft Prediction {sequence_idx}', soft_prediction_stack[current_frame])
                     cv2.imshow(f'Confusion Matrix {sequence_idx}', confusion_matrix_stack[current_frame])
+                    cv2.imshow(f'Frame Statistics {sequence_idx}', stats_stack[current_frame])
                 cv2.imshow(f'Labels Image {sequence_idx}', labels_stack[current_frame])
                 cv2.imshow(f'Graph Connectivity {sequence_idx}', graph_stack[current_frame])
 
@@ -677,6 +717,7 @@ class Visualisation:
                     cv2.moveWindow(f'Confusion Matrix {sequence_idx}', 2 * (w + sep_w), 0)
                     cv2.moveWindow(f'Labels Image {sequence_idx}', 2 * (w + sep_w), h + sep_h)
                     cv2.moveWindow(f'Graph Connectivity {sequence_idx}', 3 * (w + sep_w), 0)
+                    cv2.moveWindow(f'Frame Statistics {sequence_idx}', 0, h + sep_h)
                 else:
                     cv2.moveWindow(f'Labels Image {sequence_idx}', w + sep_w, 0)
                     cv2.moveWindow(f'Graph Connectivity {sequence_idx}', w + sep_w, labels_h + sep_h)
