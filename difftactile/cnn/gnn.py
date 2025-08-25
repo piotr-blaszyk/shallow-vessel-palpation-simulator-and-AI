@@ -541,8 +541,15 @@ def main():
     NUM_VAL_BATCHES = SYSTEM_PARAMS.gnn.num_val_batches
     TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * NUM_TRAIN_BATCHES
     VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * NUM_VAL_BATCHES
+    tensor_board_root_dir = 'lightning_logs'
+    timestamp = time.strftime('%Y%m%d_%H%M%S')
+    tensor_board_experiment_dir = f"gnn_{timestamp}"
+    tensor_board_full_dir = f'{tensor_board_root_dir}/{tensor_board_experiment_dir}'
+    print(f'tensorboard directory: {tensor_board_full_dir}')
     logger = TensorBoardLogger(
-        "lightning_logs", name="gnn", version=f"run_{time.strftime('%Y%m%d_%H%M%S')}"
+        save_dir=tensor_board_root_dir,
+        name=tensor_board_experiment_dir,
+        version=f"run_{timestamp}",
     )
     full_dataset = MyDataset(scheme="new")
     train_dataset, val_dataset, test_dataset = full_dataset.create_splits(
