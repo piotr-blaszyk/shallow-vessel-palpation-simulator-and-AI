@@ -20,8 +20,8 @@ import re
 class PreProcessSimData:
     @staticmethod
     def sim_marker_tracker():
-        input_dir = SYSTEM_PARAMS.files.dataset_root_2025_08_21
-        output_dir = SYSTEM_PARAMS.files.dataset_root_2025_08_21_reordered
+        input_dir = "difftactile/output/training_data/pickle_2025_08_24-25_merged"
+        output_dir = "difftactile/output/training_data/pickle_2025_08_24-25_merged_reordered"
         base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_points = base_graph_data['points']
         file_paths = sorted([os.path.join(input_dir, f) for f in os.listdir(input_dir)])

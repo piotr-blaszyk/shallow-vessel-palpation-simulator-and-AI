@@ -26,6 +26,7 @@ class MyDataset(torch.utils.data.Dataset):
         data_points_yesterday=[],
         data_points_pos=[],
         data_points_neg=[],
+        data_points=[],
         normalise_pos=True,
         exp_markers_npz=None,
         exp_ground_truth_labels_npz=None,
@@ -78,12 +79,14 @@ class MyDataset(torch.utils.data.Dataset):
         self.data_points_yesterday = data_points_yesterday
         self.data_points_pos = data_points_pos
         self.data_points_neg = data_points_neg
-        self.data_points = []
+        self.data_points = data_points
         if mode == "root":
             if scheme == "old":
                 self.populate_clips_old_scheme()
             elif scheme == "new":
                 self.populate_clips_new_scheme()
+            elif scheme == "single_dataset":
+                self.populate_clips_single_dataset_scheme()
         elif mode == "exp":
             self.compute_data_points_exp()
         elif mode != "dummy":
@@ -91,12 +94,47 @@ class MyDataset(torch.utils.data.Dataset):
                 self.compute_data_points_old_scheme()
             elif scheme == "new":
                 self.compute_data_points_new_scheme()
+            elif scheme == "single_dataset":
+                pass
         end_time = time.perf_counter()
         if mode == "root":
             print(
                 f"Time taken to initialise dataset: {end_time - start_time:.2f} seconds"
             )
             print(f"num data points: {len(self.data_points):,}")
+    
+    def populate_clips_single_dataset_scheme(self):
+        data_dir = "difftactile/output/training_data/pickle_2025_08_24-25_merged_reordered"
+        self.files = MyDataset.get_folder_files(data_dir)
+        self.vein_masks_single_dataset_scheme = []
+        for i in range(len(self.files)):
+            self.vein_masks_single_dataset_scheme.append(
+                self.video_contains_vein(self.files[i])
+            )
+        dilations = [1, 2, 4]
+        for i in range(len(self.files)):
+            file_path = self.files[i]
+            data = np.load(file_path)
+            points = data["markers"]
+            total_frames = points.shape[0]
+            for dilation in dilations:
+                dilated_clip_len = self.clip_len * dilation
+                if total_frames >= dilated_clip_len:
+                    num_possible_starts = total_frames - dilated_clip_len + 1
+                    clips_found = 0
+                    max_attempts = num_possible_starts * 2
+                    attempts = 0
+                    while (
+                        clips_found < self.data_points_per_trajectory
+                        and attempts < max_attempts
+                    ):
+                        start_idx = NP_RNG.integers(num_possible_starts)
+                        if self.clip_contains_vein(i, start_idx, dilation):
+                            self.data_points.append(
+                                (file_path, start_idx, dilation)
+                            )
+                            clips_found += 1
+                        attempts += 1
 
     @staticmethod
     def get_folder_files(path):
@@ -317,6 +355,8 @@ class MyDataset(torch.utils.data.Dataset):
             return self.create_splits_old_scheme(*args, **kwargs)
         elif self.scheme == "new":
             return self.create_splits_new_scheme(*args, **kwargs)
+        elif self.scheme == "single_dataset":
+            return self.create_splits_single_dataset_scheme(*args, **kwargs)
 
     def create_splits_old_scheme(self, train_size, val_size, test_size):
         """Split dataset while ensuring all clips from the same trajectory stay together"""
@@ -463,6 +503,64 @@ class MyDataset(torch.utils.data.Dataset):
         res = (train_dataset, val_dataset, test_dataset)
         print(f"split len: {[len(x) for x in res]}")
         return res
+    
+    def create_splits_single_dataset_scheme(self, train_size, val_size, test_size):
+        assert abs(train_size + val_size + test_size - 1.0) < 1e-10, (
+            "Split proportions must sum to 1"
+        )
+        all_data_points = [
+            self.data_points,
+        ]
+        all_indices = []
+        for i in range(len(all_data_points)):
+            data_points = all_data_points[i]
+            trajectory_to_indices = {}
+            for i, data_point in enumerate(data_points):
+                file_path = data_point[2]
+                trajectory_to_indices.setdefault(file_path, []).append(i)
+            trajectories = list(trajectory_to_indices.keys())
+            trajectories.sort()
+            n = len(trajectories)
+            train_split = int(n * train_size)
+            val_split = int(n * (train_size + val_size))
+            train_trajectories = trajectories[:train_split]
+            val_trajectories = trajectories[train_split:val_split]
+            test_trajectories = trajectories[val_split:]
+            train_indices = [
+                i for traj in train_trajectories for i in trajectory_to_indices[traj]
+            ]
+            val_indices = [
+                i for traj in val_trajectories for i in trajectory_to_indices[traj]
+            ]
+            test_indices = [
+                i for traj in test_trajectories for i in trajectory_to_indices[traj]
+            ]
+            all_indices.append(
+                {
+                    "train_indices": train_indices,
+                    "val_indices": val_indices,
+                    "test_indices": test_indices,
+                }
+            )
+        ixs = all_indices[0]
+        train_dataset = MyDataset(
+            scheme=self.scheme,
+            mode="train",
+            data_points=[self.data_points[i] for i in ixs["train_indices"]],
+        )
+        val_dataset = MyDataset(
+            scheme=self.scheme,
+            mode="val",
+            data_points=[self.data_points[i] for i in ixs["val_indices"]],
+        )
+        test_dataset = MyDataset(
+            scheme=self.scheme,
+            mode="test",
+            data_points=[self.data_points[i] for i in ixs["test_indices"]],
+        )
+        res = (train_dataset, val_dataset, test_dataset)
+        print(f"split len: {[len(x) for x in res]}")
+        return res
 
     def compute_file_contains_vein(self, file_path):
         file_name = os.path.basename(file_path)
@@ -474,6 +572,8 @@ class MyDataset(torch.utils.data.Dataset):
             markers, veins, contains_vein = self.file_today_vein_masks[file_ix]
         elif self.scheme == "new":
             markers, veins, contains_vein = self.vein_masks_new_scheme[file_ix]
+        elif self.scheme == "single_dataset":
+            markers, veins, contains_vein = self.vein_masks_single_dataset_scheme[file_ix]
         dilated_clip_len = self.clip_len * dilation
         clip_vein_mask = contains_vein[start : start + dilated_clip_len : dilation]
         clip_veins = veins[start : start + dilated_clip_len : dilation]
@@ -1437,19 +1537,6 @@ class MyDataset(torch.utils.data.Dataset):
                         points[i] = points[i] + vec_normalized * displacement * disp_c
             clip_points[j] = points
         return clip_points, vein_visible_mask
-
-    @staticmethod
-    def extract_trajectory_number(file_path):
-        """Extract the trajectory number from the file path.
-        Args:
-            file_path (str): Path like 'path/to/trajectory_0001.npz'
-        Returns:
-            int: The trajectory number (e.g., 1 for 'trajectory_0001.npz')
-        """
-        match = re.search(r"trajectory_(\d+)\.npz$", file_path)
-        if match:
-            return int(match.group(1))
-        raise ValueError(f"Could not extract trajectory number from {file_path}")
 
     @staticmethod
     def extract_trajectory_number(file_path):
