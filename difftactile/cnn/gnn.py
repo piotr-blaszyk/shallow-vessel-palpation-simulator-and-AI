@@ -343,24 +343,34 @@ class GNN(pl.LightningModule):
         self.focal_loss.gamma = focal_gamma
 
     @staticmethod
-    def iou_score(preds, targets, eps=1e-6):
+    def iou_score(preds, y):
         preds = preds.float()
-        targets = targets.float()
-        fg_intersection = (preds * targets).sum()
-        fg_union = (preds + targets).sum() - fg_intersection
-        if fg_union > eps:
-            fg_iou = fg_intersection / fg_union
-        else:
-            fg_iou = torch.tensor(0.0, device=preds.device)
-        bg_preds = 1 - preds
-        bg_targets = 1 - targets
-        bg_intersection = (bg_preds * bg_targets).sum()
-        bg_union = (bg_preds + bg_targets).sum() - bg_intersection
-        if bg_union > eps:
-            bg_iou = bg_intersection / bg_union
-        else:
-            bg_iou = torch.tensor(0.0, device=preds.device)
-        return {"fg_iou": fg_iou, "bg_iou": bg_iou, "macro_iou": (fg_iou + bg_iou) / 2}
+        y = y.float()
+        iou_0 = GNN.iou_score_single_class(preds, y, 0)
+        iou_1 = GNN.iou_score_single_class(preds, y, 1)
+        return {"fg_iou": iou_1, "bg_iou": iou_0, "macro_iou": (iou_1 + iou_0) / 2}
+    
+    @staticmethod
+    def iou_score_single_class(
+        preds: torch.Tensor, 
+        y: torch.Tensor, 
+        class_ix: int
+    ) -> torch.Tensor:
+        pred_mask = (preds == class_ix)
+        true_mask = (y == class_ix)
+
+        area_pred = pred_mask.sum().item()
+        area_true = true_mask.sum().item()
+        area_inter = (pred_mask & true_mask).sum().item()
+
+        if area_pred == 0 and area_true == 0:
+            return torch.tensor(1.0)
+
+        if area_pred == 0 or area_true == 0:
+            return torch.tensor(0.0)
+
+        area_union = area_pred + area_true - area_inter
+        return torch.tensor(area_inter / area_union)
 
 
 class MyDataModule(pl.LightningDataModule):
