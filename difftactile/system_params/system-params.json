@@ -164,7 +164,8 @@
         "focal_weight": 1.000e+00,
         "num_entity_types": 6,
         "exp_grid_search_dilation": 2,
-        "exp_straight_line_dilation": 1
+        "exp_straight_line_dilation": 1,
+        "num_classes": 2
     },
     "cnn": {
         "input_width_height": 192

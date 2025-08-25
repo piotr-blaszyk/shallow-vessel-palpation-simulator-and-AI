@@ -14,6 +14,7 @@ import time
 from tqdm import tqdm
 from difftactile.cnn.dataset import *
 from difftactile.cnn.common import *
+from difftactile.cnn.train import LossWeightScheduler
 
 
 class CurriculumCallback(pl.Callback):
@@ -76,6 +77,15 @@ class MyFocalLoss(nn.Module):
 class GNN(pl.LightningModule):
     def __init__(self):
         super().__init__()
+        self.num_classes = SYSTEM_PARAMS.gnn.num_classes
+        self.area_pred_acc = self.get_iou_accumulator()
+        self.area_true_acc = self.get_iou_accumulator()
+        self.area_inter_acc = self.get_iou_accumulator()
+        self.total_loss_acc = self.get_scalar_float64_accumulator()
+        self.focal_loss_acc = self.get_scalar_float64_accumulator()
+        self.connectivity_loss_acc = self.get_scalar_float64_accumulator()
+        self.hinge_loss_acc = self.get_scalar_float64_accumulator()
+        self.num_batches = self.get_scalar_int32_accumulator()
         self.num_nodes = SYSTEM_PARAMS.vitactip.num_markers
         self.clip_len = SYSTEM_PARAMS.gnn.clip_len
         node_dim = 2+3+self.num_nodes+self.clip_len
@@ -153,23 +163,18 @@ class GNN(pl.LightningModule):
         out = out.squeeze(-1)
         mask = batch.mask
         out = out[mask]
-        tversky_loss = self.tversky_loss(out, batch.y.float())
         focal_loss = self.focal_loss(out, batch.y.float())
-        loss = self.tversky_weight * tversky_loss + self.focal_weight * focal_loss
+        loss = self.focal_weight * focal_loss
+        self.focal_loss_acc[stage] += focal_loss.detach()
+        self.total_loss_acc[stage] += loss.detach()
+        self.self.num_batches[stage] += 1
         probs = torch.sigmoid(out)
-        preds = (probs > 0.5).float()
+        preds = (probs > 0.5).to(batch.y)
 
-        metrics = GNN.compute_metrics(
-            batch=batch,
-            preds=preds,
-        )
-        self.my_log(
-            stage=stage,
-            batch=batch,
-            tversky_loss=tversky_loss,
-            focal_loss=focal_loss,
-            loss=loss,
-            metrics=metrics,
+        self.update_iou_acc(
+            preds,
+            batch.y,
+            stage,
         )
         return loss
     
@@ -249,28 +254,72 @@ class GNN(pl.LightningModule):
             "optimizer": optimizer,
         }
     
-    @staticmethod
-    def compute_metrics(
-        batch,
-        preds,
+    def update_iou_acc(
+        self, 
+        preds: torch.Tensor, 
+        y: torch.Tensor, 
+        stage: str
     ):
-        B = batch.num_graphs
-        batch_metrics = {
-            "fg_iou": torch.zeros(B, device=preds.device),
-            "bg_iou": torch.zeros(B, device=preds.device),
-            "macro_iou": torch.zeros(B, device=preds.device),
-        }
-        for i in range(B):
-            iou_mask = batch.batch[batch.mask] == i
-            graph_preds = preds[iou_mask]
-            graph_targets = batch.y[iou_mask]
-            metrics = GNN.iou_score(graph_preds, graph_targets)
-            batch_metrics["fg_iou"][i] = metrics["fg_iou"]
-            batch_metrics["bg_iou"][i] = metrics["bg_iou"]
-            batch_metrics["macro_iou"][i] = metrics["macro_iou"]
-        metrics = {k: v.mean() for k, v in batch_metrics.items()}
-        return metrics
+        for class_ix in range(self.num_classes):
+            pred_mask = (preds == class_ix)
+            true_mask = (y == class_ix)
+
+            self.area_pred_acc[stage][class_ix] += pred_mask.sum().float()
+            self.area_true_acc[stage][class_ix] += true_mask.sum().float()
+            self.area_inter_acc[stage][class_ix] += (pred_mask & true_mask).sum().float()
     
+    def compute_ious(self, stage: str):
+        ious = {}
+
+        for class_ix in range(self.num_classes):
+            ap = self.area_pred_acc[stage][class_ix].item()
+            at = self.area_true_acc[stage][class_ix].item()
+            ai = self.area_inter_acc[stage][class_ix].item()
+
+            if ap == 0 and at == 0:
+                iou = 1.0
+            elif ap == 0 or at == 0:
+                iou = 0.0
+            else:
+                iou = ai / (ap + at - ai)
+
+            ious[class_ix] = iou
+
+        return ious
+    
+    def on_train_epoch_end(self):
+        self.my_on_epoch_end('train')
+
+    def on_validation_epoch_end(self):
+        self.my_on_epoch_end('val')
+
+    def on_test_epoch_end(self):
+        self.my_on_epoch_end('test')
+    
+    def my_on_epoch_end(self, stage: str):
+        # log_on_prog_bar = stage == 'train'
+        log_on_prog_bar = True
+        ious = self.compute_ious(stage)
+        self.log_dict(
+            {f"{stage}_iou/{k}": v for k, v in ious.items()},
+            prog_bar=log_on_prog_bar,
+        )
+        self.area_pred_acc[stage].zero_()
+        self.area_true_acc[stage].zero_()
+        self.area_inter_acc[stage].zero_()
+
+        total_loss = self.total_loss[stage] / self.num_batches[stage]
+        focal_loss = self.focal_loss[stage] / self.num_batches[stage]
+        connectivity_loss = self.connectivity_loss[stage] / self.num_batches[stage]
+        hinge_loss = self.hinge_loss[stage] / self.num_batches[stage]
+        self.log(f"{stage}/loss", total_loss, prog_bar=log_on_prog_bar)
+        self.log(f"{stage}/focal_loss", focal_loss, prog_bar=False)
+        self.log(f"{stage}/connectivity_loss", connectivity_loss, prog_bar=False)
+        self.log(f"{stage}/hinge_loss", hinge_loss, prog_bar=False)
+
+        self.total_loss[stage].zero_()
+        self.num_batches[stage] = 0
+
     def my_log(
         self,
         stage,
@@ -371,6 +420,27 @@ class GNN(pl.LightningModule):
 
         area_union = area_pred + area_true - area_inter
         return torch.tensor(area_inter / area_union)
+    
+    def get_iou_accumulator(self):
+        return {
+            "train": torch.zeros(self.num_classes),
+            "val": torch.zeros(self.num_classes),
+            "test": torch.zeros(self.num_classes)
+        }
+    
+    def get_scalar_float64_accumulator(self):
+        return {
+            "train": torch.zeros((), dtype=torch.float64),
+            "val": torch.zeros((), dtype=torch.float64),
+            "test": torch.zeros((), dtype=torch.float64)
+        }
+    
+    def get_scalar_int32_accumulator(self):
+        return {
+            "train": torch.zeros((), dtype=torch.int32),
+            "val": torch.zeros((), dtype=torch.int32),
+            "test": torch.zeros((), dtype=torch.int32)
+        }
 
 
 class MyDataModule(pl.LightningDataModule):
@@ -586,60 +656,6 @@ def main():
     )
     os.makedirs("saved_models", exist_ok=True)
     torch.save(model.state_dict(), SYSTEM_PARAMS.files.final_segmentation_model_gnn)
-
-
-def choose_optimal_threshold():
-    BATCH_SIZE = 512
-    NUM_WORKERS = 16
-    VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 8
-    with open(SYSTEM_PARAMS.files.test_loader_gnn, "rb") as f:
-        test_data = pickle.load(f)
-    test_dataset = test_data["dataset"]
-    test_dataset.set_difficulty_level(1.0)
-    data_module = MyDataModule(
-        train_dataset=test_dataset,
-        val_dataset=test_dataset,
-        test_dataset=test_dataset,
-        train_subset_size=VAL_EPOCH_SUBSET_SIZE,
-        val_subset_size=VAL_EPOCH_SUBSET_SIZE,
-        batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS,
-    )
-    model = GNN(lr=-1)
-    model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn))
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-    model.eval()
-    thresholds = np.linspace(0.4, 0.6, 5)
-    best_threshold = 0.5
-    best_fg_iou = 0.0
-    print("\nTesting different thresholds:")
-    print("Threshold | Foreground IoU")
-    print("-" * 25)
-    val_loader = data_module.val_dataloader()
-    with torch.no_grad():
-        for threshold in thresholds:
-            total_fg_iou = 0.0
-            num_batches = 0
-            for batch, _ in val_loader:
-                batch = batch.to(device)
-                logits = model(batch.x, batch.edge_index, batch.edge_attr)
-                logits = logits.squeeze(-1)
-                mask = batch.mask
-                logits = logits[mask]
-                probs = torch.sigmoid(logits)
-                preds = (probs > threshold).float()
-                iou_scores = GNN.iou_score(preds, batch.y)
-                total_fg_iou += iou_scores["fg_iou"].item()
-                num_batches += 1
-            avg_fg_iou = total_fg_iou / num_batches
-            print(f"{threshold:.2f}     | {avg_fg_iou:.4f}")
-            if avg_fg_iou > best_fg_iou:
-                best_fg_iou = avg_fg_iou
-                best_threshold = threshold
-    print("\nBest results:")
-    print(f"Optimal threshold: {best_threshold:.2f}")
-    print(f"Best foreground IoU: {best_fg_iou:.4f}")
 
 
 def compute_stats(dataset, batch_size):
