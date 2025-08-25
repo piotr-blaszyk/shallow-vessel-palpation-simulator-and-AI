@@ -264,7 +264,7 @@ class GNN(pl.LightningModule):
             iou_mask = batch.batch[batch.mask] == i
             graph_preds = preds[iou_mask]
             graph_targets = batch.y[iou_mask]
-            metrics = self.iou_score(graph_preds, graph_targets)
+            metrics = GNN.iou_score(graph_preds, graph_targets)
             batch_metrics["fg_iou"][i] = metrics["fg_iou"]
             batch_metrics["bg_iou"][i] = metrics["bg_iou"]
             batch_metrics["macro_iou"][i] = metrics["macro_iou"]

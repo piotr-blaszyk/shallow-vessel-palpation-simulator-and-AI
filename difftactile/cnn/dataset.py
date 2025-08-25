@@ -191,7 +191,7 @@ class MyDataset(torch.utils.data.Dataset):
                         clips_found < self.data_points_per_trajectory
                         and attempts < max_attempts
                     ):
-                        start_idx = NP_RNG.randint(num_possible_starts)
+                        start_idx = NP_RNG.integers(num_possible_starts)
                         if valid_frames[
                             start_idx : start_idx + dilated_clip_len : dilation
                         ].all() and self.clip_contains_vein(i, start_idx, dilation):
@@ -255,7 +255,7 @@ class MyDataset(torch.utils.data.Dataset):
                         clips_found < self.data_points_per_trajectory
                         and attempts < max_attempts
                     ):
-                        start_idx = NP_RNG.randint(num_possible_starts)
+                        start_idx = NP_RNG.integers(num_possible_starts)
                         if valid_frames[
                             start_idx : start_idx + dilated_clip_len : dilation
                         ].all() and self.clip_contains_vein(i, start_idx, dilation):
@@ -597,7 +597,7 @@ class MyDataset(torch.utils.data.Dataset):
         )
         veins_mask &= labels_signal_mask
         discrete_angles = [0, 60, 120, 180, 240, 300]
-        rotation_angle_deg = random.choice(discrete_angles)
+        rotation_angle_deg = NP_RNG.choice(discrete_angles)
         markers = self.augmentation_rotation(markers, rotation_angle_deg)
         veins = self.augmentation_rotation(veins, rotation_angle_deg)
         angle_uniform_shift_rad = NP_RNG.uniform(0, 2 * math.pi)
@@ -1280,7 +1280,7 @@ class MyDataset(torch.utils.data.Dataset):
         max_k = self.randomly_remove_k[self.difficulty]
         mask = np.ones(points.shape[:2], dtype=bool)
         for frame_idx in range(points.shape[0]):
-            k = NP_RNG.randint(0, min(max_k, points.shape[1])+1)
+            k = NP_RNG.integers(0, min(max_k, points.shape[1])+1)
             if k > 0:
                 indices_to_remove = NP_RNG.choice(
                     range(points.shape[1]), 
@@ -1334,13 +1334,13 @@ class MyDataset(torch.utils.data.Dataset):
         if not np.any(valid_frames_mask):
             return clip_points, clip_vein_polyline_mask
         disp_c = NP_RNG.uniform(self.min_disp_c, self.max_disp_c)
-        target_num_vein_points = NP_RNG.randint(
+        target_num_vein_points = NP_RNG.integers(
             int(self.min_vein_length * num_vein_points),
             int(self.max_vein_length * num_vein_points) + 1,
             size=num_veins,
         )
         max_start_indices = num_vein_points - target_num_vein_points
-        start_indices = NP_RNG.randint(0, max_start_indices + 1)
+        start_indices = NP_RNG.integers(0, max_start_indices + 1)
         row_indices = np.arange(num_veins)[:, np.newaxis]
         col_indices = np.arange(num_vein_points)[np.newaxis, :]
         my_vein_mask = (col_indices >= start_indices[:, np.newaxis]) & (
@@ -1398,9 +1398,9 @@ class MyDataset(torch.utils.data.Dataset):
             if max_length < 3:
                 length = 0
             else:
-                length = NP_RNG.randint(3, max_length+1)
+                length = NP_RNG.integers(3, max_length+1)
             end_idx -= length
-            start_idx = NP_RNG.randint(start_idx, end_idx+2)
+            start_idx = NP_RNG.integers(start_idx, end_idx+2)
             end_idx = start_idx + length
             vein_visible_mask = np.zeros(clip_points.shape[0], dtype=bool)
             vein_visible_mask[start_idx:end_idx] = True
@@ -1494,7 +1494,7 @@ class MyDatasetExpIterator:
         dilated_clip_len = self.clip_len * dilation
         min_start_ix = 0
         max_start_ix = self.num_frames - dilated_clip_len
-        start_ix = NP_RNG.randint(min_start_ix, max_start_ix+1)
+        start_ix = NP_RNG.integers(min_start_ix, max_start_ix+1)
         start_ix = 0
         ground_truth_labels_in = self.labels[
             start_ix : start_ix + dilated_clip_len : dilation
