@@ -82,20 +82,20 @@ class MyBlock(nn.Module):
         out_dim,
     ):
         super(MyBlock, self).__init__()
+        self.dropout = nn.Dropout(p=0.3)
         self.conv = GINEConv(
             nn.Sequential(
                 nn.Linear(in_dim, latent_dim),
                 nn.ReLU(),
-                self.dropout(),
+                self.dropout,
                 nn.Linear(latent_dim, latent_dim),
                 nn.ReLU(),
-                self.dropout(),
+                self.dropout,
                 nn.Linear(latent_dim, out_dim),
             )
         )
         self.bn = nn.BatchNorm1d(out_dim)
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.3)
         
         if in_dim != out_dim:
             self.residual = nn.Linear(in_dim, out_dim)
@@ -201,7 +201,7 @@ class GNN(pl.LightningModule):
         self.mlp_output_head = nn.Sequential(
             nn.Linear(cat_out_dim, cat_out_dim // 2),
             nn.ReLU(),
-            self.dropout(),
+            self.dropout,
             nn.Linear(cat_out_dim // 2, output_dim),
         )
 
@@ -213,7 +213,7 @@ class GNN(pl.LightningModule):
     def skip_layer_dropout(self, in_dim):
         return nn.Sequential(
             nn.Linear(in_dim, self.skip_dim),
-            self.dropout(),
+            self.dropout,
         )
 
     def forward(self, x, edge_index, edge_attr):
