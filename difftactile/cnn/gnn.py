@@ -665,7 +665,7 @@ def main():
         name=tensor_board_experiment_dir,
         version=f"run_{timestamp}",
     )
-    full_dataset = MyDataset(scheme="new")
+    full_dataset = MyDataset(scheme="single_dataset")
     train_dataset, val_dataset, test_dataset = full_dataset.create_splits(
         train_size=0.7, val_size=0.15, test_size=0.15
     )
@@ -684,7 +684,7 @@ def main():
         scheme="new",
     )
     all_stats = {}
-    target_difficulty = 0
+    target_difficulty = 1.0
     for i in range(11):
         if i != target_difficulty:
             continue

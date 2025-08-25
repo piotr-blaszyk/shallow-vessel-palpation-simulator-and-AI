@@ -54,7 +54,7 @@ class MyDataset(torch.utils.data.Dataset):
             self.exp_dilation = exp_dilation
         self.scheme = scheme
         self.clip_len = SYSTEM_PARAMS.gnn.clip_len
-        self.data_points_per_trajectory = 1024
+        self.data_points_per_trajectory = SYSTEM_PARAMS.dataset.data_points_per_trajectory
         self.mode = mode
         self.w_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
         self.h_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
@@ -70,7 +70,6 @@ class MyDataset(torch.utils.data.Dataset):
         self.randomly_remove_k = [0, 6, 13]
         self.cnn_gnn = SYSTEM_PARAMS.meta.cnn_gnn
         self.visualisation_mode = False
-        self.data_points_per_epoch = SYSTEM_PARAMS.dataset.data_points_per_epoch
         self.warmup = True
         self.difficulty_fyi = None
         self.normalise_pos = normalise_pos
@@ -681,6 +680,12 @@ class MyDataset(torch.utils.data.Dataset):
             vein_present_all_frames[:] = False
             vein_present_all_frames[selected_vein_idx] = True
         veins_mask &= vein_present_all_frames[np.newaxis, :, np.newaxis]
+
+        MyDataset.hide_vein_that_dont_move_enough(
+            veins,
+            veins_mask,
+        )
+
         if spawn_vein:
             freeze_markers = True
         else:
@@ -724,6 +729,29 @@ class MyDataset(torch.utils.data.Dataset):
         else:
             veins = torch.empty(0)
         return pyg, veins
+    
+    @staticmethod
+    def hide_vein_that_dont_move_enough(
+        veins,
+        veins_mask,
+    ):
+        my_thresh = SYSTEM_PARAMS.dataset.vein_min_movement_pixels
+        num_veins = veins.shape[1]
+        for vein_idx in range(num_veins):
+            vein_mask = veins_mask[:, vein_idx, :]
+            if not np.any(vein_mask):
+                continue
+            x0 = veins[0, vein_idx][vein_mask[0]]
+            xn = veins[-1, vein_idx][vein_mask[-1]]
+            if len(x0) == 0 or len(xn) == 0:
+                veins_mask[:, vein_idx, :] = False
+                continue
+            x0_expanded = x0[:, np.newaxis, :]
+            xn_expanded = xn[np.newaxis, :, :]
+            distances = np.sqrt(np.sum((x0_expanded - xn_expanded) ** 2, axis=2))
+            min_distance = np.min(distances)
+            if min_distance <= my_thresh:
+                veins_mask[:, vein_idx, :] = False
 
     def generate_pyg_vectorised(
         self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in=None

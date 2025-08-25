@@ -173,7 +173,8 @@
         "input_width_height": 192
     },
     "dataset": {
-        "data_points_per_epoch": 128
+        "data_points_per_trajectory": 1024,
+        "vein_min_movement_pixels": 200
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,
