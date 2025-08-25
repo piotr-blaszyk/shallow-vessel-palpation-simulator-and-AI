@@ -742,7 +742,7 @@ class MyDataset(torch.utils.data.Dataset):
         return mask
     
     def get_empty_x(self):
-        empty_x = np.zeros(shape=(self.clip_len * self.num_nodes, 0), dtype=float)
+        empty_x = np.zeros(shape=(self.clip_len * (self.num_nodes+1), 0), dtype=float)
         return empty_x
 
     def get_node_xy(self, clip_points):

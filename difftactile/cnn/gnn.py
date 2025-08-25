@@ -141,7 +141,6 @@ class GNN(pl.LightningModule):
         self.tversky_weight = SYSTEM_PARAMS.gnn.tversky_weight
         self.focal_weight = SYSTEM_PARAMS.gnn.focal_weight
         self.connectivity_weight = SYSTEM_PARAMS.gnn.connectivity_weight
-        self.laplacian_connectivity_weight = SYSTEM_PARAMS.gnn.laplacian_connectivity_weight
         self.lr = SYSTEM_PARAMS.gnn.learning_rate
         self._previous_lr = None
         self.hidden_channels = latent_dim
@@ -212,25 +211,18 @@ class GNN(pl.LightningModule):
     
     def compute_connectivity_loss(
         self,
-        edge_index_regular_nodes,
         batch,
-        out,
+        edge_index_regular_nodes,
+        out_unmasked,
+        out_masked,
     ):
-        batch_size = batch.num_graphs
-        connectivity_loss = torch.tensor(0.0, device=self.device)
-        assert edge_index_regular_nodes.shape[1] % batch_size == 0
-        num_regular_edges_first_graph = edge_index_regular_nodes.shape[1] // batch_size
-        edge_index_regular_nodes_single_graph = edge_index_regular_nodes[:, :num_regular_edges_first_graph]
-        for graph_id in batch.batch.unique():
-            graph_mask = (batch.batch == graph_id)
-            out_i = out[graph_mask]
-            connectivity_loss_i = self.compute_connectivity_loss_single(
-                out_i,
-                edge_index_regular_nodes_single_graph,
-            )
-            connectivity_loss += connectivity_loss_i
-        connectivity_loss /= batch.num_graphs
-        return connectivity_loss
+        src, dst = edge_index_regular_nodes
+        diff = out_unmasked[src] - out_unmasked[dst]
+        numerator = torch.sum(diff ** 2)
+        denominator = out_masked.sum() + 1e-8
+        res = numerator / denominator
+        res /= batch.num_graphs
+        return res
     
     def compute_connectivity_loss_single(self, pred, edge_index):
         src, dst = edge_index
@@ -270,12 +262,14 @@ class GNN(pl.LightningModule):
         out = self(x, edge_index, edge_attr)
         out = out.squeeze(-1)
         mask = batch.mask
-        out = out[mask]
-        focal_loss = self.focal_loss(out, batch.y.float())
+        out_unmasked = out
+        out_masked = out[mask]
+        focal_loss = self.focal_loss(out_masked, batch.y.float())
         connectivity_loss = self.compute_connectivity_loss(
-            edge_index_regular_nodes,
             batch,
-            out,
+            edge_index_regular_nodes,
+            out_unmasked,
+            out_masked,
         )
         loss = (
             self.focal_weight*focal_loss + 
@@ -285,7 +279,7 @@ class GNN(pl.LightningModule):
         self.connectivity_loss_acc[stage] += connectivity_loss.detach()
         self.total_loss_acc[stage] += loss.detach()
         self.num_batches[stage] += 1
-        probs = torch.sigmoid(out)
+        probs = torch.sigmoid(out_masked)
         preds = (probs > 0.5).to(batch.y)
 
         self.update_iou_acc(
