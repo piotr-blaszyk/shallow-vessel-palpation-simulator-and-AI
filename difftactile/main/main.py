@@ -16,10 +16,10 @@ import math
 from scipy.spatial import Voronoi
 from shapely.geometry import Point
 
+from difftactile.main.constants import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
-from difftactile.main.constants import *
 from difftactile.main.cfl_and_contact_params_estimation import *
 from difftactile.main.apply_scaling import ScientificNotationEncoder
 from difftactile.main.synthetic_image_generator import *
