@@ -74,6 +74,46 @@ class MyFocalLoss(nn.Module):
         return focal_loss.mean()
 
 
+class MyBlock(nn.Module):
+    def __init__(
+        self,
+        in_dim,
+        latent_dim,
+        out_dim,
+    ):
+        super(MyBlock, self).__init__()
+        self.conv = GINEConv(
+            nn.Sequential(
+                nn.Linear(in_dim, latent_dim),
+                nn.ReLU(),
+                self.dropout(),
+                nn.Linear(latent_dim, latent_dim),
+                nn.ReLU(),
+                self.dropout(),
+                nn.Linear(latent_dim, out_dim),
+            )
+        )
+        self.bn = nn.BatchNorm1d(out_dim)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.3)
+        
+        if in_dim != out_dim:
+            self.residual = nn.Linear(in_dim, out_dim)
+        else:
+            self.residual = nn.Identity()
+    
+    def forward(self, x, edge_index, edge_attr):
+        res = self.residual(x)
+        
+        out = self.conv(x, edge_index, edge_attr)
+        out = self.bn(out)
+        out = self.relu(out)
+        out = self.dropout(out)
+        
+        out = out + res
+        return out
+
+
 class GNN(pl.LightningModule):
     def __init__(self):
         super().__init__()
@@ -93,7 +133,8 @@ class GNN(pl.LightningModule):
         entity_type_embedding_dim = SYSTEM_PARAMS.gnn.entity_type_embedding_dim
         small_input_dim = SYSTEM_PARAMS.gnn.small_input_dim
         latent_dim = SYSTEM_PARAMS.gnn.latent_dim
-        skip_dim = SYSTEM_PARAMS.gnn.skip_dim
+        self.skip_dim = SYSTEM_PARAMS.gnn.skip_dim
+        cat_out_dim = self.skip_dim * 4
         input_dim = latent_dim
         output_dim = SYSTEM_PARAMS.gnn.output_dim
         self.tversky_weight = SYSTEM_PARAMS.gnn.tversky_weight
@@ -133,58 +174,30 @@ class GNN(pl.LightningModule):
             nn.Linear(small_input_dim, small_input_dim),
         )
 
-        self.res_proj1 = nn.Linear(input_dim, latent_dim)
-        self.res_proj2 = nn.Linear(latent_dim, latent_dim)
-        self.res_proj3 = nn.Linear(latent_dim, output_dim)
-
-        self.skip_proj_input = nn.Linear(input_dim, skip_dim)
-        self.skip_proj1 = nn.Linear(latent_dim, skip_dim)
-        self.skip_proj2 = nn.Linear(latent_dim, skip_dim)
-        self.skip_proj3 = nn.Linear(output_dim, skip_dim)
-
-        self.dropout = nn.Dropout(p=0.5)
-        self.dropout_input = nn.Dropout(p=0.1)
-
-        self.bn_input = nn.BatchNorm1d(input_dim)
-        self.bn1 = nn.BatchNorm1d(latent_dim)
-        self.bn2 = nn.BatchNorm1d(latent_dim)
-        self.bn3 = nn.BatchNorm1d(output_dim)
-
-        self.gine1 = GINEConv(
-            nn.Sequential(
-                nn.Linear(input_dim, latent_dim),
-                nn.ReLU(),
-                self.dropout(),
-                nn.Linear(latent_dim, latent_dim),
-                nn.ReLU(),
-                self.dropout(),
-                nn.Linear(latent_dim, latent_dim),
-            )
+        self.block1 = MyBlock(
+            in_dim=input_dim,
+            latent_dim=latent_dim,
+            out_dim=latent_dim,
         )
-        self.gine2 = GINEConv(
-            nn.Sequential(
-                nn.Linear(latent_dim, latent_dim),
-                nn.ReLU(),
-                self.dropout(),
-                nn.Linear(latent_dim, latent_dim),
-                nn.ReLU(),
-                self.dropout(),
-                nn.Linear(latent_dim, latent_dim),
-            )
+        self.block2 = MyBlock(
+            in_dim=latent_dim,
+            latent_dim=latent_dim,
+            out_dim=latent_dim,
         )
-        self.gine3 = GINEConv(
-            nn.Sequential(
-                nn.Linear(latent_dim, latent_dim),
-                nn.ReLU(),
-                self.dropout(),
-                nn.Linear(latent_dim, latent_dim),
-                nn.ReLU(),
-                self.dropout(),
-                nn.Linear(latent_dim, output_dim),
-            )
+        self.block3 = MyBlock(
+            in_dim=latent_dim,
+            latent_dim=latent_dim,
+            out_dim=output_dim,
         )
 
-        cat_out_dim = skip_dim * 4 
+        self.dropout = nn.Dropout(p=0.3)
+        self.input_dropout = nn.Dropout(p=0.1)
+
+        self.skip0 = self.skip_layer(input_dim)
+        self.skip1 = self.skip_layer(latent_dim)
+        self.skip2 = self.skip_layer(latent_dim)
+        self.skip3 = self.skip_layer(output_dim)
+
         self.mlp_output_head = nn.Sequential(
             nn.Linear(cat_out_dim, cat_out_dim // 2),
             nn.ReLU(),
@@ -193,39 +206,30 @@ class GNN(pl.LightningModule):
         )
 
         self.save_hyperparameters()
+    
+    def skip_layer(self, in_dim):
+        return nn.Linear(in_dim, self.skip_dim)
+    
+    def skip_layer_dropout(self, in_dim):
+        return nn.Sequential(
+            nn.Linear(in_dim, self.skip_dim),
+            self.dropout(),
+        )
 
     def forward(self, x, edge_index, edge_attr):
-        input = x
-        res_in1 = self.dropout(self.res_proj1(x))
-        
-        x = self.gine1(x, edge_index, edge_attr)
-        x = self.bn1(x)
-        h1 = F.relu(x + res_in1)
-        res_in2 = self.dropout(self.res_proj2(x))
+        h0 = x
+        h1 = self.block1(h0, edge_index, edge_attr)
+        h2 = self.block2(h1, edge_index, edge_attr)
+        h3 = self.block3(h2, edge_index, edge_attr)
 
-        x = self.gine2(h1, edge_index, edge_attr)
-        x = self.bn2(x)
-        h2 = F.relu(x + res_in2)
-        x = self.dropout(h2)
+        h0 = self.skip0(h0)
+        h1 = self.skip1(h1)
+        h2 = self.skip2(h2)
+        h3 = self.skip3(h3)
 
-        res_in3 = self.res_proj3(x)
-        x = self.gine3(x, edge_index, edge_attr)
-        x = self.bn3(x)
-        h3 = F.relu(x + res_in3)
+        concat_features = torch.cat([h0, h1, h2, h3], dim=-1)
 
-        input = self.skip_proj_input(input)
-        h1 = self.skip_proj1(h1)
-        h2 = self.skip_proj2(h2)
-        h3 = self.skip_proj3(h3)
-
-        input = self.dropout(input)
-        h1 = self.dropout(h1)
-        h2 = self.dropout(h2)
-        h3 = self.dropout(h3)
-
-        concat_features = torch.cat([input, h1, h2, h3], dim=-1)
         out = self.mlp_output_head(concat_features)
-        
         return out
 
     def shared_step(self, getitem_output, stage):
@@ -302,6 +306,9 @@ class GNN(pl.LightningModule):
             global_nodes,
         ], dim=0)
 
+        edge_attr = self.input_dropout(edge_attr)
+        x = self.input_dropout(x)
+
         return x, edge_index, edge_attr
     
     def cat_entity_tag(self, features, entity_ix):
@@ -312,7 +319,18 @@ class GNN(pl.LightningModule):
         return res
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        decay, no_decay = [], []
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                if 'bias' in name or 'bn' in name:
+                    no_decay.append(param)
+                else:
+                    decay.append(param)
+
+        optimizer = torch.optim.Adam([
+            {'params': decay, 'weight_decay': 1e-4},
+            {'params': no_decay, 'weight_decay': 0.0}
+        ], lr=self.lr)
         scheduler = {
             "scheduler": torch.optim.lr_scheduler.StepLR(
                 optimizer,
@@ -474,36 +492,6 @@ class GNN(pl.LightningModule):
         self.connectivity_loss_acc = self.get_scalar_float64_accumulator()
         self.hinge_loss_acc = self.get_scalar_float64_accumulator()
         self.num_batches = self.get_scalar_int32_accumulator()
-        
-
-class GNNResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, edge_dim, dropout=0.0):
-        super(GNNResidualBlock, self).__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(in_channels, out_channels),
-            nn.ReLU(),
-            nn.Linear(out_channels, out_channels)
-        )
-        self.conv = GINEConv(self.mlp)
-        self.bn = nn.BatchNorm1d(out_channels)
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(dropout)
-        
-        if in_channels != out_channels:
-            self.residual = nn.Linear(in_channels, out_channels)
-        else:
-            self.residual = nn.Identity()
-    
-    def forward(self, x, edge_index, edge_attr=None):
-        skip = self.residual(x)
-        
-        out = self.conv(x, edge_index, edge_attr)
-        out = self.bn(out)
-        out = self.relu(out)
-        out = self.dropout(out)
-        
-        out = out + skip
-        return out
 
 
 class MyDataModule(pl.LightningDataModule):
