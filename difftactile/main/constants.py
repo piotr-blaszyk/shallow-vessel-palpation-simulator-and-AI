@@ -1,5 +1,6 @@
 import json
 from typing import Any, Dict, Optional
+import numpy as np
 
 
 class ConstantsFromJson:
@@ -43,3 +44,4 @@ class ConstantsManual:
 # Create a global instance with the system parameters
 SYSTEM_PARAMS = ConstantsFromJson("difftactile/system_params/system-params.json")
 SYSTEM_PARAMS_COMPUTED = ConstantsFromJson("difftactile/system_params/system-params-computed.json")
+NP_RNG = np.random.default_rng(42)

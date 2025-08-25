@@ -20,3 +20,4 @@ saved_models/
 tac_vgnn/
 *.npz
 *.avi
+*.zip

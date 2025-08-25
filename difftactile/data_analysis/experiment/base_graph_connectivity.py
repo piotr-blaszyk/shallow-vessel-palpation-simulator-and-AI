@@ -269,7 +269,7 @@ class ComputeEdges:
         
         # Create shuffled array of indices
         indices = np.arange(n, dtype=int)
-        np.random.shuffle(indices)
+        NP_RNG.shuffle(indices)
         current_ix = 0
         
         while True:

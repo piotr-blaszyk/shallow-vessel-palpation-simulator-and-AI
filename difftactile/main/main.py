@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
 import math
-import random
+
 from scipy.spatial import Voronoi
 from shapely.geometry import Point
 
@@ -713,9 +713,9 @@ class Contact:
         _dr = -SYSTEM_PARAMS.geometry.camera_rotation_angle
         dr = R.from_euler(seq="xyz", angles=[0, 0, _dr], degrees=True)
         og_r = og_r * dr
-        xr = np.random.uniform(-10, 10)
-        yr = np.random.uniform(-10, 10)
-        zr = np.random.uniform(0, 60)
+        xr = NP_RNG.uniform(-10, 10)
+        yr = NP_RNG.uniform(-10, 10)
+        zr = NP_RNG.uniform(0, 60)
         rand_r = R.from_euler(seq="xyz", angles=[0, 0, zr], degrees=True)
         og_r = og_r * rand_r
         slide_r = og_r
@@ -726,7 +726,7 @@ class Contact:
         if True:
             k_0 = SYSTEM_PARAMS.trajectory.press_depth_offset_0
             k_1 = SYSTEM_PARAMS.trajectory.press_depth_offset_1
-            press_depth_rand = np.random.uniform(-k_0, k_1)
+            press_depth_rand = NP_RNG.uniform(-k_0, k_1)
             press_depth_1 = press_depth_1 + press_depth_rand
         
         return (
@@ -747,7 +747,7 @@ class Contact:
         dx = self.sensor_x_range_world[1] - self.sensor_x_range_world[0]
         dy = self.sensor_y_range_world[1] - self.sensor_y_range_world[0]
         r = SYSTEM_PARAMS.geometry.sensor_xy_radius
-        d_single = random.uniform(0.5 * r, 2 * r)
+        d_single = NP_RNG.uniform(0.5 * r, 2 * r)
         trajectory = [
             [x, y, z, *srq],
             [x, y, z - press_depth_surface, *srq],
@@ -812,11 +812,11 @@ class Contact:
         # Generate remaining trajectory points using polar coordinates
         current_x, current_y = x, y
         while len(trajectory) < self.trajectories.shape[1]:
-            magnitude = random.uniform(0, max_magnitude)
+            magnitude = NP_RNG.uniform(0, max_magnitude)
             
             # Keep trying angles until we find one that keeps point in bounds
             while True:
-                angle = random.uniform(0, 2 * math.pi)
+                angle = NP_RNG.uniform(0, 2 * math.pi)
                 new_x = current_x + magnitude * math.cos(angle)
                 new_y = current_y + magnitude * math.sin(angle)
                 
@@ -872,17 +872,17 @@ class Contact:
         placed_cy_values = []
         min_separation = SYSTEM_PARAMS.geometry.min_vein_separation
         for i in range(num_veins):
-            theta_rand = random.uniform(-10, 10)
+            theta_rand = NP_RNG.uniform(-10, 10)
             cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
             cx = self.sensor_x_range_phantom[0]
 
             # px = SYSTEM_PARAMS.geometry.phantom_x_length
             # py = SYSTEM_PARAMS.geometry.phantom_y_length
             # pd = (px**2 + py**2) ** (1/2)
-            # h = np.random.uniform(1/4 * pd, pd)
+            # h = NP_RNG.uniform(1/4 * pd, pd)
 
             while True:
-                cy = np.random.uniform(*self.sensor_y_range_phantom)
+                cy = NP_RNG.uniform(*self.sensor_y_range_phantom)
                 valid_position = True
                 for prev_cy in placed_cy_values:
                     if abs(cy - prev_cy) < min_separation:
@@ -1399,10 +1399,6 @@ class Contact:
             self.current_target_idx[None]
         ])
         self.target_id_data.append(target_id_arr)
-
-        if training_iteration == 0:
-            cv2.imwrite(contact_file, markers_mask)
-            cv2.imwrite(markers_file, markers_img)
     
     @staticmethod
     def get_endpoints(points):
@@ -2159,10 +2155,10 @@ class Contact:
         ts = SYSTEM_PARAMS.contact.tangential_stiffness
         cfc = SYSTEM_PARAMS.contact.coulomb_friction_coeff
 
-        self.normal_stiffness[None] = random.uniform(ns * 0.5, ns * 1.5)
-        self.normal_damping[None] = random.uniform(nd * 0.5, nd * 1.5)
-        self.tangential_stiffness[None] = random.uniform(ts * 0.5, ts * 1.5)
-        self.coulomb_friction_coeff[None] = random.uniform(cfc * 0.5, cfc * 1.25)
+        self.normal_stiffness[None] = NP_RNG.uniform(ns * 0.5, ns * 1.5)
+        self.normal_damping[None] = NP_RNG.uniform(nd * 0.5, nd * 1.5)
+        self.tangential_stiffness[None] = NP_RNG.uniform(ts * 0.5, ts * 1.5)
+        self.coulomb_friction_coeff[None] = NP_RNG.uniform(cfc * 0.5, cfc * 1.25)
     
     def print_contact_params(self):
         ns = SYSTEM_PARAMS.contact.normal_stiffness
@@ -2378,7 +2374,7 @@ class Contact:
         print("all done")
 
     def collect_training_data(self):
-        self.clear_temp_images()
+        # self.clear_temp_images()
         self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")

@@ -91,7 +91,7 @@ class Visualisation:
             if frame_num is not None:
                 start_ix = frame_num
             else:
-                # start_ix = np.random.randint(0, n - dilated_clip_len)
+                # start_ix = NP_RNG.randint(0, n - dilated_clip_len)
                 start_ix = m
             
             # Get and process clip

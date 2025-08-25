@@ -5,7 +5,6 @@ if SYSTEM_PARAMS.meta.cnn_gnn == 0:
 import os
 import torch
 import numpy as np
-import random
 import math
 from torch_geometric.data import Data
 from sklearn.neighbors import NearestNeighbors

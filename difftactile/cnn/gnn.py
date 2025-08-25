@@ -398,12 +398,12 @@ class MyDataModule(pl.LightningDataModule):
     def _select_new_subset(self):
         len_train = len(self.train_dataset)
         train_subset_size = self.train_subset_size
-        self.current_train_indices = np.random.choice(
+        self.current_train_indices = NP_RNG.choice(
             len_train, train_subset_size, replace=True
         )
         len_val = len(self.val_dataset)
         val_subset_size = min(len_val, self.val_subset_size)
-        self.current_val_indices = np.random.choice(
+        self.current_val_indices = NP_RNG.choice(
             len_val, val_subset_size, replace=False
         )
 
@@ -635,7 +635,7 @@ def choose_optimal_threshold():
 def compute_stats(dataset, batch_size):
     len_train = len(dataset)
     train_subset_size = batch_size
-    ixs = np.random.choice(len_train, train_subset_size, replace=False)
+    ixs = NP_RNG.choice(len_train, train_subset_size, replace=False)
     res = compute_alpha(dataset, ixs)
     keys = [
         "pos",
