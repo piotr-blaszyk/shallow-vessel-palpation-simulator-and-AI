@@ -494,6 +494,7 @@ class Visualisation:
             soft_prediction_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)  # New stack for soft predictions
             labels_stack = np.zeros((num_frames, labels_h, labels_w, 3), dtype=np.uint8)
             graph_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)  # New stack for graph visualization
+            confusion_matrix_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)  # New stack for confusion matrix visualization
 
             if mode == 'predictions':
                 # Get predictions
@@ -506,6 +507,34 @@ class Visualisation:
                     out = out[mask]
                     probs = torch.sigmoid(out)
                     pred = (probs > 0.5).float()
+
+                    assert data.num_graphs == 1
+                    
+                    # Compute IoU scores per frame
+                    num_nodes_per_frame = SYSTEM_PARAMS.vitactip.num_markers
+                    for frame_idx in range(num_frames):
+                        start_idx = frame_idx * num_nodes_per_frame
+                        end_idx = (frame_idx + 1) * num_nodes_per_frame
+                        frame_pred = pred[start_idx:end_idx]
+                        frame_truth = data.y[start_idx:end_idx]
+                        frame_metrics = GNN.iou_score(frame_pred, frame_truth)
+                        print(f"\nFrame {frame_idx} IoU Scores:")
+                        print(f"Foreground IoU: {frame_metrics['fg_iou']:.4f}")
+                        print(f"Background IoU: {frame_metrics['bg_iou']:.4f}")
+                        print(f"Macro IoU: {frame_metrics['macro_iou']:.4f}")
+                        
+                        # Compute confusion matrix
+                        frame_pred = pred[start_idx:end_idx].cpu().numpy()
+                        frame_truth = data.y[start_idx:end_idx].cpu().numpy()
+                        tp = np.sum((frame_pred == 1) & (frame_truth == 1))
+                        tn = np.sum((frame_pred == 0) & (frame_truth == 0))
+                        fp = np.sum((frame_pred == 1) & (frame_truth == 0))
+                        fn = np.sum((frame_pred == 0) & (frame_truth == 1))
+                        print(f"\nFrame {frame_idx} Confusion Matrix:")
+                        print(f"True Positives: {tp}")
+                        print(f"True Negatives: {tn}")
+                        print(f"False Positives: {fp}")
+                        print(f"False Negatives: {fn}")
                     
                     probs = probs.cpu().numpy().astype(np.float32)
                     pred = pred.cpu().numpy().astype(int)
@@ -582,6 +611,29 @@ class Visualisation:
                             intensity = int(255 * prob)  # Scale to [0,255]
                             # Use white color with varying intensity for all points
                             cv2.circle(soft_prediction_stack[frame_idx], center, MARKER_RADIUS, (intensity, intensity, intensity), -1, cv2.LINE_AA)
+                    
+                    # Draw confusion matrix visualization
+                    for point_idx, point in enumerate(points):
+                        if 0 <= point[0] < w and 0 <= point[1] < h:
+                            center = (int(point[0]), int(point[1]))
+                            pred_val = frame_pred[point_idx]
+                            true_val = ground_truth[point_idx]
+                            
+                            # Color coding:
+                            # TP: Lime Green (50, 205, 50)
+                            # TN: Yellow (255, 255, 0)
+                            # FP: Red (255, 0, 0)
+                            # FN: Bright Blue (0, 0, 255)
+                            if pred_val == 1 and true_val == 1:  # TP
+                                color = (50, 205, 50)
+                            elif pred_val == 0 and true_val == 0:  # TN
+                                color = (0, 255, 255)  # BGR format
+                            elif pred_val == 1 and true_val == 0:  # FP
+                                color = (0, 0, 255)
+                            else:  # FN
+                                color = (255, 0, 0)
+                            
+                            cv2.circle(confusion_matrix_stack[frame_idx], center, MARKER_RADIUS, color, -1, cv2.LINE_AA)
 
                 # Get and process labels image for current frame
                 if ground_truth_labels_present:
@@ -611,6 +663,7 @@ class Visualisation:
                 if mode == 'predictions':
                     cv2.imshow(f'Hard Prediction {sequence_idx}', prediction_stack[current_frame])
                     cv2.imshow(f'Soft Prediction {sequence_idx}', soft_prediction_stack[current_frame])
+                    cv2.imshow(f'Confusion Matrix {sequence_idx}', confusion_matrix_stack[current_frame])
                 cv2.imshow(f'Labels Image {sequence_idx}', labels_stack[current_frame])
                 cv2.imshow(f'Graph Connectivity {sequence_idx}', graph_stack[current_frame])
 
@@ -621,8 +674,9 @@ class Visualisation:
                 if mode == 'predictions':
                     cv2.moveWindow(f'Hard Prediction {sequence_idx}', w + sep_w, 0)
                     cv2.moveWindow(f'Soft Prediction {sequence_idx}', w + sep_w, h + sep_h)
-                    cv2.moveWindow(f'Labels Image {sequence_idx}', 2 * (w + sep_w), 0)
-                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', 2 * (w + sep_w), labels_h + sep_h)
+                    cv2.moveWindow(f'Confusion Matrix {sequence_idx}', 2 * (w + sep_w), 0)
+                    cv2.moveWindow(f'Labels Image {sequence_idx}', 2 * (w + sep_w), h + sep_h)
+                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', 3 * (w + sep_w), 0)
                 else:
                     cv2.moveWindow(f'Labels Image {sequence_idx}', w + sep_w, 0)
                     cv2.moveWindow(f'Graph Connectivity {sequence_idx}', w + sep_w, labels_h + sep_h)

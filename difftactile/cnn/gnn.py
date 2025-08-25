@@ -146,8 +146,8 @@ class GNN(pl.LightningModule):
         out = self.gine2(x, edge_index, edge_attr)
         return out
 
-    def shared_step(self, batch, stage):
-        batch, _ = batch
+    def shared_step(self, getitem_output, stage):
+        batch, empty_visualisation_tensor = getitem_output
         x, edge_index, edge_attr = self.my_prepare_data(batch)
         out = self(x, edge_index, edge_attr)
         out = out.squeeze(-1)
@@ -159,7 +159,7 @@ class GNN(pl.LightningModule):
         probs = torch.sigmoid(out)
         preds = (probs > 0.5).float()
 
-        metrics = self.compute_metrics(
+        metrics = GNN.compute_metrics(
             batch=batch,
             preds=preds,
         )
@@ -249,8 +249,8 @@ class GNN(pl.LightningModule):
             "optimizer": optimizer,
         }
     
+    @staticmethod
     def compute_metrics(
-        self,
         batch,
         preds,
     ):
