@@ -14,7 +14,6 @@ import time
 from tqdm import tqdm
 from difftactile.cnn.dataset import *
 from difftactile.cnn.common import *
-from difftactile.cnn.train import LossWeightScheduler
 
 
 class CurriculumCallback(pl.Callback):
@@ -78,14 +77,12 @@ class GNN(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.num_classes = SYSTEM_PARAMS.gnn.num_classes
-        self.area_pred_acc = self.get_iou_accumulator()
-        self.area_true_acc = self.get_iou_accumulator()
-        self.area_inter_acc = self.get_iou_accumulator()
-        self.total_loss_acc = self.get_scalar_float64_accumulator()
-        self.focal_loss_acc = self.get_scalar_float64_accumulator()
-        self.connectivity_loss_acc = self.get_scalar_float64_accumulator()
-        self.hinge_loss_acc = self.get_scalar_float64_accumulator()
-        self.num_batches = self.get_scalar_int32_accumulator()
+        self.stages_str = [
+            'train',
+            'val',
+            'test',
+        ]
+        self.init_accumulators()
         self.num_nodes = SYSTEM_PARAMS.vitactip.num_markers
         self.clip_len = SYSTEM_PARAMS.gnn.clip_len
         node_dim = 2+3+self.num_nodes+self.clip_len
@@ -167,7 +164,7 @@ class GNN(pl.LightningModule):
         loss = self.focal_weight * focal_loss
         self.focal_loss_acc[stage] += focal_loss.detach()
         self.total_loss_acc[stage] += loss.detach()
-        self.self.num_batches[stage] += 1
+        self.num_batches[stage] += 1
         probs = torch.sigmoid(out)
         preds = (probs > 0.5).to(batch.y)
 
@@ -264,17 +261,17 @@ class GNN(pl.LightningModule):
             pred_mask = (preds == class_ix)
             true_mask = (y == class_ix)
 
-            self.area_pred_acc[stage][class_ix] += pred_mask.sum().float()
-            self.area_true_acc[stage][class_ix] += true_mask.sum().float()
-            self.area_inter_acc[stage][class_ix] += (pred_mask & true_mask).sum().float()
+            self.area_pred_acc[stage][class_ix] += pred_mask.sum()
+            self.area_true_acc[stage][class_ix] += true_mask.sum()
+            self.area_inter_acc[stage][class_ix] += (pred_mask & true_mask).sum()
     
     def compute_ious(self, stage: str):
         ious = {}
 
         for class_ix in range(self.num_classes):
-            ap = self.area_pred_acc[stage][class_ix].item()
-            at = self.area_true_acc[stage][class_ix].item()
-            ai = self.area_inter_acc[stage][class_ix].item()
+            ap = self.area_pred_acc[stage][class_ix].float().item()
+            at = self.area_true_acc[stage][class_ix].float().item()
+            ai = self.area_inter_acc[stage][class_ix].float().item()
 
             if ap == 0 and at == 0:
                 iou = 1.0
@@ -308,60 +305,20 @@ class GNN(pl.LightningModule):
         self.area_true_acc[stage].zero_()
         self.area_inter_acc[stage].zero_()
 
-        total_loss = self.total_loss[stage] / self.num_batches[stage]
-        focal_loss = self.focal_loss[stage] / self.num_batches[stage]
-        connectivity_loss = self.connectivity_loss[stage] / self.num_batches[stage]
-        hinge_loss = self.hinge_loss[stage] / self.num_batches[stage]
+        total_loss = self.total_loss_acc[stage] / self.num_batches[stage]
+        focal_loss = self.focal_loss_acc[stage] / self.num_batches[stage]
+        connectivity_loss = self.connectivity_loss_acc[stage] / self.num_batches[stage]
+        hinge_loss = self.hinge_loss_acc[stage] / self.num_batches[stage]
         self.log(f"{stage}/loss", total_loss, prog_bar=log_on_prog_bar)
         self.log(f"{stage}/focal_loss", focal_loss, prog_bar=False)
         self.log(f"{stage}/connectivity_loss", connectivity_loss, prog_bar=False)
         self.log(f"{stage}/hinge_loss", hinge_loss, prog_bar=False)
 
-        self.total_loss[stage].zero_()
+        self.total_loss_acc[stage].zero_()
+        self.focal_loss_acc[stage].zero_()
+        self.connectivity_loss_acc[stage].zero_()
+        self.hinge_loss_acc[stage].zero_()
         self.num_batches[stage] = 0
-
-    def my_log(
-        self,
-        stage,
-        batch,
-        tversky_loss,
-        focal_loss,
-        loss,
-        metrics,
-    ):
-        self.log(
-            f"{stage}_tversky_loss",
-            tversky_loss,
-            prog_bar=False,
-            batch_size=batch.num_graphs,
-        )
-        self.log(
-            f"{stage}_focal_loss",
-            focal_loss,
-            prog_bar=False,
-            batch_size=batch.num_graphs,
-        )
-        self.log(
-            f"{stage}_combined_loss", loss, prog_bar=False, batch_size=batch.num_graphs
-        )
-        self.log(
-            f"{stage}_fg_iou",
-            metrics["fg_iou"],
-            prog_bar=True,
-            batch_size=batch.num_graphs,
-        )
-        self.log(
-            f"{stage}_bg_iou",
-            metrics["bg_iou"],
-            prog_bar=True,
-            batch_size=batch.num_graphs,
-        )
-        self.log(
-            f"{stage}_macro_iou",
-            metrics["macro_iou"],
-            prog_bar=False,
-            batch_size=batch.num_graphs,
-        )
 
     def training_step(self, batch, batch_idx):
         return self.shared_step(batch, "train")
@@ -422,25 +379,27 @@ class GNN(pl.LightningModule):
         return torch.tensor(area_inter / area_union)
     
     def get_iou_accumulator(self):
-        return {
-            "train": torch.zeros(self.num_classes),
-            "val": torch.zeros(self.num_classes),
-            "test": torch.zeros(self.num_classes)
-        }
+        return self.get_accumulator(shape=(self.num_classes,), dtype=torch.int64)
     
     def get_scalar_float64_accumulator(self):
-        return {
-            "train": torch.zeros((), dtype=torch.float64),
-            "val": torch.zeros((), dtype=torch.float64),
-            "test": torch.zeros((), dtype=torch.float64)
-        }
+        return self.get_accumulator(shape=(), dtype=torch.float64)
     
     def get_scalar_int32_accumulator(self):
-        return {
-            "train": torch.zeros((), dtype=torch.int32),
-            "val": torch.zeros((), dtype=torch.int32),
-            "test": torch.zeros((), dtype=torch.int32)
-        }
+        return self.get_accumulator(shape=(), dtype=torch.int32)
+    
+    def get_accumulator(self, shape, dtype):
+        return {k: torch.zeros(shape, dtype=dtype, device='cuda:0') for k in self.stages_str}
+    
+    def init_accumulators(self):
+        self.area_pred_acc = self.get_iou_accumulator()
+        self.area_true_acc = self.get_iou_accumulator()
+        self.area_inter_acc = self.get_iou_accumulator()
+        self.total_loss_acc = self.get_scalar_float64_accumulator()
+        self.focal_loss_acc = self.get_scalar_float64_accumulator()
+        self.connectivity_loss_acc = self.get_scalar_float64_accumulator()
+        self.hinge_loss_acc = self.get_scalar_float64_accumulator()
+        self.num_batches = self.get_scalar_int32_accumulator()
+        
 
 
 class MyDataModule(pl.LightningDataModule):
@@ -611,13 +570,13 @@ def main():
     model = GNN()
     model.set_stats(all_stats[target_difficulty])
     checkpoint_cb = ModelCheckpoint(
-        monitor="val_fg_iou",
+        monitor="val_iou/1",
         mode="max",
         save_top_k=1,
         filename="best-model",
     )
     early_stopping = EarlyStopping(
-        monitor="val_fg_iou",
+        monitor="val_iou/1",
         mode="max",
         patience=NUM_EPOCHS * 2,
         min_delta=1e-4,
