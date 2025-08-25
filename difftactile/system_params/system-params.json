@@ -165,7 +165,8 @@
         "num_entity_types": 6,
         "exp_grid_search_dilation": 2,
         "exp_straight_line_dilation": 1,
-        "num_classes": 2
+        "num_classes": 2,
+        "skip_dim": 128
     },
     "cnn": {
         "input_width_height": 192
