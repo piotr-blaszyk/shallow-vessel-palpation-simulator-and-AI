@@ -213,16 +213,23 @@ class GNN(pl.LightningModule):
         self,
         batch,
         edge_index_regular_nodes,
-        out_unmasked,
-        out_masked,
+        probs_unmasked,
+        probs_masked,
     ):
-        src, dst = edge_index_regular_nodes
-        diff = out_unmasked[src] - out_unmasked[dst]
-        numerator = torch.sum(diff ** 2)
-        denominator = out_masked.sum() + 1e-8
-        res = numerator / denominator
-        res /= batch.num_graphs
-        return res
+        n = edge_index_regular_nodes.shape[1]
+        k = batch.num_graphs
+        assert n % k == 0
+        x = n // k
+        loss = torch.tensor(0.0, device=self.device)
+        for i in range(batch.num_graphs):
+            src, dst = edge_index_regular_nodes[:, x*i:x*(i+1)]
+            diff = probs_unmasked[src] - probs_unmasked[dst]
+            numerator = torch.sum(diff ** 2) / x
+            denominator = (probs_masked.sum() / self.num_nodes) + 1e-8
+            loss_single = numerator / denominator
+            loss += loss_single
+        loss /= k
+        return loss
     
     def compute_connectivity_loss_single(self, pred, edge_index):
         src, dst = edge_index
@@ -264,12 +271,14 @@ class GNN(pl.LightningModule):
         mask = batch.mask
         out_unmasked = out
         out_masked = out[mask]
+        probs_unmasked = torch.sigmoid(out_unmasked)
+        probs_masked = torch.sigmoid(out_masked)
         focal_loss = self.focal_loss(out_masked, batch.y.float())
         connectivity_loss = self.compute_connectivity_loss(
             batch,
             edge_index_regular_nodes,
-            out_unmasked,
-            out_masked,
+            probs_unmasked,
+            probs_masked,
         )
         loss = (
             self.focal_weight*focal_loss + 
@@ -279,14 +288,19 @@ class GNN(pl.LightningModule):
         self.connectivity_loss_acc[stage] += connectivity_loss.detach()
         self.total_loss_acc[stage] += loss.detach()
         self.num_batches[stage] += 1
-        probs = torch.sigmoid(out_masked)
-        preds = (probs > 0.5).to(batch.y)
+        preds_masked = (probs_masked > 0.5).to(batch.y)
 
         self.update_iou_acc(
-            preds,
+            preds_masked,
             batch.y,
             stage,
         )
+
+        log_loss = stage == 'train'
+        self.log(f"{stage}/focal_loss", focal_loss, on_step=True, on_epoch=True, prog_bar=log_loss, batch_size=batch.num_graphs)
+        self.log(f"{stage}/connectivity_loss", connectivity_loss, on_step=True, on_epoch=True, prog_bar=log_loss, batch_size=batch.num_graphs)
+        self.log_per_batch_iou(batch, stage, preds_masked, batch.y)
+
         return loss
     
     def my_prepare_data(self, batch):
@@ -398,7 +412,7 @@ class GNN(pl.LightningModule):
             self.area_true_acc[stage][class_ix] += true_mask.sum()
             self.area_inter_acc[stage][class_ix] += (pred_mask & true_mask).sum()
     
-    def compute_ious(self, stage: str):
+    def compute_ious_acc(self, stage: str):
         ious = {}
 
         for class_ix in range(self.num_classes):
@@ -428,8 +442,8 @@ class GNN(pl.LightningModule):
     
     def my_on_epoch_end(self, stage: str):
         # log_on_prog_bar = stage == 'train'
-        log_on_prog_bar = True
-        ious = self.compute_ious(stage)
+        log_on_prog_bar = False
+        ious = self.compute_ious_acc(stage)
         self.log_dict(
             {f"{stage}_iou/{k}": v for k, v in ious.items()},
             prog_bar=log_on_prog_bar,
@@ -442,7 +456,7 @@ class GNN(pl.LightningModule):
         focal_loss = self.focal_loss_acc[stage] / self.num_batches[stage]
         connectivity_loss = self.connectivity_loss_acc[stage] / self.num_batches[stage]
         hinge_loss = self.hinge_loss_acc[stage] / self.num_batches[stage]
-        self.log(f"{stage}/loss", total_loss, prog_bar=log_on_prog_bar)
+        self.log(f"{stage}/loss", total_loss, prog_bar=False)
         self.log(f"{stage}/focal_loss", focal_loss, prog_bar=False)
         self.log(f"{stage}/connectivity_loss", connectivity_loss, prog_bar=False)
         self.log(f"{stage}/hinge_loss", hinge_loss, prog_bar=False)
@@ -480,6 +494,15 @@ class GNN(pl.LightningModule):
         self.tversky_loss.beta = tversky_beta
         self.focal_loss.alpha = focal_alpha
         self.focal_loss.gamma = focal_gamma
+    
+    def log_per_batch_iou(self, batch, stage, preds, y):
+        metrics = GNN.iou_score(preds, y)
+        log_loss = stage == 'train'
+        self.log_dict(
+            {f"{stage}_iou/{k}": v for k, v in metrics.items()},
+            prog_bar=log_loss,
+            batch_size=batch.num_graphs,
+        )
 
     @staticmethod
     def iou_score(preds, y):
@@ -487,7 +510,7 @@ class GNN(pl.LightningModule):
         y = y.float()
         iou_0 = GNN.iou_score_single_class(preds, y, 0).item()
         iou_1 = GNN.iou_score_single_class(preds, y, 1).item()
-        return {"fg_iou": iou_1, "bg_iou": iou_0}
+        return {1: iou_1, 0: iou_0}
     
     @staticmethod
     def iou_score_single_class(
@@ -498,9 +521,9 @@ class GNN(pl.LightningModule):
         pred_mask = (preds == class_ix)
         true_mask = (y == class_ix)
 
-        area_pred = pred_mask.sum().item()
-        area_true = true_mask.sum().item()
-        area_inter = (pred_mask & true_mask).sum().item()
+        area_pred = pred_mask.sum().float().item()
+        area_true = true_mask.sum().float().item()
+        area_inter = (pred_mask & true_mask).sum().float().item()
 
         if area_pred == 0 and area_true == 0:
             return torch.tensor(float('nan'))
@@ -634,7 +657,7 @@ def main():
     VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * NUM_VAL_BATCHES
     tensor_board_root_dir = 'lightning_logs'
     timestamp = time.strftime('%Y%m%d_%H%M%S')
-    tensor_board_experiment_dir = f"gnn_{timestamp}"
+    tensor_board_experiment_dir = f"gnn"
     tensor_board_full_dir = f'{tensor_board_root_dir}/{tensor_board_experiment_dir}'
     print(f'tensorboard directory: {tensor_board_full_dir}')
     logger = TensorBoardLogger(

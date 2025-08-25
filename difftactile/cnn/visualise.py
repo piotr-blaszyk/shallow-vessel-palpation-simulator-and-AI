@@ -501,7 +501,7 @@ class Visualisation:
                 # Get predictions
                 with torch.no_grad():
                     data = data.to(device)
-                    x, edge_index, edge_attr = model.my_prepare_data(data)
+                    x, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(data)
                     out = model(x, edge_index, edge_attr)
                     out = out.squeeze(-1)  # Remove the channel dimension
                     mask = data.mask
@@ -520,8 +520,8 @@ class Visualisation:
                         frame_pred = pred[start_idx:end_idx]
                         frame_truth = data.y[start_idx:end_idx]
                         frame_metrics = GNN.iou_score(frame_pred, frame_truth)
-                        fg_iou = frame_metrics['fg_iou']
-                        bg_iou = frame_metrics['bg_iou']
+                        fg_iou = frame_metrics[1]
+                        bg_iou = frame_metrics[0]
                         
                         # Compute confusion matrix
                         frame_pred = pred[start_idx:end_idx].cpu().numpy()
