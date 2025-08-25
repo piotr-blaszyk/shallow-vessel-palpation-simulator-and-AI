@@ -409,13 +409,9 @@ class Visualisation:
         with open(self.test_loader, 'rb') as f:
             test_data = pickle.load(f)
         all_stats = test_data['dataset_stats']
-        final_difficulty = 1.0
-        stats = all_stats[final_difficulty]
 
         if data_source == 'pickled_test_dataset':
             dataset = test_data['dataset']
-            dataset.set_stats(stats)
-            dataset.set_difficulty_level(1.0)
             dataset.eval()
             data_loader = DataLoader(
                 dataset,
@@ -430,8 +426,10 @@ class Visualisation:
                 val_size=0.0,
                 test_size=0.0
             )
+            target_difficulty = 1.0
+            stats = all_stats[target_difficulty]
             train_dataset.set_stats(stats)
-            train_dataset.set_difficulty_level(1.0)
+            train_dataset.set_difficulty_level(target_difficulty)
             train_dataset.eval()
             data_loader = DataLoader(
                 train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
@@ -501,7 +499,8 @@ class Visualisation:
                 # Get predictions
                 with torch.no_grad():
                     data = data.to(device)
-                    out = model(data.x, data.edge_index, data.edge_attr)
+                    x, edge_index, edge_attr = model.my_prepare_data(data)
+                    out = model(x, edge_index, edge_attr)
                     out = out.squeeze(-1)  # Remove the channel dimension
                     mask = data.mask
                     out = out[mask]
@@ -749,8 +748,8 @@ class Visualisation:
 def main():
     v = Visualisation()
     v.visualise_gnn(
-        mode='dataset', 
-        data_source='fresh_dataset'
+        mode='predictions', 
+        data_source='pickled_test_dataset'
     )
 
 

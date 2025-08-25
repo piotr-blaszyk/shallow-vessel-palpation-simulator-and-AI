@@ -483,8 +483,9 @@ def main():
         scheme="new",
     )
     all_stats = {}
+    target_difficulty = 0
     for i in range(11):
-        if i != 10:
+        if i != target_difficulty:
             continue
         difficulty = i / 10
         train_dataset.set_difficulty_level(difficulty)
@@ -493,18 +494,17 @@ def main():
         alpha_neg = stats["alpha_neg"]
         alpha_pos = stats["alpha_pos"]
         print(f"difficulty: {difficulty}; pos:neg = {alpha_neg:.2f}:{alpha_pos:.2f}")
-    init_difficulty = 0.0
-    final_difficulty = 1.0
-    train_dataset.set_difficulty_level(final_difficulty)
-    val_dataset.set_difficulty_level(final_difficulty)
-    test_dataset.set_difficulty_level(final_difficulty)
-    exp_test_dataset_grid_search.set_difficulty_level(final_difficulty)
-    exp_test_dataset_straight_line_slide.set_difficulty_level(final_difficulty)
-    train_dataset.set_stats(all_stats[final_difficulty])
-    val_dataset.set_stats(all_stats[final_difficulty])
-    test_dataset.set_stats(all_stats[final_difficulty])
-    exp_test_dataset_grid_search.set_stats(all_stats[final_difficulty])
-    exp_test_dataset_straight_line_slide.set_stats(all_stats[final_difficulty])
+    target_difficulty = float(target_difficulty)
+    train_dataset.set_difficulty_level(target_difficulty)
+    val_dataset.set_difficulty_level(target_difficulty)
+    test_dataset.set_difficulty_level(target_difficulty)
+    exp_test_dataset_grid_search.set_difficulty_level(target_difficulty)
+    exp_test_dataset_straight_line_slide.set_difficulty_level(target_difficulty)
+    train_dataset.set_stats(all_stats[target_difficulty])
+    val_dataset.set_stats(all_stats[target_difficulty])
+    test_dataset.set_stats(all_stats[target_difficulty])
+    exp_test_dataset_grid_search.set_stats(all_stats[target_difficulty])
+    exp_test_dataset_straight_line_slide.set_stats(all_stats[target_difficulty])
     data_module = MyDataModule(
         train_dataset=train_dataset,
         val_dataset=val_dataset,
@@ -522,7 +522,7 @@ def main():
     with open(SYSTEM_PARAMS.files.test_loader_gnn, "wb") as f:
         pickle.dump(test_data, f)
     model = GNN()
-    model.set_stats(all_stats[final_difficulty])
+    model.set_stats(all_stats[target_difficulty])
     checkpoint_cb = ModelCheckpoint(
         monitor="val_fg_iou",
         mode="max",
