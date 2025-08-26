@@ -15,7 +15,7 @@
     },
     "trajectory": {
         "press_depth_0": 0.010,
-        "press_depth_1": 0.004,
+        "press_depth_1": 0.008,
         "press_depth_2": 0.006,
         "press_depth_3": 0.008,
         "slide_distance": 0.050,

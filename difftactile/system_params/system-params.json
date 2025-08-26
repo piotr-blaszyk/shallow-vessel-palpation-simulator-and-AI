@@ -45,7 +45,7 @@
         "hard_plastic": {
             "density": 1150,
             "poissons_ratio": 2.700e-01,
-            "youngs_modulus": 1.200e+04
+            "youngs_modulus": 1.200e+05
         },
         "fixed_points_z_ratio": 1.000e-01,
         "fix_bottom_points": 1,
@@ -55,10 +55,10 @@
     },
     "contact": {
         "dt": 1.270e-06,
-        "normal_stiffness": 3.770e+00,
-        "tangential_stiffness": 2.639e+00,
-        "normal_damping": 1.114e+03,
-        "coulomb_friction_coeff": 4.000e-01,
+        "normal_stiffness": 4.000e+00,
+        "tangential_stiffness": 1.000e-01,
+        "normal_damping": 1.000e+03,
+        "coulomb_friction_coeff": 1.000e-01,
         "num_sub_frames": 125,
         "num_opt_steps": 2,
         "num_training_trajectories": 200,
@@ -79,7 +79,7 @@
         "press_depth": 6.000e-02,
         "slide_distance": 2.500e-01,
         "press_depth_0": 5.000e-02,
-        "press_depth_1": 2.000e-02,
+        "press_depth_1": 4.000e-02,
         "press_depth_2": 3.000e-02,
         "press_depth_3": 4.000e-02,
         "press_depth_offset_0": 5.000e-03,
