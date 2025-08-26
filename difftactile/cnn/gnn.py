@@ -686,7 +686,7 @@ def main():
     all_stats = {}
     target_difficulty = 1.0
     for i in range(11):
-        if i != target_difficulty:
+        if i / 10 != target_difficulty:
             continue
         difficulty = i / 10
         train_dataset.set_difficulty_level(difficulty)

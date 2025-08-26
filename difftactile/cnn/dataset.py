@@ -22,16 +22,27 @@ class MyDataset(torch.utils.data.Dataset):
         self,
         scheme,
         mode="root",
-        data_points_today=[],
-        data_points_yesterday=[],
-        data_points_pos=[],
-        data_points_neg=[],
-        data_points=[],
+        data_points_today=None,
+        data_points_yesterday=None,
+        data_points_pos=None,
+        data_points_neg=None,
+        data_points=None,
         normalise_pos=True,
         exp_markers_npz=None,
         exp_ground_truth_labels_npz=None,
         exp_dilation=None,
     ):
+        # Initialize mutable defaults
+        if data_points_today is None:
+            data_points_today = []
+        if data_points_yesterday is None:
+            data_points_yesterday = []
+        if data_points_pos is None:
+            data_points_pos = []
+        if data_points_neg is None:
+            data_points_neg = []
+        if data_points is None:
+            data_points = []
         super().__init__()
         start_time = time.perf_counter()
         self.clip_len = SYSTEM_PARAMS.gnn.clip_len
@@ -515,7 +526,7 @@ class MyDataset(torch.utils.data.Dataset):
             data_points = all_data_points[i]
             trajectory_to_indices = {}
             for i, data_point in enumerate(data_points):
-                file_path = data_point[2]
+                file_path = data_point[0]
                 trajectory_to_indices.setdefault(file_path, []).append(i)
             trajectories = list(trajectory_to_indices.keys())
             trajectories.sort()
