@@ -184,6 +184,10 @@ class SyntheticImageGenerator:
         return s0 * np.sin(k * dx)
     
     @staticmethod
+    def bring_numbers_closer_to_0(xs, d):
+        return np.where(xs > 0, xs - d, np.where(xs < 0, xs + d, xs))
+    
+    @staticmethod
     def apply_wave_particle_displacements(l2, points, wave_displacements):
         a2, b2, c2 = l2
         norm2 = np.sqrt(a2*a2 + b2*b2)
@@ -198,6 +202,10 @@ class SyntheticImageGenerator:
     @staticmethod
     def mask_out_distant_points(distances, thresh):
         return np.abs(distances) < thresh
+    
+    @staticmethod
+    def mask_out_close_points(distances, thresh):
+        return np.abs(distances) > thresh
     
     @staticmethod
     def get_min_dist_between_2_point_collections(points1, points2):

@@ -691,7 +691,7 @@ class MyDataset(torch.utils.data.Dataset):
             selected_vein_idx = NP_RNG.choice(present_vein_indices)
             vein_present_all_frames[:] = False
             vein_present_all_frames[selected_vein_idx] = True
-        # veins_mask &= vein_present_all_frames[np.newaxis, :, np.newaxis]
+        veins_mask &= vein_present_all_frames[np.newaxis, :, np.newaxis]
 
         # MyDataset.hide_vein_that_dont_move_enough(
         #     veins,
@@ -1477,9 +1477,12 @@ class MyDataset(torch.utils.data.Dataset):
         if not np.any(valid_frames_mask):
             return clip_points, clip_vein_polyline_mask
 
-        s0 = NP_RNG.uniform(5, 25)
-        thresh = NP_RNG.uniform(20, 200)
+        s0 = NP_RNG.uniform(5, 10)
+        thresh = NP_RNG.uniform(10, 50)
+        s0 = 10
+        thresh = 22.5
         k = thresh / np.pi
+        r = 22.5
 
         if False:
             target_num_vein_points = NP_RNG.integers(
@@ -1509,8 +1512,11 @@ class MyDataset(torch.utils.data.Dataset):
                     l2, l3, points
                 )
                 distances = SyntheticImageGenerator.get_signed_distance_to_l1_along_l2(l1, l2, points)
-                points_mask_2 = SyntheticImageGenerator.mask_out_distant_points(distances, thresh)
+                points_mask_2 = SyntheticImageGenerator.mask_out_distant_points(distances, r+thresh)
+                points_mask_3 = SyntheticImageGenerator.mask_out_close_points(distances, r)
                 points_mask &= points_mask_2
+                points_mask &= points_mask_3
+                distances = SyntheticImageGenerator.bring_numbers_closer_to_0(distances, r)
                 wave_displacements = SyntheticImageGenerator.get_wave_particle_displacement(
                     s0, k, distances
                 )

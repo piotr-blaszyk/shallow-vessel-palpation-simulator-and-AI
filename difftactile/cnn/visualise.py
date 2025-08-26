@@ -7,6 +7,7 @@ import matplotlib.colors as mcolors
 import pickle
 import cv2
 from tqdm import tqdm
+import time
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.gnn import *
@@ -732,6 +733,7 @@ class Visualisation:
                     # Force destruction of all windows and clear any pending events
                     for i in range(10):  # Multiple calls to handle race conditions
                         cv2.waitKey(1)
+                        time.sleep(0.1)
                     return
                 elif key == ord('c'):  # Close current sequence and load next
                     sequence_idx += 1
@@ -747,6 +749,7 @@ class Visualisation:
         cv2.destroyAllWindows()
         for i in range(10):
             cv2.waitKey(1)
+            time.sleep(0.1)
 
     def test_data_loader(self):
         BATCH_SIZE = 16
