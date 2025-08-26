@@ -126,7 +126,7 @@ class PredictExp:
 
     def init_model(self):
         model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn
-        model = GNN(lr=-1)
+        model = GNN()
         model.load_state_dict(torch.load(model_path))
         model.eval()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -235,8 +235,9 @@ class PredictExp:
         pyg, _ = self.dataset[i]
         with torch.no_grad():
             pyg = pyg.to(self.device)
-            out = self.model(pyg.x, pyg.edge_index, pyg.edge_attr)
-            out = out.squeeze(-1)  # Remove the channel dimension
+            x, edge_index, edge_index_regular_nodes, edge_attr = self.model.my_prepare_data(pyg, 1)
+            out = self.model(x, edge_index, edge_attr)
+            out = out.squeeze(-1)
             mask = pyg.mask
             out = out[mask]
             probs = torch.sigmoid(out)
@@ -666,6 +667,6 @@ class PredictExp:
 
 
 def main():
-    # predict_exp = PredictExp()
-    # predict_exp.go()
-    PredictExp.compute_npz_straight()
+    predict_exp = PredictExp()
+    predict_exp.go()
+    # PredictExp.compute_npz_grid_search_og()

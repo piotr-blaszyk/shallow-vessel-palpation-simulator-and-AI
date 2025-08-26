@@ -504,7 +504,7 @@ class Visualisation:
                 # Get predictions
                 with torch.no_grad():
                     data = data.to(device)
-                    x, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(data)
+                    x, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(data, 1)
                     out = model(x, edge_index, edge_attr)
                     out = out.squeeze(-1)  # Remove the channel dimension
                     mask = data.mask
@@ -853,7 +853,7 @@ def main():
     v = Visualisation()
     v.visualise_gnn(
         mode='predictions', 
-        data_source='exp_npz'
+        data_source='fresh_dataset'
     )
 
 

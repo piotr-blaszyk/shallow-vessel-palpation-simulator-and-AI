@@ -265,7 +265,7 @@ class GNN(pl.LightningModule):
 
     def shared_step(self, getitem_output, stage):
         batch, empty_visualisation_tensor = getitem_output
-        x, edge_index, edge_index_regular_nodes, edge_attr = self.my_prepare_data(batch)
+        x, edge_index, edge_index_regular_nodes, edge_attr = self.my_prepare_data(batch, batch.num_graphs)
         out = self(x, edge_index, edge_attr)
         out = out.squeeze(-1)
         mask = batch.mask
@@ -301,7 +301,7 @@ class GNN(pl.LightningModule):
 
         return loss
     
-    def my_prepare_data(self, batch):
+    def my_prepare_data(self, batch, batch_size):
         pos = batch.pos
         mask = batch.mask
         y = batch.y
@@ -320,7 +320,7 @@ class GNN(pl.LightningModule):
         edge_attr_global_temporal = batch.edge_attr_global_temporal
 
         regular_nodes = self.regular_node_mlp(regular_nodes)
-        global_nodes = self.global_node.expand(self.clip_len*batch.num_graphs, -1)
+        global_nodes = self.global_node.expand(self.clip_len, -1)
         spatial_edges = self.spatial_edge_mlp(edge_attr_spatial)
         temporal_edges = self.temporal_edge_mlp(edge_attr_temporal)
         n = edge_index_global_spatial.shape[1]
