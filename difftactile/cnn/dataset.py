@@ -1475,13 +1475,17 @@ class MyDataset(torch.utils.data.Dataset):
         num_vein_points = clip_vein_polyline.shape[2]
         if not np.any(valid_frames_mask):
             return clip_points, clip_vein_polyline_mask
-        disp_c = NP_RNG.uniform(self.min_disp_c, self.max_disp_c)
-        target_num_vein_points = NP_RNG.integers(
-            int(self.min_vein_length * num_vein_points),
-            int(self.max_vein_length * num_vein_points) + 1,
-            size=num_veins,
-        )
+
+        s0 = NP_RNG.uniform(10, 100)
+        thresh = NP_RNG.uniform(20, 200)
+        k = thresh / np.pi
+
         if False:
+            target_num_vein_points = NP_RNG.integers(
+                int(self.min_vein_length * num_vein_points),
+                int(self.max_vein_length * num_vein_points) + 1,
+                size=num_veins,
+            )
             max_start_indices = num_vein_points - target_num_vein_points
             start_indices = NP_RNG.integers(0, max_start_indices + 1)
             row_indices = np.arange(num_veins)[:, np.newaxis]
@@ -1493,27 +1497,24 @@ class MyDataset(torch.utils.data.Dataset):
             clip_vein_polyline_mask &= my_vein_mask[np.newaxis, :, :]
         for t in range(clip_points.shape[0]):
             points = clip_points[t]
-            x_0 = SYSTEM_PARAMS.meta.px_dist_adjacent_markers / 2
             for v in range(clip_vein_polyline[t].shape[0]):
                 tv_polyline = clip_vein_polyline[t, v, :, :][
                     clip_vein_polyline_mask[t, v, :]
                 ]
                 if tv_polyline.size == 0:
                     continue
-                vecs = SyntheticImageGenerator.vector_point_to_polynomial(
-                    tv_polyline, points
+                l1, l2, l3 = SyntheticImageGenerator.get_3_lines(tv_polyline)
+                points_mask = SyntheticImageGenerator.find_points_between_lines(
+                    l2, l3, points
                 )
-                x = np.linalg.norm(vecs, axis=1)
-                displacement = np.zeros_like(x)
-                mask1 = (0 < x) & (x < x_0)
-                mask2 = (x_0 <= x) & (x < 2 * x_0)
-                displacement[mask1] = x[mask1]
-                displacement[mask2] = x_0 - (x[mask2] - x_0)
-                mask = displacement > 0
-                vec_normalized = vecs[mask] / x[mask, np.newaxis]
-                points[mask] = (
-                    points[mask]
-                    + vec_normalized * displacement[mask, np.newaxis] * disp_c
+                distances = SyntheticImageGenerator.get_signed_distance_to_l1_along_l2(l1, l2, points)
+                points_mask_2 = SyntheticImageGenerator.mask_out_distant_points(distances, thresh)
+                points_mask &= points_mask_2
+                wave_displacements = SyntheticImageGenerator.get_wave_particle_displacement(
+                    s0, k, distances
+                )
+                points[points_mask] = SyntheticImageGenerator.apply_wave_particle_displacements(
+                    l2, points[points_mask], wave_displacements[points_mask]
                 )
             clip_points[t] = points
         return clip_points, clip_vein_polyline_mask

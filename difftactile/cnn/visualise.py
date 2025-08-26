@@ -446,12 +446,14 @@ class Visualisation:
                 mode='exp',
                 exp_markers_npz=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
                 exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_straight_ground_truth_labels_npz,
-                exp_dilation=1,
+                exp_dilation=2,
                 scheme='new',
             )
-            dataset = exp_test_dataset_straight_line_slide
+            dataset = exp_test_dataset_grid_search
+            target_difficulty = 1.0
+            stats = all_stats[target_difficulty]
             dataset.set_stats(stats)
-            dataset.set_difficulty_level(1.0)
+            dataset.set_difficulty_level(target_difficulty)
             data_loader = DataLoader(
                 dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
             )
@@ -844,7 +846,7 @@ def main():
     v = Visualisation()
     v.visualise_gnn(
         mode='predictions', 
-        data_source='pickled_test_dataset'
+        data_source='exp_npz'
     )
 
 

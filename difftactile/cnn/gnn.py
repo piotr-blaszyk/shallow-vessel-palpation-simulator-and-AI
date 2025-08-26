@@ -296,9 +296,7 @@ class GNN(pl.LightningModule):
             stage,
         )
 
-        log_loss = stage == 'train'
-        self.log(f"{stage}/focal_loss", focal_loss, on_step=True, on_epoch=True, prog_bar=log_loss, batch_size=batch.num_graphs)
-        self.log(f"{stage}/connectivity_loss", connectivity_loss, on_step=True, on_epoch=True, prog_bar=log_loss, batch_size=batch.num_graphs)
+        self.log(f"{stage}/focal_loss", focal_loss, on_step=True, on_epoch=True, prog_bar=False, batch_size=batch.num_graphs)
         self.log_per_batch_iou(batch, stage, preds_masked, batch.y)
 
         return loss
@@ -441,8 +439,8 @@ class GNN(pl.LightningModule):
         self.my_on_epoch_end('test')
     
     def my_on_epoch_end(self, stage: str):
-        # log_on_prog_bar = stage == 'train'
-        log_on_prog_bar = False
+        log_on_prog_bar = stage == 'val'
+        # log_on_prog_bar = False
         ious = self.compute_ious_acc(stage)
         self.log_dict(
             {f"{stage}_iou/{k}": v for k, v in ious.items()},

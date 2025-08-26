@@ -124,38 +124,80 @@ class SyntheticImageGenerator:
 
     @staticmethod
     def vector_point_to_polynomial(polynomial, target):
-        """
-        Compute the shortest vector from target point(s) to the closest point on a polynomial curve.
-        
-        Args:
-            polynomial: numpy array of shape (num_points, 2) containing points along the polynomial curve
-            target: numpy array of shape (2,) or (N, 2) containing the target point coordinates
-            
-        Returns:
-            numpy array of shape (2,) or (N, 2) representing the vector(s) from target to closest point
-        """
-        # Handle both single point and batch inputs
         single_input = target.ndim == 1
         if single_input:
             target = target[np.newaxis, :]
-        
-        # Compute squared distances from each target to all points on polynomial
-        # Using broadcasting: (x1-x2)^2 + (y1-y2)^2 for all points at once
-        # Shape: (N, num_points)
         distances = np.sum((polynomial[np.newaxis, :, :] - target[:, np.newaxis, :]) ** 2, axis=2)
-        
-        # Find indices of closest points for each target
-        # Shape: (N,)
         closest_idx = np.argmin(distances, axis=1)
-        
-        # Get closest points for each target
-        # Shape: (N, 2)
         closest_points = polynomial[closest_idx]
-        
-        # Compute vectors from targets to closest points
         vectors = closest_points - target
-        
         return vectors[0] if single_input else vectors
+
+    @staticmethod
+    def get_3_lines(line_points):
+        max_dist = 0
+        p = None
+        q = None
+        for i in range(len(line_points)):
+            for j in range(i + 1, len(line_points)):
+                dist = np.linalg.norm(line_points[i] - line_points[j])
+                if dist > max_dist:
+                    max_dist = dist
+                    p = line_points[i]
+                    q = line_points[j]
+        if p is None or q is None:
+            raise ValueError("Could not find two distinct points")
+        a1 = q[1] - p[1]
+        b1 = p[0] - q[0]
+        c1 = q[0]*p[1] - p[0]*q[1]
+        a2 = -b1
+        b2 = a1
+        c2 = -(a2*p[0] + b2*p[1])
+        a3 = -b1
+        b3 = a1
+        c3 = -(a3*q[0] + b3*q[1])
+        return [(a1, b1, c1), (a2, b2, c2), (a3, b3, c3)]
+    
+    @staticmethod
+    def find_points_between_lines(l2, l3, points):
+        a2, b2, c2 = l2
+        a3, b3, c3 = l3
+        eval_l2 = a2 * points[:, 0] + b2 * points[:, 1] + c2
+        eval_l3 = a3 * points[:, 0] + b3 * points[:, 1] + c3
+        return eval_l2 * eval_l3 <= 0
+
+    @staticmethod
+    def get_signed_distance_to_l1_along_l2(l1, l2, points):
+        a1, b1, c1 = l1
+        a2, b2, c2 = l2
+        norm2 = np.sqrt(a2*a2 + b2*b2)
+        a2_norm = a2/norm2
+        b2_norm = b2/norm2
+        eval_l2 = a2_norm * points[:, 0] + b2_norm * points[:, 1] + c2/norm2
+        projected_points = points - np.column_stack((eval_l2 * a2_norm, eval_l2 * b2_norm))
+        norm1 = np.sqrt(a1*a1 + b1*b1)
+        distances = (a1 * projected_points[:, 0] + b1 * projected_points[:, 1] + c1) / norm1
+        return distances
+    
+    @staticmethod
+    def get_wave_particle_displacement(s0, k, dx):
+        return s0 * np.sin(k * dx)
+    
+    @staticmethod
+    def apply_wave_particle_displacements(l2, points, wave_displacements):
+        a2, b2, c2 = l2
+        norm2 = np.sqrt(a2*a2 + b2*b2)
+        dir_x = -b2/norm2
+        dir_y = a2/norm2
+        displacement_vectors = np.column_stack((
+            wave_displacements * dir_x,
+            wave_displacements * dir_y
+        ))
+        return points + displacement_vectors
+    
+    @staticmethod
+    def mask_out_distant_points(distances, thresh):
+        return np.abs(distances) < thresh
 
     @staticmethod
     def compute_mask(h, w, points):
