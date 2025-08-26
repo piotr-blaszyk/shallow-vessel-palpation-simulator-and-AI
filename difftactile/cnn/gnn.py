@@ -671,14 +671,14 @@ def main():
         mode="exp",
         exp_markers_npz=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
         exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz,
-        exp_dilation=SYSTEM_PARAMS.gnn.exp_grid_search_dilation,
+        exp_dilation=2,
         scheme="new",
     )
     exp_test_dataset_straight_line_slide = MyDataset(
         mode="exp",
         exp_markers_npz=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
         exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_straight_ground_truth_labels_npz,
-        exp_dilation=SYSTEM_PARAMS.gnn.exp_straight_line_dilation,
+        exp_dilation=5,
         scheme="new",
     )
     all_stats = {}

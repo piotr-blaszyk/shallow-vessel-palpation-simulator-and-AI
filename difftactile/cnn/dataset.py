@@ -122,7 +122,7 @@ class MyDataset(torch.utils.data.Dataset):
             self.vein_masks_single_dataset_scheme.append(
                 self.video_contains_vein(self.files[i])
             )
-        dilations = [1, 2, 4]
+        dilations = [1, 2, 4, 8, 16, 32]
         for i in range(len(self.files)):
             file_path = self.files[i]
             data = np.load(file_path)
@@ -710,7 +710,7 @@ class MyDataset(torch.utils.data.Dataset):
                 first_frame_markers[np.newaxis, :, :], (markers.shape[0], 1, 1)
             )
             veins -= mean_marker_displacement[:, np.newaxis, np.newaxis, :]
-        markers, labels_signal_mask = (
+        markers, labels_signal_mask, vein_thickness = (
             self.augmentation_artificial_vein_signal_vectorised(
                 markers, veins, veins_mask
             )
@@ -731,7 +731,7 @@ class MyDataset(torch.utils.data.Dataset):
         points = markers
         points_mask = markers_mask
         pyg = self.generate_pyg_vectorised(
-            points, veins, veins_mask, ground_truth_labels_in=None
+            points, veins, veins_mask, vein_thickness, ground_truth_labels_in=None
         )
         if self.visualisation_mode:
             veins = MyDataset.generate_vein_image(
@@ -766,7 +766,7 @@ class MyDataset(torch.utils.data.Dataset):
                 veins_mask[:, vein_idx, :] = False
 
     def generate_pyg_vectorised(
-        self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in=None
+        self, clip_points, clip_labels, clip_labels_mask, vein_thickness, ground_truth_labels_in=None
     ):
         pos = self.get_pos(clip_points)
         mask = self.get_mask()
@@ -775,6 +775,7 @@ class MyDataset(torch.utils.data.Dataset):
             clip_labels,
             clip_labels_mask,
             ground_truth_labels_in,
+            vein_thickness,
         )
         empty_x = self.get_empty_x()
         node_xy = self.get_node_xy(clip_points)
@@ -856,7 +857,7 @@ class MyDataset(torch.utils.data.Dataset):
             pos[t * self.num_nodes : (t + 1) * self.num_nodes, 0:2] = points
         return pos
 
-    def get_y(self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in):
+    def get_y(self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in, vein_thickness):
         if ground_truth_labels_in is not None:
             y = ground_truth_labels_in.reshape(
                 (self.clip_len * self.num_nodes,)
@@ -872,7 +873,7 @@ class MyDataset(torch.utils.data.Dataset):
                 if labels_filtered.size > 0:
                     distances = cdist(points, labels_filtered)
                     min_distances = np.min(distances, axis=1)
-                    px_threshold = SYSTEM_PARAMS.meta.vein_px_thickness
+                    px_threshold = vein_thickness
                     y_t = min_distances < px_threshold
                 else:
                     y_t = np.zeros(shape=(self.num_nodes,), dtype=int)
@@ -1477,17 +1478,18 @@ class MyDataset(torch.utils.data.Dataset):
         if not np.any(valid_frames_mask):
             return clip_points, clip_vein_polyline_mask
 
-        s0 = NP_RNG.uniform(5, 10)
-        thresh = NP_RNG.uniform(10, 50)
-        s0 = 10
-        thresh = 22.5
+        s0 = NP_RNG.uniform(10, 20)
+        thresh = NP_RNG.uniform(10, 40)
+        r = NP_RNG.uniform(10, 50)
+        # s0 = 10
+        # thresh = 22.5
+        # r = 22.5
         k = thresh / np.pi
-        r = 22.5
 
-        if False:
+        if True:
             target_num_vein_points = NP_RNG.integers(
-                int(self.min_vein_length * num_vein_points),
-                int(self.max_vein_length * num_vein_points) + 1,
+                int(1.0 * num_vein_points),
+                int(1.0 * num_vein_points) + 1,
                 size=num_veins,
             )
             max_start_indices = num_vein_points - target_num_vein_points
@@ -1499,6 +1501,15 @@ class MyDataset(torch.utils.data.Dataset):
                 < (start_indices[:, np.newaxis] + target_num_vein_points[:, np.newaxis])
             )
             clip_vein_polyline_mask &= my_vein_mask[np.newaxis, :, :]
+        
+        if True:
+            lengths = [5]
+            length = NP_RNG.choice(lengths)
+            start_ix = NP_RNG.integers(0, clip_points.shape[0] - length + 1)
+            time_mask = np.zeros(clip_points.shape[0], dtype=bool)
+            time_mask[start_ix:start_ix + length] = True 
+            clip_vein_polyline_mask &= time_mask[:, np.newaxis, np.newaxis]
+
         for t in range(clip_points.shape[0]):
             points = clip_points[t]
             for v in range(clip_vein_polyline[t].shape[0]):
@@ -1524,7 +1535,7 @@ class MyDataset(torch.utils.data.Dataset):
                     l2, points[points_mask], wave_displacements[points_mask]
                 )
             clip_points[t] = points
-        return clip_points, clip_vein_polyline_mask
+        return clip_points, clip_vein_polyline_mask, r
 
     def augmentation_artificial_vein_signal_unvectorised(
         self, clip_points, clip_vein_polyline, clip_vein_polyline_mask
