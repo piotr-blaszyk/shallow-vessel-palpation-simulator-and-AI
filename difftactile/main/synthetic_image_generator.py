@@ -198,6 +198,11 @@ class SyntheticImageGenerator:
     @staticmethod
     def mask_out_distant_points(distances, thresh):
         return np.abs(distances) < thresh
+    
+    @staticmethod
+    def get_min_dist_between_2_point_collections(points1, points2):
+        distances = np.sqrt(np.sum((points1[:, :, np.newaxis, :] - points2[:, np.newaxis, :, :]) ** 2, axis=3))
+        return np.min(distances, axis=(1, 2))
 
     @staticmethod
     def compute_mask(h, w, points):

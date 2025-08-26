@@ -1,3 +1,4 @@
+from sympy import false
 from difftactile.main.constants import *
 
 if SYSTEM_PARAMS.meta.cnn_gnn == 0:
@@ -589,12 +590,12 @@ class MyDataset(torch.utils.data.Dataset):
         clip_veins = veins[start : start + dilated_clip_len : dilation]
         veins_present = np.all(clip_vein_mask, axis=0)
         if not np.any(veins_present):
-            return False
-        first_frame = clip_veins[0]
-        last_frame = clip_veins[-1]
-        displacement = np.linalg.norm(last_frame - first_frame, axis=2)
-        mean_displacement = np.mean(displacement, axis=1)
-        meets_displacement = mean_displacement >= 168
+            return false
+        ds = SyntheticImageGenerator.get_min_dist_between_2_point_collections(
+            clip_veins[0],
+            clip_veins[-1],
+        )
+        meets_displacement = ds >= 80
         valid_veins = veins_present & meets_displacement
         return np.any(valid_veins)
 
@@ -690,12 +691,12 @@ class MyDataset(torch.utils.data.Dataset):
             selected_vein_idx = NP_RNG.choice(present_vein_indices)
             vein_present_all_frames[:] = False
             vein_present_all_frames[selected_vein_idx] = True
-        veins_mask &= vein_present_all_frames[np.newaxis, :, np.newaxis]
+        # veins_mask &= vein_present_all_frames[np.newaxis, :, np.newaxis]
 
-        MyDataset.hide_vein_that_dont_move_enough(
-            veins,
-            veins_mask,
-        )
+        # MyDataset.hide_vein_that_dont_move_enough(
+        #     veins,
+        #     veins_mask,
+        # )
 
         if spawn_vein:
             freeze_markers = True

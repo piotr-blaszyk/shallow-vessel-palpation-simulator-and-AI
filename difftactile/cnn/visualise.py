@@ -420,7 +420,7 @@ class Visualisation:
                 num_workers=NUM_WORKERS
             )
         elif data_source == 'fresh_dataset':  # dataset mode
-            full_dataset = MyDataset(scheme='new')
+            full_dataset = MyDataset(scheme="single_dataset")
             train_dataset, _, _ = full_dataset.create_splits(
                 train_size=1.0,
                 val_size=0.0,
