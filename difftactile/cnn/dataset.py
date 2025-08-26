@@ -1476,7 +1476,7 @@ class MyDataset(torch.utils.data.Dataset):
         if not np.any(valid_frames_mask):
             return clip_points, clip_vein_polyline_mask
 
-        s0 = NP_RNG.uniform(10, 100)
+        s0 = NP_RNG.uniform(5, 25)
         thresh = NP_RNG.uniform(20, 200)
         k = thresh / np.pi
 

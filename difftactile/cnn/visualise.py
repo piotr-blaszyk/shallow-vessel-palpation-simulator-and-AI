@@ -743,6 +743,10 @@ class Visualisation:
                     current_frame = min(num_frames - 1, current_frame + 1)
                 elif key == ord('d'):
                     foo = 7
+        
+        cv2.destroyAllWindows()
+        for i in range(10):
+            cv2.waitKey(1)
 
     def test_data_loader(self):
         BATCH_SIZE = 16
@@ -845,8 +849,8 @@ class Visualisation:
 def main():
     v = Visualisation()
     v.visualise_gnn(
-        mode='predictions', 
-        data_source='exp_npz'
+        mode='dataset', 
+        data_source='fresh_dataset'
     )
 
 
