@@ -1762,7 +1762,7 @@ class Contact:
                 self.exp_marker_points, radius=0.01, color=(0, 1, 0)
             )
         self.tactile_canvas.circles(
-            self.sim_markers_deformed_filtered, radius=0.01, color=(1, 0, 0)
+            self.sim_markers_deformed, radius=0.01, color=(1, 0, 0)
         )
         self.tactile_canvas.circles(
             self.clock_arm_points,
@@ -1790,7 +1790,7 @@ class Contact:
         self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
         self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
-        self.camera.fov(10)
+        self.camera.fov(8)
         self.tactile_window = ti.ui.Window("tactile readout", (
             int(SYSTEM_PARAMS.visualisation.tactile_readout_width),
             int(SYSTEM_PARAMS.visualisation.tactile_readout_height)

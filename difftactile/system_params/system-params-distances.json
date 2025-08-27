@@ -50,8 +50,8 @@
         },
         "grid_vein": {
             "vy": 0.040,
-            "vz": 0.011,
-            "r0": 0.005
+            "vz": 0.019,
+            "r0": 0.003
         },
         "clock_arms_z_min_offset": 0.004,
         "clock_arms_z_max_offset": 0.006,

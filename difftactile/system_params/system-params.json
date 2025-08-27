@@ -126,9 +126,9 @@
         "clock_arms_z_max_offset": 3.000e-02,
         "min_vein_separation": 5.000e-02,
         "grid_vein": {
-            "vy": 2.000e-01,
-            "vz": 5.500e-02,
-            "r0": 2.500e-02
+            "vy": 0.000e+00,
+            "vz": 1.100e-01,
+            "r0": 5.000e-02
         }
     },
     "scaling_factor_1": {

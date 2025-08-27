@@ -19,6 +19,7 @@ class Phantom:
         self.set_up_domain_randomisation()
         self.cache = dict()
         self.grid_node_vein_sparse_to_dense_init()
+        self.initialise_grid_node_vein_mask()
     
     def grid_node_vein_sparse_to_dense_init(self):
         self.grid_node_vein_indices = ti.field(
