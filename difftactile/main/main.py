@@ -46,7 +46,7 @@ class Contact:
         self.set_up_loss_computation()
         self.visualisation_initialise()
         self.training_data_collection_initialise()
-    
+
     def vein_sparse_to_dense_init(self):
         self.num_veins = SYSTEM_PARAMS.meta.max_num_veins
         self.vein_counts = ti.field(int, (self.num_veins,), needs_grad=False)
@@ -457,9 +457,9 @@ class Contact:
             dtype=int,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                SYSTEM_PARAMS.phantom.n_grid_x,
-                SYSTEM_PARAMS.phantom.n_grid_y,
-                SYSTEM_PARAMS.phantom.n_grid_z,
+                SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+                SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+                SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
             ),
             needs_grad=False,
         )
@@ -526,10 +526,6 @@ class Contact:
         self.phantom_closest_vertex = SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex
         self.phantom_centroid_pose = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose
         self.vitactip_tip_pose = SYSTEM_PARAMS_COMPUTED.vitactip_tip_pose
-        self.min_coord = SYSTEM_PARAMS_COMPUTED.min_coord
-        self.max_coord_x = SYSTEM_PARAMS_COMPUTED.max_coord_x
-        self.max_coord_y = SYSTEM_PARAMS_COMPUTED.max_coord_y
-        self.max_coord_z = SYSTEM_PARAMS_COMPUTED.max_coord_z
         self.tactile_sensor_initial_position = ti.Vector.field(
             3, dtype=ti.f32, shape=1, needs_grad=False
         )
@@ -967,9 +963,9 @@ class Contact:
             )
         return
         for i, j, k in ti.ndrange(
-            SYSTEM_PARAMS.phantom.n_grid_x,
-            SYSTEM_PARAMS.phantom.n_grid_y,
-            SYSTEM_PARAMS.phantom.n_grid_z,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
         ):
             self.phantom.grid_node_mass.grad[f, i, j, k] = ti.math.clamp(
                 self.phantom.grid_node_mass.grad[f, i, j, k], -1000.0, 1000.0
@@ -1149,9 +1145,9 @@ class Contact:
     @ti.kernel
     def check_collision(self, frame: ti.i32):
         for i, j, k in ti.ndrange(
-            SYSTEM_PARAMS.phantom.n_grid_x,
-            SYSTEM_PARAMS.phantom.n_grid_y,
-            SYSTEM_PARAMS.phantom.n_grid_z,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
         ):
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 grid_node_position = ti.Vector(
@@ -1169,9 +1165,9 @@ class Contact:
     @ti.kernel
     def collision(self, frame: ti.i32):
         for i, j, k in ti.ndrange(
-            SYSTEM_PARAMS.phantom.n_grid_x,
-            SYSTEM_PARAMS.phantom.n_grid_y,
-            SYSTEM_PARAMS.phantom.n_grid_z,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
         ):
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 grid_node_position = ti.Vector(
@@ -1526,7 +1522,13 @@ class Contact:
             shape=(self.phantom.actual_total_num_particles,),
             needs_grad=False,
         )
-        self.tumour_points = ti.Vector.field(
+        self.vein_points = ti.Vector.field(
+            3,
+            dtype=float,
+            shape=(self.phantom.actual_total_num_particles,),
+            needs_grad=False,
+        )
+        self.interm_points = ti.Vector.field(
             3,
             dtype=float,
             shape=(self.phantom.actual_total_num_particles,),
@@ -1598,17 +1600,20 @@ class Contact:
     @ti.kernel
     def visualisation_reset_scene(self):
         self.healthy_tissue_points.fill(0)
-        self.tumour_points.fill(0)
+        self.vein_points.fill(0)
+        self.interm_points.fill(0)
         self.vein_2d_projection.fill(-1)
         self.vein_2d_projection_flat.fill(-1)
 
     @ti.kernel
     def visualisation_draw_3d_scene(self, f: ti.i32):
         for p in range(self.phantom.actual_total_num_particles):
-            if self.phantom.titles[p] == 0:
+            if self.phantom.grid_node_vein_indices[p] == 0:
                 self.healthy_tissue_points[p] = self.phantom.particles_A[f, p]
-            elif self.phantom.titles[p] == 1:
-                self.tumour_points[p] = self.phantom.particles_A[f, p]
+            elif self.phantom.grid_node_vein_indices[p] == 1:
+                self.vein_points[p] = self.phantom.particles_A[f, p]
+            elif self.phantom.grid_node_vein_indices[p] == 2:
+                self.interm_points[p] = self.phantom.particles_A[f, p]
         for p in range(self.vitactip.num_vertices):
             self.sensor_points[p] = self.vitactip.vertices_deformed_A[f, p]
 
@@ -1782,8 +1787,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.phantom_centroid_pose[:3]
-        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
-        self.camera.up(0, 1, 0)
+        self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(10)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -1857,8 +1862,13 @@ class Contact:
             radius=SYSTEM_PARAMS.visualisation.particle_size_normal/2,
         )
         self.scene.particles(
-            self.tumour_points,
+            self.vein_points,
             color=(1.0, 1.0, 0.0),
+            radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
+        )
+        self.scene.particles(
+            self.interm_points,
+            color=(1.0, 0.0, 1.0),
             radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
         self.scene.particles(

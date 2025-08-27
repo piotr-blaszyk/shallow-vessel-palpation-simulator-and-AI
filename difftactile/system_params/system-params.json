@@ -26,12 +26,8 @@
     },
     "phantom": {
         "mass_eps": 1.000e-08,
-        "mpm_grid_cube_size": 2.461e-02,
+        "mpm_grid_cube_size": 5.000e-03,
         "bound": 3,
-        "n_grid_x": 32,
-        "n_grid_y": 32,
-        "n_grid_z": 16,
-        "num_particles_cube_1d": 50,
         "gravity": [
             0.0,
             0.0,
@@ -51,7 +47,8 @@
         "fix_bottom_points": 1,
         "keypoint_search_xy_threshold": 5.000e-02,
         "rayleigh_damping_alpha": 1.000e-01,
-        "rayleigh_damping_beta": 1.000e-02
+        "rayleigh_damping_beta": 1.000e-02,
+        "particle_spacing": 1.000e-02
     },
     "contact": {
         "dt": 1.270e-06,
@@ -121,13 +118,18 @@
             "h": 5.000e+00,
             "depth_beneath_surface": 1.500e-02
         },
-        "phantom_x_length": 5.250e-01,
-        "phantom_y_length": 5.250e-01,
+        "phantom_x_length": 2.000e-01,
+        "phantom_y_length": 4.000e-01,
         "camera_rotation_angle": 1.037e+01,
         "high_dist": 5.000e+00,
         "clock_arms_z_min_offset": 2.000e-02,
         "clock_arms_z_max_offset": 3.000e-02,
-        "min_vein_separation": 6.000e-02
+        "min_vein_separation": 5.000e-02,
+        "grid_vein": {
+            "vy": 2.000e-01,
+            "vz": 5.500e-02,
+            "r0": 2.500e-02
+        }
     },
     "scaling_factor_1": {
         "distance_from_camera_lens_to_outer_shell_surface": 2.000e-02,
@@ -140,7 +142,7 @@
         "distance_scaling_factor": 5.000e+00,
         "youngs_modulus_scaling_factor": 1.000e+00,
         "px_dist_adjacent_markers": 3.812e+01,
-        "max_num_veins": 4,
+        "max_num_veins": 1,
         "num_trajectories": 4,
         "max_num_trajectory_points": 1500,
         "max_timesteps_per_trajectory": 1000,
@@ -261,7 +263,7 @@
         "tactile_sensor_all_nodes": "difftactile/output/tactile_sensor.all_nodes.pkl",
         "system_params_computed": "difftactile/system_params/system-params-computed.json",
         "vitactip_interp_idx_flat": "difftactile/output/vitactip.interp_idx_flat.pkl",
-        "phantom": "difftactile/meshes/vascular-phantom.stl",
+        "phantom": "difftactile/meshes/vascular-phantom-fragment.stl",
         "root_dir": "/home/psb120/Documents/DiffTactile/",
         "initial_vertex_positions_undeformed": "difftactile/output/initial_vertex_positions_undeformed.pkl",
         "domain_adaptation_results": "difftactile/output/domain_adaptation_results.json",
@@ -355,6 +357,7 @@
         "experiment_straight_markers_npz": "difftactile/output/exp_video_straight.npz",
         "experiment_straight_markers_reordered_npz": "difftactile/output/exp_video_straight_reordered.npz",
         "experiment_straight_frame_mapping_npz": "difftactile/output/experiment_straight_frame_mapping.npz",
-        "experiment_straight_ground_truth_labels_npz": "difftactile/output/experiment_straight_ground_truth_labels.npz"
+        "experiment_straight_ground_truth_labels_npz": "difftactile/output/experiment_straight_ground_truth_labels.npz",
+        "grid_node_v0_mask": "difftactile/output/grid_node_v0_mask.npz"
     }
 }

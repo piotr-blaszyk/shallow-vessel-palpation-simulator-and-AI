@@ -18,6 +18,32 @@ class Phantom:
         self.set_up_physical_state()
         self.set_up_domain_randomisation()
         self.cache = dict()
+        self.grid_node_vein_sparse_to_dense_init()
+    
+    def grid_node_vein_sparse_to_dense_init(self):
+        self.grid_node_vein_indices = ti.field(
+            dtype=int, 
+            shape=(self.actual_total_num_particles,), 
+            needs_grad=False
+        )
+    
+    @ti.kernel
+    def grid_node_vein_sparse_to_dense(self):
+        for i in range (self.particles_A.shape[1]):
+            particle_A = self.particles_A[0, i]
+            x, y, z = particle_A
+            x -= self.min_coords[0]
+            y -= self.min_coords[1]
+            z -= self.min_coords[2]
+            dist_sq = (y - self.vy) ** 2 + (z - self.vz) ** 2
+            r_inner_sq = self.r0 ** 2
+            r_outer_sq = self.r_interm_outer ** 2
+            is_vein = dist_sq <= r_inner_sq
+            is_interm = (dist_sq <= r_outer_sq) & (dist_sq > r_inner_sq)
+            if is_vein:
+                self.grid_node_vein_indices[i] = 1
+            elif is_interm:
+                self.grid_node_vein_indices[i] = 2
 
     def set_up_system_params(self):
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
@@ -37,11 +63,30 @@ class Phantom:
         self.poissons_ratio[1] += SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio
         self.set_stiffness()
         self.max_num_veins = SYSTEM_PARAMS.meta.max_num_veins
+        self.num_grid_nodes = np.array([
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
+        ], dtype=int)
+        self.grid_node_vein_mask = ti.field(
+            dtype=int,
+            shape=tuple(self.num_grid_nodes),
+            needs_grad=False,
+        )
+        self.vy = SYSTEM_PARAMS.geometry.grid_vein.vy
+        self.vz = SYSTEM_PARAMS.geometry.grid_vein.vz
+        self.r0 = SYSTEM_PARAMS.geometry.grid_vein.r0
+        self.d = SYSTEM_PARAMS.phantom.mpm_grid_cube_size
+        r1 = 1.5*self.d
+        r = self.r0+r1
+        self.r_interm_outer = r+1.5*self.d
+        self.min_coords = np.array(SYSTEM_PARAMS_COMPUTED.min_coords, dtype=float)
+        self.max_coords = np.array(SYSTEM_PARAMS_COMPUTED.max_coords, dtype=float)
 
     def load_obj(self):
         obj_loader = ObjLoader(
             SYSTEM_PARAMS.files.phantom,
-            num_particles_cube_1d=SYSTEM_PARAMS.phantom.num_particles_cube_1d,
+            num_particles_cube_1d=SYSTEM_PARAMS_COMPUTED.phantom.num_particles_cube_1d,
         )
         obj_loader.generate_particles()
         self.actual_total_num_particles = len(obj_loader.particles)
@@ -188,9 +233,9 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                SYSTEM_PARAMS.phantom.n_grid_x,
-                SYSTEM_PARAMS.phantom.n_grid_y,
-                SYSTEM_PARAMS.phantom.n_grid_z,
+                self.num_grid_nodes[0],
+                self.num_grid_nodes[1],
+                self.num_grid_nodes[2],
             ),
             needs_grad=True,
         )
@@ -199,9 +244,9 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                SYSTEM_PARAMS.phantom.n_grid_x,
-                SYSTEM_PARAMS.phantom.n_grid_y,
-                SYSTEM_PARAMS.phantom.n_grid_z,
+                self.num_grid_nodes[0],
+                self.num_grid_nodes[1],
+                self.num_grid_nodes[2],
             ),
             needs_grad=False,
         )
@@ -209,9 +254,9 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                SYSTEM_PARAMS.phantom.n_grid_x,
-                SYSTEM_PARAMS.phantom.n_grid_y,
-                SYSTEM_PARAMS.phantom.n_grid_z,
+                self.num_grid_nodes[0],
+                self.num_grid_nodes[1],
+                self.num_grid_nodes[2],
             ),
             needs_grad=False,
         )
@@ -220,9 +265,9 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                SYSTEM_PARAMS.phantom.n_grid_x,
-                SYSTEM_PARAMS.phantom.n_grid_y,
-                SYSTEM_PARAMS.phantom.n_grid_z,
+                self.num_grid_nodes[0],
+                self.num_grid_nodes[1],
+                self.num_grid_nodes[2],
             ),
             needs_grad=False,
         )
@@ -230,9 +275,9 @@ class Phantom:
             dtype=int,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                SYSTEM_PARAMS.phantom.n_grid_x,
-                SYSTEM_PARAMS.phantom.n_grid_y,
-                SYSTEM_PARAMS.phantom.n_grid_z,
+                self.num_grid_nodes[0],
+                self.num_grid_nodes[1],
+                self.num_grid_nodes[2],
             ),
             needs_grad=False,
         )
@@ -262,7 +307,7 @@ class Phantom:
         self, pos, ori, vel, state_dicts
     ):
         self.vein_titles.fill(-1)
-        if len(state_dicts) > 0:
+        if False and len(state_dicts) > 0:
             self.titles.fill(0)
             self.group_cardinality.fill(0)
             for i in range(len(state_dicts)):
@@ -279,6 +324,7 @@ class Phantom:
         )
         self.set_pose_and_velocity(pos, ori, vel)
         self.initialise_point_cloud()
+        self.grid_node_vein_sparse_to_dense()
 
     def set_up_tumour_inclusion(self, state_dict):
         self.cylinder_cx[None] = state_dict['cx']
@@ -315,6 +361,18 @@ class Phantom:
             ):
                 self.titles[item] = 1
                 self.vein_titles[item] = i
+    
+    def initialise_grid_node_vein_mask(self):
+        path = SYSTEM_PARAMS.files.grid_node_v0_mask
+        data = np.load(path)
+        grid_node_v0_mask = data['grid_node_v0_mask']
+        grid_node_v0_mask = np.repeat(
+            grid_node_v0_mask[np.newaxis, :, :], 
+            self.num_grid_nodes[0],
+            axis=0,
+        )
+        grid_node_v0_mask = grid_node_v0_mask.astype(int)
+        self.grid_node_vein_mask.from_numpy(grid_node_v0_mask)
 
     def set_pose_and_velocity(self, position, orientation, velocity):
         self.initial_position[None] = position
@@ -365,9 +423,9 @@ class Phantom:
     @ti.kernel
     def get_external_force(self, f: ti.i32):
         for i, j, k in ti.ndrange(
-            SYSTEM_PARAMS.phantom.n_grid_x,
-            SYSTEM_PARAMS.phantom.n_grid_y,
-            SYSTEM_PARAMS.phantom.n_grid_z,
+            self.num_grid_nodes[0],
+            self.num_grid_nodes[1],
+            self.num_grid_nodes[2],
         ):
             self.total_surface_external_force[f] += (
                 self.grid_node_external_impulse[f, i, j, k] / self.dt[None]
@@ -522,9 +580,9 @@ class Phantom:
     @ti.kernel
     def check_grid_occupy(self, f: ti.i32):
         for i, j, k in ti.ndrange(
-            SYSTEM_PARAMS.phantom.n_grid_x,
-            SYSTEM_PARAMS.phantom.n_grid_y,
-            SYSTEM_PARAMS.phantom.n_grid_z,
+            self.num_grid_nodes[0],
+            self.num_grid_nodes[1],
+            self.num_grid_nodes[2],
         ):
             if self.grid_node_mass[f, i, j, k] > SYSTEM_PARAMS.phantom.mass_eps:
                 self.grid_occupy[f, i, j, k] = 1
@@ -532,9 +590,9 @@ class Phantom:
     @ti.kernel
     def grid_op(self, frame: ti.i32):
         for grid_x, grid_y, grid_z in ti.ndrange(
-            SYSTEM_PARAMS.phantom.n_grid_x,
-            SYSTEM_PARAMS.phantom.n_grid_y,
-            SYSTEM_PARAMS.phantom.n_grid_z,
+            self.num_grid_nodes[0],
+            self.num_grid_nodes[1],
+            self.num_grid_nodes[2],
         ):
             if self.grid_occupy[frame, grid_x, grid_y, grid_z] == 1:
                 inverse_mass = 1 / (
@@ -571,7 +629,7 @@ class Phantom:
                     grid_velocity[0] = 0
                 if (
                     grid_x
-                    > SYSTEM_PARAMS.phantom.n_grid_x - SYSTEM_PARAMS.phantom.bound
+                    > self.num_grid_nodes[0] - SYSTEM_PARAMS.phantom.bound
                     and grid_velocity[0] > 0
                 ):
                     grid_velocity[0] = 0
@@ -579,7 +637,7 @@ class Phantom:
                     grid_velocity[1] = 0
                 if (
                     grid_y
-                    > SYSTEM_PARAMS.phantom.n_grid_y - SYSTEM_PARAMS.phantom.bound
+                    > self.num_grid_nodes[1] - SYSTEM_PARAMS.phantom.bound
                     and grid_velocity[1] > 0
                 ):
                     grid_velocity[1] = 0
@@ -587,10 +645,12 @@ class Phantom:
                     grid_velocity[2] = 0
                 if (
                     grid_z
-                    > SYSTEM_PARAMS.phantom.n_grid_y - SYSTEM_PARAMS.phantom.bound
+                    > self.num_grid_nodes[1] - SYSTEM_PARAMS.phantom.bound
                     and grid_velocity[2] > 0
                 ):
                     grid_velocity[2] = 0
+                if self.grid_node_vein_mask[grid_x, grid_y, grid_z] == 1:
+                    grid_velocity = ti.Vector([0.0, 0.0, 0.0])
                 self.grid_node_velocity_out[frame, grid_x, grid_y, grid_z] = (
                     grid_velocity
                 )

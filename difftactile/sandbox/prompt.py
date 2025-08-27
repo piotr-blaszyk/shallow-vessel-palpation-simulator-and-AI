@@ -146,9 +146,9 @@ def update_internal_forces(self, frame: ti.i32):
 @ti.kernel
 def check_grid_occupy(self, f: ti.i32):
     for i, j, k in ti.ndrange(
-        SYSTEM_PARAMS.phantom.n_grid_x,
-        SYSTEM_PARAMS.phantom.n_grid_y,
-        SYSTEM_PARAMS.phantom.n_grid_z,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
     ):
         if self.grid_node_mass[f, i, j, k] > SYSTEM_PARAMS.phantom.mass_eps:
             self.grid_occupy[f, i, j, k] = 1
@@ -157,9 +157,9 @@ def check_grid_occupy(self, f: ti.i32):
 @ti.kernel
 def check_collision(self, frame: ti.i32):
     for i, j, k in ti.ndrange(
-        SYSTEM_PARAMS.phantom.n_grid_x,
-        SYSTEM_PARAMS.phantom.n_grid_y,
-        SYSTEM_PARAMS.phantom.n_grid_z,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
     ):
         if self.phantom.grid_occupy[frame, i, j, k] == 1:
             grid_node_position = ti.Vector(
@@ -178,9 +178,9 @@ def check_collision(self, frame: ti.i32):
 @ti.kernel
 def collision(self, frame: ti.i32):
     for i, j, k in ti.ndrange(
-        SYSTEM_PARAMS.phantom.n_grid_x,
-        SYSTEM_PARAMS.phantom.n_grid_y,
-        SYSTEM_PARAMS.phantom.n_grid_z,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
     ):
         if self.phantom.grid_occupy[frame, i, j, k] == 1:
             grid_node_position = ti.Vector(
@@ -223,9 +223,9 @@ def collision(self, frame: ti.i32):
 @ti.kernel
 def grid_op(self, frame: ti.i32):
     for grid_x, grid_y, grid_z in ti.ndrange(
-        SYSTEM_PARAMS.phantom.n_grid_x,
-        SYSTEM_PARAMS.phantom.n_grid_y,
-        SYSTEM_PARAMS.phantom.n_grid_z,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+        SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
     ):
         if self.grid_occupy[frame, grid_x, grid_y, grid_z] == 1:
             inverse_mass = 1 / (
@@ -244,21 +244,21 @@ def grid_op(self, frame: ti.i32):
             if grid_x < SYSTEM_PARAMS.phantom.bound and grid_velocity[0] < 0:
                 grid_velocity[0] = 0
             if (
-                grid_x > SYSTEM_PARAMS.phantom.n_grid_x - SYSTEM_PARAMS.phantom.bound
+                grid_x > SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x - SYSTEM_PARAMS.phantom.bound
                 and grid_velocity[0] > 0
             ):
                 grid_velocity[0] = 0
             if grid_y < SYSTEM_PARAMS.phantom.bound and grid_velocity[1] < 0:
                 grid_velocity[1] = 0
             if (
-                grid_y > SYSTEM_PARAMS.phantom.n_grid_y - SYSTEM_PARAMS.phantom.bound
+                grid_y > SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y - SYSTEM_PARAMS.phantom.bound
                 and grid_velocity[1] > 0
             ):
                 grid_velocity[1] = 0
             if grid_z < SYSTEM_PARAMS.phantom.bound and grid_velocity[2] < 0:
                 grid_velocity[2] = 0
             if (
-                grid_z > SYSTEM_PARAMS.phantom.n_grid_y - SYSTEM_PARAMS.phantom.bound
+                grid_z > SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y - SYSTEM_PARAMS.phantom.bound
                 and grid_velocity[2] > 0
             ):
                 grid_velocity[2] = 0
