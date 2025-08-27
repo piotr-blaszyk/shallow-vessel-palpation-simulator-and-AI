@@ -697,11 +697,15 @@ class Contact:
     def randomise_train_step(self):
         t1 = self.get_random_grid_search_trajectory()
         t2 = self.get_fully_random_trajectory()
-        trajectories_python_array = [t1, t2]
+        t3 = self.get_straight_line_slide_trajectory()
+        trajectories_python_array = [t1, t2, t3]
         self.set_trajectories(trajectories_python_array)
 
-        self.state_dicts[0] = self.generate_random_state_dicts()
-        self.state_dicts[1] = self.generate_random_state_dicts()
+        self.state_dicts = []
+        for i in range(len(trajectories_python_array)):
+            self.state_dicts.append(
+                self.generate_random_state_dicts()
+            )
     
     def get_random_slide_params(self):
         quat = self.vitactip_tip_pose[3:]
@@ -825,6 +829,24 @@ class Contact:
                     current_x, current_y = new_x, new_y
                     break
                     
+        return trajectory
+    
+    def get_straight_line_slide_trajectory(self):
+        (
+            srq,
+            press_depth_surface,
+            press_depth_1
+        ) = self.get_random_slide_params()
+        x, y, z = self.vitactip_tip_pose[:3]
+        r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        y_span = SYSTEM_PARAMS.geometry.phantom_y_length
+        y_final = y+y_span-r
+        trajectory = [
+            [x, y, z, *srq],
+            [x, y, z - press_depth_surface, *srq],
+            [x, y, z - press_depth_1, *srq],
+            [x, y_final, z - press_depth_1, *srq],
+        ]
         return trajectory
 
     def set_up_initial_positions_state_and_trajectory(self):
@@ -2391,7 +2413,7 @@ class Contact:
             for k in range(0, 1):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(0, 2):
+                for i in range(2, 3):
                     self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     self.set_up_initial_positions_state_and_trajectory()

@@ -4,6 +4,7 @@ import json
 import pickle
 
 from difftactile.main.constants import *
+from difftactile.sensor_model import vitactip
 
 class PreMain:
     def __init__(self):
@@ -172,7 +173,7 @@ class PreMain:
         phantom_dimensions = np.array([
             SYSTEM_PARAMS.geometry.phantom_x_length, 
             SYSTEM_PARAMS.geometry.phantom_y_length, 
-            SYSTEM_PARAMS.geometry.phantom_z_length
+            SYSTEM_PARAMS.geometry.phantom_z_length,
         ], dtype=float)
         phantom_volume = phantom_dimensions[0] * phantom_dimensions[1] * phantom_dimensions[2]
 
@@ -205,13 +206,12 @@ class PreMain:
         print(f'phantom_min_max_particle_spacing: {phantom_min_max_particle_spacing}')
         print(f"mesh_data['min_particle_spacing']: {mesh_data['min_particle_spacing']}")
 
-        phantom_difftactile_position = phantom_closest_vertex + phantom_scaled_spans
-
-        vitactip_tip_position = np.array([
-            phantom_difftactile_position[0] - phantom_scaled_spans[0] + SYSTEM_PARAMS.geometry.sensor_xy_radius,
-            phantom_difftactile_position[1],
-            phantom_difftactile_position[2] + phantom_dimensions[2] / 2 + SYSTEM_PARAMS.geometry.gap,
-        ])
+        phantom_difftactile_position = phantom_closest_vertex + phantom_dimensions/2
+        sensor_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        vitactip_tip_position = phantom_closest_vertex.copy()
+        vitactip_tip_position[0] += phantom_dimensions[0]/2
+        vitactip_tip_position[1] += sensor_r
+        vitactip_tip_position[2] += phantom_dimensions[2]
 
         for key in mesh_data['min_particle_spacing'].keys():
             mesh_data['min_particle_spacing_for_material'] = mesh_data['min_particle_spacing'][key]
