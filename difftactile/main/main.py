@@ -722,7 +722,7 @@ class Contact:
         srq = slide_r.as_quat()
 
         press_depth_surface = SYSTEM_PARAMS.geometry.gap
-        press_depth_1 = press_depth_surface + SYSTEM_PARAMS.trajectory.press_depth_1
+        press_depth_1 = SYSTEM_PARAMS.trajectory.press_depth_slide
         if True:
             k_0 = SYSTEM_PARAMS.trajectory.press_depth_offset_0
             k_1 = SYSTEM_PARAMS.trajectory.press_depth_offset_1
@@ -753,6 +753,7 @@ class Contact:
             [x, y, z - press_depth_surface, *srq],
             [x, y, z - press_depth_1, *srq],
         ]
+        return trajectory
         # 0,1,2,3,4!,5,6,7!,8,9,10!,11,12,13!,14,15,16!
         # x = 4 + 3*k, k >= 0
         # x >= 4 and (x - 4) % 3 == 0
@@ -801,6 +802,7 @@ class Contact:
             [x, y, z - press_depth_surface, *srq],
             [x, y, z - press_depth_1, *srq],
         ]
+        return trajectory
         
         # Calculate maximum possible magnitude based on sensor bounds
         x_min, x_max = self.sensor_x_range_world
@@ -843,7 +845,6 @@ class Contact:
         y_final = y+y_span-r
         trajectory = [
             [x, y, z, *srq],
-            [x, y, z - press_depth_surface, *srq],
             [x, y, z - press_depth_1, *srq],
             [x, y_final, z - press_depth_1, *srq],
         ]
@@ -882,6 +883,7 @@ class Contact:
         self.trajectory_lengths.from_numpy(trajectory_lengths)
     
     def generate_random_state_dicts(self):
+        return []
         if not self.generate_tumour:
             return []
 

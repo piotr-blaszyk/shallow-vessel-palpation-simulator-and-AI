@@ -62,7 +62,7 @@ class FisheyeModelNoTaichi:
     @staticmethod
     def project_pix_to_points_3d_plane(
             ps,
-            dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_1,
+            dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_slide,
             resolution_down_scaling_factor=None
         ):
         # Store original shape and reshape input
@@ -346,6 +346,7 @@ class FisheyeModelNoTaichi:
 
     @staticmethod
     def generate_marker_3d_projection():
+        return
         with open(SYSTEM_PARAMS.files.init_marker_positions, "rb") as f:
             marker_positions_2d = pickle.load(f)
         A_points = FisheyeModelNoTaichi.project_pix_to_points(
