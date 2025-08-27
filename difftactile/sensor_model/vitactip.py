@@ -44,6 +44,7 @@ class ViTacTip:
         self.poissons_ratio[None] += (
             SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
         )
+        self.dist_sf = SYSTEM_PARAMS.meta.distance_scaling_factor
 
     @ti.kernel
     def set_up_system_params_2(self):
@@ -72,11 +73,11 @@ class ViTacTip:
         if False:
             self.surface_node_tags_npy = mesh_data["surface_node_tags"]
         all_tetrahedra = mesh_data["all_tetrahedra"]
-        node_coordinates = mesh_data["node_coordinates"] / 1_000
+        node_coordinates = mesh_data["node_coordinates"]/1_000*self.dist_sf
         node_labels = mesh_data["node_labels"]
         surface_triangles = mesh_data["surface_triangles"]
         group_to_idx = mesh_data["group_to_idx"]
-        z_bottom = mesh_data["z_bottom"] / 1_000
+        z_bottom = mesh_data["z_bottom"]/1_000*self.dist_sf
         is_fixed_layer = (
             np.abs(node_coordinates[:, 2] - z_bottom)
             < SYSTEM_PARAMS.vitactip.fixed_layer_distance_from_bottom
@@ -625,7 +626,8 @@ class ViTacTip:
     @ti.kernel
     def set_vel(self, f: ti.i32):
         for p in range(self.num_vertices):
-            self.vertex_velocities[f, p] = self.vertex_control_velocities[p]
+            if self.is_fixed_layer[p] == 1:
+                self.vertex_velocities[f, p] = self.vertex_control_velocities[p]
 
     @ti.kernel
     def set_pose_control_1(self):
@@ -672,18 +674,12 @@ class ViTacTip:
                     1.0,
                 ]
             )
-            self.vertex_control_velocities[i][0] = (
-                target_vertex_positions_undeformed[0]
-                - current_vertex_positions_undeformed[0]
-            ) / (self.dt[None] * (SYSTEM_PARAMS.contact.num_sub_frames - 1))
-            self.vertex_control_velocities[i][1] = (
-                target_vertex_positions_undeformed[1]
-                - current_vertex_positions_undeformed[1]
-            ) / (self.dt[None] * (SYSTEM_PARAMS.contact.num_sub_frames - 1))
-            self.vertex_control_velocities[i][2] = (
+            tvpu_ih = ti.Vector([
+                target_vertex_positions_undeformed[0], 
+                target_vertex_positions_undeformed[1], 
                 target_vertex_positions_undeformed[2]
-                - current_vertex_positions_undeformed[2]
-            ) / (self.dt[None] * (SYSTEM_PARAMS.contact.num_sub_frames - 1))
+            ])
+            self.vertex_control_velocities[i] = (tvpu_ih - current_vertex_positions_undeformed) / (self.dt[None] * (SYSTEM_PARAMS.contact.num_sub_frames - 1))
 
     @ti.kernel
     def get_external_force(self, f: ti.i32):

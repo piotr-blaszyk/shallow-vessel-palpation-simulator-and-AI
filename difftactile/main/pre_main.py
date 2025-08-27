@@ -207,10 +207,11 @@ class PreMain:
 
         phantom_difftactile_position = phantom_closest_vertex + phantom_dimensions/2
         sensor_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        press_depth_slide = SYSTEM_PARAMS.trajectory.press_depth_slide
         vitactip_tip_position = phantom_closest_vertex.copy()
         vitactip_tip_position[0] += phantom_dimensions[0]/2
         vitactip_tip_position[1] -= sensor_r
-        vitactip_tip_position[2] += phantom_dimensions[2]
+        vitactip_tip_position[2] += phantom_dimensions[2]-press_depth_slide
 
         for key in mesh_data['min_particle_spacing'].keys():
             mesh_data['min_particle_spacing_for_material'] = mesh_data['min_particle_spacing'][key]

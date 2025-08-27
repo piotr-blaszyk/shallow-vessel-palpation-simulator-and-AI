@@ -842,11 +842,10 @@ class Contact:
         x, y, z = self.vitactip_tip_pose[:3]
         r = SYSTEM_PARAMS.geometry.sensor_xy_radius
         y_span = SYSTEM_PARAMS.geometry.phantom_y_length
-        y_final = y+y_span-r
+        y_final = y+y_span+2*r
         trajectory = [
             [x, y, z, *srq],
-            [x, y, z - press_depth_1, *srq],
-            [x, y_final, z - press_depth_1, *srq],
+            [x, y_final, z, *srq],
         ]
         return trajectory
 
@@ -1814,7 +1813,7 @@ class Contact:
         self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
         self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
-        self.camera.fov(8)
+        self.camera.fov(4)
         self.tactile_window = ti.ui.Window("tactile readout", (
             int(SYSTEM_PARAMS.visualisation.tactile_readout_width),
             int(SYSTEM_PARAMS.visualisation.tactile_readout_height)
