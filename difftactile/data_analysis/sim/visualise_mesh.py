@@ -7,11 +7,11 @@ from difftactile.main.constants import *
 
 class VisualiseMesh:
     def __init__(self):
-        # self.load_tetrahedra()
-        # self.load_sensor_mesh_from_npz()
+        self.load_tetrahedra()
+        self.load_sensor_mesh_from_npz()
         # self.load_is_fixed_layer()
         # self.apply_is_fixed_layer()
-        self.debug_gmsh()
+        # self.load_gmsh_data_only()
     
     def debug_gmsh(self):
         with open(SYSTEM_PARAMS.files.gmsh_debug_pkl, 'rb') as f:
@@ -169,11 +169,15 @@ class VisualiseMesh:
     def visualise_tetrahedra_pyvista(self):
         cells = np.column_stack([np.full(len(self.tetrahedra), 4), self.tetrahedra])
         grid = pv.PolyData(self.points, cells)
+        tetra_max_edge_lengths = np.max(self.tetra_edge_lengths, axis=1)
+        grid.cell_data['max_edge_lengths'] = tetra_max_edge_lengths
         
         plotter = pv.Plotter()
         plotter.add_mesh(
             grid,
+            scalars='max_edge_lengths',
             cmap='viridis',
+            show_scalar_bar=True,
             opacity=1.0,
             lighting=True,
         )
@@ -184,7 +188,7 @@ class VisualiseMesh:
 
 def main():
     visualise_mesh = VisualiseMesh()
-    visualise_mesh.pyvista_visualise_msh_file()
+    visualise_mesh.visualise_mesh()
 
 
 if __name__ == '__main__':

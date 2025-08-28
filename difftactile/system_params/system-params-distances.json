@@ -44,11 +44,10 @@
         },
         "clock_arms_z_min_offset": 0.004,
         "clock_arms_z_max_offset": 0.006,
-        "min_vein_separation": 0.010
+        "min_vein_separation": 0.010,
+        "mpm_pad_single": 0.010
     },
     "visualisation": {
-        "camera_offset": 1.0,
-        "particle_size_normal": 3e-4,
-        "particle_size_keypoint": 6e-4
+        "camera_offset": 1.0
     }
 }

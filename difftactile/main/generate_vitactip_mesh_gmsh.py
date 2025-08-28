@@ -112,10 +112,9 @@ class MeshGenerator:
 
         gmsh.model.occ.synchronize()
         gmsh.model.mesh.generate(3)
-        # self.debug_gmsh()
         gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
         gmsh.write(SYSTEM_PARAMS.files.gmsh_debug_msh)
-        # self.get_difftactile_variables()
+        self.get_difftactile_variables()
         gmsh.model.occ.synchronize()
         gmsh.fltk.run()
         gmsh.finalize()
@@ -221,8 +220,7 @@ class MeshGenerator:
             "dome_surface_node_tags": dome_surface_node_tags,
             "z_bottom": self.bz,
             "radius_of_curvature_outer": self.roc,
-            "min_particle_spacing": self._min,
-            "max_particle_spacing": self._max,
+            "mean_particle_spacing": float(self._mean),
             "is_fixed_mask": is_fixed_mask,
         }
         print(f"node_coordinates.shape[0]: {node_coordinates.shape[0]}")

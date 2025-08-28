@@ -157,8 +157,7 @@ class PreMain:
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
             mesh_data = pickle.load(f)
 
-        mesh_data['min_particle_spacing'] = {key: value/1000 for key, value in mesh_data['min_particle_spacing'].items()}
-        mesh_data['max_particle_spacing'] = {key: value/1000 for key, value in mesh_data['max_particle_spacing'].items()}
+        mesh_data['mean_particle_spacing'] /= 1000
 
         px = SYSTEM_PARAMS.geometry.phantom_x_length
         py = SYSTEM_PARAMS.geometry.phantom_y_length
@@ -214,31 +213,12 @@ class PreMain:
         print(f'phantom_normalised_spans: {phantom_normalised_spans}')
         print(f'phantom_scaled_spans: {phantom_scaled_spans}')
         print(f'phantom_min_max_particle_spacing: {phantom_min_max_particle_spacing}')
-        print(f"mesh_data['min_particle_spacing']: {mesh_data['min_particle_spacing']}")
+        print(f"mesh_data['mean_particle_spacing']: {mesh_data['mean_particle_spacing']}")
 
         phantom_difftactile_position = phantom_closest_vertex + phantom_dimensions/2
         vitactip_tip_position = phantom_closest_vertex.copy()
         vitactip_tip_position[0] += phantom_dimensions[0]/2
         vitactip_tip_position[2] += phantom_dimensions[2]+SYSTEM_PARAMS.geometry.gap
-
-        for key in mesh_data['min_particle_spacing'].keys():
-            mesh_data['min_particle_spacing_for_material'] = mesh_data['min_particle_spacing'][key]
-            mesh_data['max_particle_spacing_for_material'] = mesh_data['max_particle_spacing'][key]
-            particle_min_min_spacing_ratio = max(
-                phantom_min_max_particle_spacing / mesh_data['min_particle_spacing_for_material'],
-                mesh_data['min_particle_spacing_for_material'] / phantom_min_max_particle_spacing,
-            )
-            if key == 'all':
-                if False:
-                    assert particle_min_min_spacing_ratio < 1.1, f"ratio of minimum particle spacing in phantom and ViTacTip is too high: {particle_min_min_spacing_ratio:0.2f}; phantom: {phantom_min_max_particle_spacing:0.2e}; ViTacTip: {mesh_data['min_particle_spacing_for_material']:0.2e}"
-                particle_min_max_spacing_ratio = max(
-                    phantom_min_max_particle_spacing / mesh_data['min_particle_spacing_for_material'],
-                    phantom_min_max_particle_spacing / mesh_data['max_particle_spacing_for_material'],
-                    mesh_data['max_particle_spacing_for_material'] / mesh_data['min_particle_spacing_for_material'],
-                )
-                particle_min_max_spacing_ratio = max(particle_min_max_spacing_ratio, 1 / particle_min_max_spacing_ratio)
-                if False:
-                    assert particle_min_min_spacing_ratio < 10.0, f"ratio of minimum and maximum global particle spacing is too high: {particle_min_max_spacing_ratio:0.2f}"
 
         system_params_computed = {
             "phantom_closest_vertex": phantom_closest_vertex.tolist(),
@@ -249,7 +229,7 @@ class PreMain:
             "phantom_volume": phantom_volume,
             "object_scale": object_scale,
             "phantom_min_max_particle_spacing": phantom_min_max_particle_spacing,
-            "vitactip_min_particle_spacing": mesh_data['min_particle_spacing'],
+            "vitactip_mean_particle_spacing": mesh_data['mean_particle_spacing'],
             "contact_surface_area": contact_surface_area,
             "phantom": {
                 "num_particles_cube_1d": int(phantom_num_1d_particles),

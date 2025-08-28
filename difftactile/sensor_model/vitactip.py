@@ -32,7 +32,7 @@ class ViTacTip:
 
     def set_up_system_params_1(self):
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.dt[None] = SYSTEM_PARAMS.contact.dt
+        self.dt[None] = SYSTEM_PARAMS.contact.dt_override
         self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.rayleigh_damping_alpha[None] = (
@@ -617,8 +617,8 @@ class ViTacTip:
     @ti.kernel
     def set_vel(self, f: ti.i32):
         for p in range(self.num_vertices):
-            if self.is_fixed_layer[p] == 1:
-                self.vertex_velocities[f, p] = self.vertex_control_velocities[p]
+            # if self.is_fixed_layer[p] == 1:
+            self.vertex_velocities[f, p] = self.vertex_control_velocities[p]
 
     @ti.kernel
     def set_pose_control_1(self):

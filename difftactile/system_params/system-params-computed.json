@@ -1,50 +1,46 @@
 {
   "phantom_closest_vertex": [
-    0.075,
-    0.075,
-    0.06
+    0.012,
+    0.012,
+    0.006
   ],
   "phantom_centroid_pose": [
-    0.175,
-    0.175,
-    0.08499999999999999,
+    0.022,
+    0.022,
+    0.0085,
     0,
     0,
     0
   ],
-  "phantom_top_surface_z": 0.11,
+  "phantom_top_surface_z": 0.011,
   "vitactip_tip_position": [
-    0.175,
-    0.075,
-    0.11499999999999999
+    0.022,
+    0.012,
+    0.0115
   ],
   "vitactip_tip_pose": [
-    0.175,
-    0.075,
-    0.11499999999999999,
+    0.022,
+    0.012,
+    0.0115,
     0.0,
     1.0,
     0.0,
     0.0
   ],
-  "phantom_volume": 0.0020000000000000005,
-  "object_scale": 0.2,
-  "phantom_min_max_particle_spacing": 0.005,
-  "vitactip_min_particle_spacing": {
-    "all": 0.008009567358533434,
-    "shell": Infinity,
-    "gel": Infinity
-  },
+  "phantom_volume": 2.0000000000000003e-06,
+  "object_scale": 0.02,
+  "phantom_min_max_particle_spacing": 0.0005,
+  "vitactip_mean_particle_spacing": 0.00306206768553938,
   "contact_surface_area": 0.0011341149479459152,
   "phantom": {
     "num_particles_cube_1d": 41,
-    "n_grid_x": 25,
-    "n_grid_y": 25,
-    "n_grid_z": 14
+    "n_grid_x": 31,
+    "n_grid_y": 31,
+    "n_grid_z": 17
   },
   "min_coords": [
-    0.075,
-    0.075,
-    0.06
+    0.012,
+    0.012,
+    0.006
   ]
 }

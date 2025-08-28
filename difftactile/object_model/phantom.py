@@ -55,7 +55,7 @@ class Phantom:
 
     def set_up_system_params(self):
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.dt[None] = SYSTEM_PARAMS.contact.dt
+        self.dt[None] = SYSTEM_PARAMS.contact.dt_override
         self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.rayleigh_damping_alpha[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_alpha

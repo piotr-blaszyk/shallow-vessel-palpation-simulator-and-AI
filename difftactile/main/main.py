@@ -467,7 +467,7 @@ class Contact:
     def set_up_system_params(self):
         self.trajectory_ix = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.dt[None] = SYSTEM_PARAMS.contact.dt
+        self.dt[None] = SYSTEM_PARAMS.contact.dt_override
         self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=True)
         self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=True)
         self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=True)
@@ -855,14 +855,15 @@ class Contact:
         (
             srq,
             press_depth_surface,
-            press_depth_1
+            _
         ) = self.get_random_slide_params()
+        press_depth_1 = SYSTEM_PARAMS.trajectory.press_depth_slide
         x, y, z = self.vitactip_tip_pose[:3]
         r = SYSTEM_PARAMS.geometry.sensor_xy_radius
         trajectory = [
             [x, y, z, *srq],
-            [x, y, z - press_depth_surface, *srq],
-            [x, y, z - press_depth_1, *srq],
+            [x, y, z-press_depth_surface, *srq],
+            [x, y, z-(press_depth_surface+press_depth_1), *srq],
         ]
         return trajectory
 
@@ -1833,7 +1834,7 @@ class Contact:
         self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
         self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
-        self.camera.fov(4)
+        self.camera.fov(3)
         self.tactile_window = ti.ui.Window("tactile readout", (
             int(SYSTEM_PARAMS.visualisation.tactile_readout_width),
             int(SYSTEM_PARAMS.visualisation.tactile_readout_height)
@@ -2254,17 +2255,13 @@ class Contact:
             json.dump(results, f, indent=4, cls=ScientificNotationEncoder)
     
     def set_dt(self, verbose=False):
-        if len(self.state_dicts[self.trajectory_ix[None]]) > 0:
-            tumour_modulus = self.phantom.youngs_modulus[1]
-        else:
-            tumour_modulus = self.phantom.youngs_modulus[0]
-        dt = calculate_cfl_timestep(
-            phantom_healthy_youngs_modulus=self.phantom.youngs_modulus[0],
-            phantom_tumour_youngs_modulus=tumour_modulus,
-            vitactip_youngs_modulus=self.vitactip.youngs_modulus[None],
-            courant_number=self.courant_number,
-            verbose=verbose,
-        )
+        # dt = calculate_cfl_timestep(
+        #     phantom_healthy_youngs_modulus=self.phantom.youngs_modulus[0],
+        #     vitactip_youngs_modulus=self.vitactip.youngs_modulus[None],
+        #     courant_number=self.courant_number,
+        #     verbose=verbose,
+        # )
+        dt = SYSTEM_PARAMS.contact.dt_override
         self.dt[None] = dt
         self.phantom.dt[None] = dt
         self.vitactip.dt[None] = dt
@@ -2447,9 +2444,6 @@ class Contact:
                     self.set_dt(verbose=True)
                     self.fp()
                     self.print_contact_params()
-                    if j == 0:
-                        self.vitactip.print_min_spacing()
-                        self.phantom.print_min_spacing()
                     for ts in range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory):
                         self.pid_controller_1()
                         self.pid_controller_2(ts)
