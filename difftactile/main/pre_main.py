@@ -77,59 +77,73 @@ class PreMain:
             }
         }
 
-    @staticmethod
-    def get_num_mpm_grid_nodes():
-        px = SYSTEM_PARAMS.geometry.phantom_x_length
-        py = SYSTEM_PARAMS.geometry.phantom_y_length
-        pz = SYSTEM_PARAMS.geometry.phantom_z_length
-        d = SYSTEM_PARAMS.phantom.mpm_grid_cube_size
-        nx = PreMain.get_num_mpm_grid_nodes_single_dim(px, d, pad=0)
-        ny = PreMain.get_num_mpm_grid_nodes_single_dim(py, d, pad=0)
-        nz = PreMain.get_num_mpm_grid_nodes_single_dim(pz, d, pad=3)
-        res = np.array([nx, ny, nz], dtype=int)
-        return res
+    def get_num_mpm_grid_nodes(self):
+        num_nodes = []
+        layouts = []
+        for i in range(self.p_dims.shape[0]):
+            n, layout = self.get_num_mpm_grid_nodes_single_dim(i)
+            num_nodes.append(n)
+            layouts.append(layout)
+        self.num_nodes = np.array(num_nodes, dtype=int)
+        self.layouts = layouts
 
-    @staticmethod
-    def get_num_mpm_grid_nodes_single_dim(l, d, pad):
-        n0 = l / d
-        n = int(np.ceil(n0))+1
-        n = n-2+6
-        n = n+pad
-        return n
+    def get_num_mpm_grid_nodes_single_dim(self, i):
+        l = self.p_dims[i]
+        n_phantom = l / self.d
+        n_phantom = int(np.ceil(n_phantom))
+        n_pad_single = self.pad_single / self.d
+        n_pad_single = int(np.ceil(n_pad_single))
+        n_v0_single = 3+1
+        if i == 0 or i == 1:
+            arr = np.array([
+                n_v0_single,
+                n_pad_single,
+                n_phantom,
+                n_pad_single,
+                n_v0_single,
+            ], dtype=int)
+            n = arr.sum()+1
+            return n, arr
+        else:
+            arr = np.array([
+                n_v0_single,
+                n_phantom,
+                n_pad_single,
+                n_v0_single,
+            ], dtype=int)
+            n = arr.sum()+1
+            return n, arr
     
-    @staticmethod
-    def get_min_max_coords(d, num_grid_nodes):
-        nx, ny, nz = num_grid_nodes
-        d = SYSTEM_PARAMS.phantom.mpm_grid_cube_size
-        min_coords = np.array([
-            d*2,
-            d*2,
-            d*2,
-        ], dtype=float)
-        max_coords = np.array([
-            (nx-2-1)*d,
-            (ny-2-1)*d,
-            (nz-2-3-1)*d,
-        ], dtype=float)
-        return min_coords, max_coords
+    def min_coords_single_dim(self, i):
+        if i == 0 or i == 1:
+            return sum(self.layouts[i][:2])*self.d
+        else:
+            return sum(self.layouts[i][:1])*self.d
 
-    @staticmethod
+    def get_min_coords(self):
+        res = []
+        for i in range(len(self.layouts)):
+            res.append(
+                self.min_coords_single_dim(i)
+            )
+        self.min_coords = np.array(res, dtype=float)
+
     def compute_mpm_grid_node_vein_mask(
-        num_mpm_grid_nodes,
-        min_coords, d,
+        self,
     ):
         vy = SYSTEM_PARAMS.geometry.grid_vein.vy
         vz = SYSTEM_PARAMS.geometry.grid_vein.vz
         r0 = SYSTEM_PARAMS.geometry.grid_vein.r0
+        d = self.d
         r1 = 1.5*d
         r = r0+r1
-        nx, ny, nz = num_mpm_grid_nodes
+        nx, ny, nz = self.num_nodes
         grid_node_positions = np.zeros(shape=(ny, nz, 2), dtype=float)
         for i in range(grid_node_positions.shape[0]):
             for j in range(grid_node_positions.shape[1]):
                 grid_node_positions[i, j] = np.array([i*d, j*d], dtype=float)
-        grid_node_positions[:, :, 0] -= min_coords[1]
-        grid_node_positions[:, :, 1] -= min_coords[2]
+        grid_node_positions[:, :, 0] -= self.min_coords[1]
+        grid_node_positions[:, :, 1] -= self.min_coords[2]
         distances = np.sqrt(np.sum((grid_node_positions - np.array([vy, vz]))**2, axis=2))
         grid_node_v0_mask = distances <= r
         r_interm_outer = r+1.5*d
@@ -139,31 +153,31 @@ class PreMain:
             grid_node_v0_mask=grid_node_v0_mask,
         )
 
-    @staticmethod
-    def go():
+    def go(self):
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
             mesh_data = pickle.load(f)
 
         mesh_data['min_particle_spacing'] = {key: value/1000 for key, value in mesh_data['min_particle_spacing'].items()}
         mesh_data['max_particle_spacing'] = {key: value/1000 for key, value in mesh_data['max_particle_spacing'].items()}
 
-        num_grid_nodes = PreMain.get_num_mpm_grid_nodes()
-        nx, ny, nz = num_grid_nodes
+        px = SYSTEM_PARAMS.geometry.phantom_x_length
+        py = SYSTEM_PARAMS.geometry.phantom_y_length
+        pz = SYSTEM_PARAMS.geometry.phantom_z_length
+        self.p_dims = np.array([px, py, pz], dtype=float)
+        self.d = SYSTEM_PARAMS.phantom.mpm_grid_cube_size
+        self.pad_single = SYSTEM_PARAMS.geometry.mpm_pad_single
+
+        self.get_num_mpm_grid_nodes()
+        nx, ny, nz = self.num_nodes
 
         d = SYSTEM_PARAMS.phantom.mpm_grid_cube_size
-        min_coords, max_coords = PreMain.get_min_max_coords(
-            d,
-            num_grid_nodes,
-        )
+        self.get_min_coords()
+        min_coords = self.min_coords
 
-        PreMain.compute_mpm_grid_node_vein_mask(
-            num_grid_nodes,
-            min_coords, d,
-        )
+        self.compute_mpm_grid_node_vein_mask()
 
         print(f'SYSTEM_PARAMS.phantom.mpm_grid_cube_size: {d}')
         print(f'min_coord: {min_coords}')
-        print(f'max_coords: {max_coords}')
 
         phantom_closest_vertex = min_coords.copy()
 
@@ -172,11 +186,11 @@ class PreMain:
         phantom_dimensions = np.array([
             SYSTEM_PARAMS.geometry.phantom_x_length, 
             SYSTEM_PARAMS.geometry.phantom_y_length, 
-            SYSTEM_PARAMS.geometry.phantom_z_length,
+            SYSTEM_PARAMS.geometry.phantom_z_length
         ], dtype=float)
         phantom_volume = phantom_dimensions[0] * phantom_dimensions[1] * phantom_dimensions[2]
 
-        contact_surface_area = math.pi * (SYSTEM_PARAMS.gmsh_mm.radii[0] / 1_000) ** 2
+        contact_surface_area = math.pi * (SYSTEM_PARAMS.gmsh_mm.stem_wall_radius_outer / 1_000) ** 2
 
         phantom_furthest_vertex = phantom_closest_vertex + phantom_dimensions
 
@@ -186,9 +200,6 @@ class PreMain:
         print(f'phantom_volume: {phantom_volume}')
         print(f'contact_surface_area: {contact_surface_area}')
         print(f'dist_from_floor: {dist_from_floor:0.3e}')
-
-        # assert np.all(phantom_closest_vertex >= min_coords), "the phantom is outside of the manipulation cube"
-        # assert np.all(phantom_furthest_vertex <= max_coords), "the phantom is outside of the manipulation cube"
 
         phantom_max_dim = np.max(phantom_dimensions)
         object_scale = phantom_max_dim
@@ -206,12 +217,9 @@ class PreMain:
         print(f"mesh_data['min_particle_spacing']: {mesh_data['min_particle_spacing']}")
 
         phantom_difftactile_position = phantom_closest_vertex + phantom_dimensions/2
-        sensor_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
-        press_depth_slide = SYSTEM_PARAMS.trajectory.press_depth_slide
         vitactip_tip_position = phantom_closest_vertex.copy()
         vitactip_tip_position[0] += phantom_dimensions[0]/2
-        vitactip_tip_position[1] -= sensor_r
-        vitactip_tip_position[2] += phantom_dimensions[2]-press_depth_slide
+        vitactip_tip_position[2] += phantom_dimensions[2]+SYSTEM_PARAMS.geometry.gap
 
         for key in mesh_data['min_particle_spacing'].keys():
             mesh_data['min_particle_spacing_for_material'] = mesh_data['min_particle_spacing'][key]
@@ -249,8 +257,7 @@ class PreMain:
                 "n_grid_y": int(ny),
                 "n_grid_z": int(nz)
             },
-            "min_coords": min_coords.tolist(),
-            "max_coords": max_coords.tolist()
+            "min_coords": min_coords.tolist()
         }
 
         if False:
@@ -268,7 +275,8 @@ class PreMain:
 
 
 def main():
-    PreMain.go()
+    pm = PreMain()
+    pm.go()
 
 
 if __name__ == '__main__':

@@ -135,7 +135,8 @@
             "vy": 0.1,
             "vz": 0.035,
             "r0": 0.01
-        }
+        },
+        "mpm_pad_single": 0.010
     },
     "scaling_factor_1": {
         "distance_from_camera_lens_to_outer_shell_surface": 0.013,

@@ -89,7 +89,6 @@ class Phantom:
         r = self.r0+r1
         self.r_interm_outer = r+1.5*self.d
         self.min_coords = np.array(SYSTEM_PARAMS_COMPUTED.min_coords, dtype=float)
-        self.max_coords = np.array(SYSTEM_PARAMS_COMPUTED.max_coords, dtype=float)
 
     def load_obj(self):
         obj_loader = ObjLoader(

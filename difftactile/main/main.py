@@ -895,11 +895,6 @@ class Contact:
             cz_offset = SYSTEM_PARAMS.geometry.phantom_z_length / 2 - SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
             cx = self.sensor_x_range_phantom[0]
 
-            # px = SYSTEM_PARAMS.geometry.phantom_x_length
-            # py = SYSTEM_PARAMS.geometry.phantom_y_length
-            # pd = (px**2 + py**2) ** (1/2)
-            # h = NP_RNG.uniform(1/4 * pd, pd)
-
             while True:
                 cy = NP_RNG.uniform(*self.sensor_y_range_phantom)
                 valid_position = True
