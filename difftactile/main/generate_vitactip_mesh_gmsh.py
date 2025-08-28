@@ -180,18 +180,10 @@ class MeshGenerator:
         ]
         dome_surface_node_tags -= 1
 
-        min_particle_spacing = self.compute_particle_spacing(
+        self.compute_particle_spacing(
             node_coordinates,
             all_tetrahedra,
-            mode="min",
         )
-        max_particle_spacing = self.compute_particle_spacing(
-            node_coordinates,
-            all_tetrahedra,
-            mode="max",
-        )
-        print(f"min_particle_spacing (mm): {min_particle_spacing}")
-        print(f"max_particle_spacing (mm): {max_particle_spacing}")
 
         z = node_coordinates[:, 2]
         xy = node_coordinates[:, :2]
@@ -209,8 +201,8 @@ class MeshGenerator:
             "dome_surface_node_tags": dome_surface_node_tags,
             "z_bottom": self.bz,
             "radius_of_curvature_outer": self.roc,
-            "min_particle_spacing": min_particle_spacing,
-            "max_particle_spacing": max_particle_spacing,
+            "min_particle_spacing": self._min,
+            "max_particle_spacing": self._max,
             "is_fixed_mask": is_fixed_mask,
         }
         print(f"node_coordinates.shape[0]: {node_coordinates.shape[0]}")
@@ -222,26 +214,40 @@ class MeshGenerator:
         self,
         node_coordinates,
         all_tetrahedra,
-        mode="min",
     ):
-        if mode not in ["min", "max"]:
-            raise ValueError("mode must be either 'min' or 'max'")
         tet_vertices = node_coordinates[all_tetrahedra]
         edge_pairs = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
-        initial_value = -float("inf") if mode == "max" else float("inf")
-        spacing_all = initial_value
-        spacing_shell = initial_value
-        spacing_gel = initial_value
+        node_edge_lengths = [[] for _ in range(node_coordinates.shape[0])]
+        tetra_edge_lengths = [[] for _ in range(all_tetrahedra.shape[0])]
+        all_node_lengths = []
         for i, j in edge_pairs:
             edges = tet_vertices[:, i] - tet_vertices[:, j]
             lengths = np.sqrt(np.sum(edges**2, axis=1))
             if lengths.size > 0:
-                spacing_all = (
-                    max(spacing_all, np.max(lengths))
-                    if mode == "max"
-                    else min(spacing_all, np.min(lengths))
-                )
-        return spacing_all
+                all_node_lengths.append(lengths)
+                for tet_idx, length in enumerate(lengths):
+                    node_i = all_tetrahedra[tet_idx, i]
+                    node_j = all_tetrahedra[tet_idx, j]
+                    node_edge_lengths[node_i].append(length)
+                    node_edge_lengths[node_j].append(length)
+                    tetra_edge_lengths[tet_idx].append(length)
+        all_node_lengths = np.concatenate(all_node_lengths)
+        
+        pkl = {
+            'node_edge_lengths': node_edge_lengths,
+            'tetra_edge_lengths': tetra_edge_lengths,
+        }
+        path = SYSTEM_PARAMS.files.edge_lengths_pkl
+        with open(path, "wb") as f:
+            pickle.dump(pkl, f)
+        
+        self._min = all_node_lengths.min()
+        self._max = all_node_lengths.max()
+        self._mean = all_node_lengths.mean()
+
+        print(f"min_particle_spacing (mm): {self._min}")
+        print(f"max_particle_spacing (mm): {self._max}")
+        print(f"mean_particle_spacing (mm): {self._mean}")
 
 
 def main():

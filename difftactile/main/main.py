@@ -695,10 +695,12 @@ class Contact:
         assert(len(trajectories_python_array) == len(self.state_dicts))
 
     def randomise_train_step(self):
-        t1 = self.get_random_grid_search_trajectory()
-        t2 = self.get_fully_random_trajectory()
-        t3 = self.get_straight_line_slide_trajectory()
-        trajectories_python_array = [t1, t2, t3]
+        trajectories_python_array = [
+            self.get_random_grid_search_trajectory(),
+            self.get_fully_random_trajectory(),
+            self.get_straight_line_slide_trajectory(),
+            self.get_press_trajectory(),
+        ]
         self.set_trajectories(trajectories_python_array)
 
         self.state_dicts = []
@@ -846,6 +848,21 @@ class Contact:
         trajectory = [
             [x, y, z, *srq],
             [x, y_final, z, *srq],
+        ]
+        return trajectory
+    
+    def get_press_trajectory(self):
+        (
+            srq,
+            press_depth_surface,
+            press_depth_1
+        ) = self.get_random_slide_params()
+        x, y, z = self.vitactip_tip_pose[:3]
+        r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        trajectory = [
+            [x, y, z, *srq],
+            [x, y, z - press_depth_surface, *srq],
+            [x, y, z - press_depth_1, *srq],
         ]
         return trajectory
 
@@ -2417,7 +2434,7 @@ class Contact:
             for k in range(0, 1):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(2, 3):
+                for i in range(3, 4):
                     self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     self.set_up_initial_positions_state_and_trajectory()
@@ -2458,8 +2475,6 @@ class Contact:
                         if ts % 100 == 0:
                             self.save_sensor_mesh_to_npz()
                             print(f"ts={ts}; sensor mesh saved")
-                        if self.last_target_reached[None] == 1:
-                            break
                     file_num = j * 4 + k * 2 + i
                     self.write_training_data_to_file(file_num, i)
                     

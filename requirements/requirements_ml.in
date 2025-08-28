@@ -15,3 +15,4 @@ torch_spline_conv
 
 numpy
 scikit-learn
+pyvista

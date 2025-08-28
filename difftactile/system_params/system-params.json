@@ -1,32 +1,32 @@
 {
     "vitactip": {
         "shell": {
-            "density": 1100.0,
-            "poissons_ratio": 0.495,
-            "youngs_modulus": 7500000.0
+            "density": 1.100e+03,
+            "poissons_ratio": 4.950e-01,
+            "youngs_modulus": 7.500e+06
         },
         "gel": {
-            "density": 1100.0,
-            "poissons_ratio": 0.499,
-            "youngs_modulus": 5000.0
+            "density": 1.100e+03,
+            "poissons_ratio": 4.990e-01,
+            "youngs_modulus": 5.000e+03
         },
         "single_material": {
-            "density": 1100.0,
-            "poissons_ratio": 0.499,
-            "youngs_modulus": 12000.0
+            "density": 1.100e+03,
+            "poissons_ratio": 4.990e-01,
+            "youngs_modulus": 1.200e+04
         },
-        "collision_search_distance": 5.0,
-        "keypoint_search_z_threshold": 0.005,
+        "collision_search_distance": 5.000e+00,
+        "keypoint_search_z_threshold": 5.000e-03,
         "number_of_biomimetic_tips": 0,
         "number_of_materials": 1,
-        "fixed_layer_distance_from_bottom": 0.01,
-        "rayleigh_damping_alpha": 0.1,
-        "rayleigh_damping_beta": 0.01,
+        "fixed_layer_distance_from_bottom": 1.000e-02,
+        "rayleigh_damping_alpha": 1.000e-01,
+        "rayleigh_damping_beta": 1.000e-02,
         "num_markers": 127
     },
     "phantom": {
-        "mass_eps": 1e-08,
-        "mpm_grid_cube_size": 0.005,
+        "mass_eps": 1.000e-08,
+        "mpm_grid_cube_size": 1.500e-02,
         "bound": 3,
         "gravity": [
             0.0,
@@ -35,57 +35,57 @@
         ],
         "silicone": {
             "density": 900,
-            "poissons_ratio": 0.46,
-            "youngs_modulus": 12000.0
+            "poissons_ratio": 4.600e-01,
+            "youngs_modulus": 1.200e+04
         },
         "hard_plastic": {
             "density": 1150,
-            "poissons_ratio": 0.27,
-            "youngs_modulus": 120000.0
+            "poissons_ratio": 2.700e-01,
+            "youngs_modulus": 1.200e+05
         },
-        "fixed_points_z_ratio": 0.1,
+        "fixed_points_z_ratio": 1.000e-01,
         "fix_bottom_points": 1,
-        "keypoint_search_xy_threshold": 0.2,
-        "rayleigh_damping_alpha": 0.1,
-        "rayleigh_damping_beta": 0.01,
-        "particle_spacing": 0.005
+        "keypoint_search_xy_threshold": 2.000e-01,
+        "rayleigh_damping_alpha": 1.000e-01,
+        "rayleigh_damping_beta": 1.000e-02,
+        "particle_spacing": 5.000e-03
     },
     "contact": {
-        "dt": 1.27e-06,
-        "normal_stiffness": 13.609379375350983,
-        "tangential_stiffness": 9.526565562745688,
-        "normal_damping": 0.17308175503191664,
-        "coulomb_friction_coeff": 0.85,
+        "dt": 1.270e-06,
+        "normal_stiffness": 1.361e+01,
+        "tangential_stiffness": 9.527e+00,
+        "normal_damping": 1.731e-01,
+        "coulomb_friction_coeff": 8.500e-01,
         "num_sub_frames": 125,
         "num_opt_steps": 2,
         "num_training_trajectories": 200,
-        "pid_max_speed_translation": 5.0,
-        "pid_orientation_kp": 1.0,
-        "pid_kp": 100.0,
-        "pid_ki": 0.0,
-        "pid_kd": 0.0,
-        "pid_position_tolerance": 0.005,
-        "pid_orientation_tolerance": 1.0,
-        "pid_angle_eps": 1e-08,
-        "pid_max_rotation_per_second_degrees": 500.0,
+        "pid_max_speed_translation": 5.000e+00,
+        "pid_orientation_kp": 1.000e+00,
+        "pid_kp": 1.000e+02,
+        "pid_ki": 0.000e+00,
+        "pid_kd": 0.000e+00,
+        "pid_position_tolerance": 5.000e-03,
+        "pid_orientation_tolerance": 1.000e+00,
+        "pid_angle_eps": 1.000e-08,
+        "pid_max_rotation_per_second_degrees": 5.000e+02,
         "dwell_frames": 0,
-        "norm_eps": 1e-11,
-        "tangential_velocity_detection_threshold": 5e-06
+        "norm_eps": 1.000e-11,
+        "tangential_velocity_detection_threshold": 5.000e-06
     },
     "trajectory": {
-        "press_depth": 0.06,
-        "slide_distance": 0.25,
-        "press_depth_0": 0.05,
-        "press_depth_1": 0.04,
-        "press_depth_2": 0.03,
-        "press_depth_3": 0.04,
-        "press_depth_offset_0": 0.005,
-        "press_depth_offset_1": 0.01,
-        "slide_distance_long": 0.5,
-        "press_depth_slide": 0.01
+        "press_depth": 6.000e-02,
+        "slide_distance": 2.500e-01,
+        "press_depth_0": 5.000e-02,
+        "press_depth_1": 4.000e-02,
+        "press_depth_2": 3.000e-02,
+        "press_depth_3": 4.000e-02,
+        "press_depth_offset_0": 5.000e-03,
+        "press_depth_offset_1": 1.000e-02,
+        "slide_distance_long": 5.000e-01,
+        "press_depth_slide": 1.000e-02
     },
     "gmsh_mm": {
-        "characteristic_length_factor": 0.26,
+        "characteristic_length_factor": 0.40,
         "radii": [
             19,
             20
@@ -99,10 +99,10 @@
         "refine_mesh": 0,
         "shell_thickness": 1,
         "refinement_offset": 3,
-        "dist_eps": 0.1
+        "dist_eps": 1.000e-01
     },
     "geometry": {
-        "gap": 0.005,
+        "gap": 5.000e-03,
         "phantom_orientation": [
             0,
             0,
@@ -114,41 +114,41 @@
             0.0,
             0.0
         ],
-        "phantom_z_length": 0.05,
-        "distance_from_camera_lens_to_outer_shell_surface": 0.095,
-        "sensor_xy_radius": 0.1,
+        "phantom_z_length": 5.000e-02,
+        "distance_from_camera_lens_to_outer_shell_surface": 9.500e-02,
+        "sensor_xy_radius": 1.000e-01,
         "vein": {
             "theta": 0,
-            "cz_offset": 0.02,
-            "r": 0.01,
-            "h": 5.0,
-            "depth_beneath_surface": 0.015
+            "cz_offset": 2.000e-02,
+            "r": 1.000e-02,
+            "h": 5.000e+00,
+            "depth_beneath_surface": 1.500e-02
         },
-        "phantom_x_length": 0.2,
-        "phantom_y_length": 0.2,
-        "camera_rotation_angle": 10.37,
-        "high_dist": 5.0,
-        "clock_arms_z_min_offset": 0.02,
-        "clock_arms_z_max_offset": 0.03,
-        "min_vein_separation": 0.05,
+        "phantom_x_length": 2.000e-01,
+        "phantom_y_length": 2.000e-01,
+        "camera_rotation_angle": 1.037e+01,
+        "high_dist": 5.000e+00,
+        "clock_arms_z_min_offset": 2.000e-02,
+        "clock_arms_z_max_offset": 3.000e-02,
+        "min_vein_separation": 5.000e-02,
         "grid_vein": {
-            "vy": 0.1,
-            "vz": 0.035,
-            "r0": 0.01
+            "vy": 1.000e-01,
+            "vz": 3.500e-02,
+            "r0": 1.000e-02
         },
-        "mpm_pad_single": 0.010
+        "mpm_pad_single": 1.000e-02
     },
     "scaling_factor_1": {
-        "distance_from_camera_lens_to_outer_shell_surface": 0.013,
-        "press_depth_1": 0.004
+        "distance_from_camera_lens_to_outer_shell_surface": 1.300e-02,
+        "press_depth_1": 4.000e-03
     },
     "meta": {
-        "target_courant_number": 0.2,
+        "target_courant_number": 2.000e-01,
         "enable_tactile_map": 1,
         "enable_pid_controller": 1,
         "distance_scaling_factor": 5,
-        "youngs_modulus_scaling_factor": 1.0,
-        "px_dist_adjacent_markers": 38.12,
+        "youngs_modulus_scaling_factor": 1.000e+00,
+        "px_dist_adjacent_markers": 3.812e+01,
         "max_num_veins": 1,
         "num_trajectories": 4,
         "max_num_trajectory_points": 1500,
@@ -163,15 +163,15 @@
         "latent_dim": 256,
         "output_dim": 1,
         "clip_len": 5,
-        "learning_rate": 0.001,
+        "learning_rate": 1.000e-03,
         "batch_size": 128,
         "num_train_batches": 64,
         "num_val_batches": 8,
         "num_epochs": 4,
         "num_workers": 16,
-        "tversky_weight": 0.0,
-        "focal_weight": 1.0,
-        "connectivity_weight": 0.0,
+        "tversky_weight": 0.000e+00,
+        "focal_weight": 1.000e+00,
+        "connectivity_weight": 0.000e+00,
         "num_entity_types": 6,
         "exp_grid_search_dilation": 2,
         "exp_straight_line_dilation": 1,
@@ -187,34 +187,34 @@
     },
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,
-        "camera_offset": 5.0,
-        "particle_size_normal": 0.0005,
-        "particle_size_keypoint": 0.0015,
-        "tactile_readout_width": 960.0,
-        "tactile_readout_height": 540.0,
-        "window_3d_width": 960.0,
-        "window_3d_height": 540.0
+        "camera_offset": 5.000e+00,
+        "particle_size_normal": 1.500e-03,
+        "particle_size_keypoint": 3.000e-03,
+        "tactile_readout_width": 9.600e+02,
+        "tactile_readout_height": 5.400e+02,
+        "window_3d_width": 9.600e+02,
+        "window_3d_height": 5.400e+02
     },
     "optimisation": {
-        "loss_1_weight": 1.0,
-        "loss_2_weight": 0.0,
+        "loss_1_weight": 1.000e+00,
+        "loss_2_weight": 0.000e+00,
         "mini_batch_size": 10000,
         "calibrate_learning_rates": 0,
         "enable_loss_2": 0
     },
     "fisheye_model": {
-        "focal_length_x": 380.0,
-        "focal_length_y": 380.0,
-        "principal_point_x": 1035.0,
-        "principal_point_y": 580.0,
-        "target_image_width": 1920.0,
-        "target_image_height": 1080.0,
-        "circle_centre_x": 1035.0,
-        "circle_centre_y": 580.0,
-        "circle_radius": 370.0,
-        "circle_small_radius": 370.0,
-        "shell_inner_r": 176.7,
-        "shell_outer_r": 181.7,
+        "focal_length_x": 3.800e+02,
+        "focal_length_y": 3.800e+02,
+        "principal_point_x": 1.035e+03,
+        "principal_point_y": 5.800e+02,
+        "target_image_width": 1.920e+03,
+        "target_image_height": 1.080e+03,
+        "circle_centre_x": 1.035e+03,
+        "circle_centre_y": 5.800e+02,
+        "circle_radius": 3.700e+02,
+        "circle_small_radius": 3.700e+02,
+        "shell_inner_r": 1.767e+02,
+        "shell_outer_r": 1.817e+02,
         "crop_x": 651,
         "crop_y": 196,
         "crop_width": 768,
@@ -225,7 +225,7 @@
         "down_scaling_factor": 8
     },
     "marker_tracker": {
-        "seconds_per_frame": 0.1
+        "seconds_per_frame": 1.000e-01
     },
     "files": {
         "init_marker_positions": "difftactile/output/init-marker-positions.pkl",
@@ -366,6 +366,7 @@
         "experiment_straight_frame_mapping_npz": "difftactile/output/experiment_straight_frame_mapping.npz",
         "experiment_straight_ground_truth_labels_npz": "difftactile/output/experiment_straight_ground_truth_labels.npz",
         "grid_node_v0_mask": "difftactile/output/grid_node_v0_mask.npz",
-        "sensor_mesh": "difftactile/output/sensor_mesh.npz"
+        "sensor_mesh": "difftactile/output/sensor_mesh.npz",
+        "edge_lengths_pkl": "difftactile/output/edge_lengths.pkl"
     }
 }
