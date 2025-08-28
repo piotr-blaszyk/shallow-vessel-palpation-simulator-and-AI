@@ -4,6 +4,7 @@ from scipy.spatial.transform import Rotation as R
 import torch
 from difftactile.object_model.obj_loader import ObjLoader
 from difftactile.main.constants import *
+from difftactile.object_model.common import *
 
 TI_TYPE = ti.f32
 TC_TYPE = torch.float32
@@ -20,6 +21,12 @@ class Phantom:
         self.cache = dict()
         self.grid_node_vein_sparse_to_dense_init()
         self.initialise_grid_node_vein_mask()
+    
+    def print_min_spacing(self):
+        particles_A = self.particles_A.to_numpy()
+        particles_A = particles_A[0, :, :]
+        min_spacing = Common.compute_min_spacing_3d(particles_A)
+        print(f"phantom min particle spacing: {min_spacing:0.3e}")
     
     def grid_node_vein_sparse_to_dense_init(self):
         self.grid_node_vein_indices = ti.field(

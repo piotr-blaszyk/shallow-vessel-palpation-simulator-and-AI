@@ -6,11 +6,11 @@
     },
     "phantom": {
         "mpm_grid_cube_size": 0.001,
-        "keypoint_search_xy_threshold": 0.010,
+        "keypoint_search_xy_threshold": 0.040,
         "particle_spacing": 0.001
     },
     "contact": {
-        "pid_max_speed_translation": 0.100,
+        "pid_max_speed_translation": 1.000,
         "pid_position_tolerance": 0.001,
         "tangential_velocity_detection_threshold": 1e-6
     },
@@ -24,16 +24,6 @@
         "press_depth_offset_0": 0.001,
         "press_depth_offset_1": 0.002,
         "press_depth_slide": 0.002
-    },
-    "gmsh_mm": {
-        "stem_wall_radius_outer": 20,
-        "stem_wall_radius_inner": 19,
-        "cap_height": 5,
-        "stem_height": 6,
-        "shell_thickness": 1,
-        "rigid_stem_wall_height": 2,
-        "refinement_offset": 3,
-        "dist_eps": 0.1
     },
     "geometry": {
         "gap": 0.001,

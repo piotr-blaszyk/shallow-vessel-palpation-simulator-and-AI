@@ -1519,6 +1519,14 @@ class Contact:
             ) as f:
                 pickle.dump(particles, f)
             self.mesh_needs_to_be_saved[None] = 0
+    
+    def save_sensor_mesh_to_npz(self):
+        particles = self.vitactip.vertices_deformed_A.to_numpy()[0]
+        path = SYSTEM_PARAMS.files.sensor_mesh
+        np.savez(
+            path,
+            particles=particles,
+        )
 
     def save_tactile_sensor_mesh_node_mapping_to_pickle(self):
         f2v = self.vitactip.tetrahedra.to_numpy()
@@ -1882,7 +1890,7 @@ class Contact:
         self.scene.particles(
             self.healthy_tissue_points,
             color=(0.0, 0.0, 1.0),
-            radius=SYSTEM_PARAMS.visualisation.particle_size_normal/2,
+            radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
         self.scene.particles(
             self.vein_points,
@@ -1911,7 +1919,7 @@ class Contact:
                 self.key_points,
                 color=(1.0, 0.0, 0.0),
                 per_vertex_color=self.key_points_per_vertex_color,
-                radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint*2,
+                radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
             )
         self.canvas.scene(self.scene)
         self.window.show()
@@ -2427,6 +2435,9 @@ class Contact:
                     self.set_dt(verbose=True)
                     self.fp()
                     self.print_contact_params()
+                    if j == 0:
+                        self.vitactip.print_min_spacing()
+                        self.phantom.print_min_spacing()
                     for ts in range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory):
                         self.pid_controller_1()
                         self.pid_controller_2(ts)
@@ -2449,6 +2460,9 @@ class Contact:
                             and ts % 4 == 0
                         ):
                             self.record_training_data_point(j, ts)
+                        if ts % 100 == 0:
+                            self.save_sensor_mesh_to_npz()
+                            print(f"ts={ts}; sensor mesh saved")
                         if self.last_target_reached[None] == 1:
                             break
                     file_num = j * 4 + k * 2 + i

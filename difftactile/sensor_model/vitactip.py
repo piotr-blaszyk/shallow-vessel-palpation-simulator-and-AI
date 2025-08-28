@@ -7,6 +7,7 @@ import pickle
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.sensor_model.fisheye_model_taichi import *
 from difftactile.main.constants import *
+from difftactile.object_model.common import *
 
 TI_TYPE = ti.f32
 TC_TYPE = torch.float32
@@ -22,6 +23,12 @@ class ViTacTip:
         self.load_mesh()
         self.initialise_camera_model()
         self.set_up_physical_state_1()
+    
+    def print_min_spacing(self):
+        particles_A = self.vertices_deformed_A.to_numpy()
+        particles_A = particles_A[0, :, :]
+        min_spacing = Common.compute_min_spacing_3d(particles_A)
+        print(f"ViTacTip min particle spacing: {min_spacing:0.3e}")
 
     def set_up_system_params_1(self):
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
@@ -121,8 +128,11 @@ class ViTacTip:
         )
         is_fixed_layer_data = self.node_labels[:, -1].astype(np.int32)
         self.is_fixed_layer.from_numpy(is_fixed_layer_data)
-        with open(SYSTEM_PARAMS.files.is_fixed_layer, "wb") as f:
-            pickle.dump(is_fixed_layer_data, f)
+        is_fixed_layer_path = SYSTEM_PARAMS.files.is_fixed_layer_npz
+        np.savez(
+            is_fixed_layer_path,
+            is_fixed_layer=is_fixed_layer_data,
+        )
         self.num_vertices = len(self.node_coordinates)
         self.num_tetrahedra = len(self.tetrahedra_npy)
         self.num_contact_surface_triangles = len(self.outer_surface_triangles)

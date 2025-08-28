@@ -6,10 +6,15 @@ from difftactile.main.constants import *
 
 class VisualiseMesh:
     def __init__(self):
-        # self.load_points_E()
-        # self.load_validation_point()
-        # self.merge()
-        self.load_exp_filtered()
+        self.load_tetrahedra()
+        self.load_sensor_mesh_from_npz()
+        self.load_is_fixed_layer()
+        self.apply_is_fixed_layer()
+    
+    def load_sensor_mesh_from_npz(self):
+        path = SYSTEM_PARAMS.files.sensor_mesh
+        data = np.load(path)
+        self.points = data['particles']
     
     def load_exp_unfiltered(self):
         frames_poses_data = np.load(SYSTEM_PARAMS.files.experiment_2025_08_22_output_npz)
@@ -45,12 +50,12 @@ class VisualiseMesh:
         print(f'number of nan vertices: {np.sum(np.isnan(self.points))}')
     
     def load_is_fixed_layer(self):
-        with open(SYSTEM_PARAMS.files.is_fixed_layer, 'rb') as f:
-            self.is_fixed_layer = pickle.load(f)
+        path = SYSTEM_PARAMS.files.is_fixed_layer_npz
+        data = np.load(path)
+        self.is_fixed_layer = data['is_fixed_layer']
     
     def apply_is_fixed_layer(self):
-        # Filter point coordinates to keep only those where is_fixed_layer is True
-        self.points = self.points[self.is_fixed_layer == 1]
+        self.points = self.points[self.is_fixed_layer == 0]
     
     def use_dome_surface_points(self):
         # self.point_coordinates = self.point_coordinates[self.mesh_data['dome_surface_node_tags']]
@@ -104,8 +109,11 @@ class VisualiseMesh:
         o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
 
 
-if __name__ == '__main__':
+def main():
     visualise_mesh = VisualiseMesh()
-    # visualise_mesh.use_dome_surface_points()
     visualise_mesh.visualise_point_cloud()
+
+
+if __name__ == '__main__':
+    main()
     
