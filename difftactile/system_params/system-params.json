@@ -187,8 +187,8 @@
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,
         "camera_offset": 5.0,
-        "particle_size_normal": 0.0015,
-        "particle_size_keypoint": 0.003,
+        "particle_size_normal": 0.0005,
+        "particle_size_keypoint": 0.0015,
         "tactile_readout_width": 960.0,
         "tactile_readout_height": 540.0,
         "window_3d_width": 960.0,
