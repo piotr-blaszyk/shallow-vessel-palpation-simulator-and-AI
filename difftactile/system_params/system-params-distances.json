@@ -1,8 +1,7 @@
 {
     "vitactip": {
         "collision_search_distance": 1.0,
-        "keypoint_search_z_threshold": 0.001,
-        "fixed_layer_distance_from_bottom": 0.002
+        "keypoint_search_z_threshold": 0.001
     },
     "phantom": {
         "mpm_grid_cube_size": 0.001,
@@ -31,7 +30,7 @@
         "phantom_z_length": 0.010,
         "phantom_x_length": 0.040,
         "phantom_y_length": 0.040,
-        "distance_from_camera_lens_to_outer_shell_surface": 0.013,
+        "distance_from_camera_lens_to_outer_shell_surface": 0.019,
         "sensor_xy_radius": 0.020,
         "vein": {
             "depth_beneath_surface": 0.003,

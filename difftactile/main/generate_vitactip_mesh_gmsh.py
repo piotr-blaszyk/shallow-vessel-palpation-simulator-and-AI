@@ -60,18 +60,14 @@ class MeshGenerator:
         refine_mesh = SYSTEM_PARAMS.gmsh_mm.refine_mesh
         step_file_path = SYSTEM_PARAMS.files.sensor_geometry_step
         
-        roco = self.dome_radius_of_curvature(
+        roc = self.dome_radius_of_curvature(
             r[0], hs[0]
         )
-        roci = roco-shell_thickness
-        cap_base_z = roco-hs[0]
-        bot_z = roco-hs.sum()
+        bot_z = roc-hs.sum()
 
         self.r = r
         self.hs = hs
-        self.roco = roco
-        self.roci = roci
-        self.cbz = cap_base_z
+        self.roc = roc
         self.bz = bot_z
         self.st = shell_thickness
         self.ro = refinement_offset
@@ -87,7 +83,7 @@ class MeshGenerator:
             yc=0, 
             zc=0, 
 
-            radius=self.roco,
+            radius=self.roc,
         )
         cyl_helper = gmsh.model.occ.addCylinder(
             x=0, 
@@ -116,7 +112,7 @@ class MeshGenerator:
 
         gmsh.model.occ.synchronize()
         gmsh.model.mesh.generate(3)
-        # self.get_difftactile_variables()
+        self.get_difftactile_variables()
         gmsh.model.occ.synchronize()
         gmsh.fltk.run()
         gmsh.finalize()
@@ -141,32 +137,28 @@ class MeshGenerator:
         element_types, tetrahedra_tags, tetrahedra_vertex_tags = (
             gmsh.model.mesh.getElements(dim=3)
         )
-        self.all_tetrahedra = tetrahedra_vertex_tags[0].reshape(-1, 4).astype(int)
+        all_tetrahedra = tetrahedra_vertex_tags[0].reshape(-1, 4).astype(int)
         tetrahedra_tags = tetrahedra_tags[0]
         element_types_2d, triangle_tags, triangle_nodes = gmsh.model.mesh.getElements(
             dim=2
         )
-        self.surface_triangles = triangle_nodes[0].reshape(-1, 3).astype(int)
-        self.node_tags, self.node_coordinates, parametric_coord = (
+        surface_triangles = triangle_nodes[0].reshape(-1, 3).astype(int)
+        node_tags, node_coordinates, parametric_coord = (
             gmsh.model.mesh.getNodes()
         )
-        self.node_coordinates = self.node_coordinates.reshape(-1, 3).astype(float)
-        self.node_tags = np.array(self.node_tags)
-        node_tag_to_idx = {tag: idx for idx, tag in enumerate(self.node_tags)}
-        self.node_labels = np.zeros((len(self.node_tags), 2), dtype=bool)
-        physical_groups = gmsh.model.getPhysicalGroups()
-        group_to_idx = {"shell": 0, "gel": 1}
+        node_coordinates = node_coordinates.reshape(-1, 3).astype(float)
+        node_tags = np.array(node_tags)
         surface_node_tags = []
         surface_coords = []
-        for i in range(len(self.node_tags)):
-            tag = self.node_tags[i]
-            node = self.node_coordinates[i]
+        for i in range(len(node_tags)):
+            tag = node_tags[i]
+            node = node_coordinates[i]
             x, y, z = node
-            if z > self.cbz:
-                if np.linalg.norm(node) > self.roco - self.dist_eps:
+            if z > self.roc-self.hs[0]:
+                if np.linalg.norm(node) > self.roc - self.dist_eps:
                     surface_node_tags.append(tag)
                     surface_coords.append(node)
-            else:
+            elif z > self.roc-self.hs[0:2].sum():
                 xy = np.array([x, y])
                 if np.linalg.norm(xy) > self.r[0] - self.dist_eps:
                     surface_node_tags.append(tag)
@@ -174,59 +166,67 @@ class MeshGenerator:
         surface_node_tags = np.array(surface_node_tags)
         surface_coords = np.array(surface_coords).reshape(-1, 3).astype(float)
         surface_triangles_mask = []
-        for triangle in self.surface_triangles:
+        for triangle in surface_triangles:
             all_nodes_surface = all(tag in surface_node_tags for tag in triangle)
             surface_triangles_mask.append(all_nodes_surface)
-        self.surface_triangles = self.surface_triangles[surface_triangles_mask]
-        dome_surface_node_tags = surface_node_tags[
-            self.node_coordinates[(surface_node_tags - 1), 2] >= self.cbz
-        ]
-        for dim, tag in physical_groups:
-            name = gmsh.model.getPhysicalName(dim, tag)
-            if name in group_to_idx:
-                group_node_tags, _ = gmsh.model.mesh.getNodesForPhysicalGroup(dim, tag)
-                node_tag_to_idx = {tag: idx for idx, tag in enumerate(self.node_tags)}
-                for node_tag in group_node_tags:
-                    if node_tag in node_tag_to_idx:
-                        self.node_labels[
-                            node_tag_to_idx[node_tag], group_to_idx[name]
-                        ] = True
-        marker_node_tags = np.array([0])
-        self.all_tetrahedra -= 1
+        surface_triangles = surface_triangles[surface_triangles_mask]
+
+        all_tetrahedra -= 1
         surface_node_tags -= 1
+        surface_triangles -= 1
+        node_tags -= 1
+        dome_surface_node_tags = surface_node_tags[
+            node_coordinates[surface_node_tags, 2] >= self.roc-self.hs[0]
+        ]
         dome_surface_node_tags -= 1
-        self.surface_triangles -= 1
-        self.node_tags -= 1
-        min_particle_spacing = self.compute_particle_spacing(mode="min")
-        max_particle_spacing = self.compute_particle_spacing(mode="max")
+
+        min_particle_spacing = self.compute_particle_spacing(
+            node_coordinates,
+            all_tetrahedra,
+            mode="min",
+        )
+        max_particle_spacing = self.compute_particle_spacing(
+            node_coordinates,
+            all_tetrahedra,
+            mode="max",
+        )
         print(f"min_particle_spacing (mm): {min_particle_spacing}")
         print(f"max_particle_spacing (mm): {max_particle_spacing}")
+
+        z = node_coordinates[:, 2]
+        xy = node_coordinates[:, :2]
+        xy_magnitudes = np.linalg.norm(xy, axis=1)
+        is_fixed_mask = (
+            (z < self.roc-self.hs[:3].sum()) | 
+            ((xy_magnitudes > self.r[0]) & (z < self.roc-self.hs[:2].sum()))
+        )
+
         mesh_data = {
-            "all_tetrahedra": self.all_tetrahedra,
-            "node_coordinates": self.node_coordinates,
-            "node_labels": self.node_labels,
+            "all_tetrahedra": all_tetrahedra,
+            "node_coordinates": node_coordinates,
             "surface_node_tags": surface_node_tags,
-            "surface_triangles": self.surface_triangles,
-            "node_tags": self.node_tags,
-            "group_to_idx": group_to_idx,
-            "marker_node_tags": marker_node_tags,
+            "surface_triangles": surface_triangles,
             "dome_surface_node_tags": dome_surface_node_tags,
             "z_bottom": self.bz,
-            "radius_of_curvature_inner": self.roci,
-            "radius_of_curvature_outer": self.roco,
+            "radius_of_curvature_outer": self.roc,
             "min_particle_spacing": min_particle_spacing,
             "max_particle_spacing": max_particle_spacing,
+            "is_fixed_mask": is_fixed_mask,
         }
-        print(f"self.node_coordinates.shape[0]: {self.node_coordinates.shape[0]}")
+        print(f"node_coordinates.shape[0]: {node_coordinates.shape[0]}")
         os.makedirs("output", exist_ok=True)
         with open(SYSTEM_PARAMS.files.gmsh_mesh, "wb") as f:
             pickle.dump(mesh_data, f)
 
-    def compute_particle_spacing(self, mode="min"):
+    def compute_particle_spacing(
+        self,
+        node_coordinates,
+        all_tetrahedra,
+        mode="min",
+    ):
         if mode not in ["min", "max"]:
             raise ValueError("mode must be either 'min' or 'max'")
-        tet_vertices = self.node_coordinates[self.all_tetrahedra]
-        tet_labels = self.node_labels[self.all_tetrahedra]
+        tet_vertices = node_coordinates[all_tetrahedra]
         edge_pairs = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
         initial_value = -float("inf") if mode == "max" else float("inf")
         spacing_all = initial_value
@@ -235,29 +235,13 @@ class MeshGenerator:
         for i, j in edge_pairs:
             edges = tet_vertices[:, i] - tet_vertices[:, j]
             lengths = np.sqrt(np.sum(edges**2, axis=1))
-            labels_i = tet_labels[:, i]
-            labels_j = tet_labels[:, j]
             if lengths.size > 0:
                 spacing_all = (
                     max(spacing_all, np.max(lengths))
                     if mode == "max"
                     else min(spacing_all, np.min(lengths))
                 )
-            shell_edges = lengths[labels_i[:, 0] & labels_j[:, 0]]
-            if shell_edges.size > 0:
-                spacing_shell = (
-                    max(spacing_shell, np.max(shell_edges))
-                    if mode == "max"
-                    else min(spacing_shell, np.min(shell_edges))
-                )
-            gel_edges = lengths[labels_i[:, 1] & labels_j[:, 1]]
-            if gel_edges.size > 0:
-                spacing_gel = (
-                    max(spacing_gel, np.max(gel_edges))
-                    if mode == "max"
-                    else min(spacing_gel, np.min(gel_edges))
-                )
-        return {"all": spacing_all, "shell": spacing_shell, "gel": spacing_gel}
+        return spacing_all
 
 
 def main():

@@ -55,7 +55,7 @@ class VisualiseMesh:
         self.is_fixed_layer = data['is_fixed_layer']
     
     def apply_is_fixed_layer(self):
-        self.points = self.points[self.is_fixed_layer == 0]
+        self.points = self.points[self.is_fixed_layer == 1]
     
     def use_dome_surface_points(self):
         # self.point_coordinates = self.point_coordinates[self.mesh_data['dome_surface_node_tags']]

@@ -77,20 +77,15 @@ class ViTacTip:
             shape=(self.dome_surface_node_tags.shape[0],),
             needs_grad=False,
         )
-        if False:
-            self.surface_node_tags_npy = mesh_data["surface_node_tags"]
+
         all_tetrahedra = mesh_data["all_tetrahedra"]
-        node_coordinates = mesh_data["node_coordinates"]/1_000*self.dist_sf
-        node_labels = mesh_data["node_labels"]
+        node_coordinates = mesh_data["node_coordinates"]
         surface_triangles = mesh_data["surface_triangles"]
-        group_to_idx = mesh_data["group_to_idx"]
-        z_bottom = mesh_data["z_bottom"]/1_000*self.dist_sf
-        is_fixed_layer = (
-            np.abs(node_coordinates[:, 2] - z_bottom)
-            < SYSTEM_PARAMS.vitactip.fixed_layer_distance_from_bottom
-        )
-        node_labels = np.column_stack([node_labels, is_fixed_layer])
-        element_materials = np.full(len(all_tetrahedra), fill_value=-1, dtype=np.int32)
+        node_coordinates *= 1/1_000*self.dist_sf
+
+        is_fixed_mask = mesh_data['is_fixed_mask']
+        is_fixed_mask = is_fixed_mask.astype(np.int32)
+
         vertex_masses = np.zeros(len(node_coordinates), dtype=np.float32)
         for i, tetra in enumerate(all_tetrahedra):
             v1, v2, v3, v4 = tetra
@@ -102,13 +97,6 @@ class ViTacTip:
             )
             matrix = np.vstack([pos1 - pos4, pos2 - pos4, pos3 - pos4]).T
             volume = abs(np.linalg.det(matrix)) / 6.0
-            tetra_node_labels = node_labels[tetra]
-            gel_count = np.sum(tetra_node_labels[:, group_to_idx["gel"]])
-            shell_count = np.sum(tetra_node_labels[:, group_to_idx["shell"]])
-            if gel_count == 4 and shell_count <= 3:
-                element_materials[i] = group_to_idx["gel"]
-            else:
-                element_materials[i] = group_to_idx["shell"]
             material_density = self.mass_density[None]
             element_mass = volume * material_density
             for vertex_idx in tetra:
@@ -120,29 +108,22 @@ class ViTacTip:
         self.node_coordinates = node_coordinates
         self.tetrahedra_npy = all_tetrahedra
         self.outer_surface_triangles = surface_triangles
-        self.node_labels = node_labels
-        self.element_materials_npy = element_materials
         self.vertex_masses_npy = vertex_masses
         self.is_fixed_layer = ti.field(
             int, len(self.node_coordinates), needs_grad=False
         )
-        is_fixed_layer_data = self.node_labels[:, -1].astype(np.int32)
-        self.is_fixed_layer.from_numpy(is_fixed_layer_data)
+        self.is_fixed_layer.from_numpy(is_fixed_mask)
         is_fixed_layer_path = SYSTEM_PARAMS.files.is_fixed_layer_npz
         np.savez(
             is_fixed_layer_path,
-            is_fixed_layer=is_fixed_layer_data,
+            is_fixed_layer=is_fixed_mask,
         )
         self.num_vertices = len(self.node_coordinates)
         self.num_tetrahedra = len(self.tetrahedra_npy)
         self.num_contact_surface_triangles = len(self.outer_surface_triangles)
-        self.element_materials = ti.field(
-            dtype=ti.i32, shape=(self.num_tetrahedra,), needs_grad=False
-        )
         self.vertex_mass = ti.field(
             dtype=ti.f32, shape=(self.num_vertices,), needs_grad=False
         )
-        self.element_materials.from_numpy(self.element_materials_npy)
         self.vertex_mass.from_numpy(self.vertex_masses_npy)
         self.vertices_B = ti.Vector.field(
             3, float, self.num_vertices, needs_grad=False

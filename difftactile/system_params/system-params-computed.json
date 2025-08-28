@@ -35,7 +35,7 @@
     "shell": Infinity,
     "gel": Infinity
   },
-  "contact_surface_area": 0.0012566370614359172,
+  "contact_surface_area": 0.0011341149479459152,
   "phantom": {
     "num_particles_cube_1d": 41,
     "n_grid_x": 45,

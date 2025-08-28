@@ -176,7 +176,7 @@ class PreMain:
         ], dtype=float)
         phantom_volume = phantom_dimensions[0] * phantom_dimensions[1] * phantom_dimensions[2]
 
-        contact_surface_area = math.pi * (SYSTEM_PARAMS.gmsh_mm.r1 / 1_000) ** 2
+        contact_surface_area = math.pi * (SYSTEM_PARAMS.gmsh_mm.radii[0] / 1_000) ** 2
 
         phantom_furthest_vertex = phantom_closest_vertex + phantom_dimensions
 
