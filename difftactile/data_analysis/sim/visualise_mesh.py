@@ -11,7 +11,13 @@ class VisualiseMesh:
         # self.load_sensor_mesh_from_npz()
         # self.load_is_fixed_layer()
         # self.apply_is_fixed_layer()
-        self.load_gmsh_data_only()
+        self.debug_gmsh()
+    
+    def debug_gmsh(self):
+        with open(SYSTEM_PARAMS.files.gmsh_debug_pkl, 'rb') as f:
+            mesh_data = pickle.load(f)
+        self.points = mesh_data['node_coordinates']
+        self.tetrahedra = mesh_data['all_tetrahedra']
     
     def load_gmsh_data_only(self):
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
@@ -137,113 +143,48 @@ class VisualiseMesh:
         mesh.compute_vertex_normals()
         mesh = mesh.remove_duplicated_triangles()
         o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
+    
+    def pyvista_visualise_msh_file(self):
+        path = SYSTEM_PARAMS.files.gmsh_debug_msh
+        try:
+            mesh = pv.read(path)
+        except Exception as e:
+            import meshio
+            mesh_io = meshio.read(path)
+            mesh = pv.wrap(meshio.Mesh(points=mesh_io.points, cells=mesh_io.cells))
+        volume = mesh.extract_cells(mesh.celltypes == pv.CellType.TETRA)
+
+        p = pv.Plotter(shape=(1, 2))
+        p.subplot(0, 0)
+        p.add_text("Raw tetrahedra", font_size=10)
+        p.add_mesh(volume, show_edges=True, opacity=0.5)
+
+        surface = volume.extract_surface()
+        p.subplot(0, 1)
+        p.add_text("Extracted surface", font_size=10)
+        p.add_mesh(surface, color="lightblue", smooth_shading=True)
+
+        p.show()
 
     def visualise_tetrahedra_pyvista(self):
         cells = np.column_stack([np.full(len(self.tetrahedra), 4), self.tetrahedra])
         grid = pv.PolyData(self.points, cells)
-        tetra_max_edge_lengths = np.max(self.tetra_edge_lengths, axis=1)
-        grid.cell_data['max_edge_lengths'] = tetra_max_edge_lengths
         
         plotter = pv.Plotter()
         plotter.add_mesh(
-            grid, 
-            scalars='max_edge_lengths',
-            show_edges=False,  # Hide edges to see if it's a solid mesh
+            grid,
             cmap='viridis',
-            show_scalar_bar=True,
-            scalar_bar_args={'title': 'Max Tetrahedron Edge Length'},
-            opacity=1.0,  # Fully opaque
-            lighting=True,  # Enable lighting for better depth perception
-            smooth_shading=True  # Smooth shading for better appearance
+            opacity=1.0,
+            lighting=True,
         )
         plotter.add_axes()
-        
-        # Set camera position for better initial view
         plotter.camera_position = 'iso'
-        
-        print("Visualization tips:")
-        print("- If you can see inside the mesh, there might be missing surface tetrahedra")
-        print("- Try rotating the view to see all sides")
-        print("- Check the diagnostic output above for mesh quality issues")
-        
         plotter.show()
-    
-    def check_mesh_quality(self):
-        """Diagnostic method to check mesh quality"""
-        print(f"Mesh Statistics:")
-        print(f"  Number of vertices: {len(self.points)}")
-        print(f"  Number of tetrahedra: {len(self.tetrahedra)}")
-        
-        # Check for inverted tetrahedra
-        volumes = self.compute_tetrahedra_volumes()
-        inverted_count = np.sum(volumes < 0)
-        print(f"  Inverted tetrahedra: {inverted_count}")
-        
-        # Check for surface tetrahedra
-        surface_tetrahedra = self.find_surface_tetrahedra()
-        print(f"  Surface tetrahedra: {len(surface_tetrahedra)}")
-        
-        # Check edge length statistics
-        if hasattr(self, 'tetra_edge_lengths'):
-            max_edge_lengths = np.max(self.tetra_edge_lengths, axis=1)
-            print(f"  Max edge length - min: {np.min(max_edge_lengths):.6f}, max: {np.max(max_edge_lengths):.6f}")
-    
-    def compute_tetrahedra_volumes(self):
-        """Compute volumes of all tetrahedra"""
-        volumes = []
-        for tetra in self.tetrahedra:
-            v0, v1, v2, v3 = self.points[tetra]
-            # Volume = |det([v1-v0, v2-v0, v3-v0])| / 6
-            volume = np.abs(np.linalg.det([v1-v0, v2-v0, v3-v0])) / 6
-            volumes.append(volume)
-        return np.array(volumes)
-    
-    def find_surface_tetrahedra(self):
-        """Find tetrahedra that have at least one face on the surface"""
-        # This is a simplified approach - you might need more sophisticated surface detection
-        surface_tetrahedra = []
-        face_counts = {}
-        
-        for i, tetra in enumerate(self.tetrahedra):
-            # Get all faces of this tetrahedron
-            faces = [
-                tuple(sorted([tetra[0], tetra[1], tetra[2]])),
-                tuple(sorted([tetra[0], tetra[1], tetra[3]])),
-                tuple(sorted([tetra[0], tetra[2], tetra[3]])),
-                tuple(sorted([tetra[1], tetra[2], tetra[3]]))
-            ]
-            
-            for face in faces:
-                if face in face_counts:
-                    face_counts[face] += 1
-                else:
-                    face_counts[face] = 1
-        
-        # Tetrahedra with at least one face that appears only once are surface tetrahedra
-        for i, tetra in enumerate(self.tetrahedra):
-            faces = [
-                tuple(sorted([tetra[0], tetra[1], tetra[2]])),
-                tuple(sorted([tetra[0], tetra[1], tetra[3]])),
-                tuple(sorted([tetra[0], tetra[2], tetra[3]])),
-                tuple(sorted([tetra[1], tetra[2], tetra[3]]))
-            ]
-            
-            if any(face_counts[face] == 1 for face in faces):
-                surface_tetrahedra.append(i)
-        
-        return surface_tetrahedra
 
 
 def main():
     visualise_mesh = VisualiseMesh()
-    
-    # Run diagnostic check first
-    print("Running mesh quality diagnostics...")
-    visualise_mesh.check_mesh_quality()
-    print()
-    
-    # Then visualize
-    visualise_mesh.visualise_tetrahedra_pyvista()
+    visualise_mesh.pyvista_visualise_msh_file()
 
 
 if __name__ == '__main__':

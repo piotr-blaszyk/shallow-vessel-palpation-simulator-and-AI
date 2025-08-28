@@ -367,6 +367,8 @@
         "experiment_straight_ground_truth_labels_npz": "difftactile/output/experiment_straight_ground_truth_labels.npz",
         "grid_node_v0_mask": "difftactile/output/grid_node_v0_mask.npz",
         "sensor_mesh": "difftactile/output/sensor_mesh.npz",
-        "edge_lengths_pkl": "difftactile/output/edge_lengths.pkl"
+        "edge_lengths_pkl": "difftactile/output/edge_lengths.pkl",
+        "gmsh_debug_pkl": "difftactile/output/gmsh_debug.pkl",
+        "gmsh_debug_msh": "difftactile/output/gmsh_debug.msh"
     }
 }

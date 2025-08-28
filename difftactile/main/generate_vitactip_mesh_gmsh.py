@@ -112,7 +112,10 @@ class MeshGenerator:
 
         gmsh.model.occ.synchronize()
         gmsh.model.mesh.generate(3)
-        self.get_difftactile_variables()
+        # self.debug_gmsh()
+        gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
+        gmsh.write(SYSTEM_PARAMS.files.gmsh_debug_msh)
+        # self.get_difftactile_variables()
         gmsh.model.occ.synchronize()
         gmsh.fltk.run()
         gmsh.finalize()
@@ -132,6 +135,23 @@ class MeshGenerator:
         gmsh.model.mesh.field.add("MathEval", 1)
         gmsh.model.mesh.field.setString(1, "F", f1)
         gmsh.model.mesh.field.setAsBackgroundMesh(1)
+    
+    def debug_gmsh(self):
+        element_types, tetrahedra_tags, tetrahedra_vertex_tags = (
+            gmsh.model.mesh.getElements(dim=3)
+        )
+        all_tetrahedra = tetrahedra_vertex_tags[0].reshape(-1, 4).astype(int)
+        node_tags, node_coordinates, parametric_coord = (
+            gmsh.model.mesh.getNodes()
+        )
+        node_coordinates = node_coordinates.reshape(-1, 3).astype(float)
+        all_tetrahedra -= 1
+        mesh_data = {
+            "all_tetrahedra": all_tetrahedra,
+            "node_coordinates": node_coordinates,
+        }
+        with open(SYSTEM_PARAMS.files.gmsh_debug_pkl, "wb") as f:
+            pickle.dump(mesh_data, f)
 
     def get_difftactile_variables(self):
         element_types, tetrahedra_tags, tetrahedra_vertex_tags = (
