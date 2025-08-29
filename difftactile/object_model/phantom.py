@@ -816,24 +816,3 @@ class Phantom:
             self.cache[cur_step_name]["C_0"],
             self.cache[cur_step_name]["F_0"],
         )
-
-    def get_keypoint_index(self) -> int:
-        positions = self.particles_A.to_numpy()[0]
-        centroid_x = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[0]
-        centroid_y = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose[1]
-        x_mask = (
-            np.abs(positions[:, 0] - centroid_x)
-            < SYSTEM_PARAMS.phantom.keypoint_search_xy_threshold
-        )
-        y_mask = (
-            np.abs(positions[:, 1] - centroid_y)
-            < SYSTEM_PARAMS.phantom.keypoint_search_xy_threshold
-        )
-        xy_mask = x_mask & y_mask
-        valid_points = positions[xy_mask]
-        if len(valid_points) == 0:
-            raise ValueError("No points found within 0.001 of centroid x,y coordinates")
-        min_z_idx = np.argmin(valid_points[:, 2])
-        keypoint_idx = np.where(xy_mask)[0][min_z_idx]
-        self.keypoint_idx[None] = int(keypoint_idx)
-        return np.array([keypoint_idx])
