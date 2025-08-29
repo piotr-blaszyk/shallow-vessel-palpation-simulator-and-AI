@@ -10,14 +10,16 @@ from difftactile.main.constants_ti import *
 
 @ti.data_oriented
 class Phantom:
-    def __init__(self):
+    def __init__(self, vein):
+        self.vein = vein
+        self.compute_transformation_matrix()
         self.set_up_system_params()
         self.load_obj()
         self.set_up_physical_state()
         self.set_up_domain_randomisation()
         self.cache = dict()
-        self.grid_node_vein_sparse_to_dense_init()
-        self.initialise_grid_node_vein_mask()
+        # self.grid_node_vein_sparse_to_dense_init()
+        # self.initialise_grid_node_vein_mask()
     
     def print_min_spacing(self):
         particles_A = self.particles_A.to_numpy()
@@ -94,11 +96,18 @@ class Phantom:
             num_particles_cube_1d=SYSTEM_PARAMS_COMPUTED.phantom.num_particles_cube_1d,
         )
         obj_loader.generate_particles()
-        self.num_particles = len(obj_loader.particles)
+        particles_B = obj_loader.particles
+        particles_A = Common.transform_points(
+            self.T_BA_np,
+            particles_B,
+        )
+        mask = self.vein.get_vein_mask(particles_A)
+        particles_B = particles_B[~mask]
+        self.num_particles = len(particles_B)
         self.particles_B = ti.Vector.field(
             3, dtype=float, shape=(self.num_particles,), needs_grad=False
         )
-        self.particles_B.from_numpy((obj_loader.particles).astype(np.float32))
+        self.particles_B.from_numpy((particles_B).astype(np.float32))
         self.titles = ti.field(
             dtype=int, shape=self.num_particles, needs_grad=False
         )
@@ -127,6 +136,7 @@ class Phantom:
             SYSTEM_PARAMS_COMPUTED.phantom_volume
             * SYSTEM_PARAMS.phantom.silicone.density
         )
+        self.initialise_point_cloud()
 
     @ti.kernel
     def set_stiffness(self):
@@ -308,12 +318,27 @@ class Phantom:
             if self.titles[i] == 1:
                 self.is_fixed[i] = 1
 
-    def transform_BA(self):
-        pos = ti.Vector(self.pose[:3], dtype=float)
-        ori = ti.Vector(self.pose[3:], dtype=float)
-        vel = ti.Vector([0.0, 0.0, 0.0], dtype=float)
-        self.set_pose_and_velocity(pos, ori, vel)
-        self.initialise_point_cloud()
+    def compute_transformation_matrix(self):
+        position = ti.Vector(self.pose[:3], dtype=float)
+        orientation = ti.Vector(self.pose[3:], dtype=float)
+        velocity = ti.Vector([0.0, 0.0, 0.0], dtype=float)
+        self.initial_position[None] = position
+        self.initial_orientation[None] = orientation
+        self.initial_velocity[None] = velocity
+
+        rotation_object = R.from_rotvec(
+            np.deg2rad([orientation[0], orientation[1], orientation[2]])
+        )
+        rotation_matrix = rotation_object.as_matrix()
+        transformation_matrix = np.eye(4)
+        transformation_matrix[0:3, 0:3] = rotation_matrix
+        transformation_matrix[0, 3] = position[0]
+        transformation_matrix[1, 3] = position[1]
+        transformation_matrix[2, 3] = position[2]
+
+        self.rotation_matrix[None] = rotation_matrix.tolist()
+        self.T_BA[None] = transformation_matrix.tolist()
+        self.T_BA_np = transformation_matrix.copy()
 
     def set_up_tumour_inclusion(self, state_dict):
         self.cylinder_cx[None] = state_dict['cx']
@@ -362,23 +387,7 @@ class Phantom:
         )
         grid_node_v0_mask = grid_node_v0_mask.astype(int)
         self.grid_node_vein_mask.from_numpy(grid_node_v0_mask)
-
-    def set_pose_and_velocity(self, position, orientation, velocity):
-        self.initial_position[None] = position
-        self.initial_orientation[None] = orientation
-        self.initial_velocity[None] = velocity
-        rotation_object = R.from_rotvec(
-            np.deg2rad([orientation[0], orientation[1], orientation[2]])
-        )
-        rotation_matrix = rotation_object.as_matrix()
-        transformation_matrix = np.eye(4)
-        transformation_matrix[0:3, 0:3] = rotation_matrix
-        transformation_matrix[0, 3] = position[0]
-        transformation_matrix[1, 3] = position[1]
-        transformation_matrix[2, 3] = position[2]
-        self.rotation_matrix[None] = rotation_matrix.tolist()
-        self.T_BA[None] = transformation_matrix.tolist()
-
+        
     @ti.kernel
     def initialise_point_cloud(self):
         for i in range(self.num_particles):

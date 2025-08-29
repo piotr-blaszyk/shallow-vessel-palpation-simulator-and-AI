@@ -20,3 +20,9 @@ class Common:
         transformation_matrix[0:3, 0:3] = rotation_matrix
         transformation_matrix[0:3, 3] = translation
         return rotation_matrix, transformation_matrix
+    
+    @staticmethod
+    def transform_points(t, points):
+        points_homogeneous = np.hstack((points, np.ones((points.shape[0], 1))))
+        transformed_homogeneous = points_homogeneous @ t.T
+        return transformed_homogeneous[:, :3]

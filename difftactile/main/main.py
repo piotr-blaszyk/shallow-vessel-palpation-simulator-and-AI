@@ -30,7 +30,9 @@ RUN_ON_LAB_MACHINE = True
 class Contact:
     def __init__(self):
         self.vein = Vein()
-        self.phantom = Phantom()
+        self.phantom = Phantom(
+            vein=self.vein,
+        )
         self.compute_sensor_bounds()
         self.fisheye_model = FisheyeModelNoTaichi()
         self.set_up_system_params()
