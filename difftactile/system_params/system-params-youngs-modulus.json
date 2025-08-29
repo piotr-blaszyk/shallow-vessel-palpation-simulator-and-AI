@@ -12,7 +12,7 @@
     },
     "phantom": {
         "silicone": {
-            "youngs_modulus": 1.200e+04
+            "youngs_modulus": 1.200e+03
         },
         "hard_plastic": {
             "youngs_modulus": 1.200e+05

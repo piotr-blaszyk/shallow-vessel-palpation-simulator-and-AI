@@ -617,8 +617,8 @@ class ViTacTip:
     @ti.kernel
     def set_vel(self, f: ti.i32):
         for p in range(self.num_vertices):
-            # if self.is_fixed_layer[p] == 1:
-            self.vertex_velocities[f, p] = self.vertex_control_velocities[p]
+            if self.is_fixed_layer[p] == 1:
+                self.vertex_velocities[f, p] = self.vertex_control_velocities[p]
 
     @ti.kernel
     def set_pose_control_1(self):

@@ -4,12 +4,12 @@
         "keypoint_search_z_threshold": 0.001
     },
     "phantom": {
-        "mpm_grid_cube_size": 0.003,
+        "mpm_grid_cube_size": 0.001,
         "keypoint_search_xy_threshold": 0.040,
         "particle_spacing": 0.001
     },
     "contact": {
-        "pid_max_speed_translation": 0.2,
+        "pid_max_speed_translation": 0.010,
         "pid_position_tolerance": 0.001,
         "tangential_velocity_detection_threshold": 1e-6
     },
@@ -39,7 +39,7 @@
         },
         "grid_vein": {
             "vy": 0.020,
-            "vz": 0.008,
+            "vz": 0.010,
             "r0": 0.002
         },
         "clock_arms_z_min_offset": 0.004,
