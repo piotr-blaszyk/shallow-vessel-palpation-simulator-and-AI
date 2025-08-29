@@ -21,3 +21,4 @@ tac_vgnn/
 *.npz
 *.avi
 *.zip
+*.out

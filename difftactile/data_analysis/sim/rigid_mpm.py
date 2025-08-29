@@ -11,20 +11,21 @@ class RigidMpm:
     def colour_mpm_grid_nodes():
         px = 0.105
         py = 0.022
-        d = 0.001
+        d = 0.002
         nx0 = px / d
         ny0 = py / d
         nx = int(np.ceil(nx0))+1
         ny = int(np.ceil(ny0))+1
         vx = 0.050
-        vy = py-0.003
-        r0 = 0.002
+        vy = py
+        r0 = 1e-3
         r1 = 1.5*d
         grid_node_positions = np.zeros(shape=(nx, ny, 2), dtype=float)
         for i in range(nx):
             for j in range(ny):
                 grid_node_positions[i, j] = np.array([i*d, j*d], dtype=float)
         r = r0 + r1
+        r = r0
         distances = np.sqrt(np.sum((grid_node_positions - np.array([vx, vy]))**2, axis=2))
         grid_node_v0_mask = distances <= r
         r_interm_outer = r+1.5*d
