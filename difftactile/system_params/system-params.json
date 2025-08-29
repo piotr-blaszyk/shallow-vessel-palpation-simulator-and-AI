@@ -86,20 +86,27 @@
         "press_depth_slide": 1.000e-02
     },
     "gmsh_mm": {
-        "characteristic_length_factor": 3.000e-01,
-        "radii": [
-            19,
-            20
-        ],
-        "heights_top_to_bottom": [
-            5,
-            6,
-            4,
-            3
-        ],
-        "refine_mesh": 0,
-        "shell_thickness": 1,
-        "refinement_offset": 3,
+        "vitactip": {
+            "characteristic_length_factor": 3.000e-01,
+            "radii": [
+                19,
+                20
+            ],
+            "heights_top_to_bottom": [
+                5,
+                6,
+                4,
+                3
+            ],
+            "refine_mesh": 0,
+            "shell_thickness": 1,
+            "refinement_offset": 3
+        },
+        "vein": {
+            "characteristic_length_factor": 3.000e-01,
+            "radius": 2,
+            "length": 40
+        },
         "dist_eps": 1.000e-01
     },
     "geometry": {
@@ -235,7 +242,7 @@
         "base_graph_connectivity": "difftactile/output/base-graph-connectivity.npz",
         "biomimetic_tip_points": "difftactile/output/biomimetic-tip-points.pkl",
         "voronoi_image": "difftactile/output/voronoi.png",
-        "gmsh_mesh": "difftactile/output/gmsh-mesh.pkl",
+        "gmsh_mesh_vitactip_pkl": "difftactile/output/gmsh_mesh_vitactip.pkl",
         "fisheye_model_image_dir": "difftactile/manual_or_experimental_data/downward-press-vascular-phantom",
         "vitactip_photo_default_state": "difftactile/manual_or_experimental_data/vitactip_photo_default_state_1920_1080.jpg",
         "max_deformation_exp": "difftactile/manual_or_experimental_data/max-deformation-exp.png",
@@ -372,6 +379,8 @@
         "edge_lengths_pkl": "difftactile/output/edge_lengths.pkl",
         "gmsh_debug_pkl": "difftactile/output/gmsh_debug.pkl",
         "gmsh_debug_msh": "difftactile/output/gmsh_debug.msh",
-        "vitactip_mesh_npz": "difftactile/output/vitactip_mesh.npz"
+        "vitactip_mesh_npz": "difftactile/output/vitactip_mesh.npz",
+        "rigid_static_stl": "difftactile/meshes/rigid_static.stl",
+        "gmsh_mesh_vein_pkl": "difftactile/output/gmsh_mesh_vein.pkl"
     }
 }

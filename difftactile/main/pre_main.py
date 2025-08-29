@@ -155,7 +155,7 @@ class PreMain:
         )
 
     def go(self):
-        with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
+        with open(SYSTEM_PARAMS.files.gmsh_mesh_vitactip_pkl, 'rb') as f:
             mesh_data = pickle.load(f)
 
         mesh_data['mean_particle_spacing'] /= 1000
@@ -190,7 +190,7 @@ class PreMain:
         ], dtype=float)
         phantom_volume = phantom_dimensions[0] * phantom_dimensions[1] * phantom_dimensions[2]
 
-        contact_surface_area = math.pi * (SYSTEM_PARAMS.gmsh_mm.radii[0] / 1_000) ** 2
+        contact_surface_area = math.pi * (SYSTEM_PARAMS.gmsh_mm.vitactip.radii[0] / 1_000) ** 2
 
         phantom_furthest_vertex = phantom_closest_vertex + phantom_dimensions
 
@@ -234,13 +234,16 @@ class PreMain:
             "phantom_min_max_particle_spacing": phantom_min_max_particle_spacing,
             "vitactip_mean_particle_spacing": mesh_data['mean_particle_spacing'],
             "contact_surface_area": contact_surface_area,
+            "rigid_static": {
+                "num_particles_cube_1d": int(-1),
+            },
             "phantom": {
                 "num_particles_cube_1d": int(phantom_num_1d_particles),
                 "n_grid_x": int(nx),
                 "n_grid_y": int(ny),
                 "n_grid_z": int(nz)
             },
-            "min_coords": min_coords.tolist()
+            "min_coords": min_coords.tolist(),
         }
 
         if False:

@@ -6,7 +6,7 @@ import math
 import pickle
 import os
 from difftactile.main.constants import *
-
+from difftactile.main.common import *
 
 class MeshGenerator:
     def __init__(self):
@@ -45,19 +45,19 @@ class MeshGenerator:
         gmsh.option.setNumber("Mesh.Algorithm", 6)
         gmsh.option.setNumber(
             "Mesh.CharacteristicLengthFactor",
-            SYSTEM_PARAMS.gmsh_mm.characteristic_length_factor,
+            SYSTEM_PARAMS.gmsh_mm.vitactip.characteristic_length_factor,
         )
         gmsh.model.add("ViTacTip")
 
     def load_system_params(self):
-        r = SYSTEM_PARAMS.gmsh_mm.radii
+        r = SYSTEM_PARAMS.gmsh_mm.vitactip.radii
         r = np.array(r, dtype=float)
-        hs = SYSTEM_PARAMS.gmsh_mm.heights_top_to_bottom
+        hs = SYSTEM_PARAMS.gmsh_mm.vitactip.heights_top_to_bottom
         hs = np.array(hs, dtype=float)
-        shell_thickness = SYSTEM_PARAMS.gmsh_mm.shell_thickness
-        refinement_offset = SYSTEM_PARAMS.gmsh_mm.refinement_offset
+        shell_thickness = SYSTEM_PARAMS.gmsh_mm.vitactip.shell_thickness
+        refinement_offset = SYSTEM_PARAMS.gmsh_mm.vitactip.refinement_offset
         dist_eps = SYSTEM_PARAMS.gmsh_mm.dist_eps
-        refine_mesh = SYSTEM_PARAMS.gmsh_mm.refine_mesh
+        refine_mesh = SYSTEM_PARAMS.gmsh_mm.vitactip.refine_mesh
         step_file_path = SYSTEM_PARAMS.files.sensor_geometry_step
         
         roc = self.dome_radius_of_curvature(
@@ -226,7 +226,7 @@ class MeshGenerator:
         }
         print(f"node_coordinates.shape[0]: {node_coordinates.shape[0]}")
         os.makedirs("output", exist_ok=True)
-        with open(SYSTEM_PARAMS.files.gmsh_mesh, "wb") as f:
+        with open(SYSTEM_PARAMS.files.gmsh_mesh_vitactip_pkl, "wb") as f:
             pickle.dump(mesh_data, f)
 
     def compute_particle_spacing(
@@ -234,23 +234,14 @@ class MeshGenerator:
         node_coordinates,
         all_tetrahedra,
     ):
-        tet_vertices = node_coordinates[all_tetrahedra]
-        edge_pairs = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
-        node_edge_lengths = [[] for _ in range(node_coordinates.shape[0])]
-        tetra_edge_lengths = [[] for _ in range(all_tetrahedra.shape[0])]
-        all_node_lengths = []
-        for i, j in edge_pairs:
-            edges = tet_vertices[:, i] - tet_vertices[:, j]
-            lengths = np.sqrt(np.sum(edges**2, axis=1))
-            if lengths.size > 0:
-                all_node_lengths.append(lengths)
-                for tet_idx, length in enumerate(lengths):
-                    node_i = all_tetrahedra[tet_idx, i]
-                    node_j = all_tetrahedra[tet_idx, j]
-                    node_edge_lengths[node_i].append(length)
-                    node_edge_lengths[node_j].append(length)
-                    tetra_edge_lengths[tet_idx].append(length)
-        all_node_lengths = np.concatenate(all_node_lengths)
+        (
+            all_node_lengths,
+            node_edge_lengths,
+            tetra_edge_lengths,
+        ) = Common.compute_particle_spacing_helper(
+            node_coordinates,
+            all_tetrahedra,
+        )
         
         pkl = {
             'node_edge_lengths': node_edge_lengths,
@@ -267,6 +258,8 @@ class MeshGenerator:
         print(f"min_particle_spacing (mm): {self._min}")
         print(f"max_particle_spacing (mm): {self._max}")
         print(f"mean_particle_spacing (mm): {self._mean}")
+
+    
 
 
 def main():

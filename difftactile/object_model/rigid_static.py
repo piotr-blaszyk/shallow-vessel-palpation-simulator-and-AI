@@ -12,8 +12,8 @@ class RigidObj:
     
     def load_obj(self):
         obj_loader = ObjLoader(
-            SYSTEM_PARAMS.files.phantom,
-            num_particles_cube_1d=SYSTEM_PARAMS_COMPUTED.phantom.num_particles_cube_1d,
+            SYSTEM_PARAMS.files.rigid_static_stl,
+            num_particles_cube_1d=SYSTEM_PARAMS_COMPUTED.rigid_static.num_particles_cube_1d,
         )
         obj_loader.generate_particles()
         self.num_particles = len(obj_loader.particles)

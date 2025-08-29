@@ -14,10 +14,8 @@ import torch.optim as optim
 import math
 import cProfile, pstats, sys
 
-from scipy.spatial import Voronoi
-from shapely.geometry import Point
-
 from difftactile.main.constants import *
+from difftactile.object_model.rigid_static import RigidObj
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
@@ -37,6 +35,7 @@ class Contact:
         self.load_system_identification_data()
         self.vitactip = ViTacTip()
         self.phantom = Phantom()
+        self.vein = RigidObj()
         self.set_up_initial_positions_and_trajectory_first_init_only()
         self.set_up_trajectories_and_phantom_states()
         self.set_up_initial_positions_state_and_trajectory()
@@ -1230,15 +1229,15 @@ class Contact:
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 grid_node_position = ti.Vector(
                     [
-                        (i + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
-                        (j + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
-                        (k + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        i * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        j * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        k * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
                     ]
                 )
-                closest_sensor_vertex_idx = self.vitactip.find_closest(
+                closest_sensor_triangle_idx = self.vitactip.find_closest(
                     grid_node_position, frame
                 )
-                self.contact_idx[frame, i, j, k] = closest_sensor_vertex_idx
+                self.contact_idx[frame, i, j, k] = closest_sensor_triangle_idx
 
     @ti.kernel
     def collision(self, frame: ti.i32):
@@ -1250,9 +1249,9 @@ class Contact:
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 grid_node_position = ti.Vector(
                     [
-                        (i + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
-                        (j + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
-                        (k + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        i * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        j * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        k * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
                     ]
                 )
                 grid_node_velocity = self.phantom.grid_node_momentum_in[
@@ -1261,8 +1260,8 @@ class Contact:
                     self.phantom.grid_node_mass[frame, i, j, k]
                     + SYSTEM_PARAMS.phantom.mass_eps
                 )
-                closest_sensor_vertex_idx = self.contact_idx[frame, i, j, k]
-                if closest_sensor_vertex_idx[0] != -1:
+                closest_sensor_triangle_idx = self.contact_idx[frame, i, j, k]
+                if closest_sensor_triangle_idx[0] != -1:
                     (
                         penetration_depth,
                         surface_normal,
@@ -1271,7 +1270,7 @@ class Contact:
                     ) = self.vitactip.find_sdf(
                         grid_node_position,
                         grid_node_velocity,
-                        closest_sensor_vertex_idx,
+                        closest_sensor_triangle_idx,
                         frame,
                     )
                     if is_in_contact:
@@ -1284,7 +1283,7 @@ class Contact:
                             total_contact_force, frame, i, j, k
                         )
                         self.vitactip.update_contact_force(
-                            closest_sensor_vertex_idx, -1 * total_contact_force, frame
+                            closest_sensor_triangle_idx, -1 * total_contact_force, frame
                         )
 
     def copy_frame(self):

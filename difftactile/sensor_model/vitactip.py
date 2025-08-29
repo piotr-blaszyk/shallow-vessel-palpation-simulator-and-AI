@@ -65,7 +65,7 @@ class ViTacTip:
         )
 
     def load_mesh(self):
-        with open(SYSTEM_PARAMS.files.gmsh_mesh, "rb") as f:
+        with open(SYSTEM_PARAMS.files.gmsh_mesh_vitactip_pkl, "rb") as f:
             mesh_data = pickle.load(f)
         self.dome_surface_node_tags_npy = mesh_data["dome_surface_node_tags"]
         self.dome_surface_node_tags = ti.field(

@@ -8,6 +8,9 @@
         "keypoint_search_xy_threshold": 0.040,
         "particle_spacing": 0.001
     },
+    "rigid_static": {
+        "particle_spacing": 0.001
+    },
     "contact": {
         "pid_max_speed_translation": 0.100,
         "pid_position_tolerance": 0.001,

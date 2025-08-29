@@ -8,8 +8,14 @@ from difftactile.main.constants import *
 
 class VisualiseMesh:
     def __init__(self):
-        self.load_vitactip_mesh_video()
-        self.load_tetrahedra()
+        self.load_vein_mesh()
+    
+    def load_vein_mesh(self):
+        with open(SYSTEM_PARAMS.files.gmsh_mesh_vein_pkl, 'rb') as f:
+            data = pickle.load(f)
+        self.points = data['node_coordinates']
+        self.tetrahedra = data['all_tetrahedra']
+        self.triangles = data['surface_triangles']
     
     def load_vitactip_mesh_video(self):
         path = SYSTEM_PARAMS.files.vitactip_mesh_npz
@@ -17,7 +23,7 @@ class VisualiseMesh:
         self.all_points = data['all_points']
     
     def load_gmsh_surface(self):
-        with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
+        with open(SYSTEM_PARAMS.files.gmsh_mesh_vitactip_pkl, 'rb') as f:
             mesh_data = pickle.load(f)
         surface_node_tags = mesh_data['surface_node_tags']
         points = mesh_data['node_coordinates']
@@ -34,7 +40,7 @@ class VisualiseMesh:
         self.tetrahedra = mesh_data['all_tetrahedra']
     
     def load_gmsh_data_only(self):
-        with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
+        with open(SYSTEM_PARAMS.files.gmsh_mesh_vitactip_pkl, 'rb') as f:
             mesh_data = pickle.load(f)
         with open(SYSTEM_PARAMS.files.edge_lengths_pkl, 'rb') as f:
             edge_length_data = pickle.load(f)
@@ -71,12 +77,12 @@ class VisualiseMesh:
             self.validation_point = pickle.load(f)
     
     def load_tetrahedra(self):
-        with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
+        with open(SYSTEM_PARAMS.files.gmsh_mesh_vitactip_pkl, 'rb') as f:
             self.mesh_data = pickle.load(f)
         self.tetrahedra = self.mesh_data['all_tetrahedra']
     
     def load_triangles(self):
-        with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
+        with open(SYSTEM_PARAMS.files.gmsh_mesh_vitactip_pkl, 'rb') as f:
             self.mesh_data = pickle.load(f)
         self.triangles = self.mesh_data['surface_triangles']
 
@@ -266,7 +272,7 @@ class VisualiseMesh:
 
 def main():
     visualise_mesh = VisualiseMesh()
-    visualise_mesh.visualize_sequence_from_tetrahedra_pyvista()
+    visualise_mesh.visualise_triangles()
 
 
 if __name__ == '__main__':
