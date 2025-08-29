@@ -837,11 +837,3 @@ class Phantom:
         keypoint_idx = np.where(xy_mask)[0][min_z_idx]
         self.keypoint_idx[None] = int(keypoint_idx)
         return np.array([keypoint_idx])
-
-    def get_keypoint_coordinates(
-        self, f: int, keypoint_indices: np.ndarray
-    ) -> np.ndarray:
-        positions = self.particles_A.to_numpy()[f]
-        coordinates = positions[keypoint_indices]
-        return coordinates
-    

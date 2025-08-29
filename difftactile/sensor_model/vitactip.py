@@ -52,6 +52,11 @@ class ViTacTip:
             SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
         )
         self.dist_sf = SYSTEM_PARAMS.meta.distance_scaling_factor
+        self.num_nan_particles = ti.field(
+            dtype=int,
+            shape=(),
+            needs_grad=False,
+        )
 
     @ti.kernel
     def set_up_system_params_2(self):
@@ -147,6 +152,11 @@ class ViTacTip:
             float, self.dome_surface_node_tags.shape[0], needs_grad=SYSTEM_PARAMS.meta.enable_grad
         )
         self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=False)
+        self.tip_ix = ti.field(
+            dtype=int,
+            shape=(),
+            needs_grad=False,
+        )
         self.projection_2d_clock_arms = ti.Vector.field(
             2, float, (2,), needs_grad=False
         )
@@ -552,7 +562,7 @@ class ViTacTip:
                 marker_idx
             ]
 
-    def get_keypoint_idxs(self):
+    def compute_clock_arm_ixs(self):
         self.compute_vertices_E()
         points = self.vertices_E.to_numpy()
         
@@ -567,6 +577,13 @@ class ViTacTip:
         self.clock_arms_node_idxs[0] = filtered_indices[idx_max_x]
         idx_min_y = np.argmax(filtered_points[:, 1])
         self.clock_arms_node_idxs[1] = filtered_indices[idx_min_y]
+    
+    def compute_tip_ix(self):
+        self.compute_vertices_E()
+        points = self.vertices_E.to_numpy()
+        z_coords = points[:, 2]
+        point_a_ix = int(np.argmax(z_coords))
+        self.tip_ix[None] = point_a_ix
 
     def save_predicted_markers_to_image(self):
         initial_camera_image = cv2.imread(
@@ -1135,28 +1152,3 @@ class ViTacTip:
             self.simulation_cache[cur_step_name]["vertex_velocities"],
             self.simulation_cache[cur_step_name]["sensor_outward_normal"],
         )
-
-    def get_keypoint_indices(self, f: ti.i32):
-        positions = self.vertices_deformed_A.to_numpy()[f]
-        z_coords = positions[:, 2]
-        point_a_idx = int(np.argmin(z_coords))
-        max_z = float(np.max(z_coords))
-        z_mask = z_coords >= (
-            max_z - SYSTEM_PARAMS.vitactip.keypoint_search_z_threshold
-        )
-        x_coords = positions[:, 0]
-        x_coords_filtered = x_coords.copy()
-        x_coords_filtered[~z_mask] = float("-inf")
-        point_b_idx = int(np.argmax(x_coords_filtered))
-        y_coords = positions[:, 1]
-        y_coords_filtered = y_coords.copy()
-        y_coords_filtered[~z_mask] = float("-inf")
-        point_c_idx = int(np.argmax(y_coords_filtered))
-        return np.array([point_a_idx, point_b_idx, point_c_idx])
-
-    def get_keypoint_coordinates(
-        self, f: int, keypoint_indices: np.ndarray
-    ) -> np.ndarray:
-        positions = self.vertices_undeformed_A.to_numpy()[f]
-        coordinates = positions[keypoint_indices]
-        return coordinates

@@ -30,6 +30,7 @@ RUN_ON_LAB_MACHINE = True
 @ti.data_oriented
 class Contact:
     def __init__(self):
+        self.foo()
         self.compute_sensor_bounds()
         self.fisheye_model = FisheyeModelNoTaichi()
         self.set_up_system_params()
@@ -39,13 +40,44 @@ class Contact:
         self.set_up_initial_positions_and_trajectory_first_init_only()
         self.set_up_trajectories_and_phantom_states()
         self.set_up_initial_positions_state_and_trajectory()
-        self.set_up_keypoints()
         self.set_up_collision_detection()
         self.set_up_pid()
         self.set_up_snapshot()
         self.set_up_loss_computation()
         self.visualisation_initialise()
         self.training_data_collection_initialise()
+    
+    @ti.kernel
+    def update_vitactip_tip_point(self):
+        self.vitactip_tip_point[0] = self.vitactip.vertices_undeformed_A[
+            self.num_sub_frames-1, 
+            self.vitactip.tip_ix[0],
+        ]
+    
+    @ti.kernel
+    def update_clock_arm_points_3d(self):
+        for i in range(self.vitactip.clock_arms_node_idxs.shape[0]):
+            node_idx = self.vitactip.clock_arms_node_idxs[i]
+            vertex = self.vitactip.vertices_undeformed_A[
+                self.num_sub_frames-1,
+                node_idx,
+            ]
+            self.clock_arm_points_3d[i] = vertex
+    
+    def foo(self):
+        self.num_sub_frames = SYSTEM_PARAMS.contact.num_sub_frames
+        self.vitactip_tip_point = ti.Vector.field(
+            3,
+            dtype=float,
+            shape=(1,),
+            needs_grad=False,
+        )
+        self.clock_arm_points_3d = ti.Vector.field(
+            3,
+            dtype=float,
+            shape=(2,),
+            needs_grad=False,
+        )
 
     def vein_sparse_to_dense_init(self):
         self.num_veins = SYSTEM_PARAMS.meta.max_num_veins
@@ -608,15 +640,6 @@ class Contact:
             self.max_num_trajectory_points
         ), needs_grad=False)
         self.trajectory_lengths = ti.field(dtype=int, shape=(self.num_trajectories,), needs_grad=False)
-
-    def set_up_keypoints(self):
-        self.keypoint_indices = np.concatenate(
-            (
-                self.vitactip.get_keypoint_indices(0),
-                self.phantom.get_keypoint_index(),
-            ),
-            dtype=int,
-        )
     
     def set_up_trajectories_and_phantom_states(self):
         x, y, z = self.vitactip_tip_pose[:3]
@@ -1309,7 +1332,7 @@ class Contact:
 
     @ti.kernel
     def pid_controller_2(self, ts: ti.i32):
-        current_pos = self.vitactip.vertices_undeformed_A[0, self.keypoint_indices[0]]
+        current_pos = self.vitactip.vertices_undeformed_A[0, self.vitactip.tip_ix[0]]
         target = self.trajectories[self.trajectory_ix[None], self.current_target_idx[None]]
         target_pos = ti.Vector([target[0], target[1], target[2]])
         pos_error = target_pos - current_pos
@@ -1562,9 +1585,6 @@ class Contact:
         )
         self.num_keypoints = 3
         self.key_points = ti.Vector.field(
-            3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False
-        )
-        self.key_points_per_vertex_color = ti.Vector.field(
             3, dtype=ti.f32, shape=(self.num_keypoints,), needs_grad=False
         )
         self.sensor_points = ti.Vector.field(
@@ -1863,48 +1883,16 @@ class Contact:
         self.clock_arm_points_per_vertex_color.from_numpy(
             clock_arm_points_per_vertex_color_npy
         )
-        key_points_per_vertex_color_npy = np.tile(
-            [1.0, 0.0, 0.0], (self.num_keypoints, 1)
-        )
-        key_points_per_vertex_color_npy[1:3, :] = clock_arm_points_per_vertex_color_npy
-        self.key_points_per_vertex_color.from_numpy(key_points_per_vertex_color_npy)
 
     def create_transition_array_vectorized(self, n):
         t = np.linspace(0, 1, n)[:, np.newaxis]
         start = np.array([0, 1, 1])
         end = np.array([1, 0, 0])
         return (1 - t) * start + t * end
+    
+
 
     def visualisation_update_gui(self, ts):
-        vitactip_coords = self.vitactip.vertices_deformed_A.to_numpy()[0]
-        if np.isnan(vitactip_coords).any():
-            nan_count = np.any(np.isnan(vitactip_coords), axis=1).sum()
-            print(
-                f"ViTacTip contains {nan_count} / {vitactip_coords.shape[0]} nan vertices at ts: {ts}"
-            )
-        phantom_coords = self.phantom.particles_A.to_numpy()[0]
-        if np.isnan(phantom_coords).any():
-            nan_count = np.any(np.isnan(phantom_coords), axis=1).sum()
-            print(
-                f"phantom contains {nan_count} / {phantom_coords.shape[0]} nan vertices at ts: {ts}"
-            )
-        vitactip_bottom = self.vitactip.get_keypoint_coordinates(
-            0, self.keypoint_indices[0].reshape((1,))
-        )
-        trajectory_keypoints = self.trajectories.to_numpy()[self.trajectory_ix[None], :, :3]
-        vitactip_clock_arms = self.vitactip.get_keypoint_coordinates(
-            f=0, keypoint_indices=self.vitactip.clock_arms_node_idxs.to_numpy()
-        )
-        if self.trajectory_ix[None] == 1:
-            self.compute_vein_exp_vis()
-            self.compute_vein_exp_vis_all()
-            self.compute_validation_point()
-        vein_exp_vis = self.vein_exp_vis.to_numpy()
-        vein_exp_vis_all = self.vein_exp_vis_all.to_numpy()
-        validation_point = self.validation_point_3d_A.to_numpy()
-        self.keypoint_coords = np.vstack(
-            (vitactip_bottom, vitactip_clock_arms)
-        )
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
         self.scene.point_light(pos=(0.5, 1.5, 1.5), color=(1, 1, 1))
@@ -1930,20 +1918,18 @@ class Contact:
             color=(0.0, 1.0, 0.0),
             radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
-        assert self.keypoint_coords.shape[0] == self.key_points.shape[0], (
-            f"Set self.key_points to shape ({self.keypoint_coords.shape[0]},)"
+        self.update_vitactip_tip_point()
+        self.update_clock_arm_points_3d()
+        self.scene.particles(
+            self.vitactip_tip_point,
+            color=(1.0, 0.0, 0.0),
+            radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
         )
-        assert self.keypoint_coords.shape[0] == self.key_points_per_vertex_color.shape[0], (
-            f"Set self.key_points_per_vertex_color to shape ({self.keypoint_coords.shape[0]},)"
+        self.scene.particles(
+            self.clock_arm_points_3d,
+            per_vertex_color=self.clock_arm_points_per_vertex_color,
+            radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
         )
-        if self.keypoint_coords is not None:
-            self.key_points.from_numpy(self.keypoint_coords)
-            self.scene.particles(
-                self.key_points,
-                color=(1.0, 0.0, 0.0),
-                per_vertex_color=self.key_points_per_vertex_color,
-                radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
-            )
         self.canvas.scene(self.scene)
         self.window.show()
 
@@ -2283,7 +2269,8 @@ class Contact:
         self.vitactip.extract_markers(0)
         self.compute_mapping_between_experimental_and_sim_markers()
         self.vitactip.save_predicted_markers_to_image()
-        self.vitactip.get_keypoint_idxs()
+        self.vitactip.compute_clock_arm_ixs()
+        self.vitactip.compute_tip_ix()
         initial_markers = self.vitactip.deformed_markers.to_numpy()
         with open(SYSTEM_PARAMS.files.sim_markers_initial_positions, "wb") as f:
             pickle.dump(initial_markers, f)
@@ -2479,12 +2466,14 @@ class Contact:
                         if ts % 100 == 0:
                             self.save_sensor_mesh_to_npz()
                             print(f"ts={ts}; sensor mesh saved")
+                        if self.last_target_reached[None] == 1:
+                            break
                     file_num = j * 4 + k * 2 + i
                     self.write_training_data_to_file(file_num, i)
                     
                     self.reset_loss()
                     self.batch_loss.fill(0.0)
-                    self.clear_grad()
+                    # self.clear_grad()
                     self.prev_loss[None] = 0.0
                     self.trajectory_loss[None] = 0.0
                 
