@@ -11,13 +11,14 @@ from difftactile.main.constants_ti import *
 @ti.data_oriented
 class Phantom:
     def __init__(self, vein):
+        self.set_up_system_params()
         self.vein = vein
         self.compute_transformation_matrix()
-        self.set_up_system_params()
         self.load_obj()
         self.set_up_physical_state()
-        self.set_up_domain_randomisation()
+        self.initialise_point_cloud()
         self.cache = dict()
+        # self.set_up_domain_randomisation()
         # self.grid_node_vein_sparse_to_dense_init()
         # self.initialise_grid_node_vein_mask()
     
@@ -136,7 +137,6 @@ class Phantom:
             SYSTEM_PARAMS_COMPUTED.phantom_volume
             * SYSTEM_PARAMS.phantom.silicone.density
         )
-        self.initialise_point_cloud()
 
     @ti.kernel
     def set_stiffness(self):
@@ -152,19 +152,6 @@ class Phantom:
             )
 
     def set_up_physical_state(self):
-        self.initial_position = ti.Vector.field(
-            3, dtype=ti.f32, shape=(), needs_grad=False
-        )
-        self.initial_orientation = ti.Vector.field(
-            3, dtype=ti.f32, shape=(), needs_grad=False
-        )
-        self.initial_velocity = ti.Vector.field(
-            3, dtype=ti.f32, shape=(), needs_grad=False
-        )
-        self.rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape=(), needs_grad=False)
-        self.T_BA = ti.Matrix.field(
-            4, 4, ti.f32, shape=(), needs_grad=False
-        )
         self.particles_A = ti.Vector.field(
             3,
             dtype=float,
@@ -319,9 +306,23 @@ class Phantom:
                 self.is_fixed[i] = 1
 
     def compute_transformation_matrix(self):
-        position = ti.Vector(self.pose[:3], dtype=float)
-        orientation = ti.Vector(self.pose[3:], dtype=float)
-        velocity = ti.Vector([0.0, 0.0, 0.0], dtype=float)
+        self.initial_position = ti.Vector.field(
+            3, dtype=ti.f32, shape=(), needs_grad=False
+        )
+        self.initial_orientation = ti.Vector.field(
+            3, dtype=ti.f32, shape=(), needs_grad=False
+        )
+        self.initial_velocity = ti.Vector.field(
+            3, dtype=ti.f32, shape=(), needs_grad=False
+        )
+        self.rotation_matrix = ti.Matrix.field(3, 3, ti.f32, shape=(), needs_grad=False)
+        self.T_BA = ti.Matrix.field(
+            4, 4, ti.f32, shape=(), needs_grad=False
+        )
+
+        position = ti.Vector(self.pose[:3], dt=ti.f32)
+        orientation = ti.Vector(self.pose[3:], dt=ti.f32)
+        velocity = ti.Vector([0.0, 0.0, 0.0], dt=ti.f32)
         self.initial_position[None] = position
         self.initial_orientation[None] = orientation
         self.initial_velocity[None] = velocity

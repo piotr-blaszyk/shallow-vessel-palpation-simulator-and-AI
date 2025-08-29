@@ -147,7 +147,7 @@ class Contact:
         self.vein_cx_A = None
         self.target_3_ts = 12
         self.target_4_ts = 226
-        self.vein_sparse_to_dense_init()
+        # self.vein_sparse_to_dense_init()
         self.generate_tumour = False
 
     @ti.kernel
@@ -1622,23 +1622,23 @@ class Contact:
             shape=(self.phantom.num_particles,),
             needs_grad=False,
         )
-        self.vein_2d_projection = ti.Vector.field(
-            2,
-            dtype=float,
-            shape=(
-                SYSTEM_PARAMS.meta.max_num_veins,
-                self.phantom.num_particles
-            ),
-            needs_grad=False,
-        )
-        self.vein_2d_projection_flat = ti.Vector.field(
-            2,
-            dtype=float,
-            shape=(
-                4000
-            ),
-            needs_grad=False,
-        )
+        # self.vein_2d_projection = ti.Vector.field(
+        #     2,
+        #     dtype=float,
+        #     shape=(
+        #         SYSTEM_PARAMS.meta.max_num_veins,
+        #         self.phantom.num_particles
+        #     ),
+        #     needs_grad=False,
+        # )
+        # self.vein_2d_projection_flat = ti.Vector.field(
+        #     2,
+        #     dtype=float,
+        #     shape=(
+        #         4000
+        #     ),
+        #     needs_grad=False,
+        # )
         self.sim_markers_undeformed = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
@@ -1688,14 +1688,14 @@ class Contact:
     @ti.kernel
     def visualisation_reset_scene(self):
         self.healthy_tissue_points.fill(0)
-        self.vein_2d_projection.fill(-1)
-        self.vein_2d_projection_flat.fill(-1)
+        # self.vein_2d_projection.fill(-1)
+        # self.vein_2d_projection_flat.fill(-1)
 
     @ti.kernel
     def visualisation_draw_3d_scene(self, f: ti.i32):
         for p in range(self.phantom.num_particles):
-            if self.phantom.grid_node_vein_indices[p] == 0:
-                self.healthy_tissue_points[p] = self.phantom.particles_A[f, p]
+            # if self.phantom.grid_node_vein_indices[p] == 0:
+            self.healthy_tissue_points[p] = self.phantom.particles_A[f, p]
         for p in range(self.vitactip.num_vertices):
             self.sensor_points[p] = self.vitactip.vertices_deformed_A[f, p]
 
@@ -1830,7 +1830,7 @@ class Contact:
         return a_new, b_new, c_new
 
     def visualisation_draw_tactile_readout(self):
-        self.visualisation_project_vein_2d()
+        # self.visualisation_project_vein_2d()
         self.vitactip.extract_clock_arm_2d_projections(SYSTEM_PARAMS.contact.num_sub_frames - 1)
         self.visualisation_prepare_clock_arm_points()
         self.tactile_canvas.set_image(self.bg_image)
@@ -1851,11 +1851,11 @@ class Contact:
             radius=0.02,
             per_vertex_color=self.clock_arm_points_per_vertex_color,
         )
-        self.tactile_canvas.circles(
-            self.vein_2d_projection_flat,
-            radius=0.01,
-            color=(0, 0, 1)
-        )
+        # self.tactile_canvas.circles(
+        #     self.vein_2d_projection_flat,
+        #     radius=0.01,
+        #     color=(0, 0, 1)
+        # )
         self.tactile_window.show()
 
     def visualisation_set_up_gui(self):
@@ -2433,7 +2433,7 @@ class Contact:
                     self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     self.set_up_initial_positions_state_and_trajectory()
-                    self.vein_sparse_to_dense()
+                    # self.vein_sparse_to_dense()
                     self.reset_pid_controller()
                     self.visualisation_reset_scene()
                     self.reset_exp_sim_traj()
@@ -2461,18 +2461,18 @@ class Contact:
                         if ts % 10 == 0:
                             self.record_vitactip_mesh()
                         target = self.current_target_idx[None]
-                        if (
-                            target > 2
-                            and ts % 4 == 0
-                        ):
-                            self.record_training_data_point(j, ts)
+                        # if (
+                        #     target > 2
+                        #     and ts % 4 == 0
+                        # ):
+                        #     self.record_training_data_point(j, ts)
                         if ts % 100 == 0:
                             self.save_sensor_mesh_to_npz()
                             print(f"ts={ts}; sensor mesh saved")
                         if self.last_target_reached[None] == 1:
                             break
                     file_num = j * 4 + k * 2 + i
-                    self.write_training_data_to_file(file_num, i)
+                    # self.write_training_data_to_file(file_num, i)
                     self.write_vitactip_mesh_to_file()
                     
                     self.reset_loss()
