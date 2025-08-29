@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
 import math
+import cProfile, pstats, sys
 
 from scipy.spatial import Voronoi
 from shapely.geometry import Point
@@ -51,7 +52,7 @@ class Contact:
     def update_vitactip_tip_point(self):
         self.vitactip_tip_point[0] = self.vitactip.vertices_undeformed_A[
             self.num_sub_frames-1, 
-            self.vitactip.tip_ix[0],
+            self.vitactip.tip_ix[None],
         ]
     
     @ti.kernel
@@ -1332,7 +1333,7 @@ class Contact:
 
     @ti.kernel
     def pid_controller_2(self, ts: ti.i32):
-        current_pos = self.vitactip.vertices_undeformed_A[0, self.vitactip.tip_ix[0]]
+        current_pos = self.vitactip.vertices_undeformed_A[0, self.vitactip.tip_ix[None]]
         target = self.trajectories[self.trajectory_ix[None], self.current_target_idx[None]]
         target_pos = ti.Vector([target[0], target[1], target[2]])
         pos_error = target_pos - current_pos
@@ -2505,4 +2506,11 @@ def main():
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
     contact_model.set_up_torch_params()
-    contact_model.collect_training_data()
+    profiler = cProfile.Profile()
+    try:
+        profiler.enable()
+        contact_model.collect_training_data()
+        profiler.disable()
+    finally:
+        profiler.dump_stats("profile.out")
+
