@@ -25,6 +25,15 @@ class Vein:
             needs_grad=False,
         )
         self.transform_BA()
+        self.debug_vein()
+    
+    def debug_vein(self):
+        points = self.particles_A.to_numpy()
+        path = SYSTEM_PARAMS.files.vein_points_npz
+        np.savez(
+            path,
+            points=points,
+        )
     
     def load_obj(self):
         with open(SYSTEM_PARAMS.files.gmsh_mesh_vein_pkl, "rb") as f:
@@ -88,4 +97,4 @@ class Vein:
         )
         radius_mask = yz_distances <= self.r
         length_mask = (points[:, 0] >= self.centre_A[0]) & (points[:, 0] <= self.centre_A[0] + self.h)
-        return radius_mask & length_mask
+        return radius_mask

@@ -381,7 +381,9 @@
         "gmsh_debug_msh": "difftactile/output/gmsh_debug.msh",
         "vitactip_mesh_npz": "difftactile/output/vitactip_mesh.npz",
         "rigid_static_stl": "difftactile/meshes/rigid_static.stl",
-        "gmsh_mesh_vein_pkl": "difftactile/output/gmsh_mesh_vein.pkl"
+        "gmsh_mesh_vein_pkl": "difftactile/output/gmsh_mesh_vein.pkl",
+        "phantom_points_npz": "difftactile/output/phantom_points.npz",
+        "vein_points_npz": "difftactile/output/vein_points.npz"
     },
     "rigid_static": {
         "particle_spacing": 5.000e-03

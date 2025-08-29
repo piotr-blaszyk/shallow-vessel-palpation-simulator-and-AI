@@ -8,7 +8,17 @@ from difftactile.main.constants import *
 
 class VisualiseMesh:
     def __init__(self):
-        self.load_vein_mesh()
+        self.load_phantom_points()
+    
+    def load_vein_points(self):
+        path = SYSTEM_PARAMS.files.vein_points_npz
+        data = np.load(path)
+        self.points = data['points']
+    
+    def load_phantom_points(self):
+        path = SYSTEM_PARAMS.files.phantom_points_npz
+        data = np.load(path)
+        self.points = data['points']
     
     def load_vein_mesh(self):
         with open(SYSTEM_PARAMS.files.gmsh_mesh_vein_pkl, 'rb') as f:
@@ -272,7 +282,7 @@ class VisualiseMesh:
 
 def main():
     visualise_mesh = VisualiseMesh()
-    visualise_mesh.visualise_triangles()
+    visualise_mesh.visualise_point_cloud()
 
 
 if __name__ == '__main__':

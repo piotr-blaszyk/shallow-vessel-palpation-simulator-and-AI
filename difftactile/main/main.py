@@ -33,6 +33,7 @@ class Contact:
         self.phantom = Phantom(
             vein=self.vein,
         )
+        # sys.exit(0)
         self.compute_sensor_bounds()
         self.fisheye_model = FisheyeModelNoTaichi()
         self.set_up_system_params()

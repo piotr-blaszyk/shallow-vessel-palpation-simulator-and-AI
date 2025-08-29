@@ -21,6 +21,15 @@ class Phantom:
         # self.set_up_domain_randomisation()
         # self.grid_node_vein_sparse_to_dense_init()
         # self.initialise_grid_node_vein_mask()
+        self.debug_vein()
+    
+    def debug_vein(self):
+        particles_A = self.particles_A.to_numpy()[0, :, :]
+        path = SYSTEM_PARAMS.files.phantom_points_npz
+        np.savez(
+            path,
+            points=particles_A,
+        )
     
     def print_min_spacing(self):
         particles_A = self.particles_A.to_numpy()
@@ -124,8 +133,8 @@ class Phantom:
         z_threshold = z_min + SYSTEM_PARAMS.phantom.fixed_points_z_ratio * (
             z_max - z_min
         )
-        is_fixed_np = z_coords <= z_threshold
-        # is_fixed_np = np.ones_like(z_coords, dtype=bool)
+        # is_fixed_np = z_coords <= z_threshold
+        is_fixed_np = np.ones_like(z_coords, dtype=bool)
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
         self.initial_particle_volume = (
             SYSTEM_PARAMS_COMPUTED.phantom_volume / self.num_particles
