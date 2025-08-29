@@ -13,7 +13,7 @@
         "single_material": {
             "density": 1100.0,
             "poissons_ratio": 0.499,
-            "youngs_modulus": 6000.0
+            "youngs_modulus": 12000.0
         },
         "collision_search_distance": 1.0,
         "keypoint_search_z_threshold": 0.001,
@@ -36,7 +36,7 @@
         "silicone": {
             "density": 900,
             "poissons_ratio": 0.46,
-            "youngs_modulus": 24000.0
+            "youngs_modulus": 12000.0
         },
         "hard_plastic": {
             "density": 1150,
@@ -53,9 +53,9 @@
     "contact": {
         "dt": 1.27e-06,
         "dt_override": 1e-06,
-        "normal_stiffness": 10.887503500280786,
-        "tangential_stiffness": 7.6212524501965495,
-        "normal_damping": 0.16849535424174697,
+        "normal_stiffness": 13.609379375350983,
+        "tangential_stiffness": 9.526565562745688,
+        "normal_damping": 0.18838353298872687,
         "coulomb_friction_coeff": 0.85,
         "num_sub_frames": 125,
         "num_opt_steps": 2,
@@ -134,7 +134,7 @@
         "min_vein_separation": 0.01,
         "grid_vein": {
             "vy": 0.02,
-            "vz": 0.007,
+            "vz": 0.008,
             "r0": 0.002
         },
         "mpm_pad_single": 0.01
@@ -156,7 +156,8 @@
         "max_timesteps_per_trajectory": 1000000,
         "polyline_num": 25,
         "cnn_gnn": 1,
-        "vein_px_thickness": 30
+        "vein_px_thickness": 30,
+        "enable_grad": 0
     },
     "gnn": {
         "entity_type_embedding_dim": 8,

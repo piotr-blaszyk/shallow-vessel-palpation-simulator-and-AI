@@ -50,11 +50,11 @@ class RigidObj:
         self.p_mass = self.p_vol * self.p_rho
         self.eps = 1e-5
         self.damping = 32.0
-        self.x_0 = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=True)  # position
-        self.v_0 = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=True)  # velocity
+        self.x_0 = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=SYSTEM_PARAMS.meta.enable_grad)  # position
+        self.v_0 = ti.Vector.field(3, dtype=float, shape=(self.sub_steps, self.n_particles), needs_grad=SYSTEM_PARAMS.meta.enable_grad)  # velocity
 
         # contact model parameters
-        self.external_f = ti.Vector.field(3, dtype=float, shape=(self.sub_steps), needs_grad=True) # accumulated force from each particle
+        self.external_f = ti.Vector.field(3, dtype=float, shape=(self.sub_steps), needs_grad=SYSTEM_PARAMS.meta.enable_grad) # accumulated force from each particle
         self.cache = dict() # for grad backward
 
     def init(self, position, orientation, velocity):

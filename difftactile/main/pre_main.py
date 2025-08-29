@@ -226,6 +226,7 @@ class PreMain:
             "phantom_closest_vertex": phantom_closest_vertex.tolist(),
             "phantom_centroid_pose": phantom_difftactile_position.tolist() + SYSTEM_PARAMS.geometry.phantom_orientation,
             "phantom_top_surface_z": phantom_furthest_vertex[2],
+            "phantom_dimensions": phantom_dimensions.tolist(),
             "vitactip_tip_position": vitactip_tip_position.tolist(),
             "vitactip_tip_pose": vitactip_tip_position.tolist() + SYSTEM_PARAMS.geometry.sensor_orientation,
             "phantom_volume": phantom_volume,

@@ -436,15 +436,15 @@ class Contact:
 
     def set_up_loss_computation(self):
         self.prev_loss = ti.field(float, (), needs_grad=False)
-        self.loss = ti.field(float, (), needs_grad=True)
-        self.loss_1 = ti.field(float, (), needs_grad=True)
-        self.loss_2 = ti.field(float, (), needs_grad=True)
+        self.loss = ti.field(float, (), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.loss_1 = ti.field(float, (), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.loss_2 = ti.field(float, (), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
         self.trajectory_loss = ti.field(float, (), needs_grad=False)
         self.batch_loss = ti.field(float, (), needs_grad=False)
         self.batch_loss_1 = ti.field(float, (), needs_grad=False)
         self.batch_loss_2 = ti.field(float, (), needs_grad=False)
-        self.squared_error_sum_1 = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.squared_error_sum_2 = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.squared_error_sum_1 = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.squared_error_sum_2 = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
         self.error_sum_1 = ti.field(dtype=float, shape=(), needs_grad=False)
         self.error_sum_2 = ti.field(dtype=float, shape=(), needs_grad=False)
         self.mean_error_1 = ti.field(dtype=float, shape=(), needs_grad=False)
@@ -468,10 +468,10 @@ class Contact:
         self.trajectory_ix = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
         self.dt[None] = SYSTEM_PARAMS.contact.dt_override
-        self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
         self.normal_stiffness[None] = SYSTEM_PARAMS.contact.normal_stiffness
         self.normal_damping[None] = SYSTEM_PARAMS.contact.normal_damping
         self.tangential_stiffness[None] = SYSTEM_PARAMS.contact.tangential_stiffness
@@ -479,6 +479,11 @@ class Contact:
         self.gradients_printed = False
         self.courant_number = SYSTEM_PARAMS.meta.target_courant_number
         self.retry = False
+        phantom_closest_vertex = SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex
+        self.phantom_closest_vertex = np.array(phantom_closest_vertex, dtype=float)
+        phantom_dimensions = SYSTEM_PARAMS_COMPUTED.phantom_dimensions
+        self.phantom_dimensions = np.array(phantom_dimensions, dtype=float)
+        self.gap = SYSTEM_PARAMS.geometry.gap
 
     def set_up_snapshot(self):
         self.predict_markers_snapshots = ti.Vector.field(
@@ -858,12 +863,17 @@ class Contact:
             _
         ) = self.get_random_slide_params()
         press_depth_1 = SYSTEM_PARAMS.trajectory.press_depth_1
-        x, y, z = self.vitactip_tip_pose[:3]
+        # x, y, z = self.vitactip_tip_pose[:3]
         r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        cvx, cvy, cvz = self.phantom_closest_vertex
+        dx, dy, dz = self.phantom_dimensions
+        x = cvx+dx/2
+        y = cvx+dy/2
+        z = cvz+dz+self.gap
         trajectory = [
             [x, y, z, *srq],
-            [x, y, z-press_depth_surface, *srq],
-            [x, y, z-(press_depth_surface+press_depth_1), *srq],
+            [x, y, z-self.gap, *srq],
+            [x, y, z-self.gap-press_depth_1, *srq],
         ]
         return trajectory
 
@@ -2081,16 +2091,16 @@ class Contact:
         print(f'normal_damping: {ti.exp(self.normal_damping_log[None]):0.16e} ({SYSTEM_PARAMS.contact.normal_damping:0.16e})')
     
     def set_up_torch_params(self):
-        self.vitactip_youngs_modulus_log = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.phantom_youngs_modulus_0_log = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.phantom_youngs_modulus_1_log = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.vitactip_poissons_ratio_log = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.phantom_poissons_ratio_0_log = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.phantom_poissons_ratio_1_log = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.coulomb_friction_coeff_log = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.normal_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.tangential_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=True)
-        self.normal_damping_log = ti.field(dtype=float, shape=(), needs_grad=True)
+        self.vitactip_youngs_modulus_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.phantom_youngs_modulus_0_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.phantom_youngs_modulus_1_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.vitactip_poissons_ratio_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.phantom_poissons_ratio_0_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.phantom_poissons_ratio_1_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.coulomb_friction_coeff_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.normal_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.tangential_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.normal_damping_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
 
         self.vitactip_youngs_modulus_log[None] = ti.log(self.vitactip.youngs_modulus[None])
         self.phantom_youngs_modulus_0_log[None] = ti.log(self.phantom.youngs_modulus[0])
@@ -2431,7 +2441,7 @@ class Contact:
             for k in range(0, 1):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(2, 3):
+                for i in range(3, 4):
                     self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     self.set_up_initial_positions_state_and_trajectory()

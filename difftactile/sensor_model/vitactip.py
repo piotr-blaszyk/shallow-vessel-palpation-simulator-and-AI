@@ -40,10 +40,10 @@ class ViTacTip:
         )
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.vitactip.rayleigh_damping_beta
         self.mass_density = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
-        self.mu = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
-        self.lam = ti.field(dtype=ti.f32, shape=(), needs_grad=True)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.mu = ti.field(dtype=ti.f32, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.lam = ti.field(dtype=ti.f32, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
         self.mass_density[None] += SYSTEM_PARAMS.vitactip.single_material.density
         self.youngs_modulus[None] += (
             SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
@@ -138,13 +138,13 @@ class ViTacTip:
         )
         self.contact_surface.from_numpy(self.outer_surface_triangles.astype(np.int32))
         self.projection_2d_dome_surface_nodes_deformed = ti.Vector.field(
-            2, float, self.dome_surface_node_tags.shape[0], needs_grad=True
+            2, float, self.dome_surface_node_tags.shape[0], needs_grad=SYSTEM_PARAMS.meta.enable_grad
         )
         self.projection_2d_dome_surface_nodes_undeformed = ti.Vector.field(
             2, float, self.dome_surface_node_tags.shape[0], needs_grad=False
         )
         self.projection_2d_dome_surface_nodes_deformed_z = ti.field(
-            float, self.dome_surface_node_tags.shape[0], needs_grad=True
+            float, self.dome_surface_node_tags.shape[0], needs_grad=SYSTEM_PARAMS.meta.enable_grad
         )
         self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=False)
         self.projection_2d_clock_arms = ti.Vector.field(
@@ -264,7 +264,7 @@ class ViTacTip:
         )
         self.num_markers = len(interpolated_marker_positions_2d)
         self.deformed_markers = ti.Vector.field(
-            2, float, self.num_markers, needs_grad=True
+            2, float, self.num_markers, needs_grad=SYSTEM_PARAMS.meta.enable_grad
         )
         self.undeformed_markers = ti.Vector.field(
             2, float, self.num_markers, needs_grad=False
@@ -314,13 +314,13 @@ class ViTacTip:
             3,
             float,
             shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices),
-            needs_grad=True,
+            needs_grad=SYSTEM_PARAMS.meta.enable_grad,
         )
         self.vertex_velocities = ti.Vector.field(
             3,
             float,
             shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices),
-            needs_grad=True,
+            needs_grad=SYSTEM_PARAMS.meta.enable_grad,
         )
         self.initial_deformation_gradient_inverse = ti.Matrix.field(
             3, 3, float, self.num_tetrahedra, needs_grad=False
@@ -329,7 +329,7 @@ class ViTacTip:
             3,
             dtype=ti.f32,
             shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices),
-            needs_grad=True,
+            needs_grad=SYSTEM_PARAMS.meta.enable_grad,
         )
         self.total_surface_force = ti.Vector.field(
             3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=False

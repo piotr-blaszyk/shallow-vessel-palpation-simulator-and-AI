@@ -61,10 +61,10 @@ class Phantom:
         self.rayleigh_damping_alpha[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_alpha
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_beta
         self.inverse_mpm_grid_cube_size = 1 / SYSTEM_PARAMS.phantom.mpm_grid_cube_size
-        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
-        self.lam = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
-        self.mu = ti.field(dtype=ti.f32, shape=(2,), needs_grad=True)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.lam = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.mu = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
         self.youngs_modulus[0] += SYSTEM_PARAMS.phantom.silicone.youngs_modulus
         self.poissons_ratio[0] += SYSTEM_PARAMS.phantom.silicone.poissons_ratio
         self.youngs_modulus[1] += SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus
@@ -244,7 +244,7 @@ class Phantom:
                 self.num_grid_nodes[1],
                 self.num_grid_nodes[2],
             ),
-            needs_grad=True,
+            needs_grad=SYSTEM_PARAMS.meta.enable_grad,
         )
         self.grid_node_velocity_out = ti.Vector.field(
             3,
