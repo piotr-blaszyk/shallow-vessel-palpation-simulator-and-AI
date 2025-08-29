@@ -1,4 +1,13 @@
 {
+  "vein_pose": [
+    0.09,
+    0.19,
+    0.07500000000000001,
+    0.0,
+    0.7071067811865475,
+    0.0,
+    0.7071067811865476
+  ],
   "phantom_closest_vertex": [
     0.09,
     0.09,
@@ -37,6 +46,9 @@
   "phantom_min_max_particle_spacing": 0.005,
   "vitactip_mean_particle_spacing": 0.002323061373755325,
   "contact_surface_area": 0.0011341149479459152,
+  "rigid_static": {
+    "num_particles_cube_1d": -1
+  },
   "phantom": {
     "num_particles_cube_1d": 41,
     "n_grid_x": 39,

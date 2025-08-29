@@ -224,7 +224,7 @@ class PreMain:
         vitactip_tip_position[2] += phantom_dimensions[2]-self.press_depth_slide
 
         vein_position = phantom_closest_vertex.copy()
-        vein_depth = SYSTEM_PARAMS.geometry.depth_beneath_surface
+        vein_depth = SYSTEM_PARAMS.geometry.vein.depth_beneath_surface
         vein_position[1] += phantom_dimensions[1]/2
         vein_position[2] += phantom_dimensions[2]-vein_depth
 

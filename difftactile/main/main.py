@@ -35,7 +35,7 @@ class Contact:
         self.load_system_identification_data()
         self.vitactip = ViTacTip()
         self.phantom = Phantom()
-        self.vein = RigidObj()
+        # self.vein = RigidObj()
         self.set_up_initial_positions_and_trajectory_first_init_only()
         self.set_up_trajectories_and_phantom_states()
         self.set_up_initial_positions_state_and_trajectory()
@@ -918,9 +918,9 @@ class Contact:
             vel=[0.0, 0.0, 0.0],
             state_dicts=state_dicts,
         )
-        self.vein.set_state_from_outside(
-            pose=self.vein_pose,
-        )
+        # self.vein.set_state_from_outside(
+        #     pose=self.vein_pose,
+        # )
         sensor_dome_tip_initial_pose = self.trajectories[self.trajectory_ix[None], 0].to_numpy()
         self.vitactip.set_up_pose(sensor_dome_tip_initial_pose)
         self.tactile_sensor_initial_position[0] = ti.Vector(
@@ -1233,9 +1233,9 @@ class Contact:
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 grid_node_position = ti.Vector(
                     [
-                        i * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
-                        j * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
-                        k * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (i + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (j + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (k + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
                     ]
                 )
                 closest_sensor_triangle_idx = self.vitactip.find_closest(
@@ -1253,9 +1253,9 @@ class Contact:
             if self.phantom.grid_occupy[frame, i, j, k] == 1:
                 grid_node_position = ti.Vector(
                     [
-                        i * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
-                        j * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
-                        k * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (i + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (j + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (k + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
                     ]
                 )
                 grid_node_velocity = self.phantom.grid_node_momentum_in[
@@ -1921,11 +1921,11 @@ class Contact:
             color=(0.0, 0.0, 1.0),
             radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
-        self.scene.particles(
-            self.vein.particles_A,
-            color=(1.0, 1.0, 0.0),
-            radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
-        )
+        # self.scene.particles(
+        #     self.vein.particles_A,
+        #     color=(1.0, 1.0, 0.0),
+        #     radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
+        # )
         self.scene.particles(
             self.sensor_points,
             color=(0.0, 1.0, 0.0),

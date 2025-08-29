@@ -9,13 +9,18 @@ from difftactile.object_model.common import *
 @ti.data_oriented
 class RigidObj:
     def __init__(self):
+        self.dist_sf = SYSTEM_PARAMS.meta.distance_scaling_factor
         self.load_obj()
-        self.set_up_physical_state()
+        self.particles_A = ti.Vector.field(
+            3,
+            dtype=float,
+            shape=(self.particles_B.shape[0],),
+            needs_grad=False,
+        )
     
     def load_obj(self):
         with open(SYSTEM_PARAMS.files.gmsh_mesh_vein_pkl, "rb") as f:
             data = pickle.load(f)
-
         tetrahedra = data['all_tetrahedra']
         points = data['node_coordinates']
         triangles = data['surface_triangles']
@@ -33,15 +38,6 @@ class RigidObj:
             needs_grad=False,
         )
         self.triangles.from_numpy(triangles)
-    
-    def set_up_physical_state(self):
-        self.dist_sf = SYSTEM_PARAMS.meta.distance_scaling_factor
-        self.particles_A = ti.Vector.field(
-            3,
-            dtype=float,
-            shape=(self.num_particles,),
-            needs_grad=False,
-        )
 
     def set_state_from_outside(self, pose):
         rotation_matrix, transformation_matrix = Common.compute_transformation_matrix(pose)
@@ -51,7 +47,7 @@ class RigidObj:
     
     @ti.kernel
     def initialise_point_cloud(self):
-        for i in range(self.num_particles):
+        for i in range(self.particles_A.shape[0]):
             particle_B = self.particles_B[i]
             particle_A = self.T_BA[None] @ ti.Vector(
                 [

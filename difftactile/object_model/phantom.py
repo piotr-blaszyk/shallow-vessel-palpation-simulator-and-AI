@@ -523,6 +523,7 @@ class Phantom:
             grid_base_index = (
                 self.particles_A[frame, particle_id]
                 * self.inverse_mpm_grid_cube_size
+                - 0.5
             ).cast(int)
             particle_grid_diff = self.particles_A[
                 frame, particle_id
@@ -663,6 +664,7 @@ class Phantom:
             grid_base_index = (
                 self.particles_A[frame, particle_id]
                 * self.inverse_mpm_grid_cube_size
+                - 0.5
             ).cast(int)
             particle_grid_diff = self.particles_A[
                 frame, particle_id

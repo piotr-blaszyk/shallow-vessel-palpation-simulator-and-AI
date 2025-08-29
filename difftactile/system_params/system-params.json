@@ -382,5 +382,8 @@
         "vitactip_mesh_npz": "difftactile/output/vitactip_mesh.npz",
         "rigid_static_stl": "difftactile/meshes/rigid_static.stl",
         "gmsh_mesh_vein_pkl": "difftactile/output/gmsh_mesh_vein.pkl"
+    },
+    "rigid_static": {
+        "particle_spacing": 5.000e-03
     }
 }
