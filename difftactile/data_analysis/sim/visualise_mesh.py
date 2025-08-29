@@ -227,7 +227,7 @@ class VisualiseMesh:
         vedo.show(surface)
 
     def visualize_sequence_from_tetrahedra_pyvista(self):
-        dilation = 10
+        dilation = 1
         nodes = self.all_points[::dilation]
         tetrahedra = self.tetrahedra
         num_frames = nodes.shape[0]

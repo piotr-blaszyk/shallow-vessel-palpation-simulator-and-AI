@@ -86,14 +86,7 @@ class Contact:
             shape=(self.vitactip.vertices_deformed_A.shape[1],),
             needs_grad=False,
         )
-        self.all_points = np.zeros(shape=(
-            self.max_ts,
-            self.vitactip.vertices_deformed_A.shape[1],
-            3,
-        ), dtype=float)
-        self.all_points_mask = np.zeros(shape=(
-            self.max_ts,
-        ), dtype=bool)
+        self.all_points = []
 
     def vein_sparse_to_dense_init(self):
         self.num_veins = SYSTEM_PARAMS.meta.max_num_veins
@@ -1439,20 +1432,20 @@ class Contact:
             ]
             self.vitactip_vertices_temp[i] = point
 
-    def record_vitactip_mesh(self, ts):
+    def record_vitactip_mesh(self):
         self.copy_vitactip_vertices()
-        self.all_points[ts, :, :] = self.vitactip_vertices_temp.to_numpy()
-        self.all_points_mask[ts] = True
+        self.all_points.append(
+            self.vitactip_vertices_temp.to_numpy()
+        )
     
     def write_vitactip_mesh_to_file(self):
-        all_points = self.all_points[self.all_points_mask]
+        all_points = np.stack(self.all_points, axis=0)
         path = SYSTEM_PARAMS.files.vitactip_mesh_npz
         np.savez(
             path,
             all_points=all_points,
         )
-        self.all_points = np.zeros_like(self.all_points, dtype=float)
-        self.all_points_mask = np.zeros_like(self.all_points_mask, dtype=bool)
+        self.all_points = []
 
     def record_training_data_point(self, training_iteration, ts):
         w = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
@@ -2468,7 +2461,7 @@ class Contact:
             for k in range(0, 1):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(3, 4):
+                for i in range(2, 3):
                     self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     self.set_up_initial_positions_state_and_trajectory()
@@ -2498,7 +2491,7 @@ class Contact:
                         )
                         self.visualisation_update_gui(ts)
                         if ts % 10 == 0:
-                            self.record_vitactip_mesh(ts)
+                            self.record_vitactip_mesh()
                         target = self.current_target_idx[None]
                         if (
                             target > 2

@@ -9,7 +9,7 @@
         "particle_spacing": 0.001
     },
     "contact": {
-        "pid_max_speed_translation": 0.010,
+        "pid_max_speed_translation": 0.100,
         "pid_position_tolerance": 0.001,
         "tangential_velocity_detection_threshold": 1e-6
     },
