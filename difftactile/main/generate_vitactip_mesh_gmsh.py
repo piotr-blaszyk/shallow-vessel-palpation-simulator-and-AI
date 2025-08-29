@@ -190,13 +190,14 @@ class MeshGenerator:
             surface_triangles_mask.append(all_nodes_surface)
         surface_triangles = surface_triangles[surface_triangles_mask]
 
+        dome_surface_node_tags = surface_node_tags[
+            node_coordinates[surface_node_tags-1, 2] >= self.roc-self.hs[0]
+        ]
+        
         all_tetrahedra -= 1
         surface_node_tags -= 1
         surface_triangles -= 1
         node_tags -= 1
-        dome_surface_node_tags = surface_node_tags[
-            node_coordinates[surface_node_tags, 2] >= self.roc-self.hs[0]
-        ]
         dome_surface_node_tags -= 1
 
         self.compute_particle_spacing(
