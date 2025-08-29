@@ -328,7 +328,6 @@ class Phantom:
         )
         self.set_pose_and_velocity(pos, ori, vel)
         self.initialise_point_cloud()
-        self.grid_node_vein_sparse_to_dense()
 
     def set_up_tumour_inclusion(self, state_dict):
         self.cylinder_cx[None] = state_dict['cx']
@@ -652,7 +651,7 @@ class Phantom:
                     and grid_velocity[2] > 0
                 ):
                     grid_velocity[2] = 0
-                if self.grid_node_vein_mask[grid_x, grid_y, grid_z] == 1:
+                if False and self.grid_node_vein_mask[grid_x, grid_y, grid_z] == 1:
                     grid_velocity = ti.Vector([0.0, 0.0, 0.0])
                 self.grid_node_velocity_out[frame, grid_x, grid_y, grid_z] = (
                     grid_velocity

@@ -2,6 +2,7 @@ import numpy as np
 import math
 import json
 import pickle
+from scipy.spatial.transform import Rotation as R
 
 from difftactile.main.constants import *
 
@@ -222,7 +223,18 @@ class PreMain:
         vitactip_tip_position[1] += -self.sensor_r
         vitactip_tip_position[2] += phantom_dimensions[2]-self.press_depth_slide
 
+        vein_position = phantom_closest_vertex.copy()
+        vein_depth = SYSTEM_PARAMS.geometry.depth_beneath_surface
+        vein_position[1] += phantom_dimensions[1]/2
+        vein_position[2] += phantom_dimensions[2]-vein_depth
+
+        vein_orientation = R.from_euler(seq="xyz", angles=[0, 90, 0], degrees=True)
+        vein_orientation = vein_orientation.as_quat()
+
+        vein_pose = np.concatenate([vein_position, vein_orientation], dtype=float)
+
         system_params_computed = {
+            "vein_pose": vein_pose.tolist(),
             "phantom_closest_vertex": phantom_closest_vertex.tolist(),
             "phantom_centroid_pose": phantom_difftactile_position.tolist() + SYSTEM_PARAMS.geometry.phantom_orientation,
             "phantom_top_surface_z": phantom_furthest_vertex[2],

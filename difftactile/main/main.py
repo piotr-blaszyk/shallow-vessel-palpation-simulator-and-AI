@@ -568,6 +568,7 @@ class Contact:
         self.mesh_needs_to_be_saved[None] = 0
 
     def set_up_initial_positions_and_trajectory_first_init_only(self):
+        self.vein_pose = SYSTEM_PARAMS_COMPUTED.vein_pose
         self.phantom_closest_vertex = SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex
         self.phantom_centroid_pose = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose
         self.vitactip_tip_pose = SYSTEM_PARAMS_COMPUTED.vitactip_tip_pose
@@ -916,6 +917,9 @@ class Contact:
             ori=self.phantom_centroid_pose[3:],
             vel=[0.0, 0.0, 0.0],
             state_dicts=state_dicts,
+        )
+        self.vein.set_state_from_outside(
+            pose=self.vein_pose,
         )
         sensor_dome_tip_initial_pose = self.trajectories[self.trajectory_ix[None], 0].to_numpy()
         self.vitactip.set_up_pose(sensor_dome_tip_initial_pose)
@@ -1628,18 +1632,6 @@ class Contact:
             shape=(self.phantom.num_particles,),
             needs_grad=False,
         )
-        self.vein_points = ti.Vector.field(
-            3,
-            dtype=float,
-            shape=(self.phantom.num_particles,),
-            needs_grad=False,
-        )
-        self.interm_points = ti.Vector.field(
-            3,
-            dtype=float,
-            shape=(self.phantom.num_particles,),
-            needs_grad=False,
-        )
         self.vein_2d_projection = ti.Vector.field(
             2,
             dtype=float,
@@ -1706,8 +1698,6 @@ class Contact:
     @ti.kernel
     def visualisation_reset_scene(self):
         self.healthy_tissue_points.fill(0)
-        self.vein_points.fill(0)
-        self.interm_points.fill(0)
         self.vein_2d_projection.fill(-1)
         self.vein_2d_projection_flat.fill(-1)
 
@@ -1716,10 +1706,6 @@ class Contact:
         for p in range(self.phantom.num_particles):
             if self.phantom.grid_node_vein_indices[p] == 0:
                 self.healthy_tissue_points[p] = self.phantom.particles_A[f, p]
-            elif self.phantom.grid_node_vein_indices[p] == 1:
-                self.vein_points[p] = self.phantom.particles_A[f, p]
-            elif self.phantom.grid_node_vein_indices[p] == 2:
-                self.interm_points[p] = self.phantom.particles_A[f, p]
         for p in range(self.vitactip.num_vertices):
             self.sensor_points[p] = self.vitactip.vertices_deformed_A[f, p]
 
@@ -1936,13 +1922,8 @@ class Contact:
             radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
         self.scene.particles(
-            self.vein_points,
+            self.vein.particles_A,
             color=(1.0, 1.0, 0.0),
-            radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
-        )
-        self.scene.particles(
-            self.interm_points,
-            color=(1.0, 0.0, 1.0),
             radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
         self.scene.particles(

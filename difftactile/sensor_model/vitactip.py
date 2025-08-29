@@ -109,7 +109,6 @@ class ViTacTip:
         node_coordinates = node_coordinates + translation_vector
         self.node_coordinates = node_coordinates
         self.tetrahedra_npy = all_tetrahedra
-        self.outer_surface_triangles = surface_triangles
         self.vertex_masses_npy = vertex_masses
         self.is_fixed_layer = ti.field(
             int, len(self.node_coordinates), needs_grad=False
@@ -122,7 +121,7 @@ class ViTacTip:
         )
         self.num_vertices = len(self.node_coordinates)
         self.num_tetrahedra = len(self.tetrahedra_npy)
-        self.num_contact_surface_triangles = len(self.outer_surface_triangles)
+        self.num_contact_surface_triangles = len(surface_triangles)
         self.vertex_mass = ti.field(
             dtype=ti.f32, shape=(self.num_vertices,), needs_grad=False
         )
@@ -135,10 +134,10 @@ class ViTacTip:
         )
         self.tetrahedra = ti.Vector.field(4, int, self.num_tetrahedra, needs_grad=False)
         self.tetrahedra.from_numpy(self.tetrahedra_npy.astype(np.int32))
-        self.contact_surface = ti.Vector.field(
+        self.triangles = ti.Vector.field(
             3, int, self.num_contact_surface_triangles, needs_grad=False
         )
-        self.contact_surface.from_numpy(self.outer_surface_triangles.astype(np.int32))
+        self.triangles.from_numpy(surface_triangles.astype(np.int32))
         self.projection_2d_dome_surface_nodes_deformed = ti.Vector.field(
             2, float, self.dome_surface_node_tags.shape[0], needs_grad=SYSTEM_PARAMS.meta.enable_grad
         )
@@ -683,7 +682,7 @@ class ViTacTip:
     @ti.kernel
     def get_external_force(self, f: ti.i32):
         for k in range(self.num_contact_surface_triangles):
-            a, b, c = self.contact_surface[k]
+            a, b, c = self.triangles[k]
             self.total_surface_force[f] += (
                 1 / 3 * self.contact_forces_on_vertices[f, a] * self.dx
             )
@@ -735,7 +734,7 @@ class ViTacTip:
         cur_min_offset = SYSTEM_PARAMS.vitactip.collision_search_distance
         cur_min_idx = -1
         for k in range(self.num_contact_surface_triangles):
-            a, b, c = self.contact_surface[k]
+            a, b, c = self.triangles[k]
             p_1 = self.vertices_deformed_A[f, a]
             p_2 = self.vertices_deformed_A[f, b]
             p_3 = self.vertices_deformed_A[f, c]
@@ -755,7 +754,7 @@ class ViTacTip:
         frame,
         collision_offset=0.0,
     ):
-        vertex1_idx, vertex2_idx, vertex3_idx = self.contact_surface[triangle_index]
+        vertex1_idx, vertex2_idx, vertex3_idx = self.triangles[triangle_index]
         vertex1_pos = self.vertices_deformed_A[frame, vertex1_idx]
         vertex2_pos = self.vertices_deformed_A[frame, vertex2_idx]
         vertex3_pos = self.vertices_deformed_A[frame, vertex3_idx]
@@ -804,7 +803,7 @@ class ViTacTip:
 
     @ti.func
     def update_contact_force(self, triangle_index, contact_force, frame):
-        vertex1_idx, vertex2_idx, vertex3_idx = self.contact_surface[triangle_index]
+        vertex1_idx, vertex2_idx, vertex3_idx = self.triangles[triangle_index]
         self.contact_forces_on_vertices[frame, vertex1_idx] += 1 / 3 * contact_force
         self.contact_forces_on_vertices[frame, vertex2_idx] += 1 / 3 * contact_force
         self.contact_forces_on_vertices[frame, vertex3_idx] += 1 / 3 * contact_force

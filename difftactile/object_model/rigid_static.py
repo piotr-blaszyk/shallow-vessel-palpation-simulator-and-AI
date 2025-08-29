@@ -1,5 +1,7 @@
 import taichi as ti
 import numpy as np
+import pickle
+
 from difftactile.object_model.obj_loader import ObjLoader
 from difftactile.main.constants import *
 from difftactile.object_model.common import *
@@ -11,18 +13,29 @@ class RigidObj:
         self.set_up_physical_state()
     
     def load_obj(self):
-        obj_loader = ObjLoader(
-            SYSTEM_PARAMS.files.rigid_static_stl,
-            num_particles_cube_1d=SYSTEM_PARAMS_COMPUTED.rigid_static.num_particles_cube_1d,
-        )
-        obj_loader.generate_particles()
-        self.num_particles = len(obj_loader.particles)
+        with open(SYSTEM_PARAMS.files.gmsh_mesh_vein_pkl, "rb") as f:
+            data = pickle.load(f)
+
+        tetrahedra = data['all_tetrahedra']
+        points = data['node_coordinates']
+        triangles = data['surface_triangles']
+
+        points *= 1/1_000*self.dist_sf
+
         self.particles_B = ti.Vector.field(
-            3, dtype=float, shape=(self.num_particles,), needs_grad=False
+            3, dtype=float, shape=(points.shape[0],), needs_grad=False
         )
-        self.particles_B.from_numpy((obj_loader.particles).astype(np.float32))
+        self.particles_B.from_numpy(points)
+        self.triangles = ti.Vector.field(
+            3, 
+            dtype=int, 
+            shape=(triangles.shape[0],), 
+            needs_grad=False,
+        )
+        self.triangles.from_numpy(triangles)
     
     def set_up_physical_state(self):
+        self.dist_sf = SYSTEM_PARAMS.meta.distance_scaling_factor
         self.particles_A = ti.Vector.field(
             3,
             dtype=float,
@@ -30,7 +43,7 @@ class RigidObj:
             needs_grad=False,
         )
 
-    def set_pose_from_outside(self, pose):
+    def set_state_from_outside(self, pose):
         rotation_matrix, transformation_matrix = Common.compute_transformation_matrix(pose)
         self.T_BA = ti.Matrix.field(4, 4, ti.f32, shape=(), needs_grad=False)
         self.T_BA.from_numpy(transformation_matrix)
