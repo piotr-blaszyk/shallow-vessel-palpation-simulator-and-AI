@@ -857,7 +857,7 @@ class Contact:
             press_depth_surface,
             _
         ) = self.get_random_slide_params()
-        press_depth_1 = SYSTEM_PARAMS.trajectory.press_depth_slide
+        press_depth_1 = SYSTEM_PARAMS.trajectory.press_depth_1
         x, y, z = self.vitactip_tip_pose[:3]
         r = SYSTEM_PARAMS.geometry.sensor_xy_radius
         trajectory = [

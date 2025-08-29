@@ -60,7 +60,7 @@
         "num_sub_frames": 125,
         "num_opt_steps": 2,
         "num_training_trajectories": 200,
-        "pid_max_speed_translation": 1.0,
+        "pid_max_speed_translation": 0.2,
         "pid_orientation_kp": 1.0,
         "pid_kp": 100.0,
         "pid_ki": 0.0,

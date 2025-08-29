@@ -7,11 +7,18 @@ from difftactile.main.constants import *
 
 class VisualiseMesh:
     def __init__(self):
-        self.load_tetrahedra()
-        self.load_sensor_mesh_from_npz()
-        # self.load_is_fixed_layer()
-        # self.apply_is_fixed_layer()
-        # self.load_gmsh_data_only()
+        self.load_gmsh_surface()
+    
+    def load_gmsh_surface(self):
+        with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
+            mesh_data = pickle.load(f)
+        surface_node_tags = mesh_data['surface_node_tags']
+        points = mesh_data['node_coordinates']
+        # mask = np.ones(len(points), dtype=bool)
+        # mask[surface_node_tags] = False
+        # points = points[mask]
+        self.points = points
+        self.triangles = mesh_data['surface_triangles']
     
     def debug_gmsh(self):
         with open(SYSTEM_PARAMS.files.gmsh_debug_pkl, 'rb') as f:
@@ -127,7 +134,7 @@ class VisualiseMesh:
         axes = o3d.geometry.TriangleMesh.create_coordinate_frame(size=np.max(diff)/2, origin=[0, 0, 0])
         o3d.visualization.draw_geometries([pcd, axes])
 
-    def visualise_mesh(self):
+    def visualise_tetrahedra(self):
         tetrahedra_decomposed = []
         for tetra in self.tetrahedra:
             a, b, c, d = tetra
@@ -140,6 +147,14 @@ class VisualiseMesh:
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(self.points)
         mesh.triangles = o3d.utility.Vector3iVector(tetrahedra_decomposed)
+        mesh.compute_vertex_normals()
+        mesh = mesh.remove_duplicated_triangles()
+        o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
+    
+    def visualise_triangles(self):
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(self.points)
+        mesh.triangles = o3d.utility.Vector3iVector(self.triangles)
         mesh.compute_vertex_normals()
         mesh = mesh.remove_duplicated_triangles()
         o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
@@ -188,7 +203,7 @@ class VisualiseMesh:
 
 def main():
     visualise_mesh = VisualiseMesh()
-    visualise_mesh.visualise_mesh()
+    visualise_mesh.visualise_triangles()
 
 
 if __name__ == '__main__':
