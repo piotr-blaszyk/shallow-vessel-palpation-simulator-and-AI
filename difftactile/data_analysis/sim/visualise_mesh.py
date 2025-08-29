@@ -2,13 +2,19 @@ import numpy as np
 import open3d as o3d
 import pickle
 import pyvista as pv
+import vedo
 
 from difftactile.main.constants import *
 
 class VisualiseMesh:
     def __init__(self):
-        self.load_sensor_mesh_from_npz()
+        self.load_vitactip_mesh_video()
         self.load_tetrahedra()
+    
+    def load_vitactip_mesh_video(self):
+        path = SYSTEM_PARAMS.files.vitactip_mesh_npz
+        data = np.load(path)
+        self.all_points = data['all_points']
     
     def load_gmsh_surface(self):
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
@@ -68,6 +74,11 @@ class VisualiseMesh:
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
             self.mesh_data = pickle.load(f)
         self.tetrahedra = self.mesh_data['all_tetrahedra']
+    
+    def load_triangles(self):
+        with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
+            self.mesh_data = pickle.load(f)
+        self.triangles = self.mesh_data['surface_triangles']
 
     def load_default_undeformed_points(self):
         with open(SYSTEM_PARAMS.files.initial_vertex_positions_undeformed, 'rb') as f:
@@ -200,11 +211,62 @@ class VisualiseMesh:
         plotter.add_axes()
         plotter.camera_position = 'iso'
         plotter.show()
+    
+    def visualise_tetrahedra_pyvista_for_video(self):
+        num_tets = self.tetrahedra.shape[0]
+        cells = np.hstack([np.full((num_tets, 1), 4), self.tetrahedra]).flatten()
+        grid = pv.UnstructuredGrid(cells, np.full(num_tets, 10), self.points)  # 10 = VTK_TETRA
+        surface = grid.extract_surface()
+        plotter = pv.Plotter()
+        plotter.add_mesh(surface, color="lightblue", show_edges=True)
+        plotter.show()
+    
+    def visualise_tetrahedra_vedo(self):
+        mesh = vedo.TetMesh([self.points, self.tetrahedra])
+        surface = mesh.tomesh()
+        vedo.show(surface)
+
+    def visualize_sequence_from_tetrahedra_pyvista(self):
+        dilation = 10
+        nodes = self.all_points[::dilation]
+        tetrahedra = self.tetrahedra
+        num_frames = nodes.shape[0]
+        frame_idx = [0]
+        surfaces = []
+        for f in range(num_frames):
+            pts = nodes[f]
+            num_tets = tetrahedra.shape[0]
+            cells = np.hstack([np.full((num_tets, 1), 4), tetrahedra]).ravel()
+            grid = pv.UnstructuredGrid(cells, np.full(num_tets, 10), pts)  # 10 = VTK_TETRA
+            surfaces.append(grid.extract_surface())
+        plotter = pv.Plotter()
+        actor = plotter.add_mesh(surfaces[frame_idx[0]], color="lightblue", show_edges=True)
+        text_actor = plotter.add_text(
+            f"Frame {frame_idx[0]+1}/{num_frames}", position="upper_edge", font_size=14
+        )
+        def update_scene():
+            nonlocal actor, text_actor
+            plotter.remove_actor(actor)
+            actor = plotter.add_mesh(surfaces[frame_idx[0]], color="lightblue", show_edges=True)
+            plotter.remove_actor(text_actor)
+            text_actor = plotter.add_text(
+                f"Frame {frame_idx[0]+1}/{num_frames}", position="upper_edge", font_size=14
+            )
+            plotter.render()
+        def keypress_j():
+            frame_idx[0] = (frame_idx[0] - 1) % num_frames
+            update_scene()
+        def keypress_k():
+            frame_idx[0] = (frame_idx[0] + 1) % num_frames
+            update_scene()
+        plotter.add_key_event("j", keypress_j)
+        plotter.add_key_event("k", keypress_k)
+        plotter.show()
 
 
 def main():
     visualise_mesh = VisualiseMesh()
-    visualise_mesh.visualise_tetrahedra()
+    visualise_mesh.visualize_sequence_from_tetrahedra_pyvista()
 
 
 if __name__ == '__main__':

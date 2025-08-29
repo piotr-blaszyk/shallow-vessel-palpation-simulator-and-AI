@@ -31,7 +31,6 @@ RUN_ON_LAB_MACHINE = True
 @ti.data_oriented
 class Contact:
     def __init__(self):
-        self.foo()
         self.compute_sensor_bounds()
         self.fisheye_model = FisheyeModelNoTaichi()
         self.set_up_system_params()
@@ -47,6 +46,7 @@ class Contact:
         self.set_up_loss_computation()
         self.visualisation_initialise()
         self.training_data_collection_initialise()
+        self.foo()
     
     @ti.kernel
     def update_vitactip_tip_point(self):
@@ -67,6 +67,7 @@ class Contact:
     
     def foo(self):
         self.num_sub_frames = SYSTEM_PARAMS.contact.num_sub_frames
+        self.max_ts = SYSTEM_PARAMS.meta.max_timesteps_per_trajectory
         self.vitactip_tip_point = ti.Vector.field(
             3,
             dtype=float,
@@ -79,6 +80,20 @@ class Contact:
             shape=(2,),
             needs_grad=False,
         )
+        self.vitactip_vertices_temp = ti.Vector.field(
+            3,
+            dtype=float,
+            shape=(self.vitactip.vertices_deformed_A.shape[1],),
+            needs_grad=False,
+        )
+        self.all_points = np.zeros(shape=(
+            self.max_ts,
+            self.vitactip.vertices_deformed_A.shape[1],
+            3,
+        ), dtype=float)
+        self.all_points_mask = np.zeros(shape=(
+            self.max_ts,
+        ), dtype=bool)
 
     def vein_sparse_to_dense_init(self):
         self.num_veins = SYSTEM_PARAMS.meta.max_num_veins
@@ -1415,6 +1430,30 @@ class Contact:
                 if os.path.isfile(file_path):
                     os.remove(file_path)
 
+    @ti.kernel
+    def copy_vitactip_vertices(self):
+        for i in range(self.vitactip.vertices_deformed_A.shape[1]):
+            point = self.vitactip.vertices_deformed_A[
+                self.num_sub_frames-1,
+                i
+            ]
+            self.vitactip_vertices_temp[i] = point
+
+    def record_vitactip_mesh(self, ts):
+        self.copy_vitactip_vertices()
+        self.all_points[ts, :, :] = self.vitactip_vertices_temp.to_numpy()
+        self.all_points_mask[ts] = True
+    
+    def write_vitactip_mesh_to_file(self):
+        all_points = self.all_points[self.all_points_mask]
+        path = SYSTEM_PARAMS.files.vitactip_mesh_npz
+        np.savez(
+            path,
+            all_points=all_points,
+        )
+        self.all_points = np.zeros_like(self.all_points, dtype=float)
+        self.all_points_mask = np.zeros_like(self.all_points_mask, dtype=bool)
+
     def record_training_data_point(self, training_iteration, ts):
         w = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
         h = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
@@ -2458,6 +2497,8 @@ class Contact:
                             SYSTEM_PARAMS.contact.num_sub_frames - 1
                         )
                         self.visualisation_update_gui(ts)
+                        if ts % 10 == 0:
+                            self.record_vitactip_mesh(ts)
                         target = self.current_target_idx[None]
                         if (
                             target > 2
@@ -2471,6 +2512,7 @@ class Contact:
                             break
                     file_num = j * 4 + k * 2 + i
                     self.write_training_data_to_file(file_num, i)
+                    self.write_vitactip_mesh_to_file()
                     
                     self.reset_loss()
                     self.batch_loss.fill(0.0)
@@ -2506,11 +2548,13 @@ def main():
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
     contact_model.set_up_torch_params()
-    profiler = cProfile.Profile()
-    try:
-        profiler.enable()
-        contact_model.collect_training_data()
-        profiler.disable()
-    finally:
-        profiler.dump_stats("profile.out")
+    contact_model.collect_training_data()
+    if False:
+        profiler = cProfile.Profile()
+        try:
+            profiler.enable()
+            contact_model.collect_training_data()
+            profiler.disable()
+        finally:
+            profiler.dump_stats("profile.out")
 

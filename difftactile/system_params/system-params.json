@@ -26,7 +26,7 @@
     },
     "phantom": {
         "mass_eps": 1.000e-08,
-        "mpm_grid_cube_size": 5.000e-03,
+        "mpm_grid_cube_size": 1.000e-02,
         "bound": 3,
         "gravity": [
             0.0,
@@ -53,7 +53,7 @@
     "contact": {
         "dt": 1.270e-06,
         "dt_override": 1.000e-05,
-        "normal_stiffness": 2.047e+02,
+        "normal_stiffness": 2.047e+03,
         "tangential_stiffness": 1.073e+02,
         "normal_damping": 9.020e-04,
         "coulomb_friction_coeff": 1.500e+01,
@@ -153,7 +153,7 @@
         "max_num_veins": 1,
         "num_trajectories": 4,
         "max_num_trajectory_points": 1500,
-        "max_timesteps_per_trajectory": 400,
+        "max_timesteps_per_trajectory": 100,
         "polyline_num": 25,
         "cnn_gnn": 1,
         "vein_px_thickness": 30,
@@ -371,6 +371,7 @@
         "sensor_mesh": "difftactile/output/sensor_mesh.npz",
         "edge_lengths_pkl": "difftactile/output/edge_lengths.pkl",
         "gmsh_debug_pkl": "difftactile/output/gmsh_debug.pkl",
-        "gmsh_debug_msh": "difftactile/output/gmsh_debug.msh"
+        "gmsh_debug_msh": "difftactile/output/gmsh_debug.msh",
+        "vitactip_mesh_npz": "difftactile/output/vitactip_mesh.npz"
     }
 }

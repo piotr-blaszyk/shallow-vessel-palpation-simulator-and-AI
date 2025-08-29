@@ -10,5 +10,6 @@ echo "Installing dependencies..."
 uv pip install pyvista
 uv pip install meshio
 uv pip install snakeviz
+uv pip install vedo
 
 echo "All dependencies installed successfully!" 
