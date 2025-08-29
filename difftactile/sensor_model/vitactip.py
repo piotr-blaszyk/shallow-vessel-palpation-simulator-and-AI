@@ -8,10 +8,7 @@ from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.sensor_model.fisheye_model_taichi import *
 from difftactile.main.constants import *
 from difftactile.object_model.common import *
-
-TI_TYPE = ti.f32
-TC_TYPE = torch.float32
-NP_TYPE = np.float32
+from difftactile.main.constants_ti import *
 
 
 @ti.data_oriented
@@ -387,19 +384,13 @@ class ViTacTip:
                 self.R_EB[None][i, j] = self.T_EB[None][i, j]
 
     def set_up_pose(self, pose):
-        rotation_object = R.from_quat(pose[3:])
-        initial_rotation_matrix = rotation_object.as_matrix()
-        initial_transformation_matrix = np.eye(4)
-        initial_transformation_matrix[0:3, 0:3] = initial_rotation_matrix
-        initial_transformation_matrix[0, 3] = pose[0]
-        initial_transformation_matrix[1, 3] = pose[1]
-        initial_transformation_matrix[2, 3] = pose[2]
+        rotation_matrix, transformation_matrix = Common.compute_transformation_matrix(pose)
         self.R_BC.from_numpy(np.eye(3))
-        self.R_CA.from_numpy(initial_rotation_matrix)
+        self.R_CA.from_numpy(rotation_matrix)
         self.R_BA[None] = self.R_CA[None] @ self.R_BC[None]
         self.R_AB[None] = self.R_BA[None].transpose()
         self.T_BC.from_numpy(np.eye(4))
-        self.T_CA.from_numpy(initial_transformation_matrix)
+        self.T_CA.from_numpy(transformation_matrix)
         self.T_BA[None] = self.T_CA[None] @ self.T_BC[None]
         self.T_AB[None] = self.T_BA[None].inverse()
         self.T_CD.from_numpy(np.eye(4))

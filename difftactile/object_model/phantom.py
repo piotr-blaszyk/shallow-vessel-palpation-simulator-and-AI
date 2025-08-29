@@ -5,10 +5,7 @@ import torch
 from difftactile.object_model.obj_loader import ObjLoader
 from difftactile.main.constants import *
 from difftactile.object_model.common import *
-
-TI_TYPE = ti.f32
-TC_TYPE = torch.float32
-NP_TYPE = np.float32
+from difftactile.main.constants_ti import *
 
 
 @ti.data_oriented
@@ -31,7 +28,7 @@ class Phantom:
     def grid_node_vein_sparse_to_dense_init(self):
         self.grid_node_vein_indices = ti.field(
             dtype=int, 
-            shape=(self.actual_total_num_particles,), 
+            shape=(self.num_particles,), 
             needs_grad=False
         )
     
@@ -96,19 +93,19 @@ class Phantom:
             num_particles_cube_1d=SYSTEM_PARAMS_COMPUTED.phantom.num_particles_cube_1d,
         )
         obj_loader.generate_particles()
-        self.actual_total_num_particles = len(obj_loader.particles)
+        self.num_particles = len(obj_loader.particles)
         self.particles_B = ti.Vector.field(
-            3, dtype=float, shape=(self.actual_total_num_particles,), needs_grad=False
+            3, dtype=float, shape=(self.num_particles,), needs_grad=False
         )
         self.particles_B.from_numpy((obj_loader.particles).astype(np.float32))
         self.titles = ti.field(
-            dtype=int, shape=self.actual_total_num_particles, needs_grad=False
+            dtype=int, shape=self.num_particles, needs_grad=False
         )
         self.vein_titles = ti.field(
-            dtype=int, shape=self.actual_total_num_particles, needs_grad=False
+            dtype=int, shape=self.num_particles, needs_grad=False
         )
         self.is_fixed = ti.field(
-            dtype=int, shape=(self.actual_total_num_particles,), needs_grad=False
+            dtype=int, shape=(self.num_particles,), needs_grad=False
         )
         particles_np = self.particles_B.to_numpy()
         z_coords = particles_np[:, 2]
@@ -120,7 +117,7 @@ class Phantom:
         # is_fixed_np = np.ones_like(z_coords, dtype=bool)
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
         self.initial_particle_volume = (
-            SYSTEM_PARAMS_COMPUTED.phantom_volume / self.actual_total_num_particles
+            SYSTEM_PARAMS_COMPUTED.phantom_volume / self.num_particles
         )
         self.healthy_tissue_particle_mass = (
             self.initial_particle_volume * SYSTEM_PARAMS.phantom.silicone.density
@@ -162,7 +159,7 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                self.actual_total_num_particles,
+                self.num_particles,
             ),
             needs_grad=False,
         )
@@ -171,7 +168,7 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                self.actual_total_num_particles,
+                self.num_particles,
             ),
             needs_grad=False,
         )
@@ -181,7 +178,7 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                self.actual_total_num_particles,
+                self.num_particles,
             ),
             needs_grad=False,
         )
@@ -191,7 +188,7 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                self.actual_total_num_particles,
+                self.num_particles,
             ),
             needs_grad=False,
         )
@@ -201,7 +198,7 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                self.actual_total_num_particles,
+                self.num_particles,
             ),
             needs_grad=False,
         )
@@ -211,7 +208,7 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                self.actual_total_num_particles,
+                self.num_particles,
             ),
             needs_grad=False,
         )
@@ -221,7 +218,7 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                self.actual_total_num_particles,
+                self.num_particles,
             ),
             needs_grad=False,
         )
@@ -231,7 +228,7 @@ class Phantom:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
-                self.actual_total_num_particles,
+                self.num_particles,
             ),
             needs_grad=False,
         )
@@ -306,7 +303,7 @@ class Phantom:
     @ti.kernel
     def fix_vein(self):
         return
-        for i in range(self.actual_total_num_particles):
+        for i in range(self.num_particles):
             if self.titles[i] == 1:
                 self.is_fixed[i] = 1
 
@@ -323,7 +320,7 @@ class Phantom:
                 self.partition_point_cloud(i)
             self.compute_group_cardinality()
         else:
-            self.group_cardinality[0] = self.actual_total_num_particles
+            self.group_cardinality[0] = self.num_particles
             self.group_cardinality[1] = 0
             self.titles.fill(0)
         print(
@@ -343,7 +340,7 @@ class Phantom:
 
     @ti.kernel
     def compute_group_cardinality(self):
-        for i in range(self.actual_total_num_particles):
+        for i in range(self.num_particles):
             if self.titles[i] == 0:
                 self.group_cardinality[0] += 1
             elif self.titles[i] == 1:
@@ -351,7 +348,7 @@ class Phantom:
 
     @ti.kernel
     def partition_point_cloud(self, i: ti.i32):
-        for item in range(self.actual_total_num_particles):
+        for item in range(self.num_particles):
             pos = self.particles_B[item]
             px = pos[0] - self.cylinder_cx[None]
             py = pos[1] - self.cylinder_cy[None]
@@ -399,7 +396,7 @@ class Phantom:
 
     @ti.kernel
     def initialise_point_cloud(self):
-        for i in range(self.actual_total_num_particles):
+        for i in range(self.num_particles):
             particle_position_local = self.particles_B[i]
             particle_position_global = self.T_BA[None] @ ti.Vector(
                 [
@@ -446,7 +443,7 @@ class Phantom:
 
     @ti.kernel
     def compute_trial_deformation_gradient(self, f: ti.i32):
-        for p in range(self.actual_total_num_particles):
+        for p in range(self.num_particles):
             self.trial_deformation_gradient[f, p] = (
                 ti.Matrix.diag(dim=3, val=1)
                 + self.dt[None] * self.affine_velocity_field[f, p]
@@ -454,14 +451,14 @@ class Phantom:
 
     @ti.kernel
     def svd_of_trial_deformation_gradient(self, f: ti.i32):
-        for p in range(self.actual_total_num_particles):
+        for p in range(self.num_particles):
             self.U_svd[f, p], self.S_svd[f, p], self.V_svd[f, p] = ti.svd(
                 self.trial_deformation_gradient[f, p]
             )
 
     @ti.kernel
     def svd_of_trial_deformation_gradient_grad(self, f: ti.i32):
-        for p in range(self.actual_total_num_particles):
+        for p in range(self.num_particles):
             self.trial_deformation_gradient.grad[f, p] += self.single_svd_grad(f, p)
 
     @ti.func
@@ -521,7 +518,7 @@ class Phantom:
 
     @ti.kernel
     def p2g(self, frame: ti.i32):
-        for particle_id in range(self.actual_total_num_particles):
+        for particle_id in range(self.num_particles):
             shear_modulus = self.mu[self.titles[particle_id]]
             bulk_modulus = self.lam[self.titles[particle_id]]
             grid_base_index = (
@@ -664,7 +661,7 @@ class Phantom:
 
     @ti.kernel
     def g2p(self, frame: ti.i32):
-        for particle_id in range(self.actual_total_num_particles):
+        for particle_id in range(self.num_particles):
             grid_base_index = (
                 self.particles_A[frame, particle_id]
                 * self.inverse_mpm_grid_cube_size
@@ -740,7 +737,7 @@ class Phantom:
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):
-        for p in range(self.actual_total_num_particles):
+        for p in range(self.num_particles):
             self.particles_A[target, p] = self.particles_A[source, p]
             self.velocities_A[target, p] = self.velocities_A[source, p]
             self.affine_velocity_field[target, p] = self.affine_velocity_field[
@@ -757,7 +754,7 @@ class Phantom:
         cache_C_0: ti.types.ndarray(),
         cache_F_0: ti.types.ndarray(),
     ):
-        for p in range(self.actual_total_num_particles):
+        for p in range(self.num_particles):
             for i in ti.static(range(3)):
                 self.particles_A[f, p][i] = cache_x_0[p, i]
                 self.velocities_A[f, p][i] = cache_v_0[p, i]
@@ -774,7 +771,7 @@ class Phantom:
         cache_C_0: ti.types.ndarray(),
         cache_F_0: ti.types.ndarray(),
     ):
-        for p in range(self.actual_total_num_particles):
+        for p in range(self.num_particles):
             for i in ti.static(range(3)):
                 cache_x_0[p, i] = self.particles_A[f, p][i]
                 cache_v_0[p, i] = self.velocities_A[f, p][i]
@@ -787,16 +784,16 @@ class Phantom:
         device = "cpu"
         self.cache[cur_step_name] = dict()
         self.cache[cur_step_name]["x_0"] = torch.zeros(
-            (self.actual_total_num_particles, 3), dtype=TC_TYPE, device=device
+            (self.num_particles, 3), dtype=TC_TYPE, device=device
         )
         self.cache[cur_step_name]["v_0"] = torch.zeros(
-            (self.actual_total_num_particles, 3), dtype=TC_TYPE, device=device
+            (self.num_particles, 3), dtype=TC_TYPE, device=device
         )
         self.cache[cur_step_name]["C_0"] = torch.zeros(
-            (self.actual_total_num_particles, 3, 3), dtype=TC_TYPE, device=device
+            (self.num_particles, 3, 3), dtype=TC_TYPE, device=device
         )
         self.cache[cur_step_name]["F_0"] = torch.zeros(
-            (self.actual_total_num_particles, 3, 3), dtype=TC_TYPE, device=device
+            (self.num_particles, 3, 3), dtype=TC_TYPE, device=device
         )
         self.add_step_to_cache(
             0,

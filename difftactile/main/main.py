@@ -92,7 +92,7 @@ class Contact:
         self.num_veins = SYSTEM_PARAMS.meta.max_num_veins
         self.vein_counts = ti.field(int, (self.num_veins,), needs_grad=False)
         self.vein_indices = ti.field(
-            int, (self.num_veins, self.phantom.actual_total_num_particles), needs_grad=False
+            int, (self.num_veins, self.phantom.num_particles), needs_grad=False
         )
         self.max_vein_count = ti.field(int, (), needs_grad=False)
     
@@ -106,7 +106,7 @@ class Contact:
         self.vein_counts.from_numpy(vein_counts)
         self.max_vein_count[None] = np.max(vein_counts)
         vein_counts_temp = np.zeros(shape=(self.num_veins,), dtype=int)
-        vein_indices = -np.ones(shape=(self.num_veins, self.phantom.actual_total_num_particles), dtype=int)
+        vein_indices = -np.ones(shape=(self.num_veins, self.phantom.num_particles), dtype=int)
         for particle_ix in range(len(vein_titles)):
             vein_ix = vein_titles[particle_ix]
             if vein_ix != -1:
@@ -1626,19 +1626,19 @@ class Contact:
         self.healthy_tissue_points = ti.Vector.field(
             3,
             dtype=float,
-            shape=(self.phantom.actual_total_num_particles,),
+            shape=(self.phantom.num_particles,),
             needs_grad=False,
         )
         self.vein_points = ti.Vector.field(
             3,
             dtype=float,
-            shape=(self.phantom.actual_total_num_particles,),
+            shape=(self.phantom.num_particles,),
             needs_grad=False,
         )
         self.interm_points = ti.Vector.field(
             3,
             dtype=float,
-            shape=(self.phantom.actual_total_num_particles,),
+            shape=(self.phantom.num_particles,),
             needs_grad=False,
         )
         self.vein_2d_projection = ti.Vector.field(
@@ -1646,7 +1646,7 @@ class Contact:
             dtype=float,
             shape=(
                 SYSTEM_PARAMS.meta.max_num_veins,
-                self.phantom.actual_total_num_particles
+                self.phantom.num_particles
             ),
             needs_grad=False,
         )
@@ -1714,7 +1714,7 @@ class Contact:
 
     @ti.kernel
     def visualisation_draw_3d_scene(self, f: ti.i32):
-        for p in range(self.phantom.actual_total_num_particles):
+        for p in range(self.phantom.num_particles):
             if self.phantom.grid_node_vein_indices[p] == 0:
                 self.healthy_tissue_points[p] = self.phantom.particles_A[f, p]
             elif self.phantom.grid_node_vein_indices[p] == 1:
