@@ -51,6 +51,7 @@ class Phantom:
                 self.grid_node_vein_indices[i] = 2
 
     def set_up_system_params(self):
+        self.pose = np.array(SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose, dtype=float)
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
         self.dt[None] = SYSTEM_PARAMS.contact.dt_override
         self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
@@ -307,25 +308,10 @@ class Phantom:
             if self.titles[i] == 1:
                 self.is_fixed[i] = 1
 
-    def set_state_from_outside(
-        self, pos, ori, vel, state_dicts
-    ):
-        self.vein_titles.fill(-1)
-        if False and len(state_dicts) > 0:
-            self.titles.fill(0)
-            self.group_cardinality.fill(0)
-            for i in range(len(state_dicts)):
-                state_dict = state_dicts[i]
-                self.set_up_tumour_inclusion(state_dict)
-                self.partition_point_cloud(i)
-            self.compute_group_cardinality()
-        else:
-            self.group_cardinality[0] = self.num_particles
-            self.group_cardinality[1] = 0
-            self.titles.fill(0)
-        print(
-            f"tumour_present: {len(state_dicts) > 0}, healthy: {self.group_cardinality[0]}, tumour: {self.group_cardinality[1]}"
-        )
+    def transform_BA(self):
+        pos = ti.Vector(self.pose[:3], dtype=float)
+        ori = ti.Vector(self.pose[3:], dtype=float)
+        vel = ti.Vector([0.0, 0.0, 0.0], dtype=float)
         self.set_pose_and_velocity(pos, ori, vel)
         self.initialise_point_cloud()
 

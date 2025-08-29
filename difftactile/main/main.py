@@ -15,7 +15,7 @@ import math
 import cProfile, pstats, sys
 
 from difftactile.main.constants import *
-from difftactile.object_model.rigid_static import RigidObj
+from difftactile.object_model.vein import Vein
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.sensor_model.vitactip import ViTacTip
 from difftactile.object_model.phantom import Phantom
@@ -29,13 +29,13 @@ RUN_ON_LAB_MACHINE = True
 @ti.data_oriented
 class Contact:
     def __init__(self):
+        self.vein = Vein()
+        self.phantom = Phantom()
         self.compute_sensor_bounds()
         self.fisheye_model = FisheyeModelNoTaichi()
         self.set_up_system_params()
         self.load_system_identification_data()
         self.vitactip = ViTacTip()
-        self.phantom = Phantom()
-        # self.vein = RigidObj()
         self.set_up_initial_positions_and_trajectory_first_init_only()
         self.set_up_trajectories_and_phantom_states()
         self.set_up_initial_positions_state_and_trajectory()
@@ -568,7 +568,6 @@ class Contact:
         self.mesh_needs_to_be_saved[None] = 0
 
     def set_up_initial_positions_and_trajectory_first_init_only(self):
-        self.vein_pose = SYSTEM_PARAMS_COMPUTED.vein_pose
         self.phantom_closest_vertex = SYSTEM_PARAMS_COMPUTED.phantom_closest_vertex
         self.phantom_centroid_pose = SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose
         self.vitactip_tip_pose = SYSTEM_PARAMS_COMPUTED.vitactip_tip_pose
@@ -910,17 +909,6 @@ class Contact:
         return trajectory
 
     def set_up_initial_positions_state_and_trajectory(self):
-        state_dicts = self.state_dicts[self.trajectory_ix[None]]
-
-        self.phantom.set_state_from_outside(
-            pos=self.phantom_centroid_pose[:3],
-            ori=self.phantom_centroid_pose[3:],
-            vel=[0.0, 0.0, 0.0],
-            state_dicts=state_dicts,
-        )
-        # self.vein.set_state_from_outside(
-        #     pose=self.vein_pose,
-        # )
         sensor_dome_tip_initial_pose = self.trajectories[self.trajectory_ix[None], 0].to_numpy()
         self.vitactip.set_up_pose(sensor_dome_tip_initial_pose)
         self.tactile_sensor_initial_position[0] = ti.Vector(
@@ -1908,8 +1896,6 @@ class Contact:
         end = np.array([1, 0, 0])
         return (1 - t) * start + t * end
     
-
-
     def visualisation_update_gui(self, ts):
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
@@ -1921,11 +1907,11 @@ class Contact:
             color=(0.0, 0.0, 1.0),
             radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
-        # self.scene.particles(
-        #     self.vein.particles_A,
-        #     color=(1.0, 1.0, 0.0),
-        #     radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
-        # )
+        self.scene.particles(
+            self.vein.particles_A,
+            color=(1.0, 1.0, 0.0),
+            radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
+        )
         self.scene.particles(
             self.sensor_points,
             color=(0.0, 1.0, 0.0),
