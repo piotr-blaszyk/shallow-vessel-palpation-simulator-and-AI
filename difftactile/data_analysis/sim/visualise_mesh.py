@@ -7,7 +7,8 @@ from difftactile.main.constants import *
 
 class VisualiseMesh:
     def __init__(self):
-        self.load_gmsh_surface()
+        self.load_sensor_mesh_from_npz()
+        self.load_tetrahedra()
     
     def load_gmsh_surface(self):
         with open(SYSTEM_PARAMS.files.gmsh_mesh, 'rb') as f:
@@ -203,7 +204,7 @@ class VisualiseMesh:
 
 def main():
     visualise_mesh = VisualiseMesh()
-    visualise_mesh.visualise_triangles()
+    visualise_mesh.visualise_tetrahedra()
 
 
 if __name__ == '__main__':

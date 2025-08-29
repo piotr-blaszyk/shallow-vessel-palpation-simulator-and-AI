@@ -15,13 +15,13 @@
   "phantom_top_surface_z": 0.022,
   "vitactip_tip_position": [
     0.044,
-    0.024,
-    0.023
+    0.004,
+    0.02
   ],
   "vitactip_tip_pose": [
     0.044,
-    0.024,
-    0.023,
+    0.004,
+    0.02,
     0.0,
     1.0,
     0.0,

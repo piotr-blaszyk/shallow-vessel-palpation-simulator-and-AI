@@ -7,7 +7,8 @@ from difftactile.main.constants import *
 
 class PreMain:
     def __init__(self):
-        pass
+        self.sensor_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        self.press_depth_slide = SYSTEM_PARAMS.trajectory.press_depth_slide
 
     @staticmethod
     def arr_str(xs):
@@ -218,7 +219,8 @@ class PreMain:
         phantom_difftactile_position = phantom_closest_vertex + phantom_dimensions/2
         vitactip_tip_position = phantom_closest_vertex.copy()
         vitactip_tip_position[0] += phantom_dimensions[0]/2
-        vitactip_tip_position[2] += phantom_dimensions[2]+SYSTEM_PARAMS.geometry.gap
+        vitactip_tip_position[1] += -self.sensor_r
+        vitactip_tip_position[2] += phantom_dimensions[2]-self.press_depth_slide
 
         system_params_computed = {
             "phantom_closest_vertex": phantom_closest_vertex.tolist(),

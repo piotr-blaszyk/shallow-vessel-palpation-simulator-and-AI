@@ -844,7 +844,7 @@ class Contact:
         x, y, z = self.vitactip_tip_pose[:3]
         r = SYSTEM_PARAMS.geometry.sensor_xy_radius
         y_span = SYSTEM_PARAMS.geometry.phantom_y_length
-        y_final = y+y_span+2*r
+        y_final = y+r+y_span+r
         trajectory = [
             [x, y, z, *srq],
             [x, y_final, z, *srq],
@@ -2431,7 +2431,7 @@ class Contact:
             for k in range(0, 1):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(3, 4):
+                for i in range(2, 3):
                     self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     self.set_up_initial_positions_state_and_trajectory()
