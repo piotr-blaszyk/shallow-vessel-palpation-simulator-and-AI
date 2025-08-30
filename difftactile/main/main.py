@@ -88,8 +88,8 @@ class Contact:
         self.all_points = []
         self.collisions = [
             self.collision0,
-            self.collision1,
-            self.collision2,
+            # self.collision1,
+            # self.collision2,
         ]
     
     def process_collisions(self, f):
@@ -500,7 +500,7 @@ class Contact:
         self.mean_error_2 = ti.field(dtype=float, shape=(), needs_grad=False)
 
     def set_up_collision_detection(self):
-        self.phantom_contact0 = ti.field(
+        self.triangle_ix_contact_0 = ti.field(
             dtype=int,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
@@ -510,7 +510,7 @@ class Contact:
             ),
             needs_grad=False,
         )
-        self.phantom_contact1 = ti.field(
+        self.triangle_ix_contact_1 = ti.field(
             dtype=int,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
@@ -520,7 +520,7 @@ class Contact:
             ),
             needs_grad=False,
         )
-        self.vein_contact2 = ti.field(
+        self.triangle_ix_contact_2 = ti.field(
             dtype=int,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
@@ -1030,10 +1030,10 @@ class Contact:
         self.phantom.p2g(f)
         self.vitactip.update_internal_forces(f)
         self.phantom.check_grid_occupy(f)
-        self.check_collision0(f)
-        self.check_collision1(f)
-        self.check_collision2(f)
-        self.process_collisions(f)
+        # self.check_collision0(f)
+        # self.check_collision1(f)
+        # self.check_collision2(f)
+        # self.process_collisions(f)
         self.phantom.grid_op(f)
         self.phantom.g2p(f)
         self.vitactip.update_external_forces(f)
@@ -1120,9 +1120,9 @@ class Contact:
     def reset_state(self):
         self.vitactip.reset_state()
         self.phantom.reset_state()
-        self.phantom_contact0.fill(-1)
-        self.phantom_contact1.fill(-1)
-        self.vein_contact2.fill(-1)
+        self.triangle_ix_contact_0.fill(-1)
+        self.triangle_ix_contact_1.fill(-1)
+        self.triangle_ix_contact_2.fill(-1)
         self.coulomb_friction_coeff.fill(0)
         self.normal_stiffness.fill(0)
         self.tangential_stiffness.fill(0)
@@ -1264,7 +1264,7 @@ class Contact:
                 closest_triangle_ix = self.vitactip.find_closest(
                     grid_node_position, frame
                 )
-                self.phantom_contact0[frame, i, j, k] = closest_triangle_ix
+                self.triangle_ix_contact_0[frame, i, j, k] = closest_triangle_ix
     
     @ti.kernel
     def check_collision1(self, frame: ti.i32):
@@ -1284,14 +1284,14 @@ class Contact:
                 closest_triangle_ix = self.vein.find_closest(
                     grid_node_position
                 )
-                self.phantom_contact1[frame, i, j, k] = closest_triangle_ix
+                self.triangle_ix_contact_1[frame, i, j, k] = closest_triangle_ix
     
     @ti.kernel
     def check_collision2(self, frame: ti.i32):
         for i in range(self.vein.particles_A.shape[0]):
             point = self.vein.particles_A[i]
             closest_triangle_ix = self.vitactip.find_closest(point, frame)
-            self.vein_contact2[frame, i] = closest_triangle_ix
+            self.triangle_ix_contact_2[frame, i] = closest_triangle_ix
 
     @ti.kernel
     def collision0(self, frame: ti.i32):
@@ -1314,7 +1314,7 @@ class Contact:
                     self.phantom.grid_node_mass[frame, i, j, k]
                     + SYSTEM_PARAMS.phantom.mass_eps
                 )
-                closest_triangle_ix = self.phantom_contact0[frame, i, j, k]
+                closest_triangle_ix = self.triangle_ix_contact_0[frame, i, j, k]
                 if closest_triangle_ix != -1:
                     (
                         penetration_depth,
@@ -1362,7 +1362,7 @@ class Contact:
                     self.phantom.grid_node_mass[frame, i, j, k]
                     + SYSTEM_PARAMS.phantom.mass_eps
                 )
-                closest_triangle_ix = self.phantom_contact1[frame, i, j, k]
+                closest_triangle_ix = self.triangle_ix_contact_1[frame, i, j, k]
                 if closest_triangle_ix != -1:
                     (
                         penetration_depth,
@@ -1390,7 +1390,7 @@ class Contact:
         for i in range(self.vein.particles_A.shape[0]):
             point = self.vein.particles_A[i]
             velocity = ti.Vector([0.0, 0.0, 0.0])
-            closest_triangle_ix = self.vein_contact2[frame, i]
+            closest_triangle_ix = self.triangle_ix_contact_2[frame, i]
             if closest_triangle_ix != -1:
                 (
                     penetration_depth,
