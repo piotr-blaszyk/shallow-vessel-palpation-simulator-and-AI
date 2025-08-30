@@ -720,10 +720,11 @@ class Phantom:
 
     @ti.func
     def reset_state(self):
-        self.youngs_modulus.fill(0.0)
-        self.poissons_ratio.fill(0.0)
-        self.mu.fill(0.0)
-        self.lam.fill(0.0)
+        if False:
+            self.youngs_modulus.fill(0.0)
+            self.poissons_ratio.fill(0.0)
+            self.mu.fill(0.0)
+            self.lam.fill(0.0)
         self.grid_node_momentum_in.fill(0.0)
         self.grid_node_velocity_out.fill(0.0)
         self.grid_node_mass.fill(0.0)

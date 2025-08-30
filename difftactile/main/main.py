@@ -1123,10 +1123,11 @@ class Contact:
         self.triangle_ix_contact_0.fill(-1)
         self.triangle_ix_contact_1.fill(-1)
         self.triangle_ix_contact_2.fill(-1)
-        self.coulomb_friction_coeff.fill(0)
-        self.normal_stiffness.fill(0)
-        self.tangential_stiffness.fill(0)
-        self.normal_damping.fill(0)
+        if False:
+            self.coulomb_friction_coeff.fill(0)
+            self.normal_stiffness.fill(0)
+            self.tangential_stiffness.fill(0)
+            self.normal_damping.fill(0)
 
     @ti.func
     def dist(self, a, b) -> ti.f32:
@@ -2075,16 +2076,16 @@ class Contact:
         # self.set_optimisation_params_from_log()
         self.vitactip.set_control_vel(0)
         self.vitactip.set_vel(0)
-        self.vitactip.set_up_system_params_2()
-        self.phantom.set_stiffness()
+        # self.vitactip.set_up_system_params_2()
+        # self.phantom.set_stiffness()
         for ss in range(SYSTEM_PARAMS.contact.num_sub_frames - 1):
             self.update(ss)
 
     def backward_pass_common_part(self):
         for ss in range(SYSTEM_PARAMS.contact.num_sub_frames - 2, -1, -1):
             self.update_grad(ss)
-        self.phantom.set_stiffness.grad()
-        self.vitactip.set_up_system_params_2.grad()
+        # self.phantom.set_stiffness.grad()
+        # self.vitactip.set_up_system_params_2.grad()
         # self.set_optimisation_params_from_log.grad()
 
     def save_gradients_for_calibration(self):
