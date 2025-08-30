@@ -22,7 +22,12 @@ class Phantom:
         # self.grid_node_vein_sparse_to_dense_init()
         # self.initialise_grid_node_vein_mask()
         self.debug_vein()
+        self.foo()
     
+    def foo(self):
+        self.min_ixs = np.array(SYSTEM_PARAMS_COMPUTED.min_ixs, dtype=int)
+        self.max_ixs = np.array(SYSTEM_PARAMS_COMPUTED.max_ixs, dtype=int)
+
     def debug_vein(self):
         particles_A = self.particles_A.to_numpy()[0, :, :]
         path = SYSTEM_PARAMS.files.phantom_points_npz
@@ -341,7 +346,8 @@ class Phantom:
             self.num_grid_nodes[1],
             self.num_grid_nodes[2],
         ):
-            i = self.num_grid_nodes[0] // 2
+            # i = self.num_grid_nodes[0] // 2
+            i = 9
             ix = self.grid_flat_ixs[j, k]
             if self.grid_occupy[SYSTEM_PARAMS.contact.num_sub_frames-2, i, j, k] == 1:
                 self.grid_colours[ix] = ti.Vector([1.0, 0.0, 1.0])
@@ -354,7 +360,8 @@ class Phantom:
             self.num_grid_nodes[1],
             self.num_grid_nodes[2],
         ):
-            i = self.num_grid_nodes[0] // 2
+            # i = self.num_grid_nodes[0] // 2
+            i = 9
             ix = self.grid_flat_ixs[j, k]
             self.grid_positions[ix] = ti.Vector(
                 [
@@ -647,7 +654,12 @@ class Phantom:
             self.num_grid_nodes[1],
             self.num_grid_nodes[2],
         ):
-            if self.grid_node_mass[f, i, j, k] > SYSTEM_PARAMS.phantom.mass_eps:
+            if (
+                self.grid_node_mass[f, i, j, k] > SYSTEM_PARAMS.phantom.mass_eps and
+                i >= self.min_ixs[0] and i <= self.max_ixs[0] and
+                j >= self.min_ixs[1] and j <= self.max_ixs[1] and
+                k >= self.min_ixs[2] and k <= self.max_ixs[2]
+            ):
                 self.grid_occupy[f, i, j, k] = 1
 
     @ti.kernel

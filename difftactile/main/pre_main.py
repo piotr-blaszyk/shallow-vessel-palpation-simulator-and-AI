@@ -82,12 +82,18 @@ class PreMain:
     def get_num_mpm_grid_nodes(self):
         num_nodes = []
         layouts = []
+        min_ixs = []
+        max_ixs = []
         for i in range(self.p_dims.shape[0]):
-            n, layout = self.get_num_mpm_grid_nodes_single_dim(i)
+            n, layout, min_ix, max_ix = self.get_num_mpm_grid_nodes_single_dim(i)
             num_nodes.append(n)
             layouts.append(layout)
+            min_ixs.append(min_ix)
+            max_ixs.append(max_ix)
         self.num_nodes = np.array(num_nodes, dtype=int)
         self.layouts = layouts
+        self.min_ixs = np.array(min_ixs, dtype=int)
+        self.max_ixs = np.array(max_ixs, dtype=int)
 
     def get_num_mpm_grid_nodes_single_dim(self, i):
         l = self.p_dims[i]
@@ -105,7 +111,9 @@ class PreMain:
                 n_v0_single,
             ], dtype=int)
             n = arr.sum()+1
-            return n, arr
+            min_ix = n_v0_single+n_pad_single
+            max_ix = n_v0_single+n_pad_single+n_phantom
+            return n, arr, min_ix, max_ix
         else:
             arr = np.array([
                 n_v0_single,
@@ -114,7 +122,9 @@ class PreMain:
                 n_v0_single,
             ], dtype=int)
             n = arr.sum()+1
-            return n, arr
+            min_ix = n_v0_single
+            max_ix = n_v0_single+n_phantom
+            return n, arr, min_ix, max_ix
     
     def min_coords_single_dim(self, i):
         if i == 0 or i == 1:
@@ -256,6 +266,8 @@ class PreMain:
                 "n_grid_z": int(nz)
             },
             "min_coords": min_coords.tolist(),
+            "min_ixs": self.min_ixs.tolist(),
+            "max_ixs": self.max_ixs.tolist(),
         }
 
         if False:
