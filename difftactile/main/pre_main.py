@@ -118,9 +118,9 @@ class PreMain:
     
     def min_coords_single_dim(self, i):
         if i == 0 or i == 1:
-            return sum(self.layouts[i][:2])*self.d
+            return (sum(self.layouts[i][:2])+0.5)*self.d
         else:
-            return sum(self.layouts[i][:1])*self.d
+            return (sum(self.layouts[i][:1])+0.5)*self.d
 
     def get_min_coords(self):
         res = []
