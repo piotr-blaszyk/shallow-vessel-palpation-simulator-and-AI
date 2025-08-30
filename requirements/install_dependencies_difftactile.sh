@@ -11,5 +11,6 @@ uv pip install pyvista
 uv pip install meshio
 uv pip install snakeviz
 uv pip install vedo
+uv pip install bayesian-optimization
 
 echo "All dependencies installed successfully!" 

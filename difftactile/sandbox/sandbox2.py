@@ -1,29 +1,49 @@
-# Inputs per contact:
-# m_n: mass of MPM node
-# v_n: nodal velocity vector
-# tri: triangle with vertex masses m_s1,m_s2,m_s3 and velocities v_s1,v_s2,v_s3
-# contact_point: barycentric weights alpha = [a1,a2,a3]
-# n: contact normal (pointing from sensor into phantom)
-# e: restitution coefficient (0..1)
-# dt: timestep
+from bayes_opt import BayesianOptimization
+from bayes_opt import acquisition
 
-# compute contact-point velocity (point = sum(alpha_i * v_si))
-v_s_point = a1*v_s1 + a2*v_s2 + a3*v_s3
-v_r = dot(v_n, n) - dot(v_s_point, n)
-if v_r >= 0:
-    # separating or just touching, no normal impulse needed
-    continue
+acq = acquisition.UpperConfidenceBound(kappa=2.5)
 
-# denominator = 1/m_n + sum(alpha_i^2 / m_si)
-den = 1.0/m_n + (a1*a1)/m_s1 + (a2*a2)/m_s2 + (a3*a3)/m_s3
+def black_box_function(x, y):
+    """Function with unknown internals we wish to maximize.
 
-# impulse scalar along normal
-J = - (1.0 + e) * v_r / den
+    This is just serving as an example, for all intents and
+    purposes think of the internals of this function, i.e.: the process
+    which generates its output values, as unknown.
+    """
+    return -x ** 2 - (y - 1) ** 2 + 1
 
-# apply updates (velocity impulse form)
-v_n += (J / m_n) * n
-v_s1 -= (a1 * J / m_s1) * n
-v_s2 -= (a2 * J / m_s2) * n
-v_s3 -= (a3 * J / m_s3) * n
+# Bounded region of parameter space
+pbounds = {'x': (2, 4), 'y': (-3, 3)}
 
-# (If you store momenta directly, add/subtract J*n to momenta)
+# optimizer = BayesianOptimization(
+#     f=black_box_function,
+#     pbounds=pbounds,
+#     random_state=1,
+# )
+
+# optimizer.maximize(
+#     init_points=20,
+#     n_iter=20,
+# )
+
+# print(optimizer.max)
+# print()
+
+# for i, res in enumerate(optimizer.res):
+#     print("Iteration {}: \n\t{}".format(i, res))
+
+optimizer = BayesianOptimization(
+    f=None,
+    acquisition_function=acq,
+    pbounds={'x': (-2, 2), 'y': (-3, 3)},
+    verbose=2,
+    random_state=1,
+)
+
+for _ in range(5):
+    next_point = optimizer.suggest()
+    target = black_box_function(**next_point)
+    optimizer.register(params=next_point, target=target)
+
+    print(target, next_point)
+print(optimizer.max)
