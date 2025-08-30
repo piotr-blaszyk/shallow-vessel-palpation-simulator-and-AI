@@ -679,20 +679,6 @@ class ViTacTip:
             ])
             self.vertex_control_velocities[i] = (tvpu_ih - current_vertex_positions_undeformed) / (self.dt[None] * (SYSTEM_PARAMS.contact.num_sub_frames - 1))
 
-    @ti.kernel
-    def get_external_force(self, f: ti.i32):
-        for k in range(self.num_contact_surface_triangles):
-            a, b, c = self.triangles[k]
-            self.total_surface_force[f] += (
-                1 / 3 * self.contact_forces_on_vertices[f, a] * self.dx
-            )
-            self.total_surface_force[f] += (
-                1 / 3 * self.contact_forces_on_vertices[f, b] * self.dx
-            )
-            self.total_surface_force[f] += (
-                1 / 3 * self.contact_forces_on_vertices[f, c] * self.dx
-            )
-
     def compute_current_orientation(self):
         rot_mat = self.R_BA.to_numpy()
         rotation_object = R.from_matrix(rot_mat)

@@ -494,17 +494,6 @@ class Phantom:
                 [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
             )
 
-    @ti.kernel
-    def get_external_force(self, f: ti.i32):
-        for i, j, k in ti.ndrange(
-            self.num_grid_nodes[0],
-            self.num_grid_nodes[1],
-            self.num_grid_nodes[2],
-        ):
-            self.total_surface_external_force[f] += (
-                self.grid_node_external_impulse[f, i, j, k] / self.dt[None]
-            )
-
     @ti.func
     def update_contact_impulse(self, external_force, f, i, j, k):
         self.grid_node_external_impulse[f, i, j, k] += (
