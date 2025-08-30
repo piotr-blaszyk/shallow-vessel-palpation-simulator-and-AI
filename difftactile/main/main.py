@@ -87,9 +87,9 @@ class Contact:
         )
         self.all_points = []
         self.collisions = [
-            self.collision0,
+            # self.collision0,
             # self.collision1,
-            # self.collision2,
+            self.collision2,
         ]
     
     def process_collisions(self, f):
@@ -1032,8 +1032,8 @@ class Contact:
         self.phantom.check_grid_occupy(f)
         # self.check_collision0(f)
         # self.check_collision1(f)
-        # self.check_collision2(f)
-        # self.process_collisions(f)
+        self.check_collision2(f)
+        self.process_collisions(f)
         self.phantom.grid_op(f)
         self.phantom.g2p(f)
         self.vitactip.update_external_forces(f)
