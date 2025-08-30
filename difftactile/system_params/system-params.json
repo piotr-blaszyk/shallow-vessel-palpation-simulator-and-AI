@@ -54,12 +54,12 @@
         "dt": 1.270e-06,
         "dt_override": 1.000e-05,
         "normal_stiffness": [
-            500,
             50,
-            50000.0
+            0,
+            5000
         ],
         "tangential_stiffness": [
-            0,
+            10,
             0,
             0
         ],
@@ -69,7 +69,7 @@
             0
         ],
         "coulomb_friction_coeff": [
-            0,
+            1,
             0,
             0
         ],
@@ -99,7 +99,7 @@
         "press_depth_offset_0": 5.000e-03,
         "press_depth_offset_1": 1.000e-02,
         "slide_distance_long": 5.000e-01,
-        "press_depth_slide": 1.000e-02
+        "press_depth_slide": 1.500e-02
     },
     "gmsh_mm": {
         "vitactip": {

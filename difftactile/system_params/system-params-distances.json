@@ -25,7 +25,7 @@
         "slide_distance_long": 0.100,
         "press_depth_offset_0": 0.001,
         "press_depth_offset_1": 0.002,
-        "press_depth_slide": 0.002
+        "press_depth_slide": 0.003
     },
     "geometry": {
         "gap": 0.001,

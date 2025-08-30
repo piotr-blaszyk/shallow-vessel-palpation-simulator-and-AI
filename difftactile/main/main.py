@@ -86,15 +86,27 @@ class Contact:
             needs_grad=False,
         )
         self.all_points = []
-        self.collisions = [
-            # self.collision0,
-            # self.collision1,
+        self.collision_ixs = [0]
+        self.collision_resolvers = [
+            self.collision0,
+            self.collision1,
             self.collision2,
         ]
+        self.collision_detectors = [
+            self.check_collision0,
+            self.check_collision1,
+            self.check_collision2,
+        ]
     
-    def process_collisions(self, f):
-        for idx in NP_RNG.permutation(len(self.collisions)):
-            self.collisions[idx](f)
+    def detect_collisions(self, f):
+        for i in range(len(self.collision_ixs)):
+            ix = self.collision_ixs[i]
+            self.collision_detectors[ix](f)
+    
+    def resolve_collisions(self, f):
+        for i in NP_RNG.permutation(len(self.collision_ixs)):
+            ix = self.collision_ixs[i]
+            self.collision_resolvers[ix](f)
 
     def vein_sparse_to_dense_init(self):
         self.num_veins = SYSTEM_PARAMS.meta.max_num_veins
@@ -1030,10 +1042,8 @@ class Contact:
         self.phantom.p2g(f)
         self.vitactip.update_internal_forces(f)
         self.phantom.check_grid_occupy(f)
-        # self.check_collision0(f)
-        # self.check_collision1(f)
-        self.check_collision2(f)
-        self.process_collisions(f)
+        self.detect_collisions(f)
+        self.resolve_collisions(f)
         self.phantom.grid_op(f)
         self.phantom.g2p(f)
         self.vitactip.update_external_forces(f)
@@ -2050,7 +2060,7 @@ class Contact:
         self.scene.particles(
             self.phantom.grid_positions,
             per_vertex_color=self.phantom.grid_colours,
-            radius=SYSTEM_PARAMS.visualisation.particle_size_normal*10,
+            radius=SYSTEM_PARAMS.visualisation.particle_size_normal*5,
         )
         self.scene.particles(
             self.vein.particles_A,
