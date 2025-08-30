@@ -80,9 +80,9 @@ class MeshGenerator:
             x, y, z = node
             xy = np.array([x, y])
             if (
-                np.linalg.norm(xy) > self.r - self.dist_eps or
-                z < self.dist_eps or
-                z > self.h - self.dist_eps
+                np.linalg.norm(xy) > self.r - self.dist_eps
+                # or z < self.dist_eps
+                # or z > self.h - self.dist_eps
             ):
                 surface_node_tags.append(tag)
                 surface_coords.append(node)

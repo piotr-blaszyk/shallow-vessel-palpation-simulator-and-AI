@@ -89,6 +89,13 @@ class Vein:
         centre_B_h = np.append(centre_B, 1.0)
         centre_A_h = self.T_BA_np @ centre_B_h
         self.centre_A = centre_A_h[:3]
+        self.centre_A_yz_ti = ti.Vector.field(
+            2,
+            shape=(),
+            dtype=float,
+            needs_grad=False,
+        )
+        self.centre_A_yz_ti[None] = ti.Vector(self.centre_A[1:])
     
     def get_vein_mask(self, points):
         yz_distances = np.sqrt(
@@ -98,3 +105,76 @@ class Vein:
         radius_mask = yz_distances <= self.r
         length_mask = (points[:, 0] >= self.centre_A[0]) & (points[:, 0] <= self.centre_A[0] + self.h)
         return radius_mask
+    
+    @ti.func
+    def find_closest(self, grid_p):
+        cur_min_offset = SYSTEM_PARAMS.vitactip.collision_search_distance
+        cur_min_idx = -1
+        for k in range(self.triangles.shape[0]):
+            a, b, c = self.triangles[k]
+            p_1 = self.particles_A[a]
+            p_2 = self.particles_A[b]
+            p_3 = self.particles_A[c]
+            p_c = 1 / 3 * (p_1 + p_2 + p_3)
+            offset_p = (p_c - grid_p).norm(SYSTEM_PARAMS.contact.norm_eps)
+            if offset_p < cur_min_offset:
+                cur_min_offset = offset_p
+                cur_min_idx = k
+        return cur_min_idx
+    
+    @ti.func
+    def find_sdf(
+        self,
+        point_position,
+        point_velocity,
+        triangle_index,
+    ):
+        a, b, c = self.triangles[triangle_index]
+        p1 = self.particles_A[a]
+        p2 = self.particles_A[b]
+        p3 = self.particles_A[c]
+        pc = 1/3*(p1+p2+p3)
+        triangle_normal = ti.math.cross(
+            p2 - p1, p3 - p1
+        )
+        triangle_normal = triangle_normal.normalized(SYSTEM_PARAMS.contact.norm_eps)
+        x, y, z = pc
+        yc, zc = self.centre_A_yz_ti[None]
+        cylinder_outward_normal = ti.Vector([
+            0,
+            y-yc,
+            z-zc,
+        ])
+        normal_direction = ti.math.sign(
+            triangle_normal.dot(cylinder_outward_normal)
+        )
+        triangle_normal = normal_direction * triangle_normal
+        point_to_vertex1 = point_position - p1
+        signed_distance = point_to_vertex1.dot(triangle_normal)
+        point_projected = point_position - signed_distance * triangle_normal
+        surface_normal = -1 * triangle_normal
+        edge1 = p3 - p1
+        edge2 = p2 - p1
+        point_projected_rel = point_projected - p1
+        dot_edge1_edge1 = edge1.dot(edge1)
+        dot_edge1_edge2 = edge1.dot(edge2)
+        dot_edge1_point = edge1.dot(point_projected_rel)
+        dot_edge2_edge2 = edge2.dot(edge2)
+        dot_edge2_point = edge2.dot(point_projected_rel)
+        inv_denominator = 1 / (
+            dot_edge1_edge1 * dot_edge2_edge2 - dot_edge1_edge2 * dot_edge1_edge2
+        )
+        barycentric_u = (
+            dot_edge2_edge2 * dot_edge1_point - dot_edge1_edge2 * dot_edge2_point
+        ) * inv_denominator
+        barycentric_v = (
+            dot_edge1_edge1 * dot_edge2_point - dot_edge1_edge2 * dot_edge1_point
+        ) * inv_denominator
+        relative_velocity = point_velocity
+        is_contact = (
+            signed_distance < 0
+            and barycentric_u >= 0
+            and barycentric_v >= 0.0
+            and (barycentric_u + barycentric_v <= 1)
+        )
+        return signed_distance, surface_normal, relative_velocity, is_contact

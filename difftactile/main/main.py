@@ -30,15 +30,12 @@ RUN_ON_LAB_MACHINE = True
 class Contact:
     def __init__(self):
         self.vein = Vein()
-        self.phantom = Phantom(
-            vein=self.vein,
-        )
-        # sys.exit(0)
+        self.phantom = Phantom(vein=self.vein)
+        self.vitactip = ViTacTip()
         self.compute_sensor_bounds()
         self.fisheye_model = FisheyeModelNoTaichi()
         self.set_up_system_params()
         self.load_system_identification_data()
-        self.vitactip = ViTacTip()
         self.set_up_initial_positions_and_trajectory_first_init_only()
         self.set_up_trajectories_and_phantom_states()
         self.set_up_initial_positions_state_and_trajectory()
@@ -89,6 +86,15 @@ class Contact:
             needs_grad=False,
         )
         self.all_points = []
+        self.collisions = [
+            self.collision0,
+            self.collision1,
+            self.collision2,
+        ]
+    
+    def process_collisions(self, f):
+        for idx in NP_RNG.permutation(len(self.collisions)):
+            self.collisions[idx](f)
 
     def vein_sparse_to_dense_init(self):
         self.num_veins = SYSTEM_PARAMS.meta.max_num_veins
@@ -494,9 +500,7 @@ class Contact:
         self.mean_error_2 = ti.field(dtype=float, shape=(), needs_grad=False)
 
     def set_up_collision_detection(self):
-        self.num_sensor = 1
-        self.contact_idx = ti.Vector.field(
-            self.num_sensor,
+        self.phantom_contact0 = ti.field(
             dtype=int,
             shape=(
                 SYSTEM_PARAMS.contact.num_sub_frames,
@@ -506,19 +510,38 @@ class Contact:
             ),
             needs_grad=False,
         )
+        self.phantom_contact1 = ti.field(
+            dtype=int,
+            shape=(
+                SYSTEM_PARAMS.contact.num_sub_frames,
+                SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+                SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+                SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
+            ),
+            needs_grad=False,
+        )
+        self.vein_contact2 = ti.field(
+            dtype=int,
+            shape=(
+                SYSTEM_PARAMS.contact.num_sub_frames,
+                self.vein.particles_A.shape[0],
+            ),
+            needs_grad=False,
+        )
 
     def set_up_system_params(self):
+        self.num_contact_pairs = SYSTEM_PARAMS.meta.num_contact_pairs
         self.trajectory_ix = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
         self.dt[None] = SYSTEM_PARAMS.contact.dt_override
-        self.normal_stiffness = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.normal_damping = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.tangential_stiffness = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.coulomb_friction_coeff = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.normal_stiffness[None] = SYSTEM_PARAMS.contact.normal_stiffness
-        self.normal_damping[None] = SYSTEM_PARAMS.contact.normal_damping
-        self.tangential_stiffness[None] = SYSTEM_PARAMS.contact.tangential_stiffness
-        self.coulomb_friction_coeff[None] = SYSTEM_PARAMS.contact.coulomb_friction_coeff
+        self.normal_stiffness = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.normal_damping = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.tangential_stiffness = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.coulomb_friction_coeff = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.normal_stiffness.from_numpy(np.array(SYSTEM_PARAMS.contact.normal_stiffness))
+        self.normal_damping.from_numpy(np.array(SYSTEM_PARAMS.contact.normal_damping))
+        self.tangential_stiffness.from_numpy(np.array(SYSTEM_PARAMS.contact.tangential_stiffness))
+        self.coulomb_friction_coeff.from_numpy(np.array(SYSTEM_PARAMS.contact.coulomb_friction_coeff))
         self.gradients_printed = False
         self.courant_number = SYSTEM_PARAMS.meta.target_courant_number
         self.retry = False
@@ -1007,8 +1030,10 @@ class Contact:
         self.phantom.p2g(f)
         self.vitactip.update_internal_forces(f)
         self.phantom.check_grid_occupy(f)
-        self.check_collision(f)
-        self.collision(f)
+        self.check_collision0(f)
+        self.check_collision1(f)
+        self.check_collision2(f)
+        self.process_collisions(f)
         self.phantom.grid_op(f)
         self.phantom.g2p(f)
         self.vitactip.update_external_forces(f)
@@ -1018,7 +1043,7 @@ class Contact:
         self.phantom.g2p.grad(f)
         self.phantom.grid_op.grad(f)
         self.clamp_grid(f)
-        self.collision.grad(f)
+        self.collision0.grad(f)
         self.vitactip.update_internal_forces.grad(f)
         self.phantom.p2g.grad(f)
         # self.phantom.svd_of_trial_deformation_gradient_grad(f)
@@ -1095,7 +1120,9 @@ class Contact:
     def reset_state(self):
         self.vitactip.reset_state()
         self.phantom.reset_state()
-        self.contact_idx.fill(-1)
+        self.phantom_contact0.fill(-1)
+        self.phantom_contact1.fill(-1)
+        self.vein_contact2.fill(-1)
         self.coulomb_friction_coeff.fill(0)
         self.normal_stiffness.fill(0)
         self.tangential_stiffness.fill(0)
@@ -1175,8 +1202,13 @@ class Contact:
 
     @ti.func
     def calculate_contact_force(
-        self, signed_distance, surface_normal, relative_velocity
+        self, 
+        signed_distance, 
+        surface_normal, 
+        relative_velocity, 
+        contact_pair_ix,
     ):
+        i = contact_pair_ix
         tangential_force = ti.Vector([0.0, 0.0, 0.0])
         tangential_velocity = ti.Vector([0.0, 0.0, 0.0])
         contact_relative_velocity = relative_velocity
@@ -1185,8 +1217,8 @@ class Contact:
         )
         normal_force = (
             -(
-                self.normal_stiffness[None]
-                + self.normal_damping[None] * normal_velocity_magnitude
+                self.normal_stiffness[i]
+                + self.normal_damping[i] * normal_velocity_magnitude
             )
             * signed_distance
             * surface_normal
@@ -1206,8 +1238,8 @@ class Contact:
                 1.0
                 * (tangential_velocity / tangential_velocity_magnitude)
                 * ti.min(
-                    self.tangential_stiffness[None] * tangential_velocity_magnitude,
-                    self.coulomb_friction_coeff[None]
+                    self.tangential_stiffness[i] * tangential_velocity_magnitude,
+                    self.coulomb_friction_coeff[i]
                     * normal_force.norm(SYSTEM_PARAMS.contact.norm_eps),
                 )
             )
@@ -1215,7 +1247,7 @@ class Contact:
         return total_contact_force, normal_force, tangential_force
 
     @ti.kernel
-    def check_collision(self, frame: ti.i32):
+    def check_collision0(self, frame: ti.i32):
         for i, j, k in ti.ndrange(
             SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
             SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
@@ -1229,13 +1261,40 @@ class Contact:
                         (k + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
                     ]
                 )
-                closest_sensor_triangle_idx = self.vitactip.find_closest(
+                closest_triangle_ix = self.vitactip.find_closest(
                     grid_node_position, frame
                 )
-                self.contact_idx[frame, i, j, k] = closest_sensor_triangle_idx
+                self.phantom_contact0[frame, i, j, k] = closest_triangle_ix
+    
+    @ti.kernel
+    def check_collision1(self, frame: ti.i32):
+        for i, j, k in ti.ndrange(
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
+        ):
+            if self.phantom.grid_occupy[frame, i, j, k] == 1:
+                grid_node_position = ti.Vector(
+                    [
+                        (i + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (j + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (k + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                    ]
+                )
+                closest_triangle_ix = self.vein.find_closest(
+                    grid_node_position
+                )
+                self.phantom_contact1[frame, i, j, k] = closest_triangle_ix
+    
+    @ti.kernel
+    def check_collision2(self, frame: ti.i32):
+        for i in range(self.vein.particles_A.shape[0]):
+            point = self.vein.particles_A[i]
+            closest_triangle_ix = self.vitactip.find_closest(point, frame)
+            self.vein_contact2[frame, i] = closest_triangle_ix
 
     @ti.kernel
-    def collision(self, frame: ti.i32):
+    def collision0(self, frame: ti.i32):
         for i, j, k in ti.ndrange(
             SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
             SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
@@ -1255,8 +1314,8 @@ class Contact:
                     self.phantom.grid_node_mass[frame, i, j, k]
                     + SYSTEM_PARAMS.phantom.mass_eps
                 )
-                closest_sensor_triangle_idx = self.contact_idx[frame, i, j, k]
-                if closest_sensor_triangle_idx[0] != -1:
+                closest_triangle_ix = self.phantom_contact0[frame, i, j, k]
+                if closest_triangle_ix != -1:
                     (
                         penetration_depth,
                         surface_normal,
@@ -1265,21 +1324,97 @@ class Contact:
                     ) = self.vitactip.find_sdf(
                         grid_node_position,
                         grid_node_velocity,
-                        closest_sensor_triangle_idx,
+                        closest_triangle_ix,
                         frame,
                     )
                     if is_in_contact:
                         total_contact_force, _, _ = self.calculate_contact_force(
                             penetration_depth,
-                            -1 * surface_normal,
-                            -1 * relative_velocity,
+                            -1*surface_normal,
+                            -1*relative_velocity,
+                            contact_pair_ix=0,
                         )
                         self.phantom.update_contact_impulse(
                             total_contact_force, frame, i, j, k
                         )
                         self.vitactip.update_contact_force(
-                            closest_sensor_triangle_idx, -1 * total_contact_force, frame
+                            closest_triangle_ix, -1*total_contact_force, frame
                         )
+    
+    @ti.kernel
+    def collision1(self, frame: ti.i32):
+        for i, j, k in ti.ndrange(
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
+            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
+        ):
+            if self.phantom.grid_occupy[frame, i, j, k] == 1:
+                grid_node_position = ti.Vector(
+                    [
+                        (i + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (j + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                        (k + 0.5) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size,
+                    ]
+                )
+                grid_node_velocity = self.phantom.grid_node_momentum_in[
+                    frame, i, j, k
+                ] / (
+                    self.phantom.grid_node_mass[frame, i, j, k]
+                    + SYSTEM_PARAMS.phantom.mass_eps
+                )
+                closest_triangle_ix = self.phantom_contact1[frame, i, j, k]
+                if closest_triangle_ix != -1:
+                    (
+                        penetration_depth,
+                        surface_normal,
+                        relative_velocity,
+                        is_in_contact,
+                    ) = self.vein.find_sdf(
+                        grid_node_position,
+                        grid_node_velocity,
+                        closest_triangle_ix,
+                    )
+                    if is_in_contact:
+                        total_contact_force, _, _ = self.calculate_contact_force(
+                            penetration_depth,
+                            -1*surface_normal,
+                            -1*relative_velocity,
+                            contact_pair_ix=1,
+                        )
+                        self.phantom.update_contact_impulse(
+                            total_contact_force, frame, i, j, k
+                        )
+    
+    @ti.kernel
+    def collision2(self, frame: ti.i32):
+        for i in range(self.vein.particles_A.shape[0]):
+            point = self.vein.particles_A[i]
+            velocity = ti.Vector([0.0, 0.0, 0.0])
+            closest_triangle_ix = self.vein_contact2[frame, i]
+            if closest_triangle_ix != -1:
+                (
+                    penetration_depth,
+                    surface_normal,
+                    relative_velocity,
+                    is_in_contact,
+                ) = self.vitactip.find_sdf(
+                    point,
+                    velocity,
+                    closest_triangle_ix,
+                    frame,
+                )
+                if is_in_contact:
+                    total_contact_force, _, _ = self.calculate_contact_force(
+                        penetration_depth, 
+                        -1*surface_normal, 
+                        -1*relative_velocity,
+                        contact_pair_ix=2,
+                    )
+                    self.vitactip.update_contact_force(
+                        closest_triangle_ix, 
+                        -1*total_contact_force, 
+                        frame,
+                    )
 
     def copy_frame(self):
         self.vitactip.copy_frame(SYSTEM_PARAMS.contact.num_sub_frames - 1, 0)
@@ -1937,7 +2072,7 @@ class Contact:
 
     def forward_pass_common_part(self, ts):
         self.reset_state()
-        self.set_optimisation_params_from_log()
+        # self.set_optimisation_params_from_log()
         self.vitactip.set_control_vel(0)
         self.vitactip.set_vel(0)
         self.vitactip.set_up_system_params_2()
@@ -1950,7 +2085,7 @@ class Contact:
             self.update_grad(ss)
         self.phantom.set_stiffness.grad()
         self.vitactip.set_up_system_params_2.grad()
-        self.set_optimisation_params_from_log.grad()
+        # self.set_optimisation_params_from_log.grad()
 
     def save_gradients_for_calibration(self):
         if not self.gradients_printed:
@@ -2376,8 +2511,8 @@ class Contact:
                         if self.retry:
                             break
                         self.reset_state()
-                        self.set_optimisation_params_from_log()
-                        self.print_params_short()
+                        # self.set_optimisation_params_from_log()
+                        # self.print_params_short()
                         self.set_dt(verbose=True)
                         self.clear_grad()
                         self.reset_batch_loss()
@@ -2419,7 +2554,7 @@ class Contact:
             plt.title('batch loss over time')
             plt.savefig(SYSTEM_PARAMS.files.losses.format(names[i]))
             plt.show()
-        self.save_final_params()
+        # self.save_final_params()
         print("all done")
 
     def collect_training_data(self):
@@ -2431,7 +2566,7 @@ class Contact:
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
                 for i in range(2, 3):
-                    self.randomise_contact_params()
+                    # self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     self.set_up_initial_positions_state_and_trajectory()
                     # self.vein_sparse_to_dense()
@@ -2442,7 +2577,7 @@ class Contact:
                     self.compute_mapping_between_experimental_and_sim_markers()
                     self.set_dt(verbose=True)
                     self.fp()
-                    self.print_contact_params()
+                    # self.print_contact_params()
                     for ts in range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory):
                         self.pid_controller_1()
                         self.pid_controller_2(ts)
@@ -2509,7 +2644,7 @@ def main():
     contact_model.reset_pid_controller()
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
-    contact_model.set_up_torch_params()
+    # contact_model.set_up_torch_params()
     contact_model.collect_training_data()
     if False:
         profiler = cProfile.Profile()

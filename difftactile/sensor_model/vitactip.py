@@ -752,7 +752,6 @@ class ViTacTip:
         point_velocity,
         triangle_index,
         frame,
-        collision_offset=0.0,
     ):
         vertex1_idx, vertex2_idx, vertex3_idx = self.triangles[triangle_index]
         vertex1_pos = self.vertices_deformed_A[frame, vertex1_idx]
@@ -787,7 +786,6 @@ class ViTacTip:
         barycentric_v = (
             dot_edge1_edge1 * dot_edge2_point - dot_edge1_edge2 * dot_edge1_point
         ) * inv_denominator
-        signed_distance -= collision_offset
         relative_velocity = point_velocity - 1 / 3 * (
             self.vertex_velocities[frame, vertex1_idx]
             + self.vertex_velocities[frame, vertex2_idx]

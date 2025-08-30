@@ -53,10 +53,26 @@
     "contact": {
         "dt": 1.270e-06,
         "dt_override": 1.000e-05,
-        "normal_stiffness": 5.000e+02,
-        "tangential_stiffness": 1.000e-06,
-        "normal_damping": 1.000e-06,
-        "coulomb_friction_coeff": 1.000e-06,
+        "normal_stiffness": [
+            5.000e+02,
+            5.000e+02,
+            5.000e+02
+        ],
+        "tangential_stiffness": [
+            1.000e-06,
+            1.000e-06,
+            1.000e-06
+        ],
+        "normal_damping": [
+            1.000e-06,
+            1.000e-06,
+            1.000e-06
+        ],
+        "coulomb_friction_coeff": [
+            1.000e-06,
+            1.000e-06,
+            1.000e-06
+        ],
         "num_sub_frames": 125,
         "num_opt_steps": 2,
         "num_training_trajectories": 1,
@@ -164,7 +180,8 @@
         "polyline_num": 25,
         "cnn_gnn": 1,
         "vein_px_thickness": 30,
-        "enable_grad": 0
+        "enable_grad": 0,
+        "num_contact_pairs": 3
     },
     "gnn": {
         "entity_type_embedding_dim": 8,
