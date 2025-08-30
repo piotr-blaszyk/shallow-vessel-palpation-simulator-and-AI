@@ -66,11 +66,12 @@ class Phantom:
         self.pose = np.array(SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose, dtype=float)
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
         self.dt[None] = SYSTEM_PARAMS.contact.dt_override
+        self.grid_node_spacing = SYSTEM_PARAMS.phantom.mpm_grid_cube_size
         self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.rayleigh_damping_beta = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.rayleigh_damping_alpha[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_alpha
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_beta
-        self.inverse_mpm_grid_cube_size = 1 / SYSTEM_PARAMS.phantom.mpm_grid_cube_size
+        self.inverse_grid_node_spacing = 1 / self.grid_node_spacing
         self.youngs_modulus = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
         self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
         self.lam = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
@@ -94,10 +95,9 @@ class Phantom:
         self.vy = SYSTEM_PARAMS.geometry.grid_vein.vy
         self.vz = SYSTEM_PARAMS.geometry.grid_vein.vz
         self.r0 = SYSTEM_PARAMS.geometry.grid_vein.r0
-        self.d = SYSTEM_PARAMS.phantom.mpm_grid_cube_size
-        r1 = 1.5*self.d
+        r1 = 1.5*self.grid_node_spacing
         r = self.r0+r1
-        self.r_interm_outer = r+1.5*self.d
+        self.r_interm_outer = r+1.5*self.grid_node_spacing
         self.min_coords = np.array(SYSTEM_PARAMS_COMPUTED.min_coords, dtype=float)
 
     def load_obj(self):
@@ -292,11 +292,77 @@ class Phantom:
             ),
             needs_grad=False,
         )
+        self.grid_positions = ti.Vector.field(
+            3,
+            dtype=float,
+            shape=((
+                self.num_grid_nodes[1]*
+                self.num_grid_nodes[2]
+            ),),
+            needs_grad=False,
+        )
+        self.grid_colours = ti.Vector.field(
+            3,
+            dtype=float,
+            shape=((
+                self.num_grid_nodes[1]*
+                self.num_grid_nodes[2]
+            ),),
+            needs_grad=False,
+        )
+        grid_flat_ixs = self.create_flat_indices_array(self.num_grid_nodes[1:])
+        self.grid_flat_ixs = ti.field(
+            dtype=int,
+            shape=(
+                self.num_grid_nodes[1],
+                self.num_grid_nodes[2],
+            ),
+            needs_grad=False,
+        )
+        self.grid_flat_ixs.from_numpy(grid_flat_ixs)
+        self.compute_grid_positions()
         self.total_surface_external_force = ti.Vector.field(
             3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=False
         )
         self.keypoint_idx = ti.field(dtype=int, shape=(), needs_grad=False)
         self.keypoint_idx[None] = -1
+
+    def create_flat_indices_array(self, shape):
+        shape = tuple(shape.tolist())
+        i, j = np.meshgrid(np.arange(shape[0]), 
+                        np.arange(shape[1]),
+                        indexing='ij')
+        flat_ixs = np.ravel_multi_index((i, j), shape)
+        return flat_ixs
+    
+    @ti.kernel
+    def compute_grid_colours(self):
+        for j, k in ti.ndrange(
+            self.num_grid_nodes[1],
+            self.num_grid_nodes[2],
+        ):
+            i = self.num_grid_nodes[0] // 2
+            ix = self.grid_flat_ixs[j, k]
+            if self.grid_occupy[SYSTEM_PARAMS.contact.num_sub_frames-2, i, j, k] == 1:
+                self.grid_colours[ix] = ti.Vector([1.0, 0.0, 1.0])
+            else:
+                self.grid_colours[ix] = ti.Vector([0.0, 1.0, 1.0])
+    
+    @ti.kernel
+    def compute_grid_positions(self):
+        for j, k in ti.ndrange(
+            self.num_grid_nodes[1],
+            self.num_grid_nodes[2],
+        ):
+            i = self.num_grid_nodes[0] // 2
+            ix = self.grid_flat_ixs[j, k]
+            self.grid_positions[ix] = ti.Vector(
+                [
+                    (i + 0.5) * self.grid_node_spacing,
+                    (j + 0.5) * self.grid_node_spacing,
+                    (k + 0.5) * self.grid_node_spacing,
+                ]
+            )
 
     def set_up_domain_randomisation(self):
         self.group_cardinality = ti.field(dtype=int, shape=(2,), needs_grad=False)
@@ -527,12 +593,12 @@ class Phantom:
             bulk_modulus = self.lam[self.titles[particle_id]]
             grid_base_index = (
                 self.particles_A[frame, particle_id]
-                * self.inverse_mpm_grid_cube_size
+                * self.inverse_grid_node_spacing
                 - 0.5
             ).cast(int)
             particle_grid_diff = self.particles_A[
                 frame, particle_id
-            ] * self.inverse_mpm_grid_cube_size - grid_base_index.cast(float)
+            ] * self.inverse_grid_node_spacing - grid_base_index.cast(float)
             weight_functions = [
                 0.5 * (1.5 - particle_grid_diff) ** 2,
                 0.75 - (particle_grid_diff - 1) ** 2,
@@ -553,7 +619,7 @@ class Phantom:
             force_term = cauchy_stress * self.initial_particle_volume
             impulse_term = force_term * -self.dt[None]
             impulse_term_scaled_quadratic_B_spline = (
-                4 * self.inverse_mpm_grid_cube_size**2 * impulse_term
+                4 * self.inverse_grid_node_spacing**2 * impulse_term
             )
             momentum_contribution = (
                 impulse_term_scaled_quadratic_B_spline
@@ -564,7 +630,7 @@ class Phantom:
                 grid_offset = ti.Vector([i, j, k])
                 dist_to_grid = (
                     grid_offset.cast(float) - particle_grid_diff
-                ) * SYSTEM_PARAMS.phantom.mpm_grid_cube_size
+                ) * self.grid_node_spacing
                 weight = (
                     weight_functions[i][0]
                     * weight_functions[j][1]
@@ -668,12 +734,12 @@ class Phantom:
         for particle_id in range(self.num_particles):
             grid_base_index = (
                 self.particles_A[frame, particle_id]
-                * self.inverse_mpm_grid_cube_size
+                * self.inverse_grid_node_spacing
                 - 0.5
             ).cast(int)
             particle_grid_diff = self.particles_A[
                 frame, particle_id
-            ] * self.inverse_mpm_grid_cube_size - grid_base_index.cast(float)
+            ] * self.inverse_grid_node_spacing - grid_base_index.cast(float)
             weight_functions = [
                 0.5 * (1.5 - particle_grid_diff) ** 2,
                 0.75 - (particle_grid_diff - 1.0) ** 2,
@@ -696,7 +762,7 @@ class Phantom:
                 updated_velocity += weight * grid_node_velocity
                 updated_affine += (
                     4
-                    * self.inverse_mpm_grid_cube_size
+                    * self.inverse_grid_node_spacing
                     * weight
                     * grid_node_velocity.outer_product(grid_relative_offset)
                 )

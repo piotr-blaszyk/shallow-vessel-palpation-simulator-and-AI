@@ -56,7 +56,7 @@
         "normal_stiffness": [
             500,
             50,
-            5e4
+            50000.0
         ],
         "tangential_stiffness": [
             0,

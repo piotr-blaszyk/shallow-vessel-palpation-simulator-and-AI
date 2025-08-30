@@ -2046,6 +2046,12 @@ class Contact:
             color=(0.0, 0.0, 1.0),
             radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
+        self.phantom.compute_grid_colours()
+        self.scene.particles(
+            self.phantom.grid_positions,
+            per_vertex_color=self.phantom.grid_colours,
+            radius=SYSTEM_PARAMS.visualisation.particle_size_normal*10,
+        )
         self.scene.particles(
             self.vein.particles_A,
             color=(1.0, 1.0, 0.0),
