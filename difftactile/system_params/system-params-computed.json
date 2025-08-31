@@ -2,7 +2,7 @@
   "vein_pose": [
     0.095,
     0.195,
-    0.08,
+    0.06,
     0.0,
     0.7071067811865475,
     0.0,
@@ -16,32 +16,32 @@
   "phantom_centroid_pose": [
     0.195,
     0.195,
-    0.07,
+    0.06,
     0,
     0,
     0
   ],
-  "phantom_top_surface_z": 0.095,
+  "phantom_top_surface_z": 0.075,
   "phantom_dimensions": [
     0.2,
     0.2,
-    0.05
+    0.03
   ],
   "vitactip_tip_position": [
     0.195,
     -0.0050000000000000044,
-    0.08
+    0.06
   ],
   "vitactip_tip_pose": [
     0.195,
     -0.0050000000000000044,
-    0.08,
+    0.06,
     0.0,
     1.0,
     0.0,
     0.0
   ],
-  "phantom_volume": 0.0020000000000000005,
+  "phantom_volume": 0.0012000000000000001,
   "object_scale": 0.2,
   "phantom_min_max_particle_spacing": 0.005,
   "vitactip_mean_particle_spacing": 0.002323061373755325,
@@ -53,7 +53,7 @@
     "num_particles_cube_1d": 41,
     "n_grid_x": 39,
     "n_grid_y": 39,
-    "n_grid_z": 19
+    "n_grid_z": 17
   },
   "min_coords": [
     0.095,
@@ -68,6 +68,6 @@
   "max_ixs": [
     29,
     29,
-    9
+    7
   ]
 }

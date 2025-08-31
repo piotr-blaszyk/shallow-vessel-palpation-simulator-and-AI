@@ -12,8 +12,8 @@
         },
         "single_material": {
             "density": 1.100e+03,
-            "poissons_ratio": 0.497,
-            "youngs_modulus": 1.000e+04
+            "poissons_ratio": 4.970e-01,
+            "youngs_modulus": 1.393e+05
         },
         "collision_search_distance": 5.000e+00,
         "keypoint_search_z_threshold": 5.000e-03,
@@ -56,7 +56,7 @@
         "normal_stiffness": [
             44.8,
             0,
-            50
+            50000.0
         ],
         "tangential_stiffness": [
             3.9,
@@ -66,7 +66,7 @@
         "normal_damping": [
             34.0,
             0,
-            0
+            100
         ],
         "coulomb_friction_coeff": [
             0.66,
@@ -75,7 +75,7 @@
         ],
         "num_sub_frames": 125,
         "num_opt_steps": 2,
-        "num_training_trajectories": 16,
+        "num_training_trajectories": 100,
         "pid_max_speed_translation": 5.000e-01,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,
@@ -138,7 +138,7 @@
             0.0,
             0.0
         ],
-        "phantom_z_length": 5.000e-02,
+        "phantom_z_length": 3.000e-02,
         "distance_from_camera_lens_to_outer_shell_surface": 9.500e-02,
         "sensor_xy_radius": 1.000e-01,
         "vein": {

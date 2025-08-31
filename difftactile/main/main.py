@@ -151,7 +151,7 @@ class Contact:
             needs_grad=False,
         )
         self.all_points = []
-        self.collision_ixs = [0]
+        self.collision_ixs = [0, 2]
         self.collision_resolvers = [
             self.collision0,
             self.collision1,
@@ -1086,13 +1086,34 @@ class Contact:
         r = self.sensor_r
         y_span = SYSTEM_PARAMS.geometry.phantom_y_length
         x = cvx+dx/2
-        y = cvx-self.sensor_r
+        y = cvy-r
         z = cvz+dz-press_depth
         y2 = y+r+y_span+r
+
+        cx = cvx+dx/2
+        cy = cvy+dy/2
+        r2 = dy/2+r
+
+        theta_degrees = NP_RNG.uniform(10, 10)
+        theta = np.deg2rad(theta_degrees)
+        
+        # Get points on circle
+        x1 = cx + r2 * np.cos(theta)
+        y1 = cy + r2 * np.sin(theta)
+        x2 = cx + r2 * np.cos(theta + np.pi)
+        y2 = cy + r2 * np.sin(theta + np.pi)
+
+        if True:
+            xr = NP_RNG.uniform(-5, 5)
+            yr = NP_RNG.uniform(-5, 5)
+            zr = NP_RNG.uniform(0, 60)
+            rand_r = R.from_euler(seq="xyz", angles=[0, 0, zr], degrees=True)
+            ori = ori * rand_r
+
         ori = ori.as_quat()
         trajectory = [
-            [x, y, z, *ori],
-            [x, y2, z, *ori],
+            [x1, y1, z, *ori],
+            [x2, y2, z, *ori],
         ]
         return trajectory
 
@@ -2257,15 +2278,8 @@ class Contact:
         # self.set_optimisation_params_from_log.grad()
     
     def randomise_contact_params(self):
-        ns = SYSTEM_PARAMS.contact.normal_stiffness
-        nd = SYSTEM_PARAMS.contact.normal_damping
-        ts = SYSTEM_PARAMS.contact.tangential_stiffness
-        cfc = SYSTEM_PARAMS.contact.coulomb_friction_coeff
-
-        self.normal_stiffness[None] = NP_RNG.uniform(ns * 0.5, ns * 1.5)
-        self.normal_damping[None] = NP_RNG.uniform(nd * 0.5, nd * 1.5)
-        self.tangential_stiffness[None] = NP_RNG.uniform(ts * 0.5, ts * 1.5)
-        self.coulomb_friction_coeff[None] = NP_RNG.uniform(cfc * 0.5, cfc * 1.25)
+        self.normal_stiffness[2] = NP_RNG.uniform(5e3, 5e4)
+        self.normal_damping[2] = NP_RNG.uniform(0, 100)
     
     def set_contact_params_from_bo(self):
         self.normal_stiffness[0] = self.bo.params['normal_stiffness']
@@ -2503,8 +2517,8 @@ class Contact:
                     self.bo.my_suggest_optimise()
                 self.set_contact_params_from_bo()
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
-            for i in range(0, 4):
-                # self.randomise_contact_params()
+            # self.randomise_contact_params()
+            for i in range(3, 4):
                 self.trajectory_ix[None] = i
                 trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
                 # print(f'executing trajectory: {trajectory_name}')
@@ -2534,24 +2548,25 @@ class Contact:
                         SYSTEM_PARAMS.contact.num_sub_frames - 1
                     )
                     self.visualisation_update_gui(ts)
-                    if ts % 10 == 0:
-                        self.record_vitactip_mesh()
+                    # if ts % 10 == 0:
+                    #     self.record_vitactip_mesh()
                     # target = self.current_target_idx[None]
                     # if (
                     #     target > 2
                     #     and ts % 4 == 0
                     # ):
                     #     self.record_training_data_point(j, ts)
-                    should_break = self.handle_da_loss(ts)
-                    if should_break:
-                        break
-                    if ts % 100 == 0:
-                        self.save_sensor_mesh_to_npz()
+                    if self.use_bo:
+                        should_break = self.handle_da_loss(ts)
+                        if should_break:
+                            break
+                    # if ts % 100 == 0:
+                    #     self.save_sensor_mesh_to_npz()
                         # print(f"ts={ts}; sensor mesh saved")
-                    # if self.last_target_reached[None] == 1:
-                    #     break
+                    if self.last_target_reached[None] == 1:
+                        break
                 # self.write_training_data_to_file(file_num, i)
-                self.write_vitactip_mesh_to_file()
+                # self.write_vitactip_mesh_to_file()
                 
                 self.reset_loss()
                 self.batch_loss.fill(0.0)
