@@ -36,7 +36,7 @@
         "silicone": {
             "density": 900,
             "poissons_ratio": 4.600e-01,
-            "youngs_modulus": 1.200e+04
+            "youngs_modulus": 1.200e+03
         },
         "hard_plastic": {
             "density": 1150,

@@ -22,6 +22,7 @@ from difftactile.object_model.phantom import Phantom
 from difftactile.main.cfl_and_contact_params_estimation import *
 from difftactile.main.apply_scaling import ScientificNotationEncoder
 from difftactile.main.synthetic_image_generator import *
+from difftactile.data_analysis.experiment.adjacency import *
 
 RUN_ON_LAB_MACHINE = True
 
@@ -47,6 +48,16 @@ class Contact:
         self.training_data_collection_initialise()
         self.foo()
     
+    def compute_da_loss(self, sim_points, trajectory_name):
+        _, sim_points_reordered, _ = Adjacency.get_graph_connectivity(sim_points)
+        file_path = self.da_npz_paths[trajectory_name]
+        data = np.load(file_path)
+        exp_points = data['points']
+        a = sim_points_reordered
+        b = exp_points
+        mae = np.linalg.norm(a-b, axis=1).mean()
+        return mae
+    
     @ti.kernel
     def update_vitactip_tip_point(self):
         self.vitactip_tip_point[0] = self.vitactip.vertices_undeformed_A[
@@ -65,6 +76,13 @@ class Contact:
             self.clock_arm_points_3d[i] = vertex
     
     def foo(self):
+        da_dir = SYSTEM_PARAMS.files.da_dir
+        self.da_npz_paths = {
+            'press': f'{da_dir}{SYSTEM_PARAMS.files.da_press}',
+            'twist_z': f'{da_dir}{SYSTEM_PARAMS.files.da_twist_z}',
+            'twist_x': f'{da_dir}{SYSTEM_PARAMS.files.da_twist_x}',
+            'slide': f'{da_dir}{SYSTEM_PARAMS.files.da_slide}',
+        }
         self.num_sub_frames = SYSTEM_PARAMS.contact.num_sub_frames
         self.max_ts = SYSTEM_PARAMS.meta.max_timesteps_per_trajectory
         self.vitactip_tip_point = ti.Vector.field(
@@ -86,7 +104,7 @@ class Contact:
             needs_grad=False,
         )
         self.all_points = []
-        self.collision_ixs = [0]
+        self.collision_ixs = [2]
         self.collision_resolvers = [
             self.collision0,
             self.collision1,
@@ -542,6 +560,8 @@ class Contact:
         )
 
     def set_up_system_params(self):
+        self.dist_sf = SYSTEM_PARAMS.meta.distance_scaling_factor
+        self.sensor_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
         default_photo = SYSTEM_PARAMS.files.flat_sensor_default_state
         dir = SYSTEM_PARAMS.files.da_dir
         self.default_photo = f'{dir}{default_photo}'
@@ -772,20 +792,34 @@ class Contact:
         assert(len(trajectories_python_array) == len(self.state_dicts))
 
     def randomise_train_step(self):
+        self.trajectory_names = [
+            'press',
+            'twist_z',
+            'twist_x',
+            'slide',
+        ]
         trajectories_python_array = [
-            self.get_random_grid_search_trajectory(),
-            self.get_fully_random_trajectory(),
-            self.get_straight_line_slide_trajectory(),
             self.get_press_trajectory(),
+            self.get_twist_z_trajectory(),
+            self.get_twist_x_trajectory(),
+            self.get_slide_trajectory(),
         ]
         self.set_trajectories(trajectories_python_array)
 
-        self.state_dicts = []
-        for i in range(len(trajectories_python_array)):
-            self.state_dicts.append(
-                self.generate_random_state_dicts()
-            )
+        # self.state_dicts = []
+        # for i in range(len(trajectories_python_array)):
+        #     self.state_dicts.append(
+        #         self.generate_random_state_dicts()
+        #     )    
     
+    def get_vitactip_orientation_quat(self):
+        quat = self.vitactip_tip_pose[3:]
+        og_r = R.from_quat(quat)
+        _dr = -SYSTEM_PARAMS.geometry.camera_rotation_angle
+        dr = R.from_euler(seq="xyz", angles=[0, 0, _dr], degrees=True)
+        og_r = og_r * dr
+        return og_r
+
     def get_random_slide_params(self):
         quat = self.vitactip_tip_pose[3:]
         og_r = R.from_quat(quat)
@@ -929,23 +963,72 @@ class Contact:
         return trajectory
     
     def get_press_trajectory(self):
-        (
-            srq,
-            press_depth_surface,
-            _
-        ) = self.get_random_slide_params()
-        press_depth_1 = SYSTEM_PARAMS.trajectory.press_depth_1
-        # x, y, z = self.vitactip_tip_pose[:3]
-        r = SYSTEM_PARAMS.geometry.sensor_xy_radius
+        ori = self.get_vitactip_orientation_quat()
         cvx, cvy, cvz = self.phantom_closest_vertex
         dx, dy, dz = self.phantom_dimensions
         x = cvx+dx/2
         y = cvx+dy/2
         z = cvz+dz+self.gap
+        press_depth = 0.004*self.dist_sf
         trajectory = [
-            [x, y, z, *srq],
-            [x, y, z-self.gap, *srq],
-            [x, y, z-self.gap-press_depth_1, *srq],
+            [x, y, z, *ori],
+            [x, y, z-self.gap, *ori],
+            [x, y, z-self.gap-press_depth, *ori],
+        ]
+        return trajectory
+    
+    def get_twist_z_trajectory(self):
+        ori = self.get_vitactip_orientation_quat()
+        cvx, cvy, cvz = self.phantom_closest_vertex
+        dx, dy, dz = self.phantom_dimensions
+        x = cvx+dx/2
+        y = cvx+dy/2
+        z = cvz+dz+self.gap
+        press_depth = 0.004*self.dist_sf
+        angle = 90
+        z_rot = R.from_euler(seq="xyz", angles=[0, 0, angle], degrees=True)
+        ori2 = ori * z_rot
+        trajectory = [
+            [x, y, z, *ori],
+            [x, y, z-self.gap, *ori],
+            [x, y, z-self.gap-press_depth, *ori],
+            [x, y, z-self.gap-press_depth, *ori2],
+        ]
+        return trajectory
+    
+    def get_twist_x_trajectory(self):
+        ori = self.get_vitactip_orientation_quat()
+        cvx, cvy, cvz = self.phantom_closest_vertex
+        dx, dy, dz = self.phantom_dimensions
+        x = cvx+dx/2
+        y = cvx+dy/2
+        z = cvz+dz+self.gap
+        press_depth = 0.002*self.dist_sf
+        angle = 20
+        z_rot = R.from_euler(seq="xyz", angles=[angle, 0, 0], degrees=True)
+        ori2 = ori * z_rot
+        trajectory = [
+            [x, y, z, *ori],
+            [x, y, z-self.gap, *ori],
+            [x, y, z-self.gap-press_depth, *ori],
+            [x, y, z-self.gap-press_depth, *ori2],
+        ]
+        return trajectory
+    
+    def get_slide_trajectory(self):
+        ori = self.get_vitactip_orientation_quat()
+        cvx, cvy, cvz = self.phantom_closest_vertex
+        dx, dy, dz = self.phantom_dimensions
+        press_depth = 0.003*self.dist_sf
+        r = self.sensor_r
+        y_span = SYSTEM_PARAMS.geometry.phantom_y_length
+        x = cvx+dx/2
+        y = cvx-self.sensor_r
+        z = cvz+dz-press_depth
+        y_final = y+r+y_span+r
+        trajectory = [
+            [x, y, z, *ori],
+            [x, y, z, *ori],
         ]
         return trajectory
 
