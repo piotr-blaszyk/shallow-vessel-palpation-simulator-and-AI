@@ -75,7 +75,7 @@
         ],
         "num_sub_frames": 125,
         "num_opt_steps": 2,
-        "num_training_trajectories": 1,
+        "num_training_trajectories": 100,
         "pid_max_speed_translation": 5.000e-01,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,
@@ -215,7 +215,7 @@
         "visualise_exp_markers_during_bp": 1,
         "camera_offset": 5.000e+00,
         "particle_size_normal": 9.000e-05,
-        "particle_size_keypoint": 3.000e-04,
+        "particle_size_keypoint": 9.000e-04,
         "tactile_readout_width": 9.600e+02,
         "tactile_readout_height": 5.400e+02,
         "window_3d_width": 9.600e+02,
@@ -411,7 +411,8 @@
         "da_twist_z_npz": "difftactile/output/da_twist_z.npz",
         "da_twist_x_npz": "difftactile/output/da_twist_x.npz",
         "da_slide_npz": "difftactile/output/da_slide.npz",
-        "flat_sensor_default_state_npz": "difftactile/output/flat_sensor_default_state.npz"
+        "flat_sensor_default_state_npz": "difftactile/output/flat_sensor_default_state.npz",
+        "da_overlay": "difftactile/output/da_overlay_{:s}.png"
     },
     "rigid_static": {
         "particle_spacing": 5.000e-03

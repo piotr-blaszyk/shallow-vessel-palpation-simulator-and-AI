@@ -50,13 +50,19 @@ class Contact:
         self.foo()
     
     def handle_da_loss(self, ts):
-        if False:
+        trajectory_ix = self.trajectory_ix[None]
+        trajectory_name = self.trajectory_names[trajectory_ix]
+        target_timestep = self.photo_timesteps[trajectory_name]
+        if ts == target_timestep:
             self.compute_da_loss()
+        return ts == target_timestep
     
     def compute_da_loss(self):
+        h = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
         self.move_og_resolution()
         sim_points = self.sim_markers_deformed.to_numpy()
         self.move_ti_resolution()
+        sim_points[:, 1] = h-sim_points[:, 1]
         _, sim_points_reordered, _ = Adjacency.get_graph_connectivity(sim_points)
         trajectory_ix = self.trajectory_ix[None]
         trajectory_name = self.trajectory_names[trajectory_ix]
@@ -66,7 +72,22 @@ class Contact:
         a = sim_points_reordered
         b = exp_points
         mae = np.linalg.norm(a-b, axis=1).mean()
-        self.da_loss += mae
+        self.generate_validation_img(
+            a, b,
+            img_in=self.default_photo,
+            img_out=self.da_overlay.format(trajectory_name),
+        )
+        self.da_losses.append(mae)
+    
+    def generate_validation_img(self, points1, points2, img_in, img_out):
+        img = cv2.imread(img_in)
+        points1 = points1.astype(np.int32)
+        points2 = points2.astype(np.int32)
+        for point in points1:
+            cv2.circle(img, tuple(point), radius=3, color=(0, 0, 255), thickness=-1)  # BGR format: red
+        for point in points2:
+            cv2.circle(img, tuple(point), radius=3, color=(0, 255, 0), thickness=-1)  # BGR format: green
+        cv2.imwrite(img_out, img)
     
     @ti.kernel
     def update_vitactip_tip_point(self):
@@ -86,12 +107,11 @@ class Contact:
             self.clock_arm_points_3d[i] = vertex
     
     def foo(self):
-        da_dir = SYSTEM_PARAMS.files.da_dir
         self.da_npz_paths = {
-            'press': f'{da_dir}{SYSTEM_PARAMS.files.da_press}',
-            'twist_z': f'{da_dir}{SYSTEM_PARAMS.files.da_twist_z}',
-            'twist_x': f'{da_dir}{SYSTEM_PARAMS.files.da_twist_x}',
-            'slide': f'{da_dir}{SYSTEM_PARAMS.files.da_slide}',
+            'press': f'{SYSTEM_PARAMS.files.da_press_npz}',
+            'twist_z': f'{SYSTEM_PARAMS.files.da_twist_z_npz}',
+            'twist_x': f'{SYSTEM_PARAMS.files.da_twist_x_npz}',
+            'slide': f'{SYSTEM_PARAMS.files.da_slide_npz}',
         }
         self.num_sub_frames = SYSTEM_PARAMS.contact.num_sub_frames
         self.max_ts = SYSTEM_PARAMS.meta.max_timesteps_per_trajectory
@@ -570,7 +590,14 @@ class Contact:
         )
 
     def set_up_system_params(self):
-        self.da_loss = 0
+        self.da_overlay = SYSTEM_PARAMS.files.da_overlay
+        self.photo_timesteps = {
+            'press': 35,
+            'twist_z': 180,
+            'twist_x': 51,
+            'slide': 327,
+        }
+        self.da_losses = []
         self.dist_sf = SYSTEM_PARAMS.meta.distance_scaling_factor
         self.sensor_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
         default_photo = SYSTEM_PARAMS.files.flat_sensor_default_state
@@ -998,7 +1025,7 @@ class Contact:
         z = cvz+dz+self.gap
         press_depth = 0.004*self.dist_sf
         angle = 90
-        z_rot = R.from_euler(seq="xyz", angles=[0, 0, angle], degrees=True)
+        z_rot = R.from_euler(seq="xyz", angles=[0, 0, -angle], degrees=True)
         ori2 = ori * z_rot
         ori = ori.as_quat()
         ori2 = ori2.as_quat()
@@ -2119,8 +2146,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.phantom_centroid_pose[:3]
-        self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
-        self.camera.up(0, 0, 1)
+        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
+        self.camera.up(0, -1, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(3)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -2160,11 +2187,11 @@ class Contact:
             radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
         self.phantom.compute_grid_colours()
-        self.scene.particles(
-            self.phantom.grid_positions,
-            per_vertex_color=self.phantom.grid_colours,
-            radius=SYSTEM_PARAMS.visualisation.particle_size_normal*5,
-        )
+        # self.scene.particles(
+        #     self.phantom.grid_positions,
+        #     per_vertex_color=self.phantom.grid_colours,
+        #     radius=SYSTEM_PARAMS.visualisation.particle_size_normal*5,
+        # )
         self.scene.particles(
             self.vein.particles_A,
             color=(1.0, 1.0, 0.0),
@@ -2685,7 +2712,7 @@ class Contact:
             for k in range(1, 2):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(0, 4):
+                for i in range(3, 4):
                     # self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
@@ -2724,12 +2751,14 @@ class Contact:
                         #     and ts % 4 == 0
                         # ):
                         #     self.record_training_data_point(j, ts)
-                        self.handle_da_loss(ts)
+                        should_break = self.handle_da_loss(ts)
+                        if should_break:
+                            break
                         if ts % 100 == 0:
                             self.save_sensor_mesh_to_npz()
                             print(f"ts={ts}; sensor mesh saved")
-                        if self.last_target_reached[None] == 1:
-                            break
+                        # if self.last_target_reached[None] == 1:
+                        #     break
                     file_num = j * 4 + k * 2 + i
                     # self.write_training_data_to_file(file_num, i)
                     self.write_vitactip_mesh_to_file()
@@ -2743,7 +2772,8 @@ class Contact:
             print(
                 f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1} done"
             )
-        print(f'domain adaptation loss: {self.da_loss}')
+        print(f'domain adaptation losses: {self.da_losses}')
+        print(f'domain adaptation loss sum: {sum(self.da_losses)}')
         print("training data collection done")
         print("all done")
 
