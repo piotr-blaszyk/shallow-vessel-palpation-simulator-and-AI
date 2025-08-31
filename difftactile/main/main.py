@@ -25,6 +25,7 @@ from difftactile.main.cfl_and_contact_params_estimation import *
 from difftactile.main.apply_scaling import ScientificNotationEncoder
 from difftactile.main.synthetic_image_generator import *
 from difftactile.data_analysis.experiment.adjacency import *
+from difftactile.data_analysis.experiment.bo_gp import *
 
 RUN_ON_LAB_MACHINE = True
 
@@ -49,14 +50,15 @@ class Contact:
         self.visualisation_initialise()
         self.training_data_collection_initialise()
         self.foo()
+        self.bo = BoGp()
     
-    def write_da_total_loss_to_file(self):
-        target_data = {
-            'target': sum(self.da_losses),
-        }
-        with open(self.target_path, "w") as f:
-            json.dump(target_data, f, indent=4)
-        self.da_losses = []
+    # def write_da_total_loss_to_file(self):
+    #     target_data = {
+    #         'target': sum(self.da_losses),
+    #     }
+    #     with open(self.target_path, "w") as f:
+    #         json.dump(target_data, f, indent=4)
+    #     self.da_losses = []
     
     def handle_da_loss(self, ts):
         trajectory_ix = self.trajectory_ix[None]
@@ -2263,10 +2265,14 @@ class Contact:
         self.coulomb_friction_coeff[None] = NP_RNG.uniform(cfc * 0.5, cfc * 1.25)
     
     def set_contact_params_from_bo(self):
-        self.normal_stiffness[0] = BO.normal_stiffness
-        self.normal_damping[0] = BO.normal_damping
-        self.tangential_stiffness[0] = BO.tangential_stiffness
-        self.coulomb_friction_coeff[0] = BO.coulomb_friction_coeff
+        self.normal_stiffness[0] = self.bo.params['normal_stiffness']
+        self.normal_damping[0] = self.bo.params['normal_damping']
+        self.tangential_stiffness[0] = self.bo.params['tangential_stiffness']
+        self.coulomb_friction_coeff[0] = self.bo.params['coulomb_friction_coeff']
+
+        self.vitactip.youngs_modulus[None] = self.bo.params['vitactip_youngs_modulus']
+        self.vitactip.poissons_ratio[None] = self.bo.params['vitactip_poissons_ratio']
+        self.vitactip.set_up_system_params_2()
     
     def print_contact_params(self):
         ns = SYSTEM_PARAMS.contact.normal_stiffness
@@ -2481,77 +2487,81 @@ class Contact:
     def collect_training_data(self):
         # self.clear_temp_images()
         self.clear_npz()
-        if self.use_bo:
-            self.set_contact_params_from_bo()
-            self.vitactip.set_material_params_from_bo()
+        self.generate_trajectories()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
+            if self.use_bo:
+                if j < 4:
+                    self.bo.my_suggest_random()
+                else:
+                    self.bo.my_suggest_optimise()
+                self.set_contact_params_from_bo()
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
-            for k in range(1, 2):
-                self.generate_tumour = k == 0
-                self.generate_trajectories()
-                for i in range(0, 4):
-                    # self.randomise_contact_params()
-                    self.trajectory_ix[None] = i
-                    trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
-                    print(f'executing trajectory: {trajectory_name}')
-                    self.set_up_initial_positions_state_and_trajectory()
-                    # self.vein_sparse_to_dense()
-                    self.reset_pid_controller()
-                    self.visualisation_reset_scene()
-                    self.reset_exp_sim_traj()
-                    self.vitactip.extract_markers(0)
-                    # self.compute_mapping_between_experimental_and_sim_markers()
-                    self.set_dt(verbose=True)
-                    self.fp()
-                    # self.print_contact_params()
-                    for ts in tqdm(range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory)):
-                        self.pid_controller_1()
-                        self.pid_controller_2(ts)
-                        self.pid_controller_3()
-                        self.vitactip.set_pose_control_1()
-                        self.vitactip.set_pose_control_2()
-                        self.vitactip.set_pose_control_3()
-                        self.forward_pass_common_part(ts)
-                        self.copy_frame()
-                        self.vitactip.extract_markers(
-                            SYSTEM_PARAMS.contact.num_sub_frames - 1
-                        )
-                        self.vitactip.mark_surface_nodes_in_contact(
-                            SYSTEM_PARAMS.contact.num_sub_frames - 1
-                        )
-                        self.visualisation_update_gui(ts)
-                        if ts % 10 == 0:
-                            self.record_vitactip_mesh()
-                        # target = self.current_target_idx[None]
-                        # if (
-                        #     target > 2
-                        #     and ts % 4 == 0
-                        # ):
-                        #     self.record_training_data_point(j, ts)
-                        should_break = self.handle_da_loss(ts)
-                        if should_break:
-                            break
-                        if ts % 100 == 0:
-                            self.save_sensor_mesh_to_npz()
-                            print(f"ts={ts}; sensor mesh saved")
-                        # if self.last_target_reached[None] == 1:
-                        #     break
-                    file_num = j * 4 + k * 2 + i
-                    # self.write_training_data_to_file(file_num, i)
-                    self.write_vitactip_mesh_to_file()
-                    
-                    self.reset_loss()
-                    self.batch_loss.fill(0.0)
-                    # self.clear_grad()
-                    self.prev_loss[None] = 0.0
-                    self.trajectory_loss[None] = 0.0
+            for i in range(0, 4):
+                # self.randomise_contact_params()
+                self.trajectory_ix[None] = i
+                trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
+                print(f'executing trajectory: {trajectory_name}')
+                self.set_up_initial_positions_state_and_trajectory()
+                # self.vein_sparse_to_dense()
+                self.reset_pid_controller()
+                self.visualisation_reset_scene()
+                self.reset_exp_sim_traj()
+                self.vitactip.extract_markers(0)
+                # self.compute_mapping_between_experimental_and_sim_markers()
+                self.set_dt(verbose=True)
+                self.fp()
+                # self.print_contact_params()
+                for ts in range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory):
+                    self.pid_controller_1()
+                    self.pid_controller_2(ts)
+                    self.pid_controller_3()
+                    self.vitactip.set_pose_control_1()
+                    self.vitactip.set_pose_control_2()
+                    self.vitactip.set_pose_control_3()
+                    self.forward_pass_common_part(ts)
+                    self.copy_frame()
+                    self.vitactip.extract_markers(
+                        SYSTEM_PARAMS.contact.num_sub_frames - 1
+                    )
+                    self.vitactip.mark_surface_nodes_in_contact(
+                        SYSTEM_PARAMS.contact.num_sub_frames - 1
+                    )
+                    self.visualisation_update_gui(ts)
+                    if ts % 10 == 0:
+                        self.record_vitactip_mesh()
+                    # target = self.current_target_idx[None]
+                    # if (
+                    #     target > 2
+                    #     and ts % 4 == 0
+                    # ):
+                    #     self.record_training_data_point(j, ts)
+                    should_break = self.handle_da_loss(ts)
+                    if should_break:
+                        break
+                    if ts % 100 == 0:
+                        self.save_sensor_mesh_to_npz()
+                        print(f"ts={ts}; sensor mesh saved")
+                    # if self.last_target_reached[None] == 1:
+                    #     break
+                # self.write_training_data_to_file(file_num, i)
+                self.write_vitactip_mesh_to_file()
                 
+                self.reset_loss()
+                self.batch_loss.fill(0.0)
+                # self.clear_grad()
+                self.prev_loss[None] = 0.0
+                self.trajectory_loss[None] = 0.0   
             print(
                 f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1} done"
             )
-        print(f'domain adaptation losses: {self.da_losses}')
-        print(f'domain adaptation loss sum: {sum(self.da_losses)}')
-        self.write_da_total_loss_to_file()
+            print(f'domain adaptation losses: {self.da_losses}')
+            print(f'domain adaptation loss sum: {sum(self.da_losses)}')
+            # self.write_da_total_loss_to_file()
+            self.bo.my_register(
+                sum(self.da_losses)
+            )
+            self.da_losses = []
+            self.bo.write_to_file()
         print("training data collection done")
         print("all done")
 

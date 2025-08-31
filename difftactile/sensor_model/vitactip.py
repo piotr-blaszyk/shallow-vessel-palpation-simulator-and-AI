@@ -62,10 +62,10 @@ class ViTacTip:
             needs_grad=False,
         )
     
-    def set_material_params_from_bo(self):
-        self.youngs_modulus[None] = BO.vitactip_youngs_modulus
-        self.poissons_ratio[None] = BO.vitactip_poissons_ratio
-        self.set_up_system_params_2()
+    # def set_material_params_from_bo(self):
+    #     self.youngs_modulus[None] = BO.vitactip_youngs_modulus
+    #     self.poissons_ratio[None] = BO.vitactip_poissons_ratio
+    #     self.set_up_system_params_2()
 
     @ti.kernel
     def set_up_system_params_2(self):

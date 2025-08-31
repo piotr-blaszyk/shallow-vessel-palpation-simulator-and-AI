@@ -77,35 +77,29 @@ class BoGp:
 
     def my_suggest_optimise(self):
         params = self.optimiser.suggest()
-        params = self.my_suggest_optimise_helper(params)
-        return params
+        self.my_suggest_optimise_helper(params)
     
     def my_suggest_random(self):
         params = {k: np.random.uniform(*v) for k, v in self.pbounds_normalised.items()}
-        params = self.my_suggest_optimise_helper(params)
-        return params
+        self.my_suggest_optimise_helper(params)
     
     def my_suggest_optimise_helper(self, params):
         params['tangential_stiffness'] = NP_RNG.uniform(0, 0.3) * params['normal_stiffness']
         params = self.unnormalise_dict(params)
-
         self.params = params
         with open(self.params_path, "w") as f:
             json.dump(params, f, indent=4)
-
-        return params
     
-    def my_register(self):
-        with open(self.target_path, "r") as f:
-            target_data = json.load(f)
-        target = target_data['target']
+    def my_register(self, target):
+        # with open(self.target_path, "r") as f:
+        #     target_data = json.load(f)
+        # self.target = target_data['target']
         self.optimiser.register(
             params=self.normalise_dict(self.params),
             target=self.normalise_target(target),
         )
         self.all_params.append(self.params)
         self.all_targets.append(target)
-        return target
     
     def write_to_file(self):
         print("writing to file!")
