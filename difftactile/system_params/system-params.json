@@ -231,13 +231,13 @@
     "fisheye_model": {
         "focal_length_x": 3.800e+02,
         "focal_length_y": 3.800e+02,
-        "principal_point_x": 1.035e+03,
-        "principal_point_y": 5.800e+02,
+        "principal_point_x": 1040,
+        "principal_point_y": 584,
         "target_image_width": 1.920e+03,
         "target_image_height": 1.080e+03,
-        "circle_centre_x": 1.035e+03,
-        "circle_centre_y": 5.800e+02,
-        "circle_radius": 3.700e+02,
+        "circle_centre_x": 1040,
+        "circle_centre_y": 584,
+        "circle_radius": 380,
         "circle_small_radius": 3.700e+02,
         "shell_inner_r": 1.767e+02,
         "shell_outer_r": 1.817e+02,
@@ -400,7 +400,18 @@
         "rigid_static_stl": "difftactile/meshes/rigid_static.stl",
         "gmsh_mesh_vein_pkl": "difftactile/output/gmsh_mesh_vein.pkl",
         "phantom_points_npz": "difftactile/output/phantom_points.npz",
-        "vein_points_npz": "difftactile/output/vein_points.npz"
+        "vein_points_npz": "difftactile/output/vein_points.npz",
+        "da_dir": "difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/",
+        "da_press": "press_press_depth=4_angle=10_slide_length=50_timestamp=2025-08-30-21-23-31.jpg",
+        "da_twist_z": "twist_z_press_depth=4_angle=90_slide_length=50_timestamp=2025-08-30-21-26-57.jpg",
+        "da_twist_x": "twist_x_press_depth=2_angle=20_slide_length=50_timestamp=2025-08-30-21-34-40.jpg",
+        "da_slide": "slide_press_depth=3_angle=10_slide_length=50_timestamp=2025-08-30-21-49-26.png",
+        "flat_sensor_default_state": "press_press_depth=0_angle=10_slide_length=50_timestamp=2025-08-30-21-23-00.jpg",
+        "da_press_npz": "difftactile/output/da_press.npz",
+        "da_twist_z_npz": "difftactile/output/da_twist_z.npz",
+        "da_twist_x_npz": "difftactile/output/da_twist_x.npz",
+        "da_slide_npz": "difftactile/output/da_slide.npz",
+        "flat_sensor_default_state_npz": "difftactile/output/flat_sensor_default_state.npz"
     },
     "rigid_static": {
         "particle_spacing": 5.000e-03

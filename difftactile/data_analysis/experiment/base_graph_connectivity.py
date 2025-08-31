@@ -24,7 +24,8 @@ class ComputeEdges:
     @staticmethod
     def compute_base_graph_connectivity():
         # Load marker positions from npz file
-        data = np.load(SYSTEM_PARAMS.files.init_marker_positions_npz)
+        path = SYSTEM_PARAMS.files.init_marker_positions_npz
+        data = np.load(path)
         points = data['points']  # shape: (num_points, 2)
 
         # Get the central point (index 91)

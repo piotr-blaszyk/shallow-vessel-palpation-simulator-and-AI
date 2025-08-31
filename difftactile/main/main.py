@@ -542,6 +542,9 @@ class Contact:
         )
 
     def set_up_system_params(self):
+        default_photo = SYSTEM_PARAMS.files.flat_sensor_default_state
+        dir = SYSTEM_PARAMS.files.da_dir
+        self.default_photo = f'{dir}{default_photo}'
         self.num_contact_pairs = SYSTEM_PARAMS.meta.num_contact_pairs
         self.trajectory_ix = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
@@ -2025,7 +2028,7 @@ class Contact:
             int(SYSTEM_PARAMS.visualisation.tactile_readout_height)
         ))
         self.tactile_canvas = self.tactile_window.get_canvas()
-        self.bg_image = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
+        self.bg_image = cv2.imread(self.default_photo)
         self.bg_image = cv2.cvtColor(self.bg_image, cv2.COLOR_BGR2RGB)
         self.bg_image = cv2.rotate(self.bg_image, cv2.ROTATE_90_CLOCKWISE)
         clock_arm_points_per_vertex_color_npy = np.array(

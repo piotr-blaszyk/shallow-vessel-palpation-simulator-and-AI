@@ -118,7 +118,7 @@ class FisheyeModelNoTaichi:
         # areas=[809, 1206]
         # sizes=[16.1, 19.5]
         params.minArea = 120  # Minimum area in pixels
-        params.maxArea = 350  # Maximum area in pixels
+        params.maxArea = 1000  # Maximum area in pixels
         
         detector = cv2.SimpleBlobDetector_create(params)
         keypoints = detector.detect(img)
@@ -144,7 +144,9 @@ class FisheyeModelNoTaichi:
         MarkerCenter = np.array(MarkerCenter)
         areas = np.array(areas)
         sizes = np.array(sizes)
-        # print(f'area_min: {areas.min()}; area_mean: {areas.mean()}; area_max: {areas.max()}')
+        areas.sort()
+        sizes.sort()
+        print(f'area_min: {areas.min()}; area_mean: {areas.mean()}; area_max: {areas.max()}')
         return MarkerCenter, circle_center, circle_radius
 
     @staticmethod

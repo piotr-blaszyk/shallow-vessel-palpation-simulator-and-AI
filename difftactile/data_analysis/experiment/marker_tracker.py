@@ -12,7 +12,6 @@ from difftactile.main.constants import *
 
 class MarkerTracker:
     def __init__(self, start_frame_ix=0, end_frame_ix=None):
-        self.fisheye_model = FisheyeModelNoTaichi()
         self.frame_markers = []
         self.frame_mappings = []
         self.base_frame_mappings = []

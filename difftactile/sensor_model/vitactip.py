@@ -28,6 +28,10 @@ class ViTacTip:
         print(f"ViTacTip min particle spacing: {min_spacing:0.3e}")
 
     def set_up_system_params_1(self):
+        default_photo = SYSTEM_PARAMS.files.flat_sensor_default_state
+        dir = SYSTEM_PARAMS.files.da_dir
+        self.default_photo = f'{dir}{default_photo}'
+        self.default_npz = SYSTEM_PARAMS.files.flat_sensor_default_state_npz
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
         self.dt[None] = SYSTEM_PARAMS.contact.dt_override
         self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
@@ -172,11 +176,10 @@ class ViTacTip:
     def initialise_camera_model(self):
         self.marker_interpolation_knn_k = 5
         initial_camera_image = cv2.imread(
-            SYSTEM_PARAMS.files.vitactip_photo_default_state
+            self.default_photo
         )
-        initial_marker_positions, _, _ = FisheyeModelNoTaichi.get_marker_image(
-            initial_camera_image
-        )
+        data = np.load(self.default_npz)
+        initial_marker_positions = data['points']
         marker_visualization_image = initial_camera_image.copy()
         for marker_position in initial_marker_positions:
             marker_center = (
@@ -577,7 +580,7 @@ class ViTacTip:
 
     def save_predicted_markers_to_image(self):
         initial_camera_image = cv2.imread(
-            SYSTEM_PARAMS.files.vitactip_photo_default_state
+            self.default_photo
         )
         surface_node_visualization = initial_camera_image.copy()
         with open(SYSTEM_PARAMS.files.initial_vertex_positions_undeformed, "wb") as f:
