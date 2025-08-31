@@ -1092,16 +1092,17 @@ class Contact:
 
         cx = cvx+dx/2
         cy = cvy+dy/2
-        r2 = dy/2+r
+        r21 = dy/2+r/2
+        r22 = dy/2
 
-        theta_degrees = NP_RNG.uniform(10, 10)
+        theta_degrees = -90+NP_RNG.uniform(-15, 15)
         theta = np.deg2rad(theta_degrees)
         
         # Get points on circle
-        x1 = cx + r2 * np.cos(theta)
-        y1 = cy + r2 * np.sin(theta)
-        x2 = cx + r2 * np.cos(theta + np.pi)
-        y2 = cy + r2 * np.sin(theta + np.pi)
+        x1 = cx + r21 * np.cos(theta)
+        y1 = cy + r21 * np.sin(theta)
+        x2 = cx + r22 * np.cos(theta + np.pi)
+        y2 = cy + r22 * np.sin(theta + np.pi)
 
         if True:
             xr = NP_RNG.uniform(-5, 5)
@@ -1760,14 +1761,9 @@ class Contact:
         )
         self.all_points = []
 
-    def record_training_data_point(self, training_iteration, ts):
+    def record_training_data_point(self):
         w = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
         h = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
-
-        markers_file = SYSTEM_PARAMS.files.training_data_markers.format(training_iteration, ts)
-        vein_file = SYSTEM_PARAMS.files.training_data_segmentation_mask.format(training_iteration, ts)
-        vein_full_file = SYSTEM_PARAMS.files.training_data_vein_full.format(training_iteration, ts)
-        contact_file = SYSTEM_PARAMS.files.training_data_contact.format(training_iteration, ts)
 
         cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
         cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
@@ -1805,7 +1801,7 @@ class Contact:
         #     vein_polyline_python_arr, 
         #     k=SYSTEM_PARAMS.meta.polyline_num
         # )
-        if self.collision2_contact_flat[None] == 1:
+        if self.collision2_contact_flat[None] == 1 and 2 in self.collision_ixs:
             vein_mask = np.ones(shape=(vein.shape[0], vein.shape[1]), dtype=bool)
         else:
             vein_mask = np.zeros(shape=(vein.shape[0], vein.shape[1]), dtype=bool)
@@ -1865,10 +1861,11 @@ class Contact:
         
         return endpoints
 
-    def write_training_data_to_file(self, training_iteration, traj_ix):
+    def write_training_data_to_file(self, file_num):
+        traj_ix = self.trajectory_ix[None]
         directory = SYSTEM_PARAMS.files.dataset_root
         file = SYSTEM_PARAMS.files.dataset_data_point.format(
-            training_iteration
+            file_num
         )
         path = f'{directory}/{file}'
 
@@ -2189,8 +2186,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.phantom_centroid_pose[:3]
-        self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
-        self.camera.up(0, 0, 1)
+        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
+        self.camera.up(0, 1, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(3)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -2509,82 +2506,88 @@ class Contact:
         # self.clear_temp_images()
         self.clear_npz()
         self.generate_trajectories()
-        for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
+        file_num = 0
+        for i in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             if self.use_bo:
-                if j < 4:
+                if i < 4:
                     self.bo.my_suggest_random()
                 else:
                     self.bo.my_suggest_optimise()
                 self.set_contact_params_from_bo()
-            print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
-            # self.randomise_contact_params()
-            for i in range(3, 4):
-                self.trajectory_ix[None] = i
-                trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
-                # print(f'executing trajectory: {trajectory_name}')
-                self.set_up_initial_positions_state_and_trajectory()
-                # self.vein_sparse_to_dense()
-                self.reset_pid_controller()
-                self.visualisation_reset_scene()
-                self.reset_exp_sim_traj()
-                self.vitactip.extract_markers(0)
-                # self.compute_mapping_between_experimental_and_sim_markers()
-                self.set_dt(verbose=True)
-                self.fp()
-                # self.print_contact_params()
-                for ts in range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory):
-                    self.pid_controller_1()
-                    self.pid_controller_2(ts)
-                    self.pid_controller_3()
-                    self.vitactip.set_pose_control_1()
-                    self.vitactip.set_pose_control_2()
-                    self.vitactip.set_pose_control_3()
-                    self.forward_pass_common_part(ts)
-                    self.copy_frame()
-                    self.vitactip.extract_markers(
-                        SYSTEM_PARAMS.contact.num_sub_frames - 1
-                    )
-                    self.vitactip.mark_surface_nodes_in_contact(
-                        SYSTEM_PARAMS.contact.num_sub_frames - 1
-                    )
-                    self.visualisation_update_gui(ts)
-                    # if ts % 10 == 0:
-                    #     self.record_vitactip_mesh()
-                    # target = self.current_target_idx[None]
-                    # if (
-                    #     target > 2
-                    #     and ts % 4 == 0
-                    # ):
-                    #     self.record_training_data_point(j, ts)
-                    if self.use_bo:
-                        should_break = self.handle_da_loss(ts)
-                        if should_break:
+            print(f"training trajectory: {i} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
+            for j in range(5):
+                if j < 4:
+                    self.collision_ixs = [0, 2]
+                else:
+                    self.collision_ixs = [0]
+                self.randomise_contact_params()
+                for traj_ix in range(3, 4):
+                    self.trajectory_ix[None] = traj_ix
+                    trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
+                    # print(f'executing trajectory: {trajectory_name}')
+                    self.set_up_initial_positions_state_and_trajectory()
+                    # self.vein_sparse_to_dense()
+                    self.reset_pid_controller()
+                    self.visualisation_reset_scene()
+                    self.reset_exp_sim_traj()
+                    self.vitactip.extract_markers(0)
+                    # self.compute_mapping_between_experimental_and_sim_markers()
+                    self.set_dt(verbose=True)
+                    self.fp()
+                    # self.print_contact_params()
+                    for ts in tqdm(range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory)):
+                        self.pid_controller_1()
+                        self.pid_controller_2(ts)
+                        self.pid_controller_3()
+                        self.vitactip.set_pose_control_1()
+                        self.vitactip.set_pose_control_2()
+                        self.vitactip.set_pose_control_3()
+                        self.forward_pass_common_part(ts)
+                        self.copy_frame()
+                        self.vitactip.extract_markers(
+                            SYSTEM_PARAMS.contact.num_sub_frames - 1
+                        )
+                        self.vitactip.mark_surface_nodes_in_contact(
+                            SYSTEM_PARAMS.contact.num_sub_frames - 1
+                        )
+                        self.visualisation_update_gui(ts)
+                        # if ts % 10 == 0:
+                        #     self.record_vitactip_mesh()
+                        # target = self.current_target_idx[None]
+                        if (
+                            ts > 80
+                        ):
+                            self.record_training_data_point()
+                        if self.use_bo:
+                            should_break = self.handle_da_loss(ts)
+                            if should_break:
+                                break
+                        # if ts % 100 == 0:
+                        #     self.save_sensor_mesh_to_npz()
+                            # print(f"ts={ts}; sensor mesh saved")
+                        if self.last_target_reached[None] == 1:
                             break
-                    # if ts % 100 == 0:
-                    #     self.save_sensor_mesh_to_npz()
-                        # print(f"ts={ts}; sensor mesh saved")
-                    if self.last_target_reached[None] == 1:
-                        break
-                # self.write_training_data_to_file(file_num, i)
-                # self.write_vitactip_mesh_to_file()
-                
-                self.reset_loss()
-                self.batch_loss.fill(0.0)
-                # self.clear_grad()
-                self.prev_loss[None] = 0.0
-                self.trajectory_loss[None] = 0.0   
-            print(
-                f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1} done"
-            )
-            if self.use_bo:
-                print(f'domain adaptation losses: {self.da_losses}')
-                print(f'domain adaptation loss sum: {sum(self.da_losses)}')
-                # self.write_da_total_loss_to_file()
-                self.bo.my_register(
-                    sum(self.da_losses)
+                    self.write_training_data_to_file(file_num)
+                    file_num += 1
+                    # self.write_vitactip_mesh_to_file()
+                    
+                    self.reset_loss()
+                    self.batch_loss.fill(0.0)
+                    # self.clear_grad()
+                    self.prev_loss[None] = 0.0
+                    self.trajectory_loss[None] = 0.0   
+                print(
+                    f"training trajectory: {i} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1} done"
                 )
-                self.da_losses = []
-                self.bo.write_to_file()
+                if self.use_bo:
+                    print(f'domain adaptation losses: {self.da_losses}')
+                    print(f'domain adaptation loss sum: {sum(self.da_losses)}')
+                    # self.write_da_total_loss_to_file()
+                    self.bo.my_register(
+                        sum(self.da_losses)
+                    )
+                    self.da_losses = []
+                    self.bo.write_to_file()
         print("training data collection done")
         print("all done")
 
