@@ -182,7 +182,7 @@
         "vein_px_thickness": 30,
         "enable_grad": 0,
         "num_contact_pairs": 3,
-        "load_params_from_bo": 0
+        "load_params_from_bo": 1
     },
     "gnn": {
         "entity_type_embedding_dim": 8,
