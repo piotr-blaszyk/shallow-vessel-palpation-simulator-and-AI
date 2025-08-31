@@ -12,7 +12,7 @@
         },
         "single_material": {
             "density": 1.100e+03,
-            "poissons_ratio": 4.990e-01,
+            "poissons_ratio": 0.497,
             "youngs_modulus": 1.000e+04
         },
         "collision_search_distance": 5.000e+00,
@@ -54,22 +54,22 @@
         "dt": 1.270e-06,
         "dt_override": 1.000e-05,
         "normal_stiffness": [
-            10,
+            44.8,
             0,
-            5000
+            50
         ],
         "tangential_stiffness": [
-            0,
+            3.9,
             0,
             0
         ],
         "normal_damping": [
-            0,
+            34.0,
             0,
             0
         ],
         "coulomb_friction_coeff": [
-            0,
+            0.66,
             0,
             0
         ],

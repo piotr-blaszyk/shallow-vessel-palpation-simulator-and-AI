@@ -7,7 +7,7 @@
             "youngs_modulus": 5.000e+03
         },
         "single_material": {
-            "youngs_modulus": 1e4
+            "youngs_modulus": 139303
         }
     },
     "phantom": {
