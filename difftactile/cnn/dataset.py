@@ -46,6 +46,7 @@ class MyDataset(torch.utils.data.Dataset):
             data_points = []
         super().__init__()
         start_time = time.perf_counter()
+        self.vein_px_thickness = SYSTEM_PARAMS.meta.vein_px_thickness
         self.clip_len = SYSTEM_PARAMS.gnn.clip_len
         self.num_nodes = SYSTEM_PARAMS.vitactip.num_markers
         base_graph_connectivity_data = np.load(
@@ -702,54 +703,57 @@ class MyDataset(torch.utils.data.Dataset):
         markers_mask = markers_mask[frame_ix : frame_ix + dilated_clip_len : dilation]
         veins = veins[frame_ix : frame_ix + dilated_clip_len : dilation]
         veins_mask = veins_mask[frame_ix : frame_ix + dilated_clip_len : dilation]
-        vein_present_per_frame = np.any(veins_mask, axis=2)
-        vein_present_all_frames = np.all(vein_present_per_frame, axis=0)
-        if np.sum(vein_present_all_frames) > 1:
-            present_vein_indices = np.where(vein_present_all_frames)[0]
-            selected_vein_idx = NP_RNG.choice(present_vein_indices)
-            vein_present_all_frames[:] = False
-            vein_present_all_frames[selected_vein_idx] = True
-        veins_mask &= vein_present_all_frames[np.newaxis, :, np.newaxis]
+
+        # vein_present_per_frame = np.any(veins_mask, axis=2)
+        # vein_present_all_frames = np.all(vein_present_per_frame, axis=0)
+        # if np.sum(vein_present_all_frames) > 1:
+        #     present_vein_indices = np.where(vein_present_all_frames)[0]
+        #     selected_vein_idx = NP_RNG.choice(present_vein_indices)
+        #     vein_present_all_frames[:] = False
+        #     vein_present_all_frames[selected_vein_idx] = True
+        # veins_mask &= vein_present_all_frames[np.newaxis, :, np.newaxis]
 
         # MyDataset.hide_vein_that_dont_move_enough(
         #     veins,
         #     veins_mask,
         # )
 
-        if spawn_vein:
-            freeze_markers = True
-        else:
-            freeze_markers = NP_RNG.uniform(0, 1) < 0.2
-        if False and freeze_markers:
-            first_frame_markers = markers[0]
-            marker_displacements = markers - first_frame_markers[np.newaxis, :, :]
-            mean_marker_displacement = np.mean(marker_displacements, axis=1)
-            markers = np.tile(
-                first_frame_markers[np.newaxis, :, :], (markers.shape[0], 1, 1)
-            )
-            veins -= mean_marker_displacement[:, np.newaxis, np.newaxis, :]
-        markers, labels_signal_mask, vein_thickness = (
-            self.augmentation_artificial_vein_signal_vectorised(
-                markers, veins, veins_mask
-            )
-        )
-        veins_mask &= labels_signal_mask
+        # if spawn_vein:
+        #     freeze_markers = True
+        # else:
+        #     freeze_markers = NP_RNG.uniform(0, 1) < 0.2
+        # if False and freeze_markers:
+        #     first_frame_markers = markers[0]
+        #     marker_displacements = markers - first_frame_markers[np.newaxis, :, :]
+        #     mean_marker_displacement = np.mean(marker_displacements, axis=1)
+        #     markers = np.tile(
+        #         first_frame_markers[np.newaxis, :, :], (markers.shape[0], 1, 1)
+        #     )
+        #     veins -= mean_marker_displacement[:, np.newaxis, np.newaxis, :]
+
+        # markers, labels_signal_mask, vein_thickness = (
+        #     self.augmentation_artificial_vein_signal_vectorised(
+        #         markers, veins, veins_mask
+        #     )
+        # )
+        # veins_mask &= labels_signal_mask
+
         discrete_angles = [0, 60, 120, 180, 240, 300]
         rotation_angle_deg = NP_RNG.choice(discrete_angles)
         markers = self.augmentation_rotation(markers, rotation_angle_deg)
         veins = self.augmentation_rotation(veins, rotation_angle_deg)
-        angle_uniform_shift_rad = NP_RNG.uniform(0, 2 * math.pi)
-        magnitude = NP_RNG.uniform(0, 10)
-        markers = self.uniform_shift(markers, angle_uniform_shift_rad, magnitude)
-        veins = self.uniform_shift(veins, angle_uniform_shift_rad, magnitude)
-        angle_x = math.radians(NP_RNG.uniform(-5, 5))
-        angle_y = math.radians(NP_RNG.uniform(-5, 5))
-        markers = self.rotate_xy(markers, angle_x, angle_y)
-        veins = self.rotate_xy(veins, angle_x, angle_y)
+        # angle_uniform_shift_rad = NP_RNG.uniform(0, 2 * math.pi)
+        # magnitude = NP_RNG.uniform(0, 10)
+        # markers = self.uniform_shift(markers, angle_uniform_shift_rad, magnitude)
+        # veins = self.uniform_shift(veins, angle_uniform_shift_rad, magnitude)
+        # angle_x = math.radians(NP_RNG.uniform(-5, 5))
+        # angle_y = math.radians(NP_RNG.uniform(-5, 5))
+        # markers = self.rotate_xy(markers, angle_x, angle_y)
+        # veins = self.rotate_xy(veins, angle_x, angle_y)
         points = markers
         points_mask = markers_mask
         pyg = self.generate_pyg_vectorised(
-            points, veins, veins_mask, vein_thickness, ground_truth_labels_in=None
+            points, veins, veins_mask, ground_truth_labels_in=None
         )
         if self.visualisation_mode:
             veins = MyDataset.generate_vein_image(
@@ -784,7 +788,7 @@ class MyDataset(torch.utils.data.Dataset):
                 veins_mask[:, vein_idx, :] = False
 
     def generate_pyg_vectorised(
-        self, clip_points, clip_labels, clip_labels_mask, vein_thickness, ground_truth_labels_in=None
+        self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in=None
     ):
         pos = self.get_pos(clip_points)
         mask = self.get_mask()
@@ -793,7 +797,6 @@ class MyDataset(torch.utils.data.Dataset):
             clip_labels,
             clip_labels_mask,
             ground_truth_labels_in,
-            vein_thickness,
         )
         empty_x = self.get_empty_x()
         node_xy = self.get_node_xy(clip_points)
@@ -875,7 +878,7 @@ class MyDataset(torch.utils.data.Dataset):
             pos[t * self.num_nodes : (t + 1) * self.num_nodes, 0:2] = points
         return pos
 
-    def get_y(self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in, vein_thickness):
+    def get_y(self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in):
         if ground_truth_labels_in is not None:
             y = ground_truth_labels_in.reshape(
                 (self.clip_len * self.num_nodes,)
@@ -891,7 +894,7 @@ class MyDataset(torch.utils.data.Dataset):
                 if labels_filtered.size > 0:
                     distances = cdist(points, labels_filtered)
                     min_distances = np.min(distances, axis=1)
-                    px_threshold = vein_thickness
+                    px_threshold = self.vein_px_thickness
                     y_t = min_distances < px_threshold
                 else:
                     y_t = np.zeros(shape=(self.num_nodes,), dtype=int)
