@@ -61,10 +61,16 @@ class Contact:
     def handle_da_loss(self, ts):
         trajectory_ix = self.trajectory_ix[None]
         trajectory_name = self.trajectory_names[trajectory_ix]
-        target_timestep = self.photo_timesteps[trajectory_name]
-        if ts == target_timestep:
-            self.compute_da_loss()
-        return ts == target_timestep
+        if trajectory_name == 'slide':
+            target_timestep = self.photo_timesteps[trajectory_name]
+            act_now = ts == target_timestep
+            if act_now:
+                self.compute_da_loss()
+        else:
+            act_now = self.last_target_reached[None] == 1
+            if act_now:
+                self.compute_da_loss()
+        return act_now
     
     def compute_da_loss(self):
         h = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
@@ -603,9 +609,9 @@ class Contact:
         self.use_bo = SYSTEM_PARAMS.meta.load_params_from_bo == 1
         self.da_overlay = SYSTEM_PARAMS.files.da_overlay
         self.photo_timesteps = {
-            'press': 35,
-            'twist_z': 180,
-            'twist_x': 51,
+            # 'press': 35,
+            # 'twist_z': 180,
+            # 'twist_x': 51,
             'slide': 327,
         }
         self.da_losses = []
@@ -1035,7 +1041,7 @@ class Contact:
         y = cvx+dy/2
         z = cvz+dz+self.gap
         press_depth = 0.004*self.dist_sf
-        angle = 90
+        angle = 30
         z_rot = R.from_euler(seq="xyz", angles=[0, 0, -angle], degrees=True)
         ori2 = ori * z_rot
         ori = ori.as_quat()
@@ -1053,7 +1059,7 @@ class Contact:
         cvx, cvy, cvz = self.phantom_closest_vertex
         dx, dy, dz = self.phantom_dimensions
         x = cvx+dx/2
-        y = cvx+dy/4
+        y = cvx+dy/3
         z = cvz+dz+self.gap
         press_depth = 0.002*self.dist_sf
         angle = 20

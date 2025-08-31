@@ -54,12 +54,12 @@
         "dt": 1.270e-06,
         "dt_override": 1.000e-05,
         "normal_stiffness": [
-            50000.0,
+            10,
             0,
             5000
         ],
         "tangential_stiffness": [
-            25000.0,
+            0,
             0,
             0
         ],
@@ -69,7 +69,7 @@
             0
         ],
         "coulomb_friction_coeff": [
-            1,
+            0,
             0,
             0
         ],
@@ -84,7 +84,7 @@
         "pid_position_tolerance": 5.000e-03,
         "pid_orientation_tolerance": 1.000e+00,
         "pid_angle_eps": 1.000e-08,
-        "pid_max_rotation_per_second_degrees": 5.000e+02,
+        "pid_max_rotation_per_second_degrees": 2.000e+02,
         "dwell_frames": 0,
         "norm_eps": 1.000e-11,
         "tangential_velocity_detection_threshold": 5.000e-06
