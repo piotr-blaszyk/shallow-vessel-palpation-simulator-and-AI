@@ -117,11 +117,11 @@ class MyDataset(torch.utils.data.Dataset):
     def populate_clips_single_dataset_scheme(self):
         data_dir = "difftactile/output/training_data/pickle_2025_08_24-25_merged_reordered"
         self.files = MyDataset.get_folder_files(data_dir)
-        self.vein_masks_single_dataset_scheme = []
-        for i in range(len(self.files)):
-            self.vein_masks_single_dataset_scheme.append(
-                self.video_contains_vein(self.files[i])
-            )
+        # self.vein_masks_single_dataset_scheme = []
+        # for i in range(len(self.files)):
+        #     self.vein_masks_single_dataset_scheme.append(
+        #         self.video_contains_vein(self.files[i])
+        #     )
         dilations = [1, 2, 4, 8, 16, 32]
         for i in range(len(self.files)):
             file_path = self.files[i]
@@ -132,20 +132,31 @@ class MyDataset(torch.utils.data.Dataset):
                 dilated_clip_len = self.clip_len * dilation
                 if total_frames >= dilated_clip_len:
                     num_possible_starts = total_frames - dilated_clip_len + 1
-                    clips_found = 0
-                    max_attempts = num_possible_starts * 2
-                    attempts = 0
-                    while (
-                        clips_found < self.data_points_per_trajectory
-                        and attempts < max_attempts
-                    ):
-                        start_idx = NP_RNG.integers(num_possible_starts)
-                        if self.clip_contains_vein(i, start_idx, dilation):
-                            self.data_points.append(
-                                (file_path, start_idx, dilation)
-                            )
-                            clips_found += 1
-                        attempts += 1
+                    start_indices = sorted(
+                        NP_RNG.choice(
+                            range(num_possible_starts),
+                            size=min(self.data_points_per_trajectory, num_possible_starts),
+                            replace=False,
+                        )
+                    )
+                    for start_ix in start_indices:
+                        self.data_points.append(
+                            (file_path, start_ix, dilation)
+                        )
+                    # clips_found = 0
+                    # max_attempts = num_possible_starts * 2
+                    # attempts = 0
+                    # while (
+                    #     clips_found < self.data_points_per_trajectory
+                    #     and attempts < max_attempts
+                    # ):
+                    #     start_idx = NP_RNG.integers(num_possible_starts)
+                    #     if self.clip_contains_vein(i, start_idx, dilation):
+                    #         self.data_points.append(
+                    #             (file_path, start_idx, dilation)
+                    #         )
+                    #         clips_found += 1
+                    #     attempts += 1
 
     @staticmethod
     def get_folder_files(path):
@@ -579,13 +590,20 @@ class MyDataset(torch.utils.data.Dataset):
         return (file_num % 4) < 2
 
     def clip_contains_vein(self, file_ix, start, dilation):
+        dilated_clip_len = self.clip_len * dilation
         if self.scheme == "old":
             markers, veins, contains_vein = self.file_today_vein_masks[file_ix]
         elif self.scheme == "new":
             markers, veins, contains_vein = self.vein_masks_new_scheme[file_ix]
         elif self.scheme == "single_dataset":
-            markers, veins, contains_vein = self.vein_masks_single_dataset_scheme[file_ix]
-        dilated_clip_len = self.clip_len * dilation
+            # markers, veins, contains_vein = self.vein_masks_single_dataset_scheme[file_ix]
+            data = np.load(self.files[file_ix])
+            markers = data["markers"]
+            labels = data["vein_polyline"]
+            labels_mask = data["vein_polyline_mask"]
+            labels_mask = labels_mask[start : start + dilated_clip_len : dilation]
+            res = labels_mask[:, 0, 0]
+            return np.any(res)
         clip_vein_mask = contains_vein[start : start + dilated_clip_len : dilation]
         clip_veins = veins[start : start + dilated_clip_len : dilation]
         veins_present = np.all(clip_vein_mask, axis=0)

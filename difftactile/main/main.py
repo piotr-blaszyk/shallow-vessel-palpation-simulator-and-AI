@@ -2505,7 +2505,6 @@ class Contact:
     def collect_training_data(self):
         # self.clear_temp_images()
         self.clear_npz()
-        self.generate_trajectories()
         file_num = 0
         for i in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             if self.use_bo:
@@ -2514,8 +2513,9 @@ class Contact:
                 else:
                     self.bo.my_suggest_optimise()
                 self.set_contact_params_from_bo()
-            print(f"training trajectory: {i} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for j in range(5):
+                print(f"training trajectory: {i}/{SYSTEM_PARAMS.contact.num_training_trajectories - 1}; substep: {j}/5")
+                self.generate_trajectories()
                 if j < 4:
                     self.collision_ixs = [0, 2]
                 else:
@@ -2535,7 +2535,7 @@ class Contact:
                     self.set_dt(verbose=True)
                     self.fp()
                     # self.print_contact_params()
-                    for ts in tqdm(range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory)):
+                    for ts in range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory):
                         self.pid_controller_1()
                         self.pid_controller_2(ts)
                         self.pid_controller_3()
@@ -2575,10 +2575,10 @@ class Contact:
                     self.batch_loss.fill(0.0)
                     # self.clear_grad()
                     self.prev_loss[None] = 0.0
-                    self.trajectory_loss[None] = 0.0   
-                print(
-                    f"training trajectory: {i} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1} done"
-                )
+                    self.trajectory_loss[None] = 0.0 
+                    print(
+                        f"training trajectory: {i}/{SYSTEM_PARAMS.contact.num_training_trajectories - 1}; substep: {j}/5 done"
+                    )
                 if self.use_bo:
                     print(f'domain adaptation losses: {self.da_losses}')
                     print(f'domain adaptation loss sum: {sum(self.da_losses)}')
