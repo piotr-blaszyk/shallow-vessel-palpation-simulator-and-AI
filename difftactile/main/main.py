@@ -1053,7 +1053,7 @@ class Contact:
         cvx, cvy, cvz = self.phantom_closest_vertex
         dx, dy, dz = self.phantom_dimensions
         x = cvx+dx/2
-        y = cvx+dy/2
+        y = cvx+dy/4
         z = cvz+dz+self.gap
         press_depth = 0.002*self.dist_sf
         angle = 20
@@ -2478,7 +2478,6 @@ class Contact:
         if self.use_bo:
             self.set_contact_params_from_bo()
             self.vitactip.set_material_params_from_bo()
-            self.phantom.set_material_params_from_bo()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for k in range(1, 2):

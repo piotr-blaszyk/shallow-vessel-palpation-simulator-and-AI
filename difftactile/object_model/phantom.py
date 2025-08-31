@@ -156,6 +156,7 @@ class Phantom:
         )
     
     def set_material_params_from_bo(self):
+        return
         self.youngs_modulus[0] = BO.phantom_youngs_modulus
         self.poissons_ratio[0] = BO.phantom_poissons_ratio
         self.set_stiffness()

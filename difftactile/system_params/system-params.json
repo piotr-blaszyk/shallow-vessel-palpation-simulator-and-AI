@@ -13,7 +13,7 @@
         "single_material": {
             "density": 1.100e+03,
             "poissons_ratio": 4.990e-01,
-            "youngs_modulus": 4.800e+05
+            "youngs_modulus": 1.000e+04
         },
         "collision_search_distance": 5.000e+00,
         "keypoint_search_z_threshold": 5.000e-03,
@@ -59,7 +59,7 @@
             5000
         ],
         "tangential_stiffness": [
-            0,
+            25000.0,
             0,
             0
         ],
@@ -69,7 +69,7 @@
             0
         ],
         "coulomb_friction_coeff": [
-            0,
+            1,
             0,
             0
         ],

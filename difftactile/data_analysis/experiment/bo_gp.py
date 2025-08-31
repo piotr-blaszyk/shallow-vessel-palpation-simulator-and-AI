@@ -9,12 +9,10 @@ class BoGp:
     def __init__(self):
         self.pbounds = {
             'vitactip_youngs_modulus': (1e4, 4.8e+05),
-            'phantom_youngs_modulus': (1e4, 4.8e+05),
             'vitactip_poissons_ratio': (0.3, 0.5),
-            'phantom_poissons_ratio': (0.3, 0.5),
-            'normal_stiffness': (0, 1e10),
-            'tangential_stiffness': (0, 1e10),
-            'normal_damping': (0, 1e10),
+            'normal_stiffness': (0, 5e4),
+            'tangential stiffness': (0, 5e4),
+            'normal_damping': (0, 5e4),
             'coulomb_friction_coeff': (0, 1),
         }
         # acq = acquisition.UpperConfidenceBound(kappa=2.5)
@@ -44,18 +42,22 @@ class BoGp:
 
     def my_suggest_optimise(self):
         params = self.optimiser.suggest()
-        self.save_params_to_file(params)
+        params = self.my_suggest_optimise_helper(params)
         return params
     
     def my_suggest_random(self):
         params = {k: np.random.uniform(*v) for k, v in self.pbounds.items()}
-        self.save_params_to_file(params)
+        params = self.my_suggest_optimise_helper(params)
         return params
     
-    def save_params_to_file(self, params):
+    def my_suggest_optimise_helper(self, params):
+        params['tangential_stiffness'] = NP_RNG.uniform(0, 0.3) * params['normal_stiffness']
+
         with open(self.params_path, "w") as f:
             json.dump(params, f, indent=4)
         self.params = params
+
+        return params
     
     def my_register(self):
         with open(self.target_path, "r") as f:
