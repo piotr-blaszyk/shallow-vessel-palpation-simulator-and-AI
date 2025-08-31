@@ -1094,6 +1094,7 @@ class Contact:
             sensor_dome_tip_initial_pose[:3]
         )
         self.phantom_initial_position[0] = ti.Vector(self.phantom_centroid_pose[:3])
+        self.phantom.initialise_point_cloud()
     
     def set_trajectories(self, trajectories_python_arr):
         # Create a zero-initialized array for padded trajectories
@@ -1267,7 +1268,6 @@ class Contact:
         self.batch_loss_1[None] = 0
         self.batch_loss_2[None] = 0
 
-    @ti.kernel
     def reset_state(self):
         self.vitactip.reset_state()
         self.phantom.reset_state()
@@ -2257,10 +2257,10 @@ class Contact:
         self.coulomb_friction_coeff[None] = NP_RNG.uniform(cfc * 0.5, cfc * 1.25)
     
     def set_contact_params_from_bo(self):
-        self.normal_stiffness[None] = BO.normal_stiffness
-        self.normal_damping[None] = BO.normal_damping
-        self.tangential_stiffness[None] = BO.tangential_stiffness
-        self.coulomb_friction_coeff[None] = BO.coulomb_friction_coeff
+        self.normal_stiffness[0] = BO.normal_stiffness
+        self.normal_damping[0] = BO.normal_damping
+        self.tangential_stiffness[0] = BO.tangential_stiffness
+        self.coulomb_friction_coeff[0] = BO.coulomb_friction_coeff
     
     def print_contact_params(self):
         ns = SYSTEM_PARAMS.contact.normal_stiffness

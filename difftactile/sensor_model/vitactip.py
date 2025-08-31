@@ -906,7 +906,7 @@ class ViTacTip:
                 + self.dt[None] * self.vertex_control_velocities[vertex_idx]
             )
     
-    @ti.func
+    @ti.kernel
     def reset_state(self):
         if False:
             self.youngs_modulus.fill(0.0)

@@ -13,7 +13,7 @@
         "single_material": {
             "density": 1.100e+03,
             "poissons_ratio": 4.990e-01,
-            "youngs_modulus": 1.000e-06
+            "youngs_modulus": 4.800e+05
         },
         "collision_search_distance": 5.000e+00,
         "keypoint_search_z_threshold": 5.000e-03,
@@ -36,7 +36,7 @@
         "silicone": {
             "density": 900,
             "poissons_ratio": 4.600e-01,
-            "youngs_modulus": 1.000e-06
+            "youngs_modulus": 4.800e+05
         },
         "hard_plastic": {
             "density": 1150,
@@ -54,7 +54,7 @@
         "dt": 1.270e-06,
         "dt_override": 1.000e-05,
         "normal_stiffness": [
-            50,
+            50000.0,
             0,
             5000
         ],
@@ -182,7 +182,7 @@
         "vein_px_thickness": 30,
         "enable_grad": 0,
         "num_contact_pairs": 3,
-        "load_params_from_bo": 1
+        "load_params_from_bo": 0
     },
     "gnn": {
         "entity_type_embedding_dim": 8,

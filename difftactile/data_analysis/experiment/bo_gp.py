@@ -8,10 +8,10 @@ from difftactile.main.constants import *
 class BoGp:
     def __init__(self):
         self.pbounds = {
-            'vitactip_youngs_modulus': (1e-6, 4.8e+05),
-            'phantom_youngs_modulus': (1e-6, 4.8e+05),
-            'vitactip_poissons_ratio': (0, 0.5),
-            'phantom_poissons_ratio': (0, 0.5),
+            'vitactip_youngs_modulus': (1e4, 4.8e+05),
+            'phantom_youngs_modulus': (1e4, 4.8e+05),
+            'vitactip_poissons_ratio': (0.3, 0.5),
+            'phantom_poissons_ratio': (0.3, 0.5),
             'normal_stiffness': (0, 1e10),
             'tangential_stiffness': (0, 1e10),
             'normal_damping': (0, 1e10),
