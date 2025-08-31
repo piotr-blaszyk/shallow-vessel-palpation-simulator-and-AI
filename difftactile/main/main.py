@@ -13,6 +13,7 @@ import torch
 import torch.optim as optim
 import math
 import cProfile, pstats, sys
+from tqdm import tqdm
 
 from difftactile.main.constants import *
 from difftactile.object_model.vein import Vein
@@ -48,15 +49,24 @@ class Contact:
         self.training_data_collection_initialise()
         self.foo()
     
-    def compute_da_loss(self, sim_points, trajectory_name):
+    def handle_da_loss(self, ts):
+        if False:
+            self.compute_da_loss()
+    
+    def compute_da_loss(self):
+        self.move_og_resolution()
+        sim_points = self.sim_markers_deformed.to_numpy()
+        self.move_ti_resolution()
         _, sim_points_reordered, _ = Adjacency.get_graph_connectivity(sim_points)
+        trajectory_ix = self.trajectory_ix[None]
+        trajectory_name = self.trajectory_names[trajectory_ix]
         file_path = self.da_npz_paths[trajectory_name]
         data = np.load(file_path)
         exp_points = data['points']
         a = sim_points_reordered
         b = exp_points
         mae = np.linalg.norm(a-b, axis=1).mean()
-        return mae
+        self.da_loss += mae
     
     @ti.kernel
     def update_vitactip_tip_point(self):
@@ -104,7 +114,7 @@ class Contact:
             needs_grad=False,
         )
         self.all_points = []
-        self.collision_ixs = [2]
+        self.collision_ixs = [0]
         self.collision_resolvers = [
             self.collision0,
             self.collision1,
@@ -560,6 +570,7 @@ class Contact:
         )
 
     def set_up_system_params(self):
+        self.da_loss = 0
         self.dist_sf = SYSTEM_PARAMS.meta.distance_scaling_factor
         self.sensor_r = SYSTEM_PARAMS.geometry.sensor_xy_radius
         default_photo = SYSTEM_PARAMS.files.flat_sensor_default_state
@@ -812,7 +823,7 @@ class Contact:
         #         self.generate_random_state_dicts()
         #     )    
     
-    def get_vitactip_orientation_quat(self):
+    def get_vitactip_orientation(self):
         quat = self.vitactip_tip_pose[3:]
         og_r = R.from_quat(quat)
         _dr = -SYSTEM_PARAMS.geometry.camera_rotation_angle
@@ -963,13 +974,14 @@ class Contact:
         return trajectory
     
     def get_press_trajectory(self):
-        ori = self.get_vitactip_orientation_quat()
+        ori = self.get_vitactip_orientation()
         cvx, cvy, cvz = self.phantom_closest_vertex
         dx, dy, dz = self.phantom_dimensions
         x = cvx+dx/2
         y = cvx+dy/2
         z = cvz+dz+self.gap
         press_depth = 0.004*self.dist_sf
+        ori = ori.as_quat()
         trajectory = [
             [x, y, z, *ori],
             [x, y, z-self.gap, *ori],
@@ -978,7 +990,7 @@ class Contact:
         return trajectory
     
     def get_twist_z_trajectory(self):
-        ori = self.get_vitactip_orientation_quat()
+        ori = self.get_vitactip_orientation()
         cvx, cvy, cvz = self.phantom_closest_vertex
         dx, dy, dz = self.phantom_dimensions
         x = cvx+dx/2
@@ -988,6 +1000,8 @@ class Contact:
         angle = 90
         z_rot = R.from_euler(seq="xyz", angles=[0, 0, angle], degrees=True)
         ori2 = ori * z_rot
+        ori = ori.as_quat()
+        ori2 = ori2.as_quat()
         trajectory = [
             [x, y, z, *ori],
             [x, y, z-self.gap, *ori],
@@ -997,7 +1011,7 @@ class Contact:
         return trajectory
     
     def get_twist_x_trajectory(self):
-        ori = self.get_vitactip_orientation_quat()
+        ori = self.get_vitactip_orientation()
         cvx, cvy, cvz = self.phantom_closest_vertex
         dx, dy, dz = self.phantom_dimensions
         x = cvx+dx/2
@@ -1007,6 +1021,8 @@ class Contact:
         angle = 20
         z_rot = R.from_euler(seq="xyz", angles=[angle, 0, 0], degrees=True)
         ori2 = ori * z_rot
+        ori = ori.as_quat()
+        ori2 = ori2.as_quat()
         trajectory = [
             [x, y, z, *ori],
             [x, y, z-self.gap, *ori],
@@ -1016,7 +1032,7 @@ class Contact:
         return trajectory
     
     def get_slide_trajectory(self):
-        ori = self.get_vitactip_orientation_quat()
+        ori = self.get_vitactip_orientation()
         cvx, cvy, cvz = self.phantom_closest_vertex
         dx, dy, dz = self.phantom_dimensions
         press_depth = 0.003*self.dist_sf
@@ -1025,10 +1041,11 @@ class Contact:
         x = cvx+dx/2
         y = cvx-self.sensor_r
         z = cvz+dz-press_depth
-        y_final = y+r+y_span+r
+        y2 = y+r+y_span+r
+        ori = ori.as_quat()
         trajectory = [
             [x, y, z, *ori],
-            [x, y, z, *ori],
+            [x, y2, z, *ori],
         ]
         return trajectory
 
@@ -2665,23 +2682,25 @@ class Contact:
         self.clear_npz()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
-            for k in range(0, 1):
+            for k in range(1, 2):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(2, 3):
+                for i in range(0, 4):
                     # self.randomise_contact_params()
                     self.trajectory_ix[None] = i
+                    trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
+                    print(f'executing trajectory: {trajectory_name}')
                     self.set_up_initial_positions_state_and_trajectory()
                     # self.vein_sparse_to_dense()
                     self.reset_pid_controller()
                     self.visualisation_reset_scene()
                     self.reset_exp_sim_traj()
                     self.vitactip.extract_markers(0)
-                    self.compute_mapping_between_experimental_and_sim_markers()
+                    # self.compute_mapping_between_experimental_and_sim_markers()
                     self.set_dt(verbose=True)
                     self.fp()
                     # self.print_contact_params()
-                    for ts in range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory):
+                    for ts in tqdm(range(SYSTEM_PARAMS.meta.max_timesteps_per_trajectory)):
                         self.pid_controller_1()
                         self.pid_controller_2(ts)
                         self.pid_controller_3()
@@ -2699,12 +2718,13 @@ class Contact:
                         self.visualisation_update_gui(ts)
                         if ts % 10 == 0:
                             self.record_vitactip_mesh()
-                        target = self.current_target_idx[None]
+                        # target = self.current_target_idx[None]
                         # if (
                         #     target > 2
                         #     and ts % 4 == 0
                         # ):
                         #     self.record_training_data_point(j, ts)
+                        self.handle_da_loss(ts)
                         if ts % 100 == 0:
                             self.save_sensor_mesh_to_npz()
                             print(f"ts={ts}; sensor mesh saved")
@@ -2723,6 +2743,7 @@ class Contact:
             print(
                 f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1} done"
             )
+        print(f'domain adaptation loss: {self.da_loss}')
         print("training data collection done")
         print("all done")
 
