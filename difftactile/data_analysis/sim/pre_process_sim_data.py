@@ -3,25 +3,19 @@ if SYSTEM_PARAMS.meta.cnn_gnn == 0:
     import cv2
 
 import os
-import torch
 import numpy as np
-import math
-from torch_geometric.data import Data
-from sklearn.neighbors import NearestNeighbors
-import time
 from tqdm import tqdm
 
 from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.data_analysis.experiment.adjacency import *
-import re
 
 
 class PreProcessSimData:
     @staticmethod
     def sim_marker_tracker():
-        input_dir = "difftactile/output/training_data/pickle_2025_08_24-25_merged"
-        output_dir = "difftactile/output/training_data/pickle_2025_08_24-25_merged_reordered"
+        input_dir = "difftactile/output/training_data/pickle_2025_08_31"
+        output_dir = "difftactile/output/training_data/pickle_2025_08_31_reordered"
         base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_points = base_graph_data['points']
         file_paths = sorted([os.path.join(input_dir, f) for f in os.listdir(input_dir)])

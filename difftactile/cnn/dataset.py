@@ -116,14 +116,14 @@ class MyDataset(torch.utils.data.Dataset):
             print(f"num data points: {len(self.data_points):,}")
     
     def populate_clips_single_dataset_scheme(self):
-        data_dir = "difftactile/output/training_data/pickle_2025_08_24-25_merged_reordered"
+        data_dir = "difftactile/output/training_data/pickle_2025_08_31_reordered"
         self.files = MyDataset.get_folder_files(data_dir)
         # self.vein_masks_single_dataset_scheme = []
         # for i in range(len(self.files)):
         #     self.vein_masks_single_dataset_scheme.append(
         #         self.video_contains_vein(self.files[i])
         #     )
-        dilations = [1, 2, 4, 8, 16, 32]
+        dilations = [1, 2, 4, 8, 16, 32, 64]
         for i in range(len(self.files)):
             file_path = self.files[i]
             data = np.load(file_path)

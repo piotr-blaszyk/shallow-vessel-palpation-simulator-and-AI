@@ -300,6 +300,36 @@ class GNN(pl.LightningModule):
         self.log_per_batch_iou(batch, stage, preds_masked, batch.y)
 
         return loss
+
+    def merge_tensors_unvectorised(self, x, y, n, k):
+        b = x.shape[0] // n
+        assert b == y.shape[0] // k, "Batch sizes must match"
+        x_reshaped = x.reshape(b, n, -1)
+        y_reshaped = y.reshape(b, k, -1)
+        merged = []
+        for i in range(b):
+            merged.append(x_reshaped[i])
+            merged.append(y_reshaped[i])
+        return torch.cat(merged, dim=0)
+    
+    def merge_tensors_vectorised(self, x, y, n, k):
+        b = x.shape[0] // n
+        assert b == y.shape[0] // k, "Batch sizes must match"
+        
+        x_idx = torch.arange(b*n).reshape(b, n)
+        y_idx = torch.arange(b*k).reshape(b, k)
+        
+        y_idx = y_idx + (torch.arange(b) * (n + k)).unsqueeze(1)
+        x_idx = x_idx + (torch.arange(b) * (n + k)).unsqueeze(1)
+        
+        x_idx = x_idx.reshape(-1)
+        y_idx = y_idx.reshape(-1)
+        
+        merged_idx = torch.zeros(b*(n+k), dtype=torch.long)
+        merged_idx[x_idx] = torch.arange(b*n)
+        merged_idx[y_idx] = torch.arange(b*k) + b*n
+        
+        return torch.cat([x, y], dim=0)[merged_idx]
     
     def my_prepare_data(self, batch, batch_size):
         pos = batch.pos
@@ -320,7 +350,7 @@ class GNN(pl.LightningModule):
         edge_attr_global_temporal = batch.edge_attr_global_temporal
 
         regular_nodes = self.regular_node_mlp(regular_nodes)
-        global_nodes = self.global_node.expand(self.clip_len, -1)
+        global_nodes = self.global_node.expand(batch_size*self.clip_len, -1)
         spatial_edges = self.spatial_edge_mlp(edge_attr_spatial)
         temporal_edges = self.temporal_edge_mlp(edge_attr_temporal)
         n = edge_index_global_spatial.shape[1]
@@ -353,10 +383,17 @@ class GNN(pl.LightningModule):
             global_temporal_edges,
         ], dim=0)
 
-        x = torch.cat([
+        # x = torch.cat([
+        #     regular_nodes,
+        #     global_nodes,
+        # ], dim=0)
+
+        x = self.merge_tensors_unvectorised(
             regular_nodes,
             global_nodes,
-        ], dim=0)
+            635,
+            5,
+        )
 
         edge_attr = self.input_dropout(edge_attr)
         x = self.input_dropout(x)
@@ -542,7 +579,7 @@ class GNN(pl.LightningModule):
         return self.get_accumulator(shape=(), dtype=torch.int32)
     
     def get_accumulator(self, shape, dtype):
-        return {k: torch.zeros(shape, dtype=dtype, device='cuda:0') for k in self.stages_str}
+        return {k: torch.zeros(shape, dtype=dtype, device='cpu') for k in self.stages_str}
     
     def init_accumulators(self):
         self.area_pred_acc = self.get_iou_accumulator()
@@ -737,7 +774,7 @@ def main():
     )
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
-        accelerator="auto",
+        accelerator="cpu",  # Force CPU for better error messages
         enable_checkpointing=True,
         logger=logger,
         log_every_n_steps=1,
