@@ -852,8 +852,8 @@ class Visualisation:
 def main():
     v = Visualisation()
     v.visualise_gnn(
-        mode='dataset', 
-        data_source='fresh_dataset'
+        mode='predictions', 
+        data_source='pickled_test_dataset'
     )
 
 

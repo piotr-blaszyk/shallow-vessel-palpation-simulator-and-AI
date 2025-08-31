@@ -579,7 +579,7 @@ class GNN(pl.LightningModule):
         return self.get_accumulator(shape=(), dtype=torch.int32)
     
     def get_accumulator(self, shape, dtype):
-        return {k: torch.zeros(shape, dtype=dtype, device='cpu') for k in self.stages_str}
+        return {k: torch.zeros(shape, dtype=dtype, device='cuda:0') for k in self.stages_str}
     
     def init_accumulators(self):
         self.area_pred_acc = self.get_iou_accumulator()
@@ -774,7 +774,7 @@ def main():
     )
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
-        accelerator="cpu",  # Force CPU for better error messages
+        accelerator='auto',  # Force CPU for better error messages
         enable_checkpointing=True,
         logger=logger,
         log_every_n_steps=1,
