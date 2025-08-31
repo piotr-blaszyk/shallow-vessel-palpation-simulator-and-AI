@@ -9,7 +9,9 @@ class BoGp:
     def __init__(self):
         self.pbounds = {
             'vitactip_youngs_modulus': (1e4, 4.8e+05),
+            'phantom_youngs_modulus': (1e4, 4.8e+05),
             'vitactip_poissons_ratio': (0.3, 0.5),
+            'phantom_poissons_ratio': (0.3, 0.5),
             'normal_stiffness': (0, 5e4),
             'tangential_stiffness': (0, 5e4),
             'normal_damping': (0, 5e4),
@@ -17,7 +19,9 @@ class BoGp:
         }
         self.pbounds_normalised = {
             'vitactip_youngs_modulus': (0, 1),
+            'phantom_youngs_modulus': (0, 1),
             'vitactip_poissons_ratio': (0, 1),
+            'phantom_poissons_ratio': (0, 1),
             'normal_stiffness': (0, 1),
             'tangential_stiffness': (0, 1),
             'normal_damping': (0, 1),
@@ -96,13 +100,13 @@ class BoGp:
         # self.target = target_data['target']
         self.optimiser.register(
             params=self.normalise_dict(self.params),
-            target=self.normalise_target(target),
+            target=1-self.normalise_target(target),
         )
         self.all_params.append(self.params)
         self.all_targets.append(target)
     
     def write_to_file(self):
-        print("writing to file!")
+        # print("writing to file!")
         with open(self.all_params_path, "w") as f:
             json.dump(self.all_params, f, indent=4)
         with open(self.all_targets_path, "w") as f:

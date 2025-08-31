@@ -1648,9 +1648,9 @@ class Contact:
             self.dwell_counter[None] = 0
             self.sim_keypoints[self.current_target_idx[None]] = ts
             self.mesh_needs_to_be_saved[None] = 1
-            print(
-                f"target {self.current_target_idx[None]} ({target}) reached at time step {ts}!"
-            )
+            # print(
+            #     f"target {self.current_target_idx[None]} ({target}) reached at time step {ts}!"
+            # )
         target_reached_no_control = False
         if self.is_dwelling[None] == 1:
             self.dwell_counter[None] += 1
@@ -2273,6 +2273,10 @@ class Contact:
         self.vitactip.youngs_modulus[None] = self.bo.params['vitactip_youngs_modulus']
         self.vitactip.poissons_ratio[None] = self.bo.params['vitactip_poissons_ratio']
         self.vitactip.set_up_system_params_2()
+
+        self.phantom.youngs_modulus[0] = self.bo.params['phantom_youngs_modulus']
+        self.phantom.poissons_ratio[0] = self.bo.params['phantom_poissons_ratio']
+        self.phantom.set_stiffness()
     
     def print_contact_params(self):
         ns = SYSTEM_PARAMS.contact.normal_stiffness
@@ -2325,8 +2329,8 @@ class Contact:
         self.dt[None] = dt
         self.phantom.dt[None] = dt
         self.vitactip.dt[None] = dt
-        if verbose:
-            print(f'dt={dt:0.3e} s')
+        # if verbose:
+        #     print(f'dt={dt:0.3e} s')
     
     def get_keypoint_indices_and_validate(self):
         self.vitactip.test_mapping_from_global_space_to_camera_space()
@@ -2500,7 +2504,7 @@ class Contact:
                 # self.randomise_contact_params()
                 self.trajectory_ix[None] = i
                 trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
-                print(f'executing trajectory: {trajectory_name}')
+                # print(f'executing trajectory: {trajectory_name}')
                 self.set_up_initial_positions_state_and_trajectory()
                 # self.vein_sparse_to_dense()
                 self.reset_pid_controller()
@@ -2540,7 +2544,7 @@ class Contact:
                         break
                     if ts % 100 == 0:
                         self.save_sensor_mesh_to_npz()
-                        print(f"ts={ts}; sensor mesh saved")
+                        # print(f"ts={ts}; sensor mesh saved")
                     # if self.last_target_reached[None] == 1:
                     #     break
                 # self.write_training_data_to_file(file_num, i)
