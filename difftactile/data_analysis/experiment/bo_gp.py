@@ -9,19 +9,19 @@ class BoGp:
     def __init__(self):
         self.pbounds = {
             'vitactip_youngs_modulus': (1e4, 4.8e+05),
-            'phantom_youngs_modulus': (1e4, 4.8e+05),
+            # 'phantom_youngs_modulus': (1e4, 4.8e+05),
             'vitactip_poissons_ratio': (0.3, 0.5),
-            'phantom_poissons_ratio': (0.3, 0.5),
-            'normal_stiffness': (0, 5e4),
-            'tangential_stiffness': (0, 5e4),
-            'normal_damping': (0, 5e4),
+            # 'phantom_poissons_ratio': (0.3, 0.5),
+            'normal_stiffness': (0, 5e1),
+            'tangential_stiffness': (0, 5e1),
+            'normal_damping': (0, 5e1),
             'coulomb_friction_coeff': (0, 1),
         }
         self.pbounds_normalised = {
             'vitactip_youngs_modulus': (0, 1),
-            'phantom_youngs_modulus': (0, 1),
+            # 'phantom_youngs_modulus': (0, 1),
             'vitactip_poissons_ratio': (0, 1),
-            'phantom_poissons_ratio': (0, 1),
+            # 'phantom_poissons_ratio': (0, 1),
             'normal_stiffness': (0, 1),
             'tangential_stiffness': (0, 1),
             'normal_damping': (0, 1),
@@ -90,6 +90,7 @@ class BoGp:
     def my_suggest_optimise_helper(self, params):
         params['tangential_stiffness'] = NP_RNG.uniform(0, 0.3) * params['normal_stiffness']
         params = self.unnormalise_dict(params)
+        print(params)
         self.params = params
         with open(self.params_path, "w") as f:
             json.dump(params, f, indent=4)

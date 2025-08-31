@@ -141,8 +141,8 @@ class Phantom:
         z_threshold = z_min + SYSTEM_PARAMS.phantom.fixed_points_z_ratio * (
             z_max - z_min
         )
-        is_fixed_np = z_coords <= z_threshold
-        # is_fixed_np = np.ones_like(z_coords, dtype=bool)
+        # is_fixed_np = z_coords <= z_threshold
+        is_fixed_np = np.ones_like(z_coords, dtype=bool)
         self.is_fixed.from_numpy(is_fixed_np.astype(int))
         self.initial_particle_volume = (
             SYSTEM_PARAMS_COMPUTED.phantom_volume / self.num_particles

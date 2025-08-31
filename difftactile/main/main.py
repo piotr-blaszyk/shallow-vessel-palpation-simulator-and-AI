@@ -2274,9 +2274,9 @@ class Contact:
         self.vitactip.poissons_ratio[None] = self.bo.params['vitactip_poissons_ratio']
         self.vitactip.set_up_system_params_2()
 
-        self.phantom.youngs_modulus[0] = self.bo.params['phantom_youngs_modulus']
-        self.phantom.poissons_ratio[0] = self.bo.params['phantom_poissons_ratio']
-        self.phantom.set_stiffness()
+        # self.phantom.youngs_modulus[0] = self.bo.params['phantom_youngs_modulus']
+        # self.phantom.poissons_ratio[0] = self.bo.params['phantom_poissons_ratio']
+        # self.phantom.set_stiffness()
     
     def print_contact_params(self):
         ns = SYSTEM_PARAMS.contact.normal_stiffness
@@ -2592,6 +2592,7 @@ def main():
     contact_model.get_keypoint_indices_and_validate()
     # contact_model.set_up_torch_params()
     contact_model.collect_training_data()
+    contact_model.bo.write_to_file()
     if False:
         profiler = cProfile.Profile()
         try:

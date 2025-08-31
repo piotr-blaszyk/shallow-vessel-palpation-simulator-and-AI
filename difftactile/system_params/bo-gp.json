@@ -1,8 +1,8 @@
 {
-    "vitactip_youngs_modulus": 307340.2954977476,
-    "vitactip_poissons_ratio": 0.3338680653591045,
-    "normal_stiffness": 33025.85601748338,
-    "tangential_stiffness": 5597.878854756033,
-    "normal_damping": 6278.194437099449,
-    "coulomb_friction_coeff": 0.996818452329806
+    "vitactip_youngs_modulus": 140347.47344582237,
+    "vitactip_poissons_ratio": 0.3392910991530514,
+    "normal_stiffness": 499.8748176079777,
+    "tangential_stiffness": 107.14261686305973,
+    "normal_damping": 282.10726913137245,
+    "coulomb_friction_coeff": 0.9341558324675266
 }
