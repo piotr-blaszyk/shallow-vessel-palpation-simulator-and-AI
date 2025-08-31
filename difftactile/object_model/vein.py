@@ -26,6 +26,24 @@ class Vein:
         )
         self.transform_BA()
         self.debug_vein()
+        self.initialise_centerline_particles()
+    
+    def initialise_centerline_particles(self):
+        p1 = self.pose[:3].copy()
+        vec = np.array([
+            self.h,
+            0,
+            0,
+        ], dtype=float)
+        p2 = p1+vec
+        points = np.linspace(p1, p2, num=50)
+        self.centerline_A = ti.Vector.field(
+            3,
+            dtype=float,
+            shape=(points.shape[0],),
+            needs_grad=False,
+        )
+        self.centerline_A.from_numpy(points)
     
     def debug_vein(self):
         points = self.particles_A.to_numpy()

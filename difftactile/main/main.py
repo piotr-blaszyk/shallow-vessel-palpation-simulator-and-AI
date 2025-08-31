@@ -607,6 +607,7 @@ class Contact:
         )
 
     def set_up_system_params(self):
+        self.collision2_contact_flat = ti.field(dtype=int, shape=(), needs_grad=False)
         self.target_path = SYSTEM_PARAMS.files.bo_gp_target_json
         self.use_bo = SYSTEM_PARAMS.meta.load_params_from_bo == 1
         self.da_overlay = SYSTEM_PARAMS.files.da_overlay
@@ -1282,6 +1283,7 @@ class Contact:
         self.triangle_ix_contact_0.fill(-1)
         self.triangle_ix_contact_1.fill(-1)
         self.triangle_ix_contact_2.fill(-1)
+        self.collision2_contact_flat.fill(0)
         if False:
             self.coulomb_friction_coeff.fill(0)
             self.normal_stiffness.fill(0)
@@ -1564,6 +1566,7 @@ class Contact:
                     frame,
                 )
                 if is_in_contact:
+                    self.collision2_contact_flat[None] = 1
                     total_contact_force, _, _ = self.calculate_contact_force(
                         penetration_depth, 
                         -1*surface_normal, 
@@ -1752,6 +1755,7 @@ class Contact:
         self.move_og_resolution()
         markers = self.sim_markers_deformed.to_numpy()
         self.move_ti_resolution()
+        markers[:, 1] = h-markers[:, 1]
         self.marker_data.append(markers)
         markers_img = np.zeros((h, w), dtype=np.uint8)
         for point in markers:
@@ -1760,27 +1764,32 @@ class Contact:
         markers_mask = SyntheticImageGenerator.compute_mask(h, w, markers)
 
         vein = self.vein_2d_projection.to_numpy()
-        vein_counts = self.vein_counts.to_numpy()
-        vein_python_arr = []
-        for i in range(vein.shape[0]):
-            num_points = vein_counts[i]
-            single_vein_points = vein[i, :num_points]
-            vein_python_arr.append(
-                single_vein_points
-            )
-        vein = vein_python_arr
-        vein_polyline_python_arr = []
-        for i in range(len(vein)):
-            single_vein = vein[i]
-            single_vein = SyntheticImageGenerator.filter_using_mask(markers_mask, single_vein)
-            polyline_points = SyntheticImageGenerator.fit_polynomial(single_vein)
-            vein_polyline_python_arr.append(polyline_points)
-        vein_polyline_np, vein_polyline_mask = SyntheticImageGenerator.create_padded_array_with_mask(
-            vein_polyline_python_arr, 
-            k=SYSTEM_PARAMS.meta.polyline_num
-        )
-        self.vein_polyline_data.append(vein_polyline_np)
-        self.vein_polyline_mask_data.append(vein_polyline_mask)
+        vein[:, :, 1] = h-vein[:, :, 1]
+        # vein_counts = self.vein_counts.to_numpy()
+        # vein_python_arr = []
+        # for i in range(vein.shape[0]):
+        #     num_points = vein_counts[i]
+        #     single_vein_points = vein[i, :num_points]
+        #     vein_python_arr.append(
+        #         single_vein_points
+        #     )
+        # vein = vein_python_arr
+        # vein_polyline_python_arr = []
+        # for i in range(len(vein)):
+        #     single_vein = vein[i]
+        #     single_vein = SyntheticImageGenerator.filter_using_mask(markers_mask, single_vein)
+        #     polyline_points = SyntheticImageGenerator.fit_polynomial(single_vein)
+        #     vein_polyline_python_arr.append(polyline_points)
+        # vein_polyline_np, vein_polyline_mask = SyntheticImageGenerator.create_padded_array_with_mask(
+        #     vein_polyline_python_arr, 
+        #     k=SYSTEM_PARAMS.meta.polyline_num
+        # )
+        if self.collision2_contact_flat[None] == 1:
+            vein_mask = np.ones(shape=(vein.shape[0], vein.shape[1]), dtype=bool)
+        else:
+            vein_mask = np.zeros(shape=(vein.shape[0], vein.shape[1]), dtype=bool)
+        self.vein_polyline_data.append(vein)
+        self.vein_polyline_mask_data.append(vein_mask)
 
         target_id_arr = np.array([
             self.current_target_idx[None]
@@ -1918,23 +1927,23 @@ class Contact:
             shape=(self.phantom.num_particles,),
             needs_grad=False,
         )
-        # self.vein_2d_projection = ti.Vector.field(
-        #     2,
-        #     dtype=float,
-        #     shape=(
-        #         SYSTEM_PARAMS.meta.max_num_veins,
-        #         self.phantom.num_particles
-        #     ),
-        #     needs_grad=False,
-        # )
-        # self.vein_2d_projection_flat = ti.Vector.field(
-        #     2,
-        #     dtype=float,
-        #     shape=(
-        #         4000
-        #     ),
-        #     needs_grad=False,
-        # )
+        self.vein_2d_projection = ti.Vector.field(
+            2,
+            dtype=float,
+            shape=(
+                SYSTEM_PARAMS.meta.max_num_veins,
+                self.vein.centerline_A.shape[0],
+            ),
+            needs_grad=False,
+        )
+        self.vein_2d_projection_flat = ti.Vector.field(
+            2,
+            dtype=float,
+            shape=(
+                self.vein.centerline_A.shape[0],
+            ),
+            needs_grad=False,
+        )
         self.sim_markers_undeformed = ti.Vector.field(
             2, dtype=float, shape=(self.vitactip.num_markers,), needs_grad=False
         )
@@ -1984,8 +1993,8 @@ class Contact:
     @ti.kernel
     def visualisation_reset_scene(self):
         self.healthy_tissue_points.fill(0)
-        # self.vein_2d_projection.fill(-1)
-        # self.vein_2d_projection_flat.fill(-1)
+        self.vein_2d_projection.fill(-1)
+        self.vein_2d_projection_flat.fill(-1)
 
     @ti.kernel
     def visualisation_draw_3d_scene(self, f: ti.i32):
@@ -1997,18 +2006,12 @@ class Contact:
 
     @ti.kernel
     def visualisation_project_vein_2d(self):
-        for i in range(self.vein_counts.shape[0]):
-            num_points = self.vein_counts[i]
-            for j in range(num_points):
-                vein_ix = self.vein_indices[i, j]
-                point = self.phantom.particles_A[
-                    SYSTEM_PARAMS.contact.num_sub_frames - 1,
-                    vein_ix
-                ]
-                projection_2d = self.vitactip.project_A_point_2d(point)
-                projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
-                self.vein_2d_projection[i, j] = projection_2d
-                self.vein_2d_projection_flat[i * self.max_vein_count[None] + j] = projection_2d / self.tactile_image_resolution[None]
+        for i in range(self.vein.centerline_A.shape[0]):
+            point = self.vein.centerline_A[i]
+            projection_2d = self.vitactip.project_A_point_2d(point)
+            projection_2d[1] = self.tactile_image_resolution[None][1] - projection_2d[1]
+            self.vein_2d_projection[0, i] = projection_2d
+            self.vein_2d_projection_flat[i] = projection_2d / self.tactile_image_resolution[None]
 
     @ti.kernel
     def visualisation_prepare_tactile_readout_data_fp(self):
@@ -2126,7 +2129,7 @@ class Contact:
         return a_new, b_new, c_new
 
     def visualisation_draw_tactile_readout(self):
-        # self.visualisation_project_vein_2d()
+        self.visualisation_project_vein_2d()
         self.vitactip.extract_clock_arm_2d_projections(SYSTEM_PARAMS.contact.num_sub_frames - 1)
         self.visualisation_prepare_clock_arm_points()
         self.tactile_canvas.set_image(self.bg_image)
@@ -2147,11 +2150,11 @@ class Contact:
             radius=0.02,
             per_vertex_color=self.clock_arm_points_per_vertex_color,
         )
-        # self.tactile_canvas.circles(
-        #     self.vein_2d_projection_flat,
-        #     radius=0.01,
-        #     color=(0, 0, 1)
-        # )
+        self.tactile_canvas.circles(
+            self.vein_2d_projection_flat,
+            radius=0.01,
+            color=(0, 0, 1)
+        )
         self.tactile_window.show()
 
     def visualisation_set_up_gui(self):
@@ -2558,20 +2561,20 @@ class Contact:
             print(
                 f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1} done"
             )
-            print(f'domain adaptation losses: {self.da_losses}')
-            print(f'domain adaptation loss sum: {sum(self.da_losses)}')
-            # self.write_da_total_loss_to_file()
-            self.bo.my_register(
-                sum(self.da_losses)
-            )
-            self.da_losses = []
-            self.bo.write_to_file()
+            if self.use_bo:
+                print(f'domain adaptation losses: {self.da_losses}')
+                print(f'domain adaptation loss sum: {sum(self.da_losses)}')
+                # self.write_da_total_loss_to_file()
+                self.bo.my_register(
+                    sum(self.da_losses)
+                )
+                self.da_losses = []
+                self.bo.write_to_file()
         print("training data collection done")
         print("all done")
 
 
 def main():
-    return
     if RUN_ON_LAB_MACHINE:
         ti.init(
             debug=False,

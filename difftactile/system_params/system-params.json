@@ -173,7 +173,7 @@
         "distance_scaling_factor": 5.000e+00,
         "youngs_modulus_scaling_factor": 1.000e+00,
         "px_dist_adjacent_markers": 3.812e+01,
-        "max_num_veins": 0,
+        "max_num_veins": 1,
         "num_trajectories": 4,
         "max_num_trajectory_points": 1500,
         "max_timesteps_per_trajectory": 1000000,
@@ -182,7 +182,7 @@
         "vein_px_thickness": 30,
         "enable_grad": 0,
         "num_contact_pairs": 3,
-        "load_params_from_bo": 1
+        "load_params_from_bo": 0
     },
     "gnn": {
         "entity_type_embedding_dim": 8,
