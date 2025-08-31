@@ -2571,6 +2571,7 @@ class Contact:
 
 
 def main():
+    return
     if RUN_ON_LAB_MACHINE:
         ti.init(
             debug=False,
@@ -2591,7 +2592,14 @@ def main():
     contact_model.reset_exp_sim_traj()
     contact_model.get_keypoint_indices_and_validate()
     # contact_model.set_up_torch_params()
+    
+    import time
+    start_time = time.perf_counter()
     contact_model.collect_training_data()
+    end_time = time.perf_counter()
+    elapsed_time = end_time - start_time
+    print(f"Training data collection took {elapsed_time:.2f} seconds")
+    
     contact_model.bo.write_to_file()
     if False:
         profiler = cProfile.Profile()

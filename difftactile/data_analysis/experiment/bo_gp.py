@@ -114,6 +114,7 @@ class BoGp:
             json.dump(self.all_targets, f, indent=4)
 
 def main():
+    return
     b = BoGp()
     IPython.embed()
     b.write_to_file()
