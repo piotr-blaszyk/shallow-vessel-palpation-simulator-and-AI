@@ -4,9 +4,11 @@ import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import pickle
+
+from difftactile.main.constants import *
+from difftactile.main.constants_bo_gp import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.sensor_model.fisheye_model_taichi import *
-from difftactile.main.constants import *
 from difftactile.object_model.common import *
 from difftactile.main.constants_ti import *
 
@@ -28,6 +30,7 @@ class ViTacTip:
         print(f"ViTacTip min particle spacing: {min_spacing:0.3e}")
 
     def set_up_system_params_1(self):
+        self.use_bo = SYSTEM_PARAMS.meta.load_params_from_bo
         default_photo = SYSTEM_PARAMS.files.flat_sensor_default_state
         dir = SYSTEM_PARAMS.files.da_dir
         self.default_photo = f'{dir}{default_photo}'
@@ -46,10 +49,10 @@ class ViTacTip:
         self.mu = ti.field(dtype=ti.f32, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
         self.lam = ti.field(dtype=ti.f32, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
         self.mass_density[None] += SYSTEM_PARAMS.vitactip.single_material.density
-        self.youngs_modulus[None] += (
+        self.youngs_modulus[None] = (
             SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
         )
-        self.poissons_ratio[None] += (
+        self.poissons_ratio[None] = (
             SYSTEM_PARAMS.vitactip.single_material.poissons_ratio
         )
         self.dist_sf = SYSTEM_PARAMS.meta.distance_scaling_factor
@@ -58,13 +61,18 @@ class ViTacTip:
             shape=(),
             needs_grad=False,
         )
+    
+    def set_material_params_from_bo(self):
+        self.youngs_modulus[None] = BO.vitactip_youngs_modulus
+        self.poissons_ratio[None] = BO.vitactip_poissons_ratio
+        self.set_up_system_params_2()
 
     @ti.kernel
     def set_up_system_params_2(self):
-        self.lam[None] += (self.youngs_modulus[None] * self.poissons_ratio[None]) / (
+        self.lam[None] = (self.youngs_modulus[None] * self.poissons_ratio[None]) / (
             (1 + self.poissons_ratio[None]) * (1 - 2 * self.poissons_ratio[None])
         )
-        self.mu[None] += self.youngs_modulus[None] / (
+        self.mu[None] = self.youngs_modulus[None] / (
             2 * (1 + self.poissons_ratio[None])
         )
 

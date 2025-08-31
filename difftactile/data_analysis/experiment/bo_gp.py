@@ -1,9 +1,13 @@
 from bayes_opt import BayesianOptimization, acquisition
+import IPython
+import json
+
+from difftactile.main.constants import *
 
 
 class BoGp:
     def __init__(self):
-        self.pbounds = {
+        pbounds = {
             'vitactip_youngs_modulus': (1e-6, 4.8e+05),
             'phantom_youngs_modulus': (1e-6, 4.8e+05),
             'vitactip_poissons_ratio': (0, 0.5),
@@ -13,26 +17,31 @@ class BoGp:
             'normal_damping': (0, 1e10),
             'coulomb_friction_coeff': (0, 1),
         }
-
-    def go(self):
         acq = acquisition.UpperConfidenceBound(kappa=2.5)
-        optimizer = BayesianOptimization(
+        self.optimiser = BayesianOptimization(
             f=None,
             acquisition_function=acq,
-            pbounds=self.pbounds,
+            pbounds=pbounds,
             verbose=2,
             random_state=1,
         )
+        self.json_path = SYSTEM_PARAMS.files.bo_gp_json
+    
+    @staticmethod
+    def black_box_function(*args, **kwargs):
+        return 0
+    
+    def foo(self):
+        next_point = self.optimiser.suggest()
+        target = BoGp.black_box_function(**next_point)
+        self.optimiser.register(params=next_point, target=target)
 
-        for _ in range(5):
-            next_point = optimizer.suggest()
-            target = BoGp.black_box_function(**next_point)
-            optimizer.register(params=next_point, target=target)
-
-            print(target, next_point)
-        print(optimizer.max)
-
+    def my_suggest(self):
+        dct = self.optimiser.suggest()
+        with open(self.json_path, "w") as f:
+            json.dump(dct, f, indent=4)
+        return dct
 
 def main():
-    bo_gp = BoGp()
-    bo_gp.go()
+    b = BoGp()
+    IPython.embed()

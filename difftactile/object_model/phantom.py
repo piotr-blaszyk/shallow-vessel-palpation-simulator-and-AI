@@ -2,8 +2,10 @@ import taichi as ti
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import torch
-from difftactile.object_model.obj_loader import ObjLoader
+
 from difftactile.main.constants import *
+from difftactile.main.constants_bo_gp import *
+from difftactile.object_model.obj_loader import ObjLoader
 from difftactile.object_model.common import *
 from difftactile.main.constants_ti import *
 
@@ -68,6 +70,7 @@ class Phantom:
                 self.grid_node_vein_indices[i] = 2
 
     def set_up_system_params(self):
+        self.use_bo = SYSTEM_PARAMS.meta.load_params_from_bo
         self.pose = np.array(SYSTEM_PARAMS_COMPUTED.phantom_centroid_pose, dtype=float)
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
         self.dt[None] = SYSTEM_PARAMS.contact.dt_override
@@ -81,10 +84,10 @@ class Phantom:
         self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
         self.lam = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
         self.mu = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.youngs_modulus[0] += SYSTEM_PARAMS.phantom.silicone.youngs_modulus
-        self.poissons_ratio[0] += SYSTEM_PARAMS.phantom.silicone.poissons_ratio
-        self.youngs_modulus[1] += SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus
-        self.poissons_ratio[1] += SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio
+        self.youngs_modulus[0] = SYSTEM_PARAMS.phantom.silicone.youngs_modulus
+        self.poissons_ratio[0] = SYSTEM_PARAMS.phantom.silicone.poissons_ratio
+        self.youngs_modulus[1] = SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus
+        self.poissons_ratio[1] = SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio
         self.set_stiffness()
         self.max_num_veins = SYSTEM_PARAMS.meta.max_num_veins
         self.num_grid_nodes = np.array([
@@ -151,14 +154,19 @@ class Phantom:
             SYSTEM_PARAMS_COMPUTED.phantom_volume
             * SYSTEM_PARAMS.phantom.silicone.density
         )
+    
+    def set_material_params_from_bo(self):
+        self.youngs_modulus[0] = BO.phantom_youngs_modulus
+        self.poissons_ratio[0] = BO.phantom_poissons_ratio
+        self.set_stiffness()
 
     @ti.kernel
     def set_stiffness(self):
         for item in range(2):
-            self.mu[item] += (
+            self.mu[item] = (
                 self.youngs_modulus[item] / 2 / (1 + self.poissons_ratio[item])
             )
-            self.lam[item] += (
+            self.lam[item] = (
                 self.youngs_modulus[item]
                 * self.poissons_ratio[item]
                 / (1 + self.poissons_ratio[item])

@@ -181,7 +181,8 @@
         "cnn_gnn": 1,
         "vein_px_thickness": 30,
         "enable_grad": 0,
-        "num_contact_pairs": 3
+        "num_contact_pairs": 3,
+        "load_params_from_bo": 1
     },
     "gnn": {
         "entity_type_embedding_dim": 8,
@@ -412,7 +413,8 @@
         "da_twist_x_npz": "difftactile/output/da_twist_x.npz",
         "da_slide_npz": "difftactile/output/da_slide.npz",
         "flat_sensor_default_state_npz": "difftactile/output/flat_sensor_default_state.npz",
-        "da_overlay": "difftactile/output/da_overlay_{:s}.png"
+        "da_overlay": "difftactile/output/da_overlay_{:s}.png",
+        "bo_gp_json": "difftactile/system_params/bo-gp.json"
     },
     "rigid_static": {
         "particle_spacing": 5.000e-03

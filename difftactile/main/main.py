@@ -16,6 +16,7 @@ import cProfile, pstats, sys
 from tqdm import tqdm
 
 from difftactile.main.constants import *
+from difftactile.main.constants_bo_gp import *
 from difftactile.object_model.vein import Vein
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.sensor_model.vitactip import ViTacTip
@@ -590,6 +591,7 @@ class Contact:
         )
 
     def set_up_system_params(self):
+        self.use_bo = SYSTEM_PARAMS.meta.load_params_from_bo == 1
         self.da_overlay = SYSTEM_PARAMS.files.da_overlay
         self.photo_timesteps = {
             'press': 35,
@@ -2233,255 +2235,6 @@ class Contact:
         # self.phantom.set_stiffness.grad()
         # self.vitactip.set_up_system_params_2.grad()
         # self.set_optimisation_params_from_log.grad()
-
-    def save_gradients_for_calibration(self):
-        if not self.gradients_printed:
-            print(f"loss: {self.loss.grad[None]}")
-            print(f"squared_error_sum_1 (grad): {self.squared_error_sum_1.grad[None]}")
-            print(f"squared_error_sum_1 (val): {self.squared_error_sum_1[None]}")
-            print(f"squared_error_sum_2 (grad): {self.squared_error_sum_2.grad[None]}")
-            print(f"squared_error_sum_2 (val): {self.squared_error_sum_2[None]}")
-            print()
-            self.print_gradients_single(
-                "deformed_markers", self.vitactip.deformed_markers
-            )
-            self.print_gradients_single(
-                "vertices_deformed_A", self.vitactip.vertices_deformed_A
-            )
-            self.print_gradients_single(
-                "vertex_velocities", self.vitactip.vertex_velocities
-            )
-            self.print_gradients_single(
-                "contact_forces_on_vertices", self.vitactip.contact_forces_on_vertices
-            )
-            self.print_gradients_single("vitactip.mu", self.vitactip.mu)
-            self.print_gradients_single("vitactip.lam", self.vitactip.lam)
-            self.print_gradients_single(
-                "vitactip.youngs_modulus", self.vitactip.youngs_modulus
-            )
-            self.print_gradients_single("normal_stiffness", self.normal_stiffness)
-            self.print_gradients_single("normal_damping", self.normal_damping)
-            self.print_gradients_single(
-                "tangential_stiffness", self.tangential_stiffness
-            )
-            self.print_gradients_single(
-                "coulomb_friction_coeff", self.coulomb_friction_coeff
-            )
-            self.print_gradients_indexed("phantom.mu", self.phantom.mu, 0)
-            self.print_gradients_indexed("phantom.lam", self.phantom.lam, 0)
-            self.print_gradients_indexed(
-                "phantom.youngs_modulus", self.phantom.youngs_modulus, 0
-            )
-            self.print_gradients_indexed("phantom.mu", self.phantom.mu, 1)
-            self.print_gradients_indexed("phantom.lam", self.phantom.lam, 1)
-            self.print_gradients_indexed(
-                "phantom.youngs_modulus", self.phantom.youngs_modulus, 1
-            )
-            print()
-
-            if False:
-                base_gradient_data = {
-                    "loss": self.loss.grad[None],
-                    "squared_error_sum_1": self.squared_error_sum_1.grad[None],
-                    "squared_error_sum_2": self.squared_error_sum_2.grad[None],
-                    "vitactip_mu": self.vitactip.mu.grad[None],
-                    "vitactip_lam": self.vitactip.lam.grad[None],
-                    "vitactip_youngs_modulus": self.vitactip.youngs_modulus.grad[None],
-                    "normal_stiffness": self.normal_stiffness.grad[None],
-                    "normal_damping": self.normal_damping.grad[None],
-                    "tangential_stiffness": self.tangential_stiffness.grad[None],
-                    "coulomb_friction_coeff": self.coulomb_friction_coeff.grad[None],
-                    "phantom_mu_0": self.phantom.mu.grad[0],
-                    "phantom_mu_1": self.phantom.mu.grad[1],
-                    "phantom_lam_0": self.phantom.lam.grad[0],
-                    "phantom_lam_1": self.phantom.lam.grad[1],
-                    "phantom_youngs_modulus_0": self.phantom.youngs_modulus.grad[0],
-                    "phantom_youngs_modulus_1": self.phantom.youngs_modulus.grad[1]
-                }
-                
-                gradient_data = {k: float(v) for k, v in base_gradient_data.items()}
-
-                if SYSTEM_PARAMS.optimisation.calibrate_learning_rates == 1:
-                    with open(SYSTEM_PARAMS.files.optimisation_loop_calibration, 'w') as f:
-                        json.dump(gradient_data, f, indent=4)
-
-            self.gradients_printed = True
-
-    def print_gradients_single(self, name, ti_var):
-        grad_npy = ti_var.grad.to_numpy()
-        val_npy = ti_var.to_numpy()
-        print(f"{name} (grad) min: {grad_npy.min()}")
-        print(f"{name} (grad) max: {grad_npy.max()}")
-        print(f"{name} (val) min: {val_npy.min()}")
-        print(f"{name} (val) max: {val_npy.max()}")
-        print()
-    
-    def print_gradients_indexed(self, name, ti_var, ix):
-        grad_npy = ti_var.grad.to_numpy()[ix]
-        val_npy = ti_var.to_numpy()[ix]
-        print(f"{name}_{ix} (grad) min: {grad_npy.min()}")
-        print(f"{name}_{ix} (grad) max: {grad_npy.max()}")
-        print(f"{name}_{ix} (val) min: {val_npy.min()}")
-        print(f"{name}_{ix} (val) max: {val_npy.max()}")
-        print()
-    
-    def print_params_short(self):
-        print(f'vitactip.youngs_modulus: {self.vitactip.youngs_modulus[None]:0.16e} ({SYSTEM_PARAMS.vitactip.single_material.youngs_modulus:0.16e})')
-        print(f'phantom.youngs_modulus_0: {self.phantom.youngs_modulus[0]:0.16e} ({SYSTEM_PARAMS.phantom.silicone.youngs_modulus:0.16e})')
-        print(f'phantom.youngs_modulus_1: {self.phantom.youngs_modulus[1]:0.16e} ({SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus:0.16e})')
-        print(f'vitactip.poissons_ratio: {self.vitactip.poissons_ratio[None]:0.16e} ({SYSTEM_PARAMS.vitactip.single_material.poissons_ratio:0.16e})')
-        print(f'phantom.poissons_ratio_0: {self.phantom.poissons_ratio[0]:0.16e} ({SYSTEM_PARAMS.phantom.silicone.poissons_ratio:0.16e})')
-        print(f'phantom.poissons_ratio_1: {self.phantom.poissons_ratio[1]:0.16e} ({SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio:0.16e})')
-        print(f'coulomb_friction_coeff: {self.coulomb_friction_coeff[None]:0.16e} ({SYSTEM_PARAMS.contact.coulomb_friction_coeff:0.16e})')
-        print(f'normal_stiffness: {self.normal_stiffness[None]:0.16e} ({SYSTEM_PARAMS.contact.normal_stiffness:0.16e})')
-        print(f'tangential_stiffness: {self.tangential_stiffness[None]:0.16e} ({SYSTEM_PARAMS.contact.tangential_stiffness:0.16e})')
-        print(f'normal_damping: {self.normal_damping[None]:0.16e} ({SYSTEM_PARAMS.contact.normal_damping:0.16e})')
-        
-        assert not math.isnan(float(self.vitactip.youngs_modulus[None])), "vitactip.youngs_modulus is NaN"
-        assert not math.isnan(float(self.phantom.youngs_modulus[0])), "phantom.youngs_modulus[0] is NaN"
-        assert not math.isnan(float(self.phantom.youngs_modulus[1])), "phantom.youngs_modulus[1] is NaN"
-        assert not math.isnan(float(self.vitactip.poissons_ratio[None])), "vitactip.poissons_ratio is NaN"
-        assert not math.isnan(float(self.phantom.poissons_ratio[0])), "phantom.poissons_ratio[0] is NaN"
-        assert not math.isnan(float(self.phantom.poissons_ratio[1])), "phantom.poissons_ratio[1] is NaN"
-        assert not math.isnan(float(self.coulomb_friction_coeff[None])), "coulomb_friction_coeff is NaN"
-        assert not math.isnan(float(self.normal_stiffness[None])), "normal_stiffness is NaN"
-        assert not math.isnan(float(self.tangential_stiffness[None])), "tangential_stiffness is NaN"
-        assert not math.isnan(float(self.normal_damping[None])), "normal_damping is NaN"
-    
-    def print_params_short_from_log(self):
-        print(f'vitactip.youngs_modulus: {ti.exp(self.vitactip_youngs_modulus_log[None]):0.16e} ({SYSTEM_PARAMS.vitactip.single_material.youngs_modulus:0.16e})')
-        print(f'phantom.youngs_modulus_0: {ti.exp(self.phantom_youngs_modulus_0_log[None]):0.16e} ({SYSTEM_PARAMS.phantom.silicone.youngs_modulus:0.16e})')
-        print(f'phantom.youngs_modulus_1: {ti.exp(self.phantom_youngs_modulus_1_log[None]):0.16e} ({SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus:0.16e})')
-        print(f'vitactip.poissons_ratio: {ti.exp(self.vitactip_poissons_ratio_log[None]):0.16e} ({SYSTEM_PARAMS.vitactip.single_material.poissons_ratio:0.16e})')
-        print(f'phantom.poissons_ratio_0: {ti.exp(self.phantom_poissons_ratio_0_log[None]):0.16e} ({SYSTEM_PARAMS.phantom.silicone.poissons_ratio:0.16e})')
-        print(f'phantom.poissons_ratio_1: {ti.exp(self.phantom_poissons_ratio_1_log[None]):0.16e} ({SYSTEM_PARAMS.phantom.hard_plastic.poissons_ratio:0.16e})')
-        print(f'coulomb_friction_coeff: {ti.exp(self.coulomb_friction_coeff_log[None]):0.16e} ({SYSTEM_PARAMS.contact.coulomb_friction_coeff:0.16e})')
-        print(f'normal_stiffness: {ti.exp(self.normal_stiffness_log[None]):0.16e} ({SYSTEM_PARAMS.contact.normal_stiffness:0.16e})')
-        print(f'tangential_stiffness: {ti.exp(self.tangential_stiffness_log[None]):0.16e} ({SYSTEM_PARAMS.contact.tangential_stiffness:0.16e})')
-        print(f'normal_damping: {ti.exp(self.normal_damping_log[None]):0.16e} ({SYSTEM_PARAMS.contact.normal_damping:0.16e})')
-    
-    def set_up_torch_params(self):
-        self.vitactip_youngs_modulus_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.phantom_youngs_modulus_0_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.phantom_youngs_modulus_1_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.vitactip_poissons_ratio_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.phantom_poissons_ratio_0_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.phantom_poissons_ratio_1_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.coulomb_friction_coeff_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.normal_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.tangential_stiffness_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.normal_damping_log = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-
-        self.vitactip_youngs_modulus_log[None] = ti.log(self.vitactip.youngs_modulus[None])
-        self.phantom_youngs_modulus_0_log[None] = ti.log(self.phantom.youngs_modulus[0])
-        self.phantom_youngs_modulus_1_log[None] = ti.log(self.phantom.youngs_modulus[1])
-        self.vitactip_poissons_ratio_log[None] = ti.log(self.vitactip.poissons_ratio[None])
-        self.phantom_poissons_ratio_0_log[None] = ti.log(self.phantom.poissons_ratio[0])
-        self.phantom_poissons_ratio_1_log[None] = ti.log(self.phantom.poissons_ratio[1])
-        self.coulomb_friction_coeff_log[None] = ti.log(self.coulomb_friction_coeff[None])
-        self.normal_stiffness_log[None] = ti.log(self.normal_stiffness[None])
-        self.tangential_stiffness_log[None] = ti.log(self.tangential_stiffness[None])
-        self.normal_damping_log[None] = ti.log(self.normal_damping[None])
-
-        self.vitactip_youngs_modulus_torch = torch.tensor(self.vitactip_youngs_modulus_log[None], requires_grad=False)
-        self.phantom_youngs_modulus_0_torch = torch.tensor(self.phantom_youngs_modulus_0_log[None], requires_grad=False)
-        self.phantom_youngs_modulus_1_torch = torch.tensor(self.phantom_youngs_modulus_1_log[None], requires_grad=False)
-        self.vitactip_poissons_ratio_torch = torch.tensor(self.vitactip_poissons_ratio_log[None], requires_grad=False)
-        self.phantom_poissons_ratio_0_torch = torch.tensor(self.phantom_poissons_ratio_0_log[None], requires_grad=False)
-        self.phantom_poissons_ratio_1_torch = torch.tensor(self.phantom_poissons_ratio_1_log[None], requires_grad=False)
-        self.coulomb_friction_coeff_torch = torch.tensor(self.coulomb_friction_coeff_log[None], requires_grad=False)
-        self.normal_stiffness_torch = torch.tensor(self.normal_stiffness_log[None], requires_grad=False)
-        self.tangential_stiffness_torch = torch.tensor(self.tangential_stiffness_log[None], requires_grad=False)
-        self.normal_damping_torch = torch.tensor(self.normal_damping_log[None], requires_grad=False)
-
-        self.torch_params = [
-            self.vitactip_youngs_modulus_torch,
-            self.phantom_youngs_modulus_0_torch,
-            self.phantom_youngs_modulus_1_torch,
-            self.vitactip_poissons_ratio_torch,
-            self.phantom_poissons_ratio_0_torch,
-            self.phantom_poissons_ratio_1_torch,
-            self.coulomb_friction_coeff_torch,
-            self.normal_stiffness_torch,
-            self.tangential_stiffness_torch,
-            self.normal_damping_torch
-        ]
-
-        if False:
-            self.optimiser = optim.Adam(self.torch_params, lr=1e-1, betas=(0.9, 0.999), eps=1e-8)
-
-        self.optimiser = optim.Adam([
-            {'params': [self.vitactip_youngs_modulus_torch], 'lr': 0},
-            {'params': [self.phantom_youngs_modulus_0_torch], 'lr': 0},
-            {'params': [self.phantom_youngs_modulus_1_torch], 'lr': 0},
-            {'params': [self.vitactip_poissons_ratio_torch], 'lr': 0},
-            {'params': [self.phantom_poissons_ratio_0_torch], 'lr': 0},
-            {'params': [self.phantom_poissons_ratio_1_torch], 'lr': 0},
-            {'params': [self.coulomb_friction_coeff_torch]},
-            {'params': [self.normal_stiffness_torch]},
-            {'params': [self.tangential_stiffness_torch]},
-            {'params': [self.normal_damping_torch]}
-        ], lr=1e-1, betas=(0.9, 0.999), eps=1e-8)
-
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimiser, step_size=1, gamma=0.1)
-    
-    def update_params(self, ts):
-        try:
-            assert not math.isnan(float(self.vitactip_youngs_modulus_log.grad[None])), "vitactip_youngs_modulus gradient is NaN"
-            assert not math.isnan(float(self.phantom_youngs_modulus_0_log.grad[None])), "phantom_youngs_modulus_0 gradient is NaN"
-            assert not math.isnan(float(self.phantom_youngs_modulus_1_log.grad[None])), "phantom_youngs_modulus_1 gradient is NaN"
-            assert not math.isnan(float(self.vitactip_poissons_ratio_log.grad[None])), "vitactip_poissons_ratio gradient is NaN"
-            assert not math.isnan(float(self.phantom_poissons_ratio_0_log.grad[None])), "phantom_poissons_ratio_0 gradient is NaN"
-            assert not math.isnan(float(self.phantom_poissons_ratio_1_log.grad[None])), "phantom_poissons_ratio_1 gradient is NaN"
-            assert not math.isnan(float(self.coulomb_friction_coeff_log.grad[None])), "coulomb_friction_coeff gradient is NaN"
-            assert not math.isnan(float(self.normal_stiffness_log.grad[None])), "normal_stiffness gradient is NaN"
-            assert not math.isnan(float(self.tangential_stiffness_log.grad[None])), "tangential_stiffness gradient is NaN"
-            assert not math.isnan(float(self.normal_damping_log.grad[None])), "normal_damping gradient is NaN"
-        except:
-            self.courant_number /= 2
-            self.retry = True
-            self.clear_grad()
-            self.set_dt(verbose=True)
-            return
-
-        self.optimiser.zero_grad()
-
-        self.vitactip_youngs_modulus_torch.grad = torch.tensor(self.vitactip_youngs_modulus_log.grad[None])
-        self.phantom_youngs_modulus_0_torch.grad = torch.tensor(self.phantom_youngs_modulus_0_log.grad[None])
-        self.phantom_youngs_modulus_1_torch.grad = torch.tensor(self.phantom_youngs_modulus_1_log.grad[None])
-        self.vitactip_poissons_ratio_torch.grad = torch.tensor(self.vitactip_poissons_ratio_log.grad[None])
-        self.phantom_poissons_ratio_0_torch.grad = torch.tensor(self.phantom_poissons_ratio_0_log.grad[None])
-        self.phantom_poissons_ratio_1_torch.grad = torch.tensor(self.phantom_poissons_ratio_1_log.grad[None])
-        self.coulomb_friction_coeff_torch.grad = torch.tensor(self.coulomb_friction_coeff_log.grad[None])
-        self.normal_stiffness_torch.grad = torch.tensor(self.normal_stiffness_log.grad[None])
-        self.tangential_stiffness_torch.grad = torch.tensor(self.tangential_stiffness_log.grad[None])
-        self.normal_damping_torch.grad = torch.tensor(self.normal_damping_log.grad[None])
-        
-        self.optimiser.step()
-        
-        self.vitactip_youngs_modulus_log[None] = self.vitactip_youngs_modulus_torch.item()
-        self.phantom_youngs_modulus_0_log[None] = self.phantom_youngs_modulus_0_torch.item()
-        self.phantom_youngs_modulus_1_log[None] = self.phantom_youngs_modulus_1_torch.item()
-        self.vitactip_poissons_ratio_log[None] = self.vitactip_poissons_ratio_torch.item()
-        self.phantom_poissons_ratio_0_log[None] = self.phantom_poissons_ratio_0_torch.item()
-        self.phantom_poissons_ratio_1_log[None] = self.phantom_poissons_ratio_1_torch.item()
-        self.coulomb_friction_coeff_log[None] = self.coulomb_friction_coeff_torch.item()
-        self.normal_stiffness_log[None] = self.normal_stiffness_torch.item()
-        self.tangential_stiffness_log[None] = self.tangential_stiffness_torch.item()
-        self.normal_damping_log[None] = self.normal_damping_torch.item()
-    
-    @ti.kernel
-    def set_optimisation_params_from_log(self):
-        self.vitactip.youngs_modulus[None] += ti.exp(self.vitactip_youngs_modulus_log[None])
-        self.phantom.youngs_modulus[0] += ti.exp(self.phantom_youngs_modulus_0_log[None])
-        self.phantom.youngs_modulus[1] += ti.exp(self.phantom_youngs_modulus_1_log[None])
-        self.vitactip.poissons_ratio[None] += ti.exp(self.vitactip_poissons_ratio_log[None])
-        self.phantom.poissons_ratio[0] += ti.exp(self.phantom_poissons_ratio_0_log[None])
-        self.phantom.poissons_ratio[1] += ti.exp(self.phantom_poissons_ratio_1_log[None])
-        self.coulomb_friction_coeff[None] += ti.exp(self.coulomb_friction_coeff_log[None])
-        self.normal_stiffness[None] += ti.exp(self.normal_stiffness_log[None])
-        self.tangential_stiffness[None] += ti.exp(self.tangential_stiffness_log[None])
-        self.normal_damping[None] += ti.exp(self.normal_damping_log[None])
     
     def randomise_contact_params(self):
         ns = SYSTEM_PARAMS.contact.normal_stiffness
@@ -2493,6 +2246,12 @@ class Contact:
         self.normal_damping[None] = NP_RNG.uniform(nd * 0.5, nd * 1.5)
         self.tangential_stiffness[None] = NP_RNG.uniform(ts * 0.5, ts * 1.5)
         self.coulomb_friction_coeff[None] = NP_RNG.uniform(cfc * 0.5, cfc * 1.25)
+    
+    def set_contact_params_from_bo(self):
+        self.normal_stiffness[None] = BO.normal_stiffness
+        self.normal_damping[None] = BO.normal_damping
+        self.tangential_stiffness[None] = BO.tangential_stiffness
+        self.coulomb_friction_coeff[None] = BO.coulomb_friction_coeff
     
     def print_contact_params(self):
         ns = SYSTEM_PARAMS.contact.normal_stiffness
@@ -2707,6 +2466,10 @@ class Contact:
     def collect_training_data(self):
         # self.clear_temp_images()
         self.clear_npz()
+        if self.use_bo:
+            self.set_contact_params_from_bo()
+            self.vitactip.set_material_params_from_bo()
+            self.phantom.set_material_params_from_bo()
         for j in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for k in range(1, 2):
