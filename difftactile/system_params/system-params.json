@@ -13,7 +13,7 @@
         "single_material": {
             "density": 1.100e+03,
             "poissons_ratio": 4.990e-01,
-            "youngs_modulus": 1.200e+04
+            "youngs_modulus": 1.000e-06
         },
         "collision_search_distance": 5.000e+00,
         "keypoint_search_z_threshold": 5.000e-03,
@@ -36,7 +36,7 @@
         "silicone": {
             "density": 900,
             "poissons_ratio": 4.600e-01,
-            "youngs_modulus": 1.200e+03
+            "youngs_modulus": 1.000e-06
         },
         "hard_plastic": {
             "density": 1150,
@@ -75,7 +75,7 @@
         ],
         "num_sub_frames": 125,
         "num_opt_steps": 2,
-        "num_training_trajectories": 100,
+        "num_training_trajectories": 1,
         "pid_max_speed_translation": 5.000e-01,
         "pid_orientation_kp": 1.000e+00,
         "pid_kp": 1.000e+02,

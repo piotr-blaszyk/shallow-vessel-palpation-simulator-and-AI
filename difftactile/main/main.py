@@ -2146,8 +2146,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.phantom_centroid_pose[:3]
-        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
-        self.camera.up(0, -1, 0)
+        self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(3)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -2712,7 +2712,7 @@ class Contact:
             for k in range(1, 2):
                 self.generate_tumour = k == 0
                 self.randomise_train_step()
-                for i in range(3, 4):
+                for i in range(0, 4):
                     # self.randomise_contact_params()
                     self.trajectory_ix[None] = i
                     trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
