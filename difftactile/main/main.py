@@ -50,6 +50,14 @@ class Contact:
         self.training_data_collection_initialise()
         self.foo()
     
+    def write_da_total_loss_to_file(self):
+        target_data = {
+            'target': sum(self.da_losses),
+        }
+        with open(self.target_path, "w") as f:
+            json.dump(target_data, f, indent=4)
+        self.da_losses = []
+    
     def handle_da_loss(self, ts):
         trajectory_ix = self.trajectory_ix[None]
         trajectory_name = self.trajectory_names[trajectory_ix]
@@ -591,6 +599,7 @@ class Contact:
         )
 
     def set_up_system_params(self):
+        self.target_path = SYSTEM_PARAMS.files.bo_gp_target_json
         self.use_bo = SYSTEM_PARAMS.meta.load_params_from_bo == 1
         self.da_overlay = SYSTEM_PARAMS.files.da_overlay
         self.photo_timesteps = {
@@ -831,7 +840,7 @@ class Contact:
         ]
         assert(len(trajectories_python_array) == len(self.state_dicts))
 
-    def randomise_train_step(self):
+    def generate_trajectories(self):
         self.trajectory_names = [
             'press',
             'twist_z',
@@ -2474,7 +2483,7 @@ class Contact:
             print(f"training trajectory: {j} / {SYSTEM_PARAMS.contact.num_training_trajectories - 1}")
             for k in range(1, 2):
                 self.generate_tumour = k == 0
-                self.randomise_train_step()
+                self.generate_trajectories()
                 for i in range(0, 4):
                     # self.randomise_contact_params()
                     self.trajectory_ix[None] = i
@@ -2537,6 +2546,7 @@ class Contact:
             )
         print(f'domain adaptation losses: {self.da_losses}')
         print(f'domain adaptation loss sum: {sum(self.da_losses)}')
+        self.write_da_total_loss_to_file()
         print("training data collection done")
         print("all done")
 

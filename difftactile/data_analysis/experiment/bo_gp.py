@@ -25,7 +25,8 @@ class BoGp:
             verbose=2,
             random_state=1,
         )
-        self.json_path = SYSTEM_PARAMS.files.bo_gp_json
+        self.params_path = SYSTEM_PARAMS.files.bo_gp_json
+        self.target_path = SYSTEM_PARAMS.files.bo_gp_target_json
     
     @staticmethod
     def black_box_function(*args, **kwargs):
@@ -37,10 +38,19 @@ class BoGp:
         self.optimiser.register(params=next_point, target=target)
 
     def my_suggest(self):
-        dct = self.optimiser.suggest()
-        with open(self.json_path, "w") as f:
-            json.dump(dct, f, indent=4)
-        return dct
+        params = self.optimiser.suggest()
+        with open(self.params_path, "w") as f:
+            json.dump(params, f, indent=4)
+        self.params = params
+    
+    def my_register(self):
+        with open(self.target_path, "r") as f:
+            target_data = json.load(f)
+        target = target_data['target']
+        self.optimiser.register(
+            params=self.params,
+            target=target,
+        )
 
 def main():
     b = BoGp()

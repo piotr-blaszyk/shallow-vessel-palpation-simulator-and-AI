@@ -414,7 +414,8 @@
         "da_slide_npz": "difftactile/output/da_slide.npz",
         "flat_sensor_default_state_npz": "difftactile/output/flat_sensor_default_state.npz",
         "da_overlay": "difftactile/output/da_overlay_{:s}.png",
-        "bo_gp_json": "difftactile/system_params/bo-gp.json"
+        "bo_gp_json": "difftactile/system_params/bo-gp.json",
+        "bo_gp_target_json": "difftactile/output/bo-gp-target.json"
     },
     "rigid_static": {
         "particle_spacing": 5.000e-03
