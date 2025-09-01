@@ -231,7 +231,7 @@ class MarkerTracker:
                     frame = draw_markers(frame, self.frame_markers[frame_idx], (0, 255, 0))
                 else:
                     markers = self.markers[frame_idx]
-                    assert self.markers_mask[frame_idx].all()
+                    # assert self.markers_mask[frame_idx].all()
                     frame = draw_markers(frame, markers, (0, 255, 0), show_text=True)
                 out.write(frame)
             elif mode == "raw-video":

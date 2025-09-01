@@ -21,9 +21,6 @@ class Endgame:
         self.cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
         self.cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
         self.r = SYSTEM_PARAMS.fisheye_model.circle_radius
-
-        # +ve = clockwise from horizontal
-        # -ve = counterclockwise from horizontal
         th = np.zeros(shape=(10,), dtype=float)
         th[0] = 0
         th[1] = 0
@@ -192,10 +189,10 @@ class Endgame:
             video_in = avi_path
             video_out = os.path.join(output_dir, f"{base_name}_markers.avi")
             npz_out = os.path.join(output_dir, f"{base_name}_markers.npz")
-            PredictExp.compute_npz_helper(
+            PredictExp.compute_npz_helper3(
                 video_in=video_in,
                 video_out=video_out,
-                npz_in=npz_out,
+                npz_out=npz_out,
             )
             for npz_path in npz_files:
                 base_name = os.path.splitext(os.path.basename(npz_path))[0]
@@ -434,11 +431,46 @@ class Endgame:
             cv2.waitKey(1)
             time.sleep(0.1)
 
+    def merge_npz_to_sim_format(self):
+        annotations_dir = os.path.join(self.root, f"{self.dir}_annotations_line_points")
+        markers_dir = os.path.join(
+            self.root, f"{self.dir}_reordered_interpolated_markers"
+        )
+        output_dir = os.path.join(self.root, f"{self.dir}_sim_format")
+        os.makedirs(output_dir, exist_ok=True)
+        ann_files = sorted(glob.glob(os.path.join(annotations_dir, "*.npz")))
+        if not ann_files:
+            print("No annotation npz files found.")
+            return
+        for ann_path in ann_files:
+            base = os.path.splitext(os.path.basename(ann_path))[0]
+            marker_path = os.path.join(markers_dir, f"{base}_markers.npz")
+            if not os.path.exists(marker_path):
+                print(f"Skipping {base}: marker file not found at {marker_path}")
+                continue
+            line_point_data = np.load(ann_path)
+            marker_data = np.load(marker_path)
+            markers = marker_data["markers"]
+            markers_mask = marker_data["markers_mask"]
+            vein_polyline = line_point_data["line_points"]
+            vein_polyline_mask = line_point_data["mask"]
+            a, b, c, d = vein_polyline.shape
+            vein_polyline_mask = np.broadcast_to(
+                vein_polyline_mask[..., None], (a, b, c)
+            )
+            out_path = os.path.join(output_dir, f"{base}.npz")
+            np.savez(
+                out_path,
+                markers=markers,
+                markers_mask=markers_mask,
+                vein_polyline=vein_polyline,
+                vein_polyline_mask=vein_polyline_mask,
+            )
+
 
 def main():
     e = Endgame()
-    e.annotations_to_line_points()
-    e.visualise_line_points()
+    e.merge_npz_to_sim_format()
 
 
 if __name__ == "__main__":

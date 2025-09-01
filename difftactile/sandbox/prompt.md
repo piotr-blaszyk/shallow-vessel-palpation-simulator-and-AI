@@ -1,3 +1,6 @@
-I have a data pre-processing method for my GNN: generate_pyg_vectorised. Modify this method. Currently, the method includes a minimal setup that computes the adjacency data and a single edge feature: edge length (also a single node feature but it's just set to 0). The method gets passed clip_points - a numpy array of shape (num_video_clip_frames, num_poins, 2), clip_labels - a numpy array of shape (num_video_clip_frames, num_veins, num_vein_points, 2), clip_labels_mask - a numpy array of shape (num_video_clip_frames, num_veins, num_vein_points).
+Now I want to implement the following method.
 
-I want to compute the following node features: x_position, y_position. I want to compute the following edge features: edge length (already computed), dx, dy, cos(theta), sin(theta).
+    def merge_npz_to_sim_format(self):
+        pass
+
+I want to load all npz files from the f"{self.dir}_annotations_line_points". I also want to load those npz files whose base file name ends in "_markers" from the f"{self.dir}_reordered_interpolated_markers" directory. 

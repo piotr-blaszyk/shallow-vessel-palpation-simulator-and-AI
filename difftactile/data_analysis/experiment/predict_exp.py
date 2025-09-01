@@ -455,13 +455,31 @@ class PredictExp:
         marker_tracker.extract_frames(video_in)
         HungarianExp.reorder_exp_points(
             input_path=npz_in,
-            output_path=npz_out
+            output_path=npz_out,
         )
         marker_tracker.create_visualization(
             out_path=video_out,
             mode="unpaired-markers",
             base_from_file=False,
             npz_in=npz_out,
+        )
+    
+    @staticmethod
+    def compute_npz_helper3(
+        video_in,
+        video_out,
+        npz_out,
+    ):
+        marker_tracker = MarkerTracker()
+        marker_tracker.extract_frames(video_in)
+        PredictExp.write_video_to_npz_file(
+            marker_tracker=marker_tracker,
+            path=npz_out,
+        )
+        marker_tracker.create_visualization(
+            out_path=video_out,
+            mode="unpaired-markers",
+            base_from_file=False,
         )
     
     def downsample_ground_truth_image_to_prediction_shape(self):
