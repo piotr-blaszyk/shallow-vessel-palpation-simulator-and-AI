@@ -189,7 +189,7 @@
         "small_input_dim": 248,
         "latent_dim": 256,
         "output_dim": 1,
-        "clip_len": 5,
+        "clip_len": 7,
         "learning_rate": 1.000e-03,
         "batch_size": 32,
         "num_train_batches": 64,

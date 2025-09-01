@@ -71,7 +71,6 @@ class MyDataset(torch.utils.data.Dataset):
             self.exp_ground_truth_labels = ground_truth_label_data["labels"]
             self.exp_dilation = exp_dilation
         self.scheme = scheme
-        self.clip_len = SYSTEM_PARAMS.gnn.clip_len
         self.data_points_per_trajectory = SYSTEM_PARAMS.dataset.data_points_per_trajectory
         self.mode = mode
         self.w_camera_big = int(SYSTEM_PARAMS.fisheye_model.target_image_width)
@@ -912,7 +911,10 @@ class MyDataset(torch.utils.data.Dataset):
 
     def get_mask(self):
         mask = np.zeros(shape=(self.clip_len * (self.num_nodes + 1),), dtype=bool)
-        mask[: self.clip_len * self.num_nodes] = True
+        k = self.clip_len // 2
+        start = k*self.num_nodes
+        stop = (k+1)*self.num_nodes
+        mask[start:stop] = True
         return mask
     
     def get_empty_x(self):
@@ -1533,7 +1535,7 @@ class MyDataset(torch.utils.data.Dataset):
             clip_vein_polyline_mask &= my_vein_mask[np.newaxis, :, :]
         
         if True:
-            lengths = [5]
+            lengths = [self.clip_len]
             length = NP_RNG.choice(lengths)
             start_ix = NP_RNG.integers(0, clip_points.shape[0] - length + 1)
             time_mask = np.zeros(clip_points.shape[0], dtype=bool)

@@ -116,6 +116,7 @@ class MyBlock(nn.Module):
 class GNN(pl.LightningModule):
     def __init__(self):
         super().__init__()
+        self.num_regular_nodes = SYSTEM_PARAMS.vitactip.num_markers
         self.num_classes = SYSTEM_PARAMS.gnn.num_classes
         self.stages_str = [
             'train',
@@ -389,8 +390,8 @@ class GNN(pl.LightningModule):
         x = self.merge_tensors_unvectorised(
             regular_nodes,
             global_nodes,
-            635,
-            5,
+            self.num_regular_nodes*self.clip_len,
+            self.clip_len,
         )
 
         edge_attr = self.input_dropout(edge_attr)
@@ -698,23 +699,18 @@ def main():
         name=tensor_board_experiment_dir,
         version=f"run_{timestamp}",
     )
-    full_dataset = MyDataset(scheme="single_dataset")
+    full_dataset = MyDataset(
+        scheme="single_dataset",
+        sim_exp="sim",
+        data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
+    )
     train_dataset, val_dataset, test_dataset = full_dataset.create_splits(
         train_size=0.7, val_size=0.15, test_size=0.15
     )
-    exp_test_dataset_grid_search = MyDataset(
-        mode="exp",
-        exp_markers_npz=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
-        exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz,
-        exp_dilation=2,
-        scheme="new",
-    )
-    exp_test_dataset_straight_line_slide = MyDataset(
-        mode="exp",
-        exp_markers_npz=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
-        exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_straight_ground_truth_labels_npz,
-        exp_dilation=5,
-        scheme="new",
+    exp_dataset_endgame = MyDataset(
+        scheme="single_dataset",
+        sim_exp="exp",
+        data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
     )
     all_stats = {}
     target_difficulty = 1.0
@@ -732,13 +728,11 @@ def main():
     train_dataset.set_difficulty_level(target_difficulty)
     val_dataset.set_difficulty_level(target_difficulty)
     test_dataset.set_difficulty_level(target_difficulty)
-    exp_test_dataset_grid_search.set_difficulty_level(target_difficulty)
-    exp_test_dataset_straight_line_slide.set_difficulty_level(target_difficulty)
+    exp_dataset_endgame.set_difficulty_level(target_difficulty)
     train_dataset.set_stats(all_stats[target_difficulty])
     val_dataset.set_stats(all_stats[target_difficulty])
     test_dataset.set_stats(all_stats[target_difficulty])
-    exp_test_dataset_grid_search.set_stats(all_stats[target_difficulty])
-    exp_test_dataset_straight_line_slide.set_stats(all_stats[target_difficulty])
+    exp_dataset_endgame.set_stats(all_stats[target_difficulty])
     data_module = MyDataModule(
         train_dataset=train_dataset,
         val_dataset=val_dataset,
@@ -781,15 +775,8 @@ def main():
         ],
         reload_dataloaders_every_n_epochs=1,
     )
-    exp_test_loader_grid_search = DataLoader(
-        exp_test_dataset_grid_search,
-        batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS,
-        pin_memory=False,
-        persistent_workers=False,
-    )
-    exp_test_loader_straight_line_slide = DataLoader(
-        exp_test_dataset_straight_line_slide,
+    exp_test_loader_endgame = DataLoader(
+        exp_dataset_endgame,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=False,
@@ -799,10 +786,8 @@ def main():
     trainer.fit(model, datamodule=data_module)
     print("\nTesting on simulation data:")
     trainer.test(model, datamodule=data_module)
-    print("\nTesting on experimental data (grid search trajectory):")
-    trainer.test(model, dataloaders=exp_test_loader_grid_search)
-    print("\nTesting on experimental data (straight line slide):")
-    trainer.test(model, dataloaders=exp_test_loader_straight_line_slide)
+    print("\nTesting on experimental data (end game):")
+    trainer.test(model, dataloaders=exp_test_loader_endgame)
     end = time.perf_counter()
     duration = end - start
     print(
