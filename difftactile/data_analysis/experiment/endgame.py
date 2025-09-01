@@ -6,7 +6,9 @@ from scipy.interpolate import interp1d
 import tqdm
 import time
 import shutil
+
 from difftactile.data_analysis.experiment.predict_exp import *
+from difftactile.main.constants import *
 
 
 class Endgame:
@@ -211,15 +213,11 @@ class Endgame:
         input_dir = os.path.join(self.root, f"{self.dir}_dilated")
         output_dir = os.path.join(self.root, f"{self.dir}_annotations")
         os.makedirs(output_dir, exist_ok=True)
-
         avi_files = sorted(glob.glob(os.path.join(input_dir, "*.avi")))
         if not avi_files:
             print("No videos found.")
             return
-
-        colors = [(0, 0, 255), (0, 255, 0), (255, 0, 0), (255, 0, 255)]  # BGR: red, green, blue, magenta
-
-        # Load or initialize annotations
+        colors = [(0, 0, 255), (0, 255, 0), (255, 0, 0), (255, 0, 255)]
         annotations = {}
         for avi_path in avi_files:
             base = os.path.splitext(os.path.basename(avi_path))[0]
@@ -232,8 +230,6 @@ class Endgame:
                 n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 cap.release()
                 annotations[avi_path] = [[] for _ in range(n_frames)]
-
-        # State variables
         video_idx = 0
         frame_idx = 0
 
@@ -249,7 +245,6 @@ class Endgame:
 
         cv2.namedWindow("Annotator")
         cv2.setMouseCallback("Annotator", mouse_callback)
-
         while True:
             avi_path = avi_files[video_idx]
             cap = cv2.VideoCapture(avi_path)
@@ -261,24 +256,18 @@ class Endgame:
             if not ret:
                 print(f"Failed to read frame {frame_idx} from {avi_path}")
                 break
-
             display = frame.copy()
-
-            # Draw annotations for current frame
             frame_annots = annotations[avi_path][frame_idx]
             for idx, pt in enumerate(frame_annots):
                 color = colors[idx % len(colors)]
                 cv2.circle(display, (int(pt[0]), int(pt[1])), 6, color, -1)
-
-            # Overlay text
-            text = f"Video {video_idx+1}/{len(avi_files)} | Frame {frame_idx+1}/{n_frames} | Annotations {len(frame_annots)}/4"
-            cv2.putText(display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
-
+            text = f"Video {video_idx + 1}/{len(avi_files)} | Frame {frame_idx + 1}/{n_frames} | Annotations {len(frame_annots)}/4"
+            cv2.putText(
+                display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
+            )
             cv2.imshow("Annotator", display)
-            key = cv2.waitKey(20) & 0xFF  # refresh faster to show new points immediately
-
+            key = cv2.waitKey(20) & 0xFF
             if key == ord("q"):
-                # Save all annotations before exit
                 for avi_path in avi_files:
                     base = os.path.splitext(os.path.basename(avi_path))[0]
                     pkl_path = os.path.join(output_dir, f"{base}.pkl")
@@ -305,16 +294,67 @@ class Endgame:
                     with open(pkl_path, "wb") as f:
                         pickle.dump(annotations[avi_path], f)
                 print("Annotations saved.")
-
         cv2.destroyAllWindows()
         for _ in range(10):
             cv2.waitKey(1)
             time.sleep(0.1)
 
+    def annotations_to_line_points(self):
+        theta = SYSTEM_PARAMS.geometry.camera_rotation_angle
+        cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
+        cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
+        r = SYSTEM_PARAMS.fisheye_model.circle_radius
+        input_dir = os.path.join(self.root, f"{self.dir}_annotations")
+        output_dir = os.path.join(self.root, f"{self.dir}_annotations_line_points")
+        os.makedirs(output_dir, exist_ok=True)
+        pkl_files = sorted(glob.glob(os.path.join(input_dir, "*.pkl")))
+        if not pkl_files:
+            print("No annotation files found.")
+            return
+        theta_rad = np.deg2rad(theta)
+        dx, dy = np.cos(theta_rad), np.sin(theta_rad)
+        for pkl_path in pkl_files:
+            base = os.path.splitext(os.path.basename(pkl_path))[0]
+            npz_path = os.path.join(output_dir, f"{base}.npz")
+            with open(pkl_path, "rb") as f:
+                annotations = pickle.load(f)
+            num_frames = len(annotations)
+            max_lines = 4
+            num_line_points = 50
+            line_points = np.zeros(
+                (num_frames, max_lines, num_line_points, 2), dtype=np.float32
+            )
+            mask = np.zeros((num_frames, max_lines), dtype=bool)
+            for frame_idx, frame_annots in enumerate(annotations):
+                for line_idx, pt in enumerate(frame_annots[:max_lines]):
+                    px, py = pt
+                    a = dx**2 + dy**2
+                    b = 2 * (dx * (cx - px) + dy * (cy - py))
+                    c = (cx - px) ** 2 + (cy - py) ** 2 - r**2
+                    disc = b**2 - 4 * a * c
+                    if disc < 0:
+                        print(
+                            f"Warning: no intersection for frame {frame_idx}, point {pt}"
+                        )
+                        continue
+                    t1 = (-b - np.sqrt(disc)) / (2 * a)
+                    t2 = (-b + np.sqrt(disc)) / (2 * a)
+                    x1, y1 = px + t1 * dx, py + t1 * dy
+                    x2, y2 = px + t2 * dx, py + t2 * dy
+                    xs = np.linspace(x1, x2, num_line_points)
+                    ys = np.linspace(y1, y2, num_line_points)
+                    line_points[frame_idx, line_idx, :, :] = np.stack([xs, ys], axis=-1)
+                    mask[frame_idx, line_idx] = True
+            np.savez(
+                npz_path,
+                line_points=line_points,
+                mask=mask,
+            )
+
 
 def main():
     e = Endgame()
-    e.annotate()
+    e.annotations_to_line_points()
 
 
 if __name__ == "__main__":
