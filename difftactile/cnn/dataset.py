@@ -22,6 +22,9 @@ class MyDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         scheme,
+        sim_exp,
+        data_dir, # "difftactile/output/training_data/pickle_2025_08_31_reordered"
+        repeat_factor=1,
         mode="root",
         data_points_today=None,
         data_points_yesterday=None,
@@ -46,6 +49,7 @@ class MyDataset(torch.utils.data.Dataset):
             data_points = []
         super().__init__()
         start_time = time.perf_counter()
+        self.repeat_factor = repeat_factor
         self.vein_px_thickness = SYSTEM_PARAMS.meta.vein_px_thickness
         self.clip_len = SYSTEM_PARAMS.gnn.clip_len
         self.num_nodes = SYSTEM_PARAMS.vitactip.num_markers
@@ -92,13 +96,17 @@ class MyDataset(torch.utils.data.Dataset):
         self.data_points_pos = data_points_pos
         self.data_points_neg = data_points_neg
         self.data_points = data_points
+        self.data_dir = data_dir
         if mode == "root":
             if scheme == "old":
                 self.populate_clips_old_scheme()
             elif scheme == "new":
                 self.populate_clips_new_scheme()
             elif scheme == "single_dataset":
-                self.populate_clips_single_dataset_scheme()
+                if sim_exp == 'sim':
+                    self.populate_clips_single_dataset_scheme_train()
+                else:
+                    self.populate_clips_single_dataset_scheme_test()
         elif mode == "exp":
             self.compute_data_points_exp()
         elif mode != "dummy":
@@ -115,15 +123,9 @@ class MyDataset(torch.utils.data.Dataset):
             )
             print(f"num data points: {len(self.data_points):,}")
     
-    def populate_clips_single_dataset_scheme(self):
-        data_dir = "difftactile/output/training_data/pickle_2025_08_31_reordered"
-        self.files = MyDataset.get_folder_files(data_dir)
-        # self.vein_masks_single_dataset_scheme = []
-        # for i in range(len(self.files)):
-        #     self.vein_masks_single_dataset_scheme.append(
-        #         self.video_contains_vein(self.files[i])
-        #     )
-        dilations = [1, 2, 4, 8, 16, 32, 64]
+    def populate_clips_single_dataset_scheme_train(self):
+        self.files = MyDataset.get_folder_files(self.data_dir)
+        dilations = [16]
         for i in range(len(self.files)):
             file_path = self.files[i]
             data = np.load(file_path)
@@ -131,33 +133,33 @@ class MyDataset(torch.utils.data.Dataset):
             total_frames = points.shape[0]
             for dilation in dilations:
                 dilated_clip_len = self.clip_len * dilation
-                if total_frames >= dilated_clip_len:
-                    num_possible_starts = total_frames - dilated_clip_len + 1
-                    start_indices = sorted(
-                        NP_RNG.choice(
-                            range(num_possible_starts),
-                            size=min(self.data_points_per_trajectory, num_possible_starts),
-                            replace=False,
-                        )
-                    )
+                dilated_total_frames = total_frames // dilation
+                if dilated_total_frames >= dilated_clip_len:
+                    num_possible_starts = dilated_total_frames - self.clip_len + 1
+                    start_indices = np.arange(0, num_possible_starts)
+                    start_indices = np.tile(start_indices, self.repeat_factor)
+                    NP_RNG.shuffle(start_indices)
                     for start_ix in start_indices:
                         self.data_points.append(
-                            (file_path, start_ix, dilation)
+                            (file_path, start_ix*dilation, dilation)
                         )
-                    # clips_found = 0
-                    # max_attempts = num_possible_starts * 2
-                    # attempts = 0
-                    # while (
-                    #     clips_found < self.data_points_per_trajectory
-                    #     and attempts < max_attempts
-                    # ):
-                    #     start_idx = NP_RNG.integers(num_possible_starts)
-                    #     if self.clip_contains_vein(i, start_idx, dilation):
-                    #         self.data_points.append(
-                    #             (file_path, start_idx, dilation)
-                    #         )
-                    #         clips_found += 1
-                    #     attempts += 1
+
+    def populate_clips_single_dataset_scheme_test(self):
+        self.files = MyDataset.get_folder_files(self.data_dir)
+        dilation = 1
+        for i in range(len(self.files)):
+            file_path = self.files[i]
+            data = np.load(file_path)
+            points = data["markers"]
+            total_frames = points.shape[0]
+            dilated_clip_len = self.clip_len * dilation
+            if total_frames >= dilated_clip_len:
+                num_possible_starts = total_frames - dilated_clip_len + 1
+                start_indices = np.arange(0, num_possible_starts)
+                for start_ix in start_indices:
+                    self.data_points.append(
+                        (file_path, start_ix, dilation)
+                    )
 
     @staticmethod
     def get_folder_files(path):
