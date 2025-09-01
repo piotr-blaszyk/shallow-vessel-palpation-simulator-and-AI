@@ -601,7 +601,7 @@ class GNN(pl.LightningModule):
         return self.get_accumulator(shape=(), dtype=torch.int32)
     
     def get_accumulator(self, shape, dtype):
-        return {k: torch.zeros(shape, dtype=dtype, device='cpu') for k in self.stages_str}
+        return {k: torch.zeros(shape, dtype=dtype, device='cuda:0') for k in self.stages_str}
     
     def init_accumulators(self):
         self.area_pred_acc = self.get_iou_accumulator()
@@ -649,8 +649,9 @@ class MyDataModule(pl.LightningDataModule):
     def _select_new_subset(self):
         len_train = len(self.train_dataset)
         train_subset_size = self.train_subset_size
+        foo = min(len_train, train_subset_size)
         self.current_train_indices = NP_RNG.choice(
-            len_train, train_subset_size, replace=True
+            len_train, foo, replace=False
         )
         len_val = len(self.val_dataset)
         val_subset_size = min(len_val, self.val_subset_size)
@@ -789,7 +790,7 @@ def main():
     )
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
-        accelerator='cpu',  # Force CPU for better error messages
+        accelerator='auto',  # Force CPU for better error messages
         enable_checkpointing=True,
         logger=logger,
         log_every_n_steps=1,

@@ -514,9 +514,11 @@ class Visualisation:
                 # Get predictions
                 with torch.no_grad():
                     data = data.to(device)
-                    x, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(data, 1)
+                    x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(data, 1)
                     out = model(x, edge_index, edge_attr)
                     out = out.squeeze(-1)  # Remove the channel dimension
+                    # out = out[x_mask]
+
                     mask = data.mask
                     out = out[mask]
                     probs = torch.sigmoid(out)
@@ -862,8 +864,8 @@ class Visualisation:
 def main():
     v = Visualisation()
     v.visualise_gnn(
-        mode='dataset', 
-        data_source='fresh_dataset'
+        mode='predictions', 
+        data_source='pickled_test_dataset'
     )
 
 
