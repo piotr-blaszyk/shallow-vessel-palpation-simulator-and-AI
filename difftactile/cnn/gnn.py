@@ -264,52 +264,75 @@ class GNN(pl.LightningModule):
 
     def shared_step(self, getitem_output, stage):
         batch, empty_visualisation_tensor = getitem_output
-        x, edge_index, edge_index_regular_nodes, edge_attr = self.my_prepare_data(batch, batch.num_graphs)
+        x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = self.my_prepare_data(batch, batch.num_graphs)
         out = self(x, edge_index, edge_attr)
         out = out.squeeze(-1)
+        out = out[x_mask]
         mask = batch.mask
         out_unmasked = out
         out_masked = out[mask]
+        y_masked = batch.y[mask]
         probs_unmasked = torch.sigmoid(out_unmasked)
         probs_masked = torch.sigmoid(out_masked)
-        focal_loss = self.focal_loss(out_masked, batch.y.float())
-        connectivity_loss = self.compute_connectivity_loss(
-            batch,
-            edge_index_regular_nodes,
-            probs_unmasked,
-            probs_masked,
-        )
+        focal_loss = self.focal_loss(out_masked, y_masked.float())
+        # connectivity_loss = self.compute_connectivity_loss(
+        #     batch,
+        #     edge_index_regular_nodes,
+        #     probs_unmasked,
+        #     probs_masked,
+        # )
         loss = (
-            self.focal_weight*focal_loss + 
-            self.connectivity_weight*connectivity_loss
+            self.focal_weight*focal_loss
         )
         self.focal_loss_acc[stage] += focal_loss.detach()
-        self.connectivity_loss_acc[stage] += connectivity_loss.detach()
+        # self.connectivity_loss_acc[stage] += connectivity_loss.detach()
         self.total_loss_acc[stage] += loss.detach()
         self.num_batches[stage] += 1
-        preds_masked = (probs_masked > 0.5).to(batch.y)
+        preds_masked = (probs_masked > 0.5).to(y_masked)
 
         self.update_iou_acc(
             preds_masked,
-            batch.y,
+            y_masked,
             stage,
         )
 
         self.log(f"{stage}/focal_loss", focal_loss, on_step=True, on_epoch=True, prog_bar=False, batch_size=batch.num_graphs)
-        self.log_per_batch_iou(batch, stage, preds_masked, batch.y)
+        self.log_per_batch_iou(batch, stage, preds_masked, y_masked)
 
         return loss
+
+    # def merge_tensors_unvectorised(self, x, y, n, k):
+    #     b = x.shape[0] // n
+    #     assert b == y.shape[0] // k, "Batch sizes must match"
+    #     x_reshaped = x.reshape(b, n, -1)
+    #     y_reshaped = y.reshape(b, k, -1)
+    #     merged = []
+    #     for i in range(b):
+    #         merged.append(x_reshaped[i])
+    #         merged.append(y_reshaped[i])
+    #     return torch.cat(merged, dim=0)
 
     def merge_tensors_unvectorised(self, x, y, n, k):
         b = x.shape[0] // n
         assert b == y.shape[0] // k, "Batch sizes must match"
+        
         x_reshaped = x.reshape(b, n, -1)
         y_reshaped = y.reshape(b, k, -1)
+        
         merged = []
+        mask = []
+        
         for i in range(b):
             merged.append(x_reshaped[i])
+            mask.append(torch.ones(n, dtype=torch.bool))   # True for x
+            
             merged.append(y_reshaped[i])
-        return torch.cat(merged, dim=0)
+            mask.append(torch.zeros(k, dtype=torch.bool))  # False for y
+        
+        merged = torch.cat(merged, dim=0)
+        mask = torch.cat(mask, dim=0)
+        
+        return merged, mask
     
     def merge_tensors_vectorised(self, x, y, n, k):
         b = x.shape[0] // n
@@ -329,7 +352,7 @@ class GNN(pl.LightningModule):
         merged_idx[y_idx] = torch.arange(b*k) + b*n
         
         return torch.cat([x, y], dim=0)[merged_idx]
-    
+
     def my_prepare_data(self, batch, batch_size):
         pos = batch.pos
         mask = batch.mask
@@ -387,7 +410,7 @@ class GNN(pl.LightningModule):
         #     global_nodes,
         # ], dim=0)
 
-        x = self.merge_tensors_unvectorised(
+        x, x_mask = self.merge_tensors_unvectorised(
             regular_nodes,
             global_nodes,
             self.num_regular_nodes*self.clip_len,
@@ -397,7 +420,7 @@ class GNN(pl.LightningModule):
         edge_attr = self.input_dropout(edge_attr)
         x = self.input_dropout(x)
 
-        return x, edge_index, edge_index_regular_nodes, edge_attr
+        return x, x_mask, edge_index, edge_index_regular_nodes, edge_attr
     
     def cat_entity_tag(self, features, entity_ix):
         ix_tensor = torch.tensor([entity_ix], dtype=torch.long, device=features.device)
@@ -578,7 +601,7 @@ class GNN(pl.LightningModule):
         return self.get_accumulator(shape=(), dtype=torch.int32)
     
     def get_accumulator(self, shape, dtype):
-        return {k: torch.zeros(shape, dtype=dtype, device='cuda:0') for k in self.stages_str}
+        return {k: torch.zeros(shape, dtype=dtype, device='cpu') for k in self.stages_str}
     
     def init_accumulators(self):
         self.area_pred_acc = self.get_iou_accumulator()
@@ -766,7 +789,7 @@ def main():
     )
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
-        accelerator='auto',  # Force CPU for better error messages
+        accelerator='cpu',  # Force CPU for better error messages
         enable_checkpointing=True,
         logger=logger,
         log_every_n_steps=1,

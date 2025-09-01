@@ -910,7 +910,7 @@ class MyDataset(torch.utils.data.Dataset):
             return y
 
     def get_mask(self):
-        mask = np.zeros(shape=(self.clip_len * (self.num_nodes + 1),), dtype=bool)
+        mask = np.zeros(shape=(self.clip_len*self.num_nodes,), dtype=bool)
         k = self.clip_len // 2
         start = k*self.num_nodes
         stop = (k+1)*self.num_nodes
