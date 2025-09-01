@@ -268,24 +268,22 @@ class GNN(pl.LightningModule):
         out = self(x, edge_index, edge_attr)
         out = out.squeeze(-1)
         out = out[x_mask]
-        mask = batch.mask
-        out_unmasked = out
-        out_masked = out[mask]
-        y_masked = batch.y[mask]
+        if stage == 'val' or stage == 'test':
+            mask = batch.mask
+            out_unmasked = out
+            out_masked = out[mask]
+            y_masked = batch.y[mask]
+        else:
+            out_unmasked = out
+            out_masked = out
+            y_masked = batch.y
         probs_unmasked = torch.sigmoid(out_unmasked)
         probs_masked = torch.sigmoid(out_masked)
         focal_loss = self.focal_loss(out_masked, y_masked.float())
-        # connectivity_loss = self.compute_connectivity_loss(
-        #     batch,
-        #     edge_index_regular_nodes,
-        #     probs_unmasked,
-        #     probs_masked,
-        # )
         loss = (
             self.focal_weight*focal_loss
         )
         self.focal_loss_acc[stage] += focal_loss.detach()
-        # self.connectivity_loss_acc[stage] += connectivity_loss.detach()
         self.total_loss_acc[stage] += loss.detach()
         self.num_batches[stage] += 1
         preds_masked = (probs_masked > 0.5).to(y_masked)
@@ -300,17 +298,6 @@ class GNN(pl.LightningModule):
         self.log_per_batch_iou(batch, stage, preds_masked, y_masked)
 
         return loss
-
-    # def merge_tensors_unvectorised(self, x, y, n, k):
-    #     b = x.shape[0] // n
-    #     assert b == y.shape[0] // k, "Batch sizes must match"
-    #     x_reshaped = x.reshape(b, n, -1)
-    #     y_reshaped = y.reshape(b, k, -1)
-    #     merged = []
-    #     for i in range(b):
-    #         merged.append(x_reshaped[i])
-    #         merged.append(y_reshaped[i])
-    #     return torch.cat(merged, dim=0)
 
     def merge_tensors_unvectorised(self, x, y, n, k):
         b = x.shape[0] // n
@@ -333,25 +320,6 @@ class GNN(pl.LightningModule):
         mask = torch.cat(mask, dim=0)
         
         return merged, mask
-    
-    def merge_tensors_vectorised(self, x, y, n, k):
-        b = x.shape[0] // n
-        assert b == y.shape[0] // k, "Batch sizes must match"
-        
-        x_idx = torch.arange(b*n).reshape(b, n)
-        y_idx = torch.arange(b*k).reshape(b, k)
-        
-        y_idx = y_idx + (torch.arange(b) * (n + k)).unsqueeze(1)
-        x_idx = x_idx + (torch.arange(b) * (n + k)).unsqueeze(1)
-        
-        x_idx = x_idx.reshape(-1)
-        y_idx = y_idx.reshape(-1)
-        
-        merged_idx = torch.zeros(b*(n+k), dtype=torch.long)
-        merged_idx[x_idx] = torch.arange(b*n)
-        merged_idx[y_idx] = torch.arange(b*k) + b*n
-        
-        return torch.cat([x, y], dim=0)[merged_idx]
 
     def my_prepare_data(self, batch, batch_size):
         pos = batch.pos

@@ -518,8 +518,8 @@ class Visualisation:
                     out = model(x, edge_index, edge_attr)
                     out = out.squeeze(-1)  # Remove the channel dimension
                     out = out[x_mask]
-                    mask = data.mask
-                    out = out[mask]
+                    # mask = data.mask
+                    # out = out[mask]
                     probs = torch.sigmoid(out)
                     pred = (probs > 0.5).float()
 
