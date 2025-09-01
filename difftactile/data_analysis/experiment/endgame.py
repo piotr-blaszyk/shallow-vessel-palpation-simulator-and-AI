@@ -6,7 +6,6 @@ from scipy.interpolate import interp1d
 import tqdm
 import time
 import shutil
-
 from difftactile.data_analysis.experiment.predict_exp import *
 from difftactile.main.constants import *
 
@@ -18,6 +17,25 @@ class Endgame:
         self.input_dir = os.path.join(self.root, self.dir)
         self.output_dir = os.path.join(self.root, f"{self.dir}_interpolated_trimmed")
         os.makedirs(self.output_dir, exist_ok=True)
+        self.og_theta = SYSTEM_PARAMS.geometry.camera_rotation_angle
+        self.cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
+        self.cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
+        self.r = SYSTEM_PARAMS.fisheye_model.circle_radius
+
+        # +ve = clockwise from horizontal
+        # -ve = counterclockwise from horizontal
+        th = np.zeros(shape=(10,), dtype=float)
+        th[0] = 0
+        th[1] = 0
+        th[2] = 0
+        th[3] = 0
+        th[4] = -5
+        th[5] = -5
+        th[6] = -5
+        th[7] = -5
+        th[8] = 0
+        th[9] = 0
+        self.thetas = th
 
     def _get_file_pairs(self, dir):
         avi_files = sorted(glob.glob(os.path.join(dir, "*.avi")))
@@ -300,61 +318,127 @@ class Endgame:
             time.sleep(0.1)
 
     def annotations_to_line_points(self):
-        theta = SYSTEM_PARAMS.geometry.camera_rotation_angle
-        cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
-        cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
-        r = SYSTEM_PARAMS.fisheye_model.circle_radius
-        input_dir = os.path.join(self.root, f"{self.dir}_annotations")
-        output_dir = os.path.join(self.root, f"{self.dir}_annotations_line_points")
-        os.makedirs(output_dir, exist_ok=True)
-        pkl_files = sorted(glob.glob(os.path.join(input_dir, "*.pkl")))
+        cx = self.cx
+        cy = self.cy
+        r = self.r
+        ann_dir = os.path.join(self.root, f"{self.dir}_annotations")
+        out_dir = os.path.join(self.root, f"{self.dir}_annotations_line_points")
+        os.makedirs(out_dir, exist_ok=True)
+        pkl_files = sorted(glob.glob(os.path.join(ann_dir, "*.pkl")))
         if not pkl_files:
             print("No annotation files found.")
             return
-        theta_rad = np.deg2rad(theta)
-        dx, dy = np.cos(theta_rad), np.sin(theta_rad)
-        for pkl_path in pkl_files:
+        C = np.array([float(cx), float(cy)], dtype=np.float64)
+        R2 = float(r) ** 2
+        max_lines = 4
+        num_pts = 50
+        for i in range(len(pkl_files)):
+            th = np.deg2rad(self.thetas[i])
+            u = np.array([np.cos(th), np.sin(th)], dtype=np.float64)
+            pkl_path = pkl_files[i]
             base = os.path.splitext(os.path.basename(pkl_path))[0]
-            npz_path = os.path.join(output_dir, f"{base}.npz")
+            out_path = os.path.join(out_dir, f"{base}.npz")
             with open(pkl_path, "rb") as f:
-                annotations = pickle.load(f)
-            num_frames = len(annotations)
-            max_lines = 4
-            num_line_points = 50
+                ann = pickle.load(f)
+            num_frames = len(ann)
             line_points = np.zeros(
-                (num_frames, max_lines, num_line_points, 2), dtype=np.float32
+                (num_frames, max_lines, num_pts, 2), dtype=np.float32
             )
             mask = np.zeros((num_frames, max_lines), dtype=bool)
-            for frame_idx, frame_annots in enumerate(annotations):
-                for line_idx, pt in enumerate(frame_annots[:max_lines]):
-                    px, py = pt
-                    a = dx**2 + dy**2
-                    b = 2 * (dx * (cx - px) + dy * (cy - py))
-                    c = (cx - px) ** 2 + (cy - py) ** 2 - r**2
-                    disc = b**2 - 4 * a * c
-                    if disc < 0:
-                        print(
-                            f"Warning: no intersection for frame {frame_idx}, point {pt}"
-                        )
+            for fi, frame_pts in enumerate(ann):
+                for li, pt in enumerate(frame_pts[:max_lines]):
+                    P0 = np.array(pt, dtype=np.float64)
+                    t0 = -np.dot(P0 - C, u)
+                    F = P0 + t0 * u
+                    d2 = np.sum((F - C) ** 2)
+                    if d2 > R2:
                         continue
-                    t1 = (-b - np.sqrt(disc)) / (2 * a)
-                    t2 = (-b + np.sqrt(disc)) / (2 * a)
-                    x1, y1 = px + t1 * dx, py + t1 * dy
-                    x2, y2 = px + t2 * dx, py + t2 * dy
-                    xs = np.linspace(x1, x2, num_line_points)
-                    ys = np.linspace(y1, y2, num_line_points)
-                    line_points[frame_idx, line_idx, :, :] = np.stack([xs, ys], axis=-1)
-                    mask[frame_idx, line_idx] = True
+                    L = float(np.sqrt(max(R2 - d2, 0.0)))
+                    A = F - L * u
+                    B = F + L * u
+                    xs = np.linspace(A[0], B[0], num_pts, dtype=np.float32)
+                    ys = np.linspace(A[1], B[1], num_pts, dtype=np.float32)
+                    line_points[fi, li, :, 0] = xs
+                    line_points[fi, li, :, 1] = ys
+                    mask[fi, li] = True
             np.savez(
-                npz_path,
+                out_path,
                 line_points=line_points,
                 mask=mask,
             )
+
+    def visualise_line_points(self):
+        cx = self.cx
+        cy = self.cy
+        r = self.r
+        input_dir = os.path.join(self.root, f"{self.dir}_dilated")
+        npz_dir = os.path.join(self.root, f"{self.dir}_annotations_line_points")
+        avi_files = sorted(glob.glob(os.path.join(input_dir, "*.avi")))
+        npz_files = sorted(glob.glob(os.path.join(npz_dir, "*.npz")))
+        if not avi_files or not npz_files:
+            print("No videos or line points found.")
+            return
+        avi_map = {os.path.splitext(os.path.basename(f))[0]: f for f in avi_files}
+        npz_map = {os.path.splitext(os.path.basename(f))[0]: f for f in npz_files}
+        common_keys = sorted(set(avi_map.keys()) & set(npz_map.keys()))
+        if not common_keys:
+            print("No matching video/npz pairs found.")
+            return
+        colors = [(0, 0, 255), (0, 255, 0), (255, 0, 0), (255, 0, 255)]
+        video_idx = 0
+        frame_idx = 0
+        while True:
+            key_base = common_keys[video_idx]
+            avi_path = avi_map[key_base]
+            npz_path = npz_map[key_base]
+            cap = cv2.VideoCapture(avi_path)
+            n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            frame_idx = max(0, min(frame_idx, n_frames - 1))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            cap.release()
+            if not ret:
+                print(f"Failed to read frame {frame_idx} from {avi_path}")
+                break
+            data = np.load(npz_path)
+            line_points = data["line_points"]
+            mask = data["mask"]
+            display = frame.copy()
+            if frame_idx < line_points.shape[0]:
+                for line_idx in range(4):
+                    if mask[frame_idx, line_idx]:
+                        pts = line_points[frame_idx, line_idx]
+                        for x, y in pts.astype(int):
+                            cv2.circle(display, (x, y), 2, colors[line_idx], -1)
+            cv2.circle(display, (cx, cy), radius=r, color=(0, 255, 255), thickness=3)
+            text = f"Video {video_idx + 1}/{len(common_keys)} | Frame {frame_idx + 1}/{n_frames}"
+            cv2.putText(
+                display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
+            )
+            cv2.imshow("Line Points Viewer", display)
+            key = cv2.waitKey(0) & 0xFF
+            if key == ord("q"):
+                break
+            elif key == ord("m"):
+                video_idx = (video_idx + 1) % len(common_keys)
+                frame_idx = 0
+            elif key == ord("n"):
+                video_idx = (video_idx - 1) % len(common_keys)
+                frame_idx = 0
+            elif key == ord("k"):
+                frame_idx += 1
+            elif key == ord("j"):
+                frame_idx -= 1
+        cv2.destroyAllWindows()
+        for i in range(10):
+            cv2.waitKey(1)
+            time.sleep(0.1)
 
 
 def main():
     e = Endgame()
     e.annotations_to_line_points()
+    e.visualise_line_points()
 
 
 if __name__ == "__main__":
