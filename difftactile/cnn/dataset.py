@@ -49,6 +49,7 @@ class MyDataset(torch.utils.data.Dataset):
             data_points = []
         super().__init__()
         start_time = time.perf_counter()
+        self.sim_exp = sim_exp
         self.repeat_factor = repeat_factor
         self.vein_px_thickness = SYSTEM_PARAMS.meta.vein_px_thickness
         self.clip_len = SYSTEM_PARAMS.gnn.clip_len
@@ -125,16 +126,16 @@ class MyDataset(torch.utils.data.Dataset):
     
     def populate_clips_single_dataset_scheme_train(self):
         self.files = MyDataset.get_folder_files(self.data_dir)
-        dilations = [16]
+        dilations = [24]
         for i in range(len(self.files)):
             file_path = self.files[i]
             data = np.load(file_path)
             points = data["markers"]
             total_frames = points.shape[0]
             for dilation in dilations:
-                dilated_clip_len = self.clip_len * dilation
+                # dilated_clip_len = self.clip_len * dilation
                 dilated_total_frames = total_frames // dilation
-                if dilated_total_frames >= dilated_clip_len:
+                if dilated_total_frames >= self.clip_len:
                     num_possible_starts = dilated_total_frames - self.clip_len + 1
                     start_indices = np.arange(0, num_possible_starts)
                     start_indices = np.tile(start_indices, self.repeat_factor)
@@ -570,16 +571,22 @@ class MyDataset(torch.utils.data.Dataset):
         ixs = all_indices[0]
         train_dataset = MyDataset(
             scheme=self.scheme,
+            sim_exp=self.sim_exp,
+            data_dir=self.data_dir,
             mode="train",
             data_points=[self.data_points[i] for i in ixs["train_indices"]],
         )
         val_dataset = MyDataset(
             scheme=self.scheme,
+            sim_exp=self.sim_exp,
+            data_dir=self.data_dir,
             mode="val",
             data_points=[self.data_points[i] for i in ixs["val_indices"]],
         )
         test_dataset = MyDataset(
             scheme=self.scheme,
+            sim_exp=self.sim_exp,
+            data_dir=self.data_dir,
             mode="test",
             data_points=[self.data_points[i] for i in ixs["test_indices"]],
         )

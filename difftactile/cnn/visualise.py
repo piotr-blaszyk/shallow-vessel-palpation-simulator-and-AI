@@ -420,7 +420,18 @@ class Visualisation:
                 num_workers=NUM_WORKERS
             )
         elif data_source == 'fresh_dataset':  # dataset mode
-            full_dataset = MyDataset(scheme="single_dataset")
+            if False:
+                full_dataset = MyDataset(
+                    scheme="single_dataset",
+                    sim_exp="exp",
+                    data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+                )
+            if True:
+                full_dataset = MyDataset(
+                    scheme="single_dataset",
+                    sim_exp="sim",
+                    data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
+                )
             train_dataset, _, _ = full_dataset.create_splits(
                 train_size=1.0,
                 val_size=0.0,
@@ -851,8 +862,8 @@ class Visualisation:
 def main():
     v = Visualisation()
     v.visualise_gnn(
-        mode='predictions', 
-        data_source='pickled_test_dataset'
+        mode='dataset', 
+        data_source='fresh_dataset'
     )
 
 
