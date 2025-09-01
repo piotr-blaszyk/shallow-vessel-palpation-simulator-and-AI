@@ -1,5 +1,6 @@
 from difftactile.cnn.gnn import *
 
+
 def choose_optimal_threshold():
     BATCH_SIZE = 512
     NUM_WORKERS = 16

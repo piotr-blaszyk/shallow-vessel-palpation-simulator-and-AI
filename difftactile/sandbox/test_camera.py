@@ -1,5 +1,6 @@
+
 import cv2
-import time
+
 
 def test_camera(camera_id):
     print(f"\nTesting camera {camera_id}")

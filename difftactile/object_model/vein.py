@@ -1,10 +1,11 @@
-import taichi as ti
-import numpy as np
 import pickle
 
-from difftactile.object_model.obj_loader import ObjLoader
+import numpy as np
+import taichi as ti
+
 from difftactile.main.constants import *
 from difftactile.object_model.common import *
+
 
 @ti.data_oriented
 class Vein:

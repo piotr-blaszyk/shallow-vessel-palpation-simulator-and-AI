@@ -1,18 +1,10 @@
-import os
-import torch
-import matplotlib.pyplot as plt
-from torch.utils.data import DataLoader
-import numpy as np
-from scipy.spatial.distance import cdist
-import matplotlib.colors as mcolors
-import pickle
-import cv2
-from tqdm import tqdm
 import time
+
+from tqdm import tqdm
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.gnn import *
-from difftactile.data_analysis.experiment.adjacency import Adjacency
+
 
 def main():
     dataset = MyDataset(

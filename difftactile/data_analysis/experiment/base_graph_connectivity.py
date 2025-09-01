@@ -1,21 +1,13 @@
+import pickle
+
 import cv2
 import numpy as np
-import pickle
-from scipy.optimize import linear_sum_assignment
-from scipy.spatial.distance import cdist
-from scipy.stats import entropy
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import LeaveOneOut
-from sklearn.metrics import confusion_matrix, f1_score, accuracy_score, recall_score
-import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy.spatial import Voronoi
-import matplotlib.pyplot as plt
-from shapely.geometry import Polygon
 
-from difftactile.main.constants import *
 from difftactile.cnn.dataset import *
 from difftactile.data_analysis.experiment.adjacency import *
+from difftactile.main.constants import *
+
 
 class ComputeEdges:
     def __init__(self):

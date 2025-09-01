@@ -1,6 +1,7 @@
-from bayes_opt import BayesianOptimization, acquisition
-import IPython
 import json
+
+import IPython
+from bayes_opt import BayesianOptimization, acquisition
 
 from difftactile.main.constants import *
 

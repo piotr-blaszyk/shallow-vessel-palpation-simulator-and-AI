@@ -2,6 +2,7 @@ import taichi as ti
 
 from difftactile.main.constants import *
 
+
 class FisheyeModelTaichi:
     def __init__(self):
         pass

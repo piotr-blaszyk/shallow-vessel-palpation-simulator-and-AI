@@ -1,21 +1,21 @@
 from sympy import false
+
 from difftactile.main.constants import *
 
 if SYSTEM_PARAMS.meta.cnn_gnn == 0:
     import cv2
-import os
-import torch
-import numpy as np
-
 import math
-from torch_geometric.data import Data
-from sklearn.neighbors import NearestNeighbors
+import os
+import re
 import time
-from tqdm import tqdm
+
+import numpy as np
+import torch
+from torch_geometric.data import Data
+
+from difftactile.data_analysis.experiment.adjacency import *
 from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
-from difftactile.data_analysis.experiment.adjacency import *
-import re
 
 
 class MyDataset(torch.utils.data.Dataset):

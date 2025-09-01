@@ -1,5 +1,5 @@
 import torch
-import numpy as np
+
 
 def iou_score_from_model(preds, targets, eps=1e-6):
     # This is the implementation from the model

@@ -1,5 +1,6 @@
 from difftactile.main.constants import SYSTEM_PARAMS
 
+
 def main():
     # Test dot notation
     dot_value = SYSTEM_PARAMS.optimisation.update_steps.vitactip.youngs_modulus

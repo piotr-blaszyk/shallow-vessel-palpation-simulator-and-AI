@@ -1,31 +1,30 @@
-import taichi as ti
-import numpy as np
-import pickle
+import cProfile
 import json
-import cv2
-import sys
-import os
-from scipy.spatial.distance import cdist
-from scipy.optimize import linear_sum_assignment
-from scipy.spatial.transform import Rotation as R
-import matplotlib.pyplot as plt
-import torch
-import torch.optim as optim
 import math
-import cProfile, pstats, sys
-from tqdm import tqdm
+import os
+import pickle
+import time
+from pathlib import Path
 
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import taichi as ti
+from scipy.optimize import linear_sum_assignment
+from scipy.spatial.distance import cdist
+from scipy.spatial.transform import Rotation as R
+
+from difftactile.data_analysis.experiment.adjacency import *
+from difftactile.data_analysis.experiment.bo_gp import *
+from difftactile.main.apply_scaling import ScientificNotationEncoder
+from difftactile.main.cfl_and_contact_params_estimation import *
 from difftactile.main.constants import *
 from difftactile.main.constants_bo_gp import *
+from difftactile.main.synthetic_image_generator import *
+from difftactile.object_model.phantom import Phantom
 from difftactile.object_model.vein import Vein
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.sensor_model.vitactip import ViTacTip
-from difftactile.object_model.phantom import Phantom
-from difftactile.main.cfl_and_contact_params_estimation import *
-from difftactile.main.apply_scaling import ScientificNotationEncoder
-from difftactile.main.synthetic_image_generator import *
-from difftactile.data_analysis.experiment.adjacency import *
-from difftactile.data_analysis.experiment.bo_gp import *
 
 RUN_ON_LAB_MACHINE = True
 
@@ -607,6 +606,7 @@ class Contact:
         )
 
     def set_up_system_params(self):
+        self.timestamp = time.strftime('%Y%m%d_%H%M%S')
         self.collision2_contact_flat = ti.field(dtype=int, shape=(), needs_grad=False)
         self.target_path = SYSTEM_PARAMS.files.bo_gp_target_json
         self.use_bo = SYSTEM_PARAMS.meta.load_params_from_bo == 1
@@ -1863,7 +1863,8 @@ class Contact:
 
     def write_training_data_to_file(self, file_num):
         traj_ix = self.trajectory_ix[None]
-        directory = SYSTEM_PARAMS.files.dataset_root
+        directory = SYSTEM_PARAMS.files.dataset_root.format(self.timestamp)
+        Path(directory).mkdir(parents=True, exist_ok=True)
         file = SYSTEM_PARAMS.files.dataset_data_point.format(
             file_num
         )
@@ -2504,7 +2505,7 @@ class Contact:
 
     def collect_training_data(self):
         # self.clear_temp_images()
-        self.clear_npz()
+        # self.clear_npz()
         file_num = 0
         for i in range(SYSTEM_PARAMS.contact.num_training_trajectories):
             if self.use_bo:

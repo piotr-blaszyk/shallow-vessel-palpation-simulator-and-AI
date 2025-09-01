@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class Common:
     @staticmethod
     def compute_particle_spacing_helper(

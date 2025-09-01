@@ -1,11 +1,9 @@
-import numpy as np
-import cv2
-from os import path as osp
-import os
-import math
 import glob
+import os
 import pickle
-import json
+
+import cv2
+import numpy as np
 
 from difftactile.main.constants import *
 

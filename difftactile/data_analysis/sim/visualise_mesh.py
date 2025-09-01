@@ -1,10 +1,12 @@
+import pickle
+
 import numpy as np
 import open3d as o3d
-import pickle
 import pyvista as pv
 import vedo
 
 from difftactile.main.constants import *
+
 
 class VisualiseMesh:
     def __init__(self):

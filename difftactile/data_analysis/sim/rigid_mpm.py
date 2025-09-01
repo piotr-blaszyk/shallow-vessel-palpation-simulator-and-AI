@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 
 
-
 class RigidMpm:
     def __init__(self):
         pass

@@ -1,7 +1,9 @@
-import numpy as np
-import time
-import os
 import gc
+import os
+import time
+
+import numpy as np
+
 
 def measure_loading_time(path, num_iterations=5):
     """Measure the loading time of an NPZ file."""

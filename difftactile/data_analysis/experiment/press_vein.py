@@ -1,12 +1,8 @@
+
 import cv2
-import numpy as np
-import tkinter as tk
-from PIL import Image, ImageTk
-from scipy.optimize import linear_sum_assignment
-from scipy.spatial.distance import cdist
-import pickle
-from difftactile.sensor_model.fisheye_model_no_taichi import *
+
 from difftactile.main.constants import *
+from difftactile.sensor_model.fisheye_model_no_taichi import *
 
 img1 = cv2.imread(SYSTEM_PARAMS.files.press_no_vein)
 img2 = cv2.imread(SYSTEM_PARAMS.files.press_horizontal_vein)

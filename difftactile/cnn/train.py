@@ -1,20 +1,19 @@
 
 import os
-import torch
-from torch.utils.data import DataLoader
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
-from pytorch_lightning.loggers import TensorBoardLogger
-from lightning.pytorch.profilers import PyTorchProfiler, PassThroughProfiler
-import time
 import pickle
-import numpy as np
+import time
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pytorch_lightning as pl
+import torch
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.loggers import TensorBoardLogger
+from torch.utils.data import DataLoader
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.lit_module_unet_cnn import *
 from difftactile.main.constants import *
-from difftactile.cnn.dataset import *
 
 
 class CurriculumCallback(pl.Callback):

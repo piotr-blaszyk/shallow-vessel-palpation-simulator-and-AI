@@ -7,6 +7,8 @@ echo "Installing dependencies..."
 
 # Install PyTorch and related packages
 
+uv pip install opencv-python
+uv pip install taichi
 uv pip install pyvista
 uv pip install meshio
 uv pip install snakeviz

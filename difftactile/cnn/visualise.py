@@ -1,17 +1,16 @@
-import os
-import torch
-import matplotlib.pyplot as plt
-from torch.utils.data import DataLoader
-import numpy as np
-import matplotlib.colors as mcolors
 import pickle
-import cv2
-from tqdm import tqdm
 import time
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.gnn import *
-from difftactile.data_analysis.experiment.adjacency import Adjacency  # Add this import
+
 
 class Visualisation:
     def __init__(self):

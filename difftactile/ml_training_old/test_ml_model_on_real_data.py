@@ -1,13 +1,13 @@
-import torch
-import numpy as np
 import pickle
-from graph_neural_network import GNNClassifier
-import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix
-from torch_geometric.data import Data, DataLoader
+
+import numpy as np
 import pytorch_lightning as pl
+import torch
+from graph_neural_network import GNNClassifier
+from torch_geometric.data import Data, DataLoader
 
 from difftactile.main.constants import *
+
 
 def load_and_preprocess_data():
     # Load experimental data

@@ -1,19 +1,21 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import pytorch_lightning as pl
-from torchmetrics import Accuracy, F1Score, Recall
-from torch_geometric.data import Data, Batch, DataLoader
-from torch_geometric.nn import GCNConv, global_mean_pool
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import confusion_matrix
-import matplotlib.pyplot as plt
-import numpy as np
 import os
 import pickle
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pytorch_lightning as pl
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from exploratory_data_analysis import *
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split
+from torch_geometric.data import Data, DataLoader
+from torch_geometric.nn import GCNConv, global_mean_pool
+from torchmetrics import Accuracy, F1Score, Recall
+
 from difftactile.main.constants import *
+
 
 class GNNClassifier(pl.LightningModule):
     def __init__(self, node_dim=4):

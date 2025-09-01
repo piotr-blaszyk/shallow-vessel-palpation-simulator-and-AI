@@ -1,8 +1,9 @@
 import json
-import numpy as np
+
 import cv2
-import os
+import numpy as np
 from matplotlib import pyplot as plt
+
 from difftactile.main.constants import *
 
 

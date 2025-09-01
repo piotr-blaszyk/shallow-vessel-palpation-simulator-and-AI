@@ -1,22 +1,23 @@
-import numpy as np
-import cv2
-import torch
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-import pickle
 import math
-from scipy.interpolate import interp1d
-import sys
+import pickle
 
-from difftactile.data_analysis.experiment.marker_tracker import *
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from scipy.interpolate import interp1d
+from tqdm import tqdm
+
+from difftactile.cnn.common import Common
+from difftactile.cnn.dataset import *
+from difftactile.cnn.gnn import *
+from difftactile.cnn.visualise import *
 from difftactile.data_analysis.experiment.hungarian_exp import *
-from difftactile.sensor_model.fisheye_model_no_taichi import *
+from difftactile.data_analysis.experiment.marker_tracker import *
 from difftactile.main.constants import *
 from difftactile.main.synthetic_image_generator import SyntheticImageGenerator
-from difftactile.cnn.gnn import *
-from difftactile.cnn.dataset import *
-from difftactile.cnn.visualise import *
-from difftactile.cnn.common import Common
+from difftactile.sensor_model.fisheye_model_no_taichi import *
+
 
 class PredictExp:
     def __init__(self):

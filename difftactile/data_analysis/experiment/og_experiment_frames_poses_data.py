@@ -1,22 +1,14 @@
-import numpy as np
-import cv2
-import torch
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-import pickle
-import math
-from scipy.interpolate import interp1d
-import sys
 
-from difftactile.data_analysis.experiment.marker_tracker import *
-from difftactile.data_analysis.experiment.hungarian_exp import *
-from difftactile.sensor_model.fisheye_model_no_taichi import *
-from difftactile.main.constants import *
-from difftactile.main.synthetic_image_generator import SyntheticImageGenerator
-from difftactile.cnn.gnn import *
+import numpy as np
+
 from difftactile.cnn.dataset import *
+from difftactile.cnn.gnn import *
 from difftactile.cnn.visualise import *
-from difftactile.cnn.common import Common
+from difftactile.data_analysis.experiment.hungarian_exp import *
+from difftactile.data_analysis.experiment.marker_tracker import *
+from difftactile.main.constants import *
+from difftactile.sensor_model.fisheye_model_no_taichi import *
+
 
 def main():
     poses = np.array([

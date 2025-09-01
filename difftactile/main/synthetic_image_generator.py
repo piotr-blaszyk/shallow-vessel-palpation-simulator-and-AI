@@ -1,8 +1,8 @@
-import numpy as np
-from shapely.geometry import Polygon, MultiLineString
-from shapely.ops import unary_union, polygonize
-from scipy.spatial import Delaunay
 import cv2
+import numpy as np
+from scipy.spatial import Delaunay
+from shapely.geometry import MultiLineString, Polygon
+from shapely.ops import polygonize, unary_union
 
 from difftactile.main.constants import *
 

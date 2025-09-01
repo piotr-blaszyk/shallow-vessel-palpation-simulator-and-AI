@@ -1,21 +1,19 @@
-from ast import Pass
-from re import X
+import time
+
+import numpy as np
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pytorch_lightning as pl
-from torch_geometric.data import Data, temporal
-from torch_geometric.nn import GINEConv, Linear
-from torch_geometric_temporal.nn.recurrent import GConvGRU
-from torch_geometric.loader import DataLoader
-import numpy as np
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from torch.utils.data import SubsetRandomSampler
-import time
+from torch_geometric.loader import DataLoader
+from torch_geometric.nn import GINEConv
 from tqdm import tqdm
-from difftactile.cnn.dataset import *
+
 from difftactile.cnn.common import *
+from difftactile.cnn.dataset import *
 
 
 class CurriculumCallback(pl.Callback):

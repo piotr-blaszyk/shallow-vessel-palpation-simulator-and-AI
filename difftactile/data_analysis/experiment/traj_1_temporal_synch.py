@@ -1,8 +1,9 @@
+
 import cv2
 import numpy as np
-import math
 
 from difftactile.main.constants import *
+
 
 def go(frame_ix, x):
     image_path = SYSTEM_PARAMS.files.traj_out_snapshot.format(1, frame_ix)

@@ -1,5 +1,7 @@
-import numpy as np
 import json
+
+import numpy as np
+
 from difftactile.main.constants import *
 
 

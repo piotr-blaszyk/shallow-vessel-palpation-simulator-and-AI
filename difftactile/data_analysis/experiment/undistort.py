@@ -3,6 +3,7 @@ import numpy as np
 
 from difftactile.main.constants import *
 
+
 def main():
     # Load the image
     image = cv2.imread(SYSTEM_PARAMS.files.phantom_uncropped_compressed)

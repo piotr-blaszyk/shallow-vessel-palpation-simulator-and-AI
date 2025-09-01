@@ -3,8 +3,8 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 from sklearn.neighbors import KNeighborsClassifier
 
-
 from difftactile.main.constants import *
+
 
 class Adjacency:
     @staticmethod

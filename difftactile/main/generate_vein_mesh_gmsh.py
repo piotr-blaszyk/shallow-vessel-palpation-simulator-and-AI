@@ -3,10 +3,11 @@ import numpy as np
 
 np.set_printoptions(formatter={"float_kind": "{:.2f}".format})
 import math
-import pickle
 import os
-from difftactile.main.constants import *
+import pickle
+
 from difftactile.main.common import *
+from difftactile.main.constants import *
 
 
 class MeshGenerator:

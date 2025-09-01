@@ -1,20 +1,21 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, TensorDataset
-import pytorch_lightning as pl
-from torchmetrics import Accuracy
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-import matplotlib.pyplot as plt
-import numpy as np
-import sys
 import os
 import pickle
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pytorch_lightning as pl
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from exploratory_data_analysis import *
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader, TensorDataset
+from torchmetrics import Accuracy
+
 from difftactile.main.constants import *
+
 
 class TumorClassifier(pl.LightningModule):
     def __init__(self, input_dim=254):

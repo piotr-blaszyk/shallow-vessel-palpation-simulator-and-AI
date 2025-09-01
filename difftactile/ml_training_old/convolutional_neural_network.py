@@ -1,18 +1,20 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import pytorch_lightning as pl
-from torchmetrics import Accuracy, F1Score, ConfusionMatrix, Recall
-from torch.utils.data import DataLoader, TensorDataset
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-import matplotlib.pyplot as plt
-import numpy as np
 import os
 import pickle
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pytorch_lightning as pl
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from exploratory_data_analysis import *
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
+from torchmetrics import Accuracy, ConfusionMatrix, F1Score, Recall
+
 from difftactile.main.constants import *
+
 
 class CNNClassifier(pl.LightningModule):
     def __init__(self):

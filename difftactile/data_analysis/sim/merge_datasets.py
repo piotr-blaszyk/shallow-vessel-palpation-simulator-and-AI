@@ -1,6 +1,7 @@
 import os
-import shutil
 import re
+import shutil
+
 
 def extract_trajectory_number(file_path):
     """Extract the trajectory number from the file path.

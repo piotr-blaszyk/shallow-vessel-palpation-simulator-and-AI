@@ -1,6 +1,8 @@
-import cv2
-import time
 import threading
+import time
+
+import cv2
+
 from difftactile.main.constants import *
 
 

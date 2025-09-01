@@ -1,13 +1,13 @@
-import taichi as ti
 import numpy as np
-from scipy.spatial.transform import Rotation as R
+import taichi as ti
 import torch
+from scipy.spatial.transform import Rotation as R
 
 from difftactile.main.constants import *
 from difftactile.main.constants_bo_gp import *
-from difftactile.object_model.obj_loader import ObjLoader
-from difftactile.object_model.common import *
 from difftactile.main.constants_ti import *
+from difftactile.object_model.common import *
+from difftactile.object_model.obj_loader import ObjLoader
 
 
 @ti.data_oriented

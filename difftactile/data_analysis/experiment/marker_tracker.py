@@ -1,13 +1,15 @@
+import os
+import pickle
+import tkinter as tk
+
 import cv2
 import numpy as np
-import os
-import tkinter as tk
 from PIL import Image, ImageTk
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
-import pickle
-from difftactile.sensor_model.fisheye_model_no_taichi import *
+
 from difftactile.main.constants import *
+from difftactile.sensor_model.fisheye_model_no_taichi import *
 
 
 class MarkerTracker:

@@ -3,12 +3,13 @@ load a obj/stl file and convert it to mpm particles
 use millimeter as units
 the space is 100 mm x 100 mm x 100 mm
 """
-import trimesh
-import numpy as np
-import json
 
+import numpy as np
+import trimesh
 from mesh_to_sdf import *
+
 from difftactile.main.constants import *
+
 
 class ObjLoader:
     def __init__(self, data_path, num_particles_cube_1d):

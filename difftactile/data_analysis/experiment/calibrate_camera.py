@@ -1,6 +1,7 @@
+import glob
+
 import cv2
 import numpy as np
-import glob
 
 from difftactile.main.constants import *
 

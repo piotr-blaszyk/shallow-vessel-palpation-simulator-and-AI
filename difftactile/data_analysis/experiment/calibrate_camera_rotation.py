@@ -1,8 +1,10 @@
-import cv2
-import numpy as np
 import math
 
+import cv2
+import numpy as np
+
 from difftactile.main.constants import *
+
 
 def calibrate_vertical():
     image_path = SYSTEM_PARAMS.files.calibration_vertical

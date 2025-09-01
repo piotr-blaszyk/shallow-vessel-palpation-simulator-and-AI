@@ -1,8 +1,6 @@
-from monai.networks.nets import BasicUNetPlusPlus, UNet
 import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from monai.networks.nets import UNet
 
 from difftactile.cnn.common import *
 

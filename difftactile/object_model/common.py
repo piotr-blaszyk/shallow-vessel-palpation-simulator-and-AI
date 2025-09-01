@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+
 class Common:
     @staticmethod
     def compute_min_spacing_3d(points):

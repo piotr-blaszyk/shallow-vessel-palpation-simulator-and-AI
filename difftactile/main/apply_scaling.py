@@ -1,5 +1,6 @@
 import json
 
+
 class ScientificNotationEncoder(json.JSONEncoder):
     def default(self, obj):
         return super().default(obj)

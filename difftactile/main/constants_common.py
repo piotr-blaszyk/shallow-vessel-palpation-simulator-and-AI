@@ -1,6 +1,5 @@
 import json
 from typing import Any, Dict, Optional
-import numpy as np
 
 
 class ConstantsFromJson:

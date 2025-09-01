@@ -1,16 +1,17 @@
-import taichi as ti
-import torch
+import pickle
+
 import cv2
 import numpy as np
+import taichi as ti
+import torch
 from scipy.spatial.transform import Rotation as R
-import pickle
 
 from difftactile.main.constants import *
 from difftactile.main.constants_bo_gp import *
+from difftactile.main.constants_ti import *
+from difftactile.object_model.common import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 from difftactile.sensor_model.fisheye_model_taichi import *
-from difftactile.object_model.common import *
-from difftactile.main.constants_ti import *
 
 
 @ti.data_oriented

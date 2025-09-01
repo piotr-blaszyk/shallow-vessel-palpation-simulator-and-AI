@@ -1,14 +1,16 @@
 from difftactile.main.constants import *
+
 if SYSTEM_PARAMS.meta.cnn_gnn == 0:
-    import cv2
+    pass
 
 import os
+
 import numpy as np
 from tqdm import tqdm
 
+from difftactile.data_analysis.experiment.adjacency import *
 from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
-from difftactile.data_analysis.experiment.adjacency import *
 
 
 class PreProcessSimData:

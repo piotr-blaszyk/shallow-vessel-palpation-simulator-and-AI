@@ -1,10 +1,12 @@
-import numpy as np
-import math
 import json
+import math
 import pickle
+
+import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from difftactile.main.constants import *
+
 
 class PreMain:
     def __init__(self):

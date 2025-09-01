@@ -1,8 +1,10 @@
 import pickle
-import numpy as np
+
 import cv2
+import numpy as np
 
 from difftactile.main.constants import *
+
 
 def load_sim_data():
     with open(SYSTEM_PARAMS.files.marker_snapshots_and_labels, "rb") as f:

@@ -1,9 +1,9 @@
 import cv2
 import numpy as np
 
+from difftactile.data_analysis.experiment.adjacency import *
 from difftactile.main.constants import SYSTEM_PARAMS
 from difftactile.sensor_model.fisheye_model_no_taichi import FisheyeModelNoTaichi
-from difftactile.data_analysis.experiment.adjacency import *
 
 
 class DomainAdaptation:
