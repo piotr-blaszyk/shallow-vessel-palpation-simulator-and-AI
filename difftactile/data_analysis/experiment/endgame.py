@@ -22,6 +22,12 @@ class Endgame:
         npz_files = sorted(glob.glob(os.path.join(dir, "*.npz")))
         return avi_files, npz_files
 
+    def _get_file_pairs_2(self, dir):
+        avi_files = sorted(glob.glob(os.path.join(dir, "*.avi")))
+        npz_files_poses = sorted(glob.glob(os.path.join(dir, "*_poses.npz")))
+        npz_files_markers = sorted(glob.glob(os.path.join(dir, "*_markers.npz")))
+        return avi_files, npz_files_poses, npz_files_markers
+
     def interpolate_metadata_and_trim_videos(self):
         avi_files, npz_files = self._get_file_pairs(self.input_dir)
         for avi_path, npz_path in zip(avi_files, npz_files):
@@ -169,18 +175,38 @@ class Endgame:
             PredictExp.compute_npz_helper(
                 video_in=video_in,
                 video_out=video_out,
-                npz_out=npz_out,
+                npz_in=npz_out,
             )
             for npz_path in npz_files:
                 base_name = os.path.splitext(os.path.basename(npz_path))[0]
                 dst_path = os.path.join(output_dir, f"{base_name}_poses.npz")
                 shutil.copy(npz_path, dst_path)
 
+    def reorder_interpolate_markers(self):
+        input_dir = os.path.join(self.root, f"{self.dir}_markers")
+        output_dir = os.path.join(self.root, f"{self.dir}_reordered_interpolated_markers")
+        os.makedirs(output_dir, exist_ok=True)
+        avi_files, npz_files_poses, npz_files_markers = self._get_file_pairs_2(input_dir)
+        for avi_path, npz_in in zip(avi_files, npz_files_markers):
+            base_name = os.path.splitext(os.path.basename(avi_path))[0]
+            video_in = avi_path
+            video_out = os.path.join(output_dir, f"{base_name}.avi")
+            npz_out = os.path.join(output_dir, f"{base_name}.npz")
+            PredictExp.compute_npz_helper2(
+                video_in=video_in,
+                video_out=video_out,
+                npz_in=npz_in,
+                npz_out=npz_out,
+            )
+            for npz_path in npz_files_poses:
+                base_name = os.path.splitext(os.path.basename(npz_path))[0]
+                dst_path = os.path.join(output_dir, f"{base_name}.npz")
+                shutil.copy(npz_path, dst_path)
 
 def main():
     e = Endgame()
     # e.apply_dilation(16)
-    e.extract_markers()
+    e.reorder_interpolate_markers()
 
 
 if __name__ == "__main__":

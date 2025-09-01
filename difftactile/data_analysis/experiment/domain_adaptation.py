@@ -62,9 +62,9 @@ def main():
     dir = SYSTEM_PARAMS.files.da_dir
     img_in = SYSTEM_PARAMS.files.flat_sensor_default_state
     img_in = f'{dir}{img_in}'
-    # DomainAdaptation.visualise_markers(img_in)
+    DomainAdaptation.visualise_markers(img_in)
     npz_out = SYSTEM_PARAMS.files.flat_sensor_default_state_npz
-    # DomainAdaptation.extract_reorder_save_markers(img_in, npz_out)
+    DomainAdaptation.extract_reorder_save_markers(img_in, npz_out)
 
 if __name__ == "__main__":
     main()

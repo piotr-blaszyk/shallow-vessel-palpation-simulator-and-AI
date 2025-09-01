@@ -144,7 +144,7 @@ class FisheyeModelNoTaichi:
         sizes = np.array(sizes)
         areas.sort()
         sizes.sort()
-        print(f'area_min: {areas.min()}; area_mean: {areas.mean()}; area_max: {areas.max()}')
+        # print(f'area_min: {areas.min()}; area_mean: {areas.mean()}; area_max: {areas.max()}')
         return MarkerCenter, circle_center, circle_radius
 
     @staticmethod

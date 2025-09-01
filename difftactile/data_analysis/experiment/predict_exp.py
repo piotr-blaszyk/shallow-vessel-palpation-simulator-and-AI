@@ -362,11 +362,11 @@ class PredictExp:
         PredictExp.compute_npz_helper(
             video_in=SYSTEM_PARAMS.files.experiment_og_raw_video,
             video_out=SYSTEM_PARAMS.files.experiment_og_processed_video,
-            npz_out=SYSTEM_PARAMS.files.experiment_og_markers_npz,
-            npz_out_reordered=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
+            npz_in=SYSTEM_PARAMS.files.experiment_og_markers_npz,
+            npz_out=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
             frame_mapping_npz_out=SYSTEM_PARAMS.files.experiment_og_frame_mapping_npz,
             video_from_cache=True,
-            npz_in=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
+            npz_temp=SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz,
             labels_out=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz,
             labels_in=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz,
         )
@@ -376,11 +376,11 @@ class PredictExp:
         PredictExp.compute_npz_helper(
             video_in=SYSTEM_PARAMS.files.experiment_straight_raw_video,
             video_out=SYSTEM_PARAMS.files.experiment_straight_processed_video,
-            npz_out=SYSTEM_PARAMS.files.experiment_straight_markers_npz,
-            npz_out_reordered=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
+            npz_in=SYSTEM_PARAMS.files.experiment_straight_markers_npz,
+            npz_out=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
             frame_mapping_npz_out=SYSTEM_PARAMS.files.experiment_straight_frame_mapping_npz,
             video_from_cache=False,
-            npz_in=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
+            npz_temp=SYSTEM_PARAMS.files.experiment_straight_markers_reordered_npz,
             labels_out=SYSTEM_PARAMS.files.experiment_straight_ground_truth_labels_npz,
             labels_in=SYSTEM_PARAMS.files.experiment_straight_ground_truth_labels_npz,
             seconds_per_frame=1e0
@@ -391,7 +391,7 @@ class PredictExp:
         PredictExp.compute_npz_helper(
             video_in=SYSTEM_PARAMS.files.experiment_2025_08_22_raw_video,
             video_out=SYSTEM_PARAMS.files.experiment_2025_08_22_processed_video,
-            npz_out=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_npz,
+            npz_in=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_npz,
             # npz_out_reordered=SYSTEM_PARAMS.files.experiment_2025_08_22_markers_reordered_npz,
             # frame_mapping_npz_out=SYSTEM_PARAMS.files.experiment_2025_08_22_frame_mapping_npz,
             # video_from_cache=True,
@@ -412,6 +412,7 @@ class PredictExp:
         labels_out=None,
         labels_in=None,
         seconds_per_frame=None,
+        foo=False,
     ):
         if not video_from_cache:
             marker_tracker = MarkerTracker()
@@ -442,6 +443,26 @@ class PredictExp:
         #     labels_in_path_npz=labels_in
         # )
         # player.run()
+    
+    @staticmethod
+    def compute_npz_helper2(
+        video_in,
+        video_out,
+        npz_in,
+        npz_out,
+    ):
+        marker_tracker = MarkerTracker()
+        marker_tracker.extract_frames(video_in)
+        HungarianExp.reorder_exp_points(
+            input_path=npz_in,
+            output_path=npz_out
+        )
+        marker_tracker.create_visualization(
+            out_path=video_out,
+            mode="unpaired-markers",
+            base_from_file=False,
+            npz_in=npz_out,
+        )
     
     def downsample_ground_truth_image_to_prediction_shape(self):
         ground_truth_path = self.ground_truth_img_path

@@ -16,7 +16,9 @@ class HungarianExp:
         points = data['markers']
         points_mask = data['markers_mask']
         base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
-        base_points = base_graph_data['points']
+        # base_points = base_graph_data['points']
+        data_flat = np.load(SYSTEM_PARAMS.files.flat_sensor_default_state_npz)
+        base_points = data_flat['points']
         adjacency_matrix = base_graph_data['adjacency_matrix']
 
         tracked_points, tracked_points_mask = HungarianExp.track_markers_with_interpolation(
@@ -30,56 +32,6 @@ class HungarianExp:
             markers=tracked_points,
             markers_mask=tracked_points_mask
         )
-    
-    @staticmethod
-    def reorder_exp_points_simple():
-        input_path = SYSTEM_PARAMS.files.exp_video_npz
-        output_path = SYSTEM_PARAMS.files.exp_video_npz_reordered
-        data = np.load(input_path)
-        all_points = data['markers']
-        all_points_mask = data['markers_mask']
-        base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
-        base_points = base_graph_data['points']
-        
-        all_reordered_points_list = []
-        all_reordered_points_mask_list = []
-
-        for i in range(all_points.shape[0]):
-            points = all_points[i]
-            points_mask = all_points_mask[i]
-            points = points[points_mask]  # Get only valid points for this frame
-
-            if points.shape[0] < base_points.shape[0]:
-                continue
-
-            # Calculate cost matrix between detected points and base points
-            cost_matrix = cdist(points, base_points, metric='sqeuclidean')
-            row_ind, col_ind = linear_sum_assignment(cost_matrix)
-
-            # Create reordered points array of correct size
-            reordered_points = np.zeros((base_points.shape[0], 2))
-            reordered_mask = np.zeros(base_points.shape[0], dtype=bool)
-            
-            # Only take the first base_points.shape[0] assignments
-            for base_idx, detected_idx in zip(col_ind[:base_points.shape[0]], 
-                                            row_ind[:base_points.shape[0]]):
-                reordered_points[base_idx] = points[detected_idx]
-                reordered_mask[base_idx] = True
-            
-            all_reordered_points_list.append(reordered_points)
-            all_reordered_points_mask_list.append(reordered_mask)
-
-        # Convert lists to numpy arrays
-        all_reordered_points = np.array(all_reordered_points_list)
-        all_reordered_points_mask = np.array(all_reordered_points_mask_list)
-
-        np.savez(
-            output_path,
-            markers=all_reordered_points,
-            markers_mask=all_reordered_points_mask
-        )
-    
-
     
     @staticmethod
     def visualise_reordered_point_connectivity(
@@ -173,17 +125,17 @@ class HungarianExp:
         """
         num_frames = points.shape[0]
         num_desired_points = base_points.shape[0]
-        tracked_points = np.zeros((num_frames, num_desired_points, 2))
-        tracked_points_mask = np.zeros((num_frames, num_desired_points), dtype=bool)
+        tracked_points = np.zeros((1+num_frames, num_desired_points, 2))
+        tracked_points_mask = np.zeros((1+num_frames, num_desired_points), dtype=bool)
         
         tracked_points[0] = base_points
         tracked_points_mask[0] = True
             
         # Process subsequent frames
-        for t in range(1, num_frames):
+        for t in range(1, num_frames+1):
             prev_points = tracked_points[t-1]
             prev_mask = tracked_points_mask[t-1]
-            curr_points = points[t][points_mask[t]]
+            curr_points = points[t-1][points_mask[t-1]]
             
             if len(curr_points) == 0:  # No points detected in current frame
                 tracked_points[t] = tracked_points[t-1]
@@ -241,7 +193,7 @@ class HungarianExp:
                     tracked_points[t, global_prev_idx] = curr_points[curr_idx]
                     tracked_points_mask[t, global_prev_idx] = True
         
-        return tracked_points, tracked_points_mask
+        return tracked_points[1:], tracked_points_mask[1:]
 
 
 def main():
