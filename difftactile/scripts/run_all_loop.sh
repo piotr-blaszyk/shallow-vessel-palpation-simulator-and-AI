@@ -1,8 +1,7 @@
 #!/usr/bin/env zsh
-set -e
 set -x
 
-for i in {1..10}; do
+for i in {1..100}; do
   ./difftactile/scripts/run_all.sh
 done
 

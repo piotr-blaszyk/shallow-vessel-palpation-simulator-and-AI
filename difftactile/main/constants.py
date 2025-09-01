@@ -1,3 +1,5 @@
+import numpy as np
+
 from difftactile.main.constants_common import *
 
 # Create a global instance with the system parameters

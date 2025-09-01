@@ -1,6 +1,6 @@
 import numpy as np
 import taichi as ti
-import torch
+# import torch
 from scipy.spatial.transform import Rotation as R
 
 from difftactile.main.constants import *
@@ -860,6 +860,7 @@ class Phantom:
                 cache_F_0[p, i, j] = self.deformation_gradient[f, p][i, j]
 
     def memory_to_cache(self, t):
+        return
         cur_step_name = f"{t:06d}"
         device = "cpu"
         self.cache[cur_step_name] = dict()
