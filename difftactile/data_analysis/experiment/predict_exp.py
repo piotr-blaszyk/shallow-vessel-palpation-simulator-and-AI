@@ -407,7 +407,6 @@ class PredictExp:
         npz_out,
         npz_out_reordered=None,
         video_from_cache=False,
-        # npz_in=SYSTEM_PARAMS.files.exp_video_npz_reordered
         npz_in=None,
         frame_mapping_npz_out=None,
         labels_out=None,
@@ -436,13 +435,13 @@ class PredictExp:
                 base_from_file=False,
                 npz_in=npz_in
             )
-        player = VideoPlayer(
-            video_in_path=video_out,
-            markers_in_path_npz=npz_in,
-            labels_out_path_npz=labels_out,
-            labels_in_path_npz=labels_in
-        )
-        player.run()
+        # player = VideoPlayer(
+        #     video_in_path=video_out,
+        #     markers_in_path_npz=npz_in,
+        #     labels_out_path_npz=labels_out,
+        #     labels_in_path_npz=labels_in
+        # )
+        # player.run()
     
     def downsample_ground_truth_image_to_prediction_shape(self):
         ground_truth_path = self.ground_truth_img_path

@@ -33,39 +33,18 @@ class MarkerTracker:
             seconds_per_frame=None
         ):
         cap = cv2.VideoCapture(str(input_path))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if seconds_per_frame is None:
-            seconds_per_frame = SYSTEM_PARAMS.marker_tracker.seconds_per_frame
-        frame_interval = int(fps * seconds_per_frame)
-        frame_idx = 0
-        frame_mapping = []
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-            if frame_idx % frame_interval == 0:
-                if self.end_frame_ix is not None and frame_idx >= self.end_frame_ix:
-                    break
-                if frame_idx >= self.start_frame_ix:
-                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    self.frames.append(frame)
-                    markers, _, _ = FisheyeModelNoTaichi.get_marker_image(gray)
-                    if len(markers) > 0:
-                        self.frame_markers.append(markers)
-                    else:
-                        self.frame_markers.append(np.array([]))
-                    frame_mapping.append(
-                        frame_idx
-                    )
-            frame_idx += 1
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            self.frames.append(frame)
+            markers, _, _ = FisheyeModelNoTaichi.get_marker_image(gray)
+            if len(markers) > 0:
+                self.frame_markers.append(markers)
+            else:
+                self.frame_markers.append(np.array([]))
         cap.release()
-        frame_mapping = np.array(frame_mapping, dtype=int)
-        if frame_mapping_npz_out is not None:
-            np.savez(
-                frame_mapping_npz_out,
-                frame_mapping=frame_mapping,
-            )
-        print(f"marker tracker: extracted {len(self.frame_markers)} frames from range {self.start_frame_ix} to {self.end_frame_ix if self.end_frame_ix is not None else 'end'}")
 
     def match_consecutive_frames(self):
         for i in range(len(self.frame_markers) - 1):

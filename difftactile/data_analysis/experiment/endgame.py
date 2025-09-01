@@ -5,6 +5,8 @@ import cv2
 from scipy.interpolate import interp1d
 import tqdm
 import time
+import shutil
+from difftactile.data_analysis.experiment.predict_exp import *
 
 
 class Endgame:
@@ -154,11 +156,31 @@ class Endgame:
             cv2.waitKey(1)
             time.sleep(0.1)
 
+    def extract_markers(self):
+        input_dir = os.path.join(self.root, f"{self.dir}_dilated")
+        output_dir = os.path.join(self.root, f"{self.dir}_markers")
+        os.makedirs(output_dir, exist_ok=True)
+        avi_files, npz_files = self._get_file_pairs(input_dir)
+        for avi_path in avi_files:
+            base_name = os.path.splitext(os.path.basename(avi_path))[0]
+            video_in = avi_path
+            video_out = os.path.join(output_dir, f"{base_name}_markers.avi")
+            npz_out = os.path.join(output_dir, f"{base_name}_markers.npz")
+            PredictExp.compute_npz_helper(
+                video_in=video_in,
+                video_out=video_out,
+                npz_out=npz_out,
+            )
+            for npz_path in npz_files:
+                base_name = os.path.splitext(os.path.basename(npz_path))[0]
+                dst_path = os.path.join(output_dir, f"{base_name}_poses.npz")
+                shutil.copy(npz_path, dst_path)
+
 
 def main():
     e = Endgame()
     # e.apply_dilation(16)
-    e.visualise_videos()
+    e.extract_markers()
 
 
 if __name__ == "__main__":
