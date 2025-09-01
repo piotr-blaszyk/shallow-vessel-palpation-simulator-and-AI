@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 from scipy.interpolate import interp1d
 import tqdm
+import time
 
 
 class Endgame:
@@ -14,13 +15,13 @@ class Endgame:
         self.output_dir = os.path.join(self.root, f"{self.dir}_interpolated_trimmed")
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def _get_file_pairs(self):
-        avi_files = sorted(glob.glob(os.path.join(self.input_dir, "*.avi")))
-        npz_files = sorted(glob.glob(os.path.join(self.input_dir, "*.npz")))
+    def _get_file_pairs(self, dir):
+        avi_files = sorted(glob.glob(os.path.join(dir, "*.avi")))
+        npz_files = sorted(glob.glob(os.path.join(dir, "*.npz")))
         return avi_files, npz_files
 
     def interpolate_metadata_and_trim_videos(self):
-        avi_files, npz_files = self._get_file_pairs()
+        avi_files, npz_files = self._get_file_pairs(self.input_dir)
         for avi_path, npz_path in zip(avi_files, npz_files):
             npz_data = np.load(npz_path)
             output = npz_data["output"]
@@ -76,11 +77,89 @@ class Endgame:
             cap.release()
             writer.release()
 
+    def apply_dilation(self, k):
+        input_dir = os.path.join(self.root, f"{self.dir}_interpolated_trimmed")
+        output_dir = os.path.join(self.root, f"{self.dir}_dilated")
+        os.makedirs(output_dir, exist_ok=True)
+        avi_files, npz_files = self._get_file_pairs(input_dir)
+        for avi_path, npz_path in zip(avi_files, npz_files):
+            npz_data = np.load(npz_path)
+            output = npz_data["output"]
+            metadata = npz_data["metadata"]
+            dilated_output = output[::k]
+            output_npz = os.path.join(output_dir, os.path.basename(npz_path))
+            np.savez(
+                output_npz,
+                output=dilated_output,
+                metadata=metadata,
+            )
+            cap = cv2.VideoCapture(avi_path)
+            fourcc = cv2.VideoWriter_fourcc(*"XVID")
+            fps = cap.get(cv2.CAP_PROP_FPS) / k
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            output_avi = os.path.join(output_dir, os.path.basename(avi_path))
+            writer = cv2.VideoWriter(output_avi, fourcc, fps, (w, h))
+            frame_idx = 0
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                if frame_idx % k == 0:
+                    writer.write(frame)
+                frame_idx += 1
+            cap.release()
+            writer.release()
+
+    def visualise_videos(self):
+        input_dir = os.path.join(self.root, f"{self.dir}_dilated")
+        avi_files = sorted(glob.glob(os.path.join(input_dir, "*.avi")))
+        if not avi_files:
+            print("No videos found.")
+            return
+        video_idx = 0
+        frame_idx = 0
+        while True:
+            avi_path = avi_files[video_idx]
+            cap = cv2.VideoCapture(avi_path)
+            n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            frame_idx = max(0, min(frame_idx, n_frames - 1))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            cap.release()
+            if not ret:
+                print(f"Failed to read frame {frame_idx} from {avi_path}")
+                break
+            display = frame.copy()
+            text = f"Video {video_idx + 1}/{len(avi_files)} | Frame {frame_idx + 1}/{n_frames}"
+            cv2.putText(
+                display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
+            )
+            cv2.imshow("Video Viewer", display)
+            key = cv2.waitKey(0) & 0xFF
+            if key == ord("q"):
+                break
+            elif key == ord("m"):
+                video_idx = (video_idx + 1) % len(avi_files)
+                frame_idx = 0
+            elif key == ord("n"):
+                video_idx = (video_idx - 1) % len(avi_files)
+                frame_idx = 0
+            elif key == ord("k"):
+                frame_idx += 1
+            elif key == ord("j"):
+                frame_idx -= 1
+        cv2.destroyAllWindows()
+        for i in range(10):
+            cv2.waitKey(1)
+            time.sleep(0.1)
+
 
 def main():
     e = Endgame()
-    e.interpolate_metadata_and_trim_videos()
+    # e.apply_dilation(16)
+    e.visualise_videos()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
