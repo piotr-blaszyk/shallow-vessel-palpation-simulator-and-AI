@@ -179,7 +179,7 @@
         "max_timesteps_per_trajectory": 1000000,
         "polyline_num": 25,
         "cnn_gnn": 1,
-        "vein_px_thickness": 30,
+        "vein_px_thickness": 60,
         "enable_grad": 0,
         "num_contact_pairs": 3,
         "load_params_from_bo": 0

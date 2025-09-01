@@ -420,13 +420,13 @@ class Visualisation:
                 num_workers=NUM_WORKERS
             )
         elif data_source == 'fresh_dataset':  # dataset mode
-            if False:
+            if True:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="exp",
                     data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
                 )
-            if True:
+            if False:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="sim",
@@ -864,7 +864,7 @@ def main():
     v = Visualisation()
     v.visualise_gnn(
         mode='predictions', 
-        data_source='pickled_test_dataset'
+        data_source='fresh_dataset'
     )
 
 
