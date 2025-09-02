@@ -908,6 +908,8 @@ def compute_stats(dataset, batch_size):
 
         "edge_attr_global_spatial",
         "edge_attr_global_temporal",
+
+        "vein_regression",
     ]
     for key in keys:
         res |= compute_mean_std(dataset, ixs, key)

@@ -551,6 +551,12 @@ class Visualisation:
                         ys.append(reg_pred.detach().cpu().numpy())
                     xs = np.array(xs)
                     ys = np.array(ys)
+                    ys = MyDataset.unnormalise_single(
+                        stats['vein_regression_mean'],
+                        stats['vein_regression_std'],
+                        ys,
+                        [2],
+                    )
                     vein_polyline, vein_polyline_mask = Endgame.line_dense_to_sparse(
                         xs,
                         ys,

@@ -899,6 +899,7 @@ class MyDataset(torch.utils.data.Dataset):
             edge_attr_temporal,
             edge_attr_global_spatial,
             edge_attr_global_temporal,
+            vein_regression,
         )
         pyg_data = self.get_pyg_data(
             pos=pos,
@@ -1152,6 +1153,7 @@ class MyDataset(torch.utils.data.Dataset):
         edge_attr_temporal,
         edge_attr_global_spatial,
         edge_attr_global_temporal,
+        vein_regression,
     ):
         if not self.warmup:
             if self.normalise_pos:
@@ -1185,6 +1187,12 @@ class MyDataset(torch.utils.data.Dataset):
                 self.edge_attr_global_temporal_std,
                 edge_attr_global_temporal,
                 [],
+            )
+            MyDataset.normalise_single(
+                self.vein_regression_mean,
+                self.vein_regression_std,
+                vein_regression,
+                [2],
             )
 
     def get_pyg_data(
@@ -1256,6 +1264,12 @@ class MyDataset(torch.utils.data.Dataset):
         ixs = np.array(ixs)
         if ixs.size > 0:
             xs[:, ixs] = (xs[:, ixs] - means[ixs]) / stds[ixs]
+
+    @staticmethod
+    def unnormalise_single(means, stds, xs, ixs):
+        ixs = np.array(ixs)
+        if ixs.size > 0:
+            xs[:, ixs] = xs[:, ixs] * stds[ixs] + means[ixs]
 
     def get_clip(
         self, markers, clip_len, dilation, start_ix, ground_truth_labels_in=None
