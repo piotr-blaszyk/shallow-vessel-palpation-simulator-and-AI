@@ -940,8 +940,14 @@ class MyDataset(torch.utils.data.Dataset):
         k = self.clip_len // 2
         start = k*self.num_nodes
         stop = (k+1)*self.num_nodes
-        mask[start:stop] = True
+        # mask[start:stop] = True
+        mask[start:start+7] = True
         return mask
+
+    # def get_mask_central_rings(self):
+    #     mask = np.zeros(shape=(self.num_nodes,), dtype=bool)
+    #     mask[:7] = True
+    #     return mask
     
     def get_empty_x(self):
         empty_x = np.zeros(shape=(self.clip_len * (self.num_nodes+1), 0), dtype=float)

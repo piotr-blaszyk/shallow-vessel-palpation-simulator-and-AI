@@ -54,7 +54,7 @@ class PredictExp:
         self.init_camera_params()
         self.compute_mapping_2d_3d()
 
-        self.bin_size = 0.001
+        self.bin_size = 0.0001
         self.bin_num_x = math.ceil(self.phantom_length_x / self.bin_size)
         self.bin_num_y = math.ceil(self.phantom_length_y / self.bin_size)
         self.bins = np.zeros(shape=(2, self.bin_num_x, self.bin_num_y), dtype=int)

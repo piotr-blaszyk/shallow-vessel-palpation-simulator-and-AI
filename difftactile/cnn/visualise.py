@@ -480,12 +480,12 @@ class Visualisation:
                 poses = poses.numpy()[0]
                 metadata = metadata.numpy()[0]
                 frame_ix = frame_ix.item()
-                if not (
-                    metadata[1] == 0 
-                    and metadata[0] == 0 
-                    and frame_ix == 0
-                ):
-                    continue
+                # if not (
+                #     metadata[1] == 0 
+                #     and metadata[0] == 0 
+                #     and frame_ix == 0
+                # ):
+                #     continue
             except StopIteration:
                 print("End of dataset reached. Restarting...")
                 data_iter = iter(data_loader)

@@ -268,7 +268,7 @@ class GNN(pl.LightningModule):
         out = self(x, edge_index, edge_attr)
         out = out.squeeze(-1)
         out = out[x_mask]
-        if stage == 'val' or stage == 'test':
+        if True or stage == 'val' or stage == 'test':
             mask = batch.mask
             out_unmasked = out
             out_masked = out[mask]
