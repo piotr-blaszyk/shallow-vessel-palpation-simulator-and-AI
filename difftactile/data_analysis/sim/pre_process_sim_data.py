@@ -16,8 +16,9 @@ from difftactile.sensor_model.fisheye_model_no_taichi import *
 class PreProcessSimData:
     @staticmethod
     def sim_marker_tracker():
-        input_dir = "difftactile/output/training_data/pickle_2025_08_31"
-        output_dir = "difftactile/output/training_data/pickle_2025_08_31_reordered"
+        input_dir = "difftactile/output/training_data/pickle_20250901_220921"
+        output_dir = "difftactile/output/training_data/pickle_20250901_220921_reordered"
+        os.makedirs(output_dir, exist_ok=True)
         base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         base_points = base_graph_data['points']
         file_paths = sorted([os.path.join(input_dir, f) for f in os.listdir(input_dir)])

@@ -1,74 +1,90 @@
-import open3d as o3d
+import os
+import glob
 import numpy as np
+import math
 
+class Endgame:
+    # ... other methods ...
 
-class TemporalPointCloudVisualizer:
-    def __init__(self, points_3d: np.ndarray):
-        """
-        points_3d: numpy array of shape (num_timesteps, num_points, 3)
-        """
-        assert points_3d.ndim == 3, "Shape must be (num_timesteps, num_points, 3)"
-        self.points_3d = points_3d
-        self.num_timesteps = points_3d.shape[0]
-        self.current_t = 0
+    def add_dense_line_data(self):
+        input_dir = os.path.join(self.root, f"{self.dir}_sim_format_poses")
+        output_dir = os.path.join(self.root, f"{self.dir}_dense")
+        os.makedirs(output_dir, exist_ok=True)
 
-        # Create point cloud and axis mesh
-        self.pcd = o3d.geometry.PointCloud()
-        self.pcd.points = o3d.utility.Vector3dVector(self.points_3d[self.current_t])
+        files = sorted(glob.glob(os.path.join(input_dir, "*.npz")))
+        if not files:
+            print("No sim_format_poses npz files found.")
+            return
 
-        _min = np.min(points_3d, axis=(0, 1))
-        _max = np.max(points_3d, axis=(0, 1))
-        diff = _max - _min
-        self.axes = o3d.geometry.TriangleMesh.create_coordinate_frame(
-            size=np.max(diff) / 2, origin=[0, 0, 0]
-        )
+        for path in files:
+            base = os.path.basename(path)
+            data = np.load(path)
 
-    def _update(self, vis):
-        self.pcd.points = o3d.utility.Vector3dVector(self.points_3d[self.current_t])
-        vis.update_geometry(self.pcd)
-        vis.update_renderer()
+            # Extract existing arrays
+            markers = data["markers"]
+            markers_mask = data["markers_mask"]
+            vein_polyline = data["vein_polyline"]          # (frames, veins, pts, 2)
+            vein_polyline_mask = data["vein_polyline_mask"]  # (frames, veins, pts)
+            poses = data["poses"]
+            metadata = data["metadata"]
 
-    def _next(self, vis):
-        self.current_t = (self.current_t + 1) % self.num_timesteps
-        self._update(vis)
-        return False
+            num_frames, max_num_veins, num_points, _ = vein_polyline.shape
 
-    def _prev(self, vis):
-        self.current_t = (self.current_t - 1) % self.num_timesteps
-        self._update(vis)
-        return False
+            vein_classification = np.zeros((num_frames, max_num_veins), dtype=np.int32)
+            vein_regression = np.zeros((num_frames, max_num_veins, 3), dtype=np.float32)
 
-    def _set_camera(self, vis):
-        ctr = vis.get_view_control()
-        bbox = self.pcd.get_axis_aligned_bounding_box()
+            # You should already know cx, cy
+            cx, cy = self.cx, self.cy  # Make sure these exist in your class
 
-        # Look at the point cloud center
-        center = bbox.get_center()
-        eye = center + np.array([0, 0, 5])  # place camera along +Z
-        up = np.array([0, -1, 0])           # make +Y go downward
+            for t in range(num_frames):
+                for i in range(max_num_veins):
+                    vein = vein_polyline[t, i][vein_polyline_mask[t, i]]
 
-        ctr.look_at(center, eye, up)
+                    if len(vein) < 2:
+                        # Not enough points → no vein
+                        vein_classification[t, i] = 0
+                        vein_regression[t, i] = [0, 0, 0]
+                        continue
 
-    def run(self):
-        vis = o3d.visualization.VisualizerWithKeyCallback()
-        vis.create_window()
-        vis.add_geometry(self.pcd)
-        vis.add_geometry(self.axes)
+                    # Compute pairwise distances to find furthest apart points
+                    dmax = -1
+                    p1 = p2 = None
+                    for a in range(len(vein)):
+                        for b in range(a + 1, len(vein)):
+                            d = np.linalg.norm(vein[a] - vein[b])
+                            if d > dmax:
+                                dmax = d
+                                p1, p2 = vein[a], vein[b]
 
-        vis.register_key_callback(ord("K"), self._next)
-        vis.register_key_callback(ord("J"), self._prev)
+                    # Construct vector (dx, dy)
+                    dx, dy = p2 - p1
+                    theta = math.atan2(dy, dx)
 
-        # Set camera after geometries are added
-        self._set_camera(vis)
+                    # cos(2θ), sin(2θ)
+                    cos2 = math.cos(2 * theta)
+                    sin2 = math.sin(2 * theta)
 
-        vis.run()
-        vis.destroy_window()
+                    # Line equation: y = m(x - x0) + y0
+                    if dx != 0:
+                        m = dy / dx
+                        y_intercept = m * (cx - p1[0]) + p1[1]
+                    else:
+                        y_intercept = cy  # vertical line, intersect at cy
 
+                    vein_classification[t, i] = 1
+                    vein_regression[t, i] = [cos2, sin2, y_intercept]
 
-if __name__ == "__main__":
-    # Example: 5 timesteps, 100 points each
-    num_timesteps, num_points = 5, 100
-    points_3d = np.random.randn(num_timesteps, num_points, 3)
-
-    viz = TemporalPointCloudVisualizer(points_3d)
-    viz.run()
+            # Save with extra fields
+            out_path = os.path.join(output_dir, base)
+            np.savez(
+                out_path,
+                markers=markers,
+                markers_mask=markers_mask,
+                vein_polyline=vein_polyline,
+                vein_polyline_mask=vein_polyline_mask,
+                poses=poses,
+                metadata=metadata,
+                vein_classification=vein_classification,
+                vein_regression=vein_regression,
+            )
+            print(f"Saved dense file: {out_path}")

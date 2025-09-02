@@ -1,6 +1,6 @@
-Now I want to implement the following method.
+I now want to implement the following method.
 
-    def merge_npz_to_sim_format(self):
+    def add_dense_line_data(self):
         pass
 
-I want to load all npz files from the f"{self.dir}_annotations_line_points". I also want to load those npz files whose base file name ends in "_markers" from the f"{self.dir}_reordered_interpolated_markers" directory. 
+I want to load the npz files from the f"{self.dir}_sim_format_poses" directory. I want to have a for-loop: for t in range(vein_polyline.shape[0]) to iterate over the video frames. Then I want to have a nested for-loop: for i in range(vein_polyline.shape[1]) to iterate over different vein slots. Then I want to compute the vein points present for each vein slot via vein = vein_polyline[t, i][vein_polyline_mask[t, i]]. I then want to obtain the 2 points that are the furthest apart. I want to compute a vector from one point to the other (I don't care about which point is the start point and which one is the end point). I then want to compute the angle theta that this vector makes with the x+ axis. I then want to compute: cos(2*theta) and sin(2*theta) for this vector. I also want to compute the y coordinate at which a vertical line x=cx and the vector line intersect. For each vein slot I also want to compute whether the vein is present or not by checking the number of vein points. If the vein is not present, set the values (cos, sin, y-intercept) to 0. For each vein slot compute a classification label: vein present (1) or absent (0). Generate a numpy array vein_classification of shape (num_video_frames, max_num_veins=4) and a numpy array vein_regression of shape (num_video_frames, max_num_veins=4, num_regression_values=3). Compute a new npz file that has all of the fields that the input has but als

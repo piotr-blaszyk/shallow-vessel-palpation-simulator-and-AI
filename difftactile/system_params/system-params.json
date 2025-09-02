@@ -417,7 +417,7 @@
         "bo_all_targets": "difftactile/output/bo_all_targets.json",
         "bo_all_params": "difftactile/output/bo_all_params.json",
         "exp_data_endgame": "difftactile/manual_or_experimental_data/endgame/20250901-131547_sim_format_poses",
-        "sim_data_endgame": "difftactile/output/training_data/pickle_20250901_115841/"
+        "sim_data_endgame": "difftactile/output/training_data/pickle_20250901_220921_reordered"
     },
     "rigid_static": {
         "particle_spacing": 5.000e-03
