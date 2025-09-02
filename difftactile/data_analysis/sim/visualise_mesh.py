@@ -6,11 +6,24 @@ import pyvista as pv
 import vedo
 
 from difftactile.main.constants import *
+from difftactile.sensor_model.fisheye_model_no_taichi import *
 
 
 class VisualiseMesh:
     def __init__(self):
-        self.load_vein_mesh()
+        self.load_endgame_exp_points()
+    
+    def load_endgame_exp_points(self):
+        path = 'difftactile/manual_or_experimental_data/endgame/20250901-131547_sim_format_poses/metadata_0.0_0.0.npz'
+        data = np.load(path)
+        points = data['vein_polyline']
+        points = points[0]
+        points = points.reshape(-1, 2)
+        points_E = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(
+            ps=points,
+            dist_lens_to_plane=0.019-0.003
+        )
+        self.points = points_E
     
     def load_vein_points(self):
         path = SYSTEM_PARAMS.files.vein_points_npz
@@ -148,19 +161,6 @@ class VisualiseMesh:
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(self.points)
         
-        if hasattr(self, 'node_edge_lengths'):
-            edge_lengths = self.node_edge_lengths
-            min_val = np.min(edge_lengths)
-            max_val = np.max(edge_lengths)
-            normalized_values = (edge_lengths - min_val) / (max_val - min_val)
-            
-            colors = np.zeros((len(self.points), 3))
-            colors[:, 0] = normalized_values
-            colors[:, 1] = 1 - normalized_values
-            colors[:, 2] = 0.5
-            
-            pcd.colors = o3d.utility.Vector3dVector(colors)
-        
         axes = o3d.geometry.TriangleMesh.create_coordinate_frame(size=np.max(diff)/2, origin=[0, 0, 0])
         o3d.visualization.draw_geometries([pcd, axes])
 
@@ -282,9 +282,89 @@ class VisualiseMesh:
         plotter.show()
 
 
+def get_T_EA(
+    x,
+    y,
+    z,
+):
+    R = np.eye(3)
+    t = np.array([[x], [y], [z]])
+    T = np.eye(4)
+    T[:3, :3] = R
+    T[:3, 3:] = t
+    return T
+
+
+def load_endgame_exp_points():
+    path = 'difftactile/manual_or_experimental_data/endgame/20250901-131547_sim_format_poses/metadata_0.0_0.0.npz'
+    data = np.load(path)
+    points = data['vein_polyline']
+    mask = data['vein_polyline_mask']
+    points = points[mask]
+    points = points.reshape(points.shape[0], -1, 2)
+    points_E = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(
+        ps=points,
+        dist_lens_to_plane=0.019-0.003
+    )
+    return points_E
+
+
+class TemporalPointCloudVisualizer:
+    def __init__(self, points_3d: np.ndarray):
+        """
+        points_3d: numpy array of shape (num_timesteps, num_points, 3)
+        """
+        assert points_3d.ndim == 3, "Shape must be (num_timesteps, num_points, 3)"
+        self.points_3d = points_3d
+        self.num_timesteps = points_3d.shape[0]
+        self.current_t = 0
+
+        # Create point cloud and axis mesh
+        self.pcd = o3d.geometry.PointCloud()
+        self.pcd.points = o3d.utility.Vector3dVector(self.points_3d[self.current_t])
+
+        _min = np.min(points_3d, axis=(0, 1))
+        _max = np.max(points_3d, axis=(0, 1))
+        diff = _max - _min
+        self.axes = o3d.geometry.TriangleMesh.create_coordinate_frame(
+            size=np.max(diff) / 2, origin=[0, 0, 0]
+        )
+    
+    def _update(self, vis):
+        self.pcd.points = o3d.utility.Vector3dVector(self.points_3d[self.current_t])
+        vis.update_geometry(self.pcd)
+        vis.update_renderer()
+
+    def _next(self, vis):
+        self.current_t = (self.current_t + 1) % self.num_timesteps
+        self._update(vis)
+        return False
+
+    def _prev(self, vis):
+        self.current_t = (self.current_t - 1) % self.num_timesteps
+        self._update(vis)
+        return False
+
+    def run(self):
+        vis = o3d.visualization.VisualizerWithKeyCallback()
+        vis.create_window()
+        vis.add_geometry(self.pcd)
+        vis.add_geometry(self.axes)
+
+        vis.register_key_callback(ord("K"), self._next)
+        vis.register_key_callback(ord("J"), self._prev)
+
+        vis.run()
+        vis.destroy_window()
+
+
 def main():
-    visualise_mesh = VisualiseMesh()
-    visualise_mesh.visualise_triangles()
+    # visualise_mesh = VisualiseMesh()
+    # visualise_mesh.visualise_point_cloud()
+
+    points_3d = load_endgame_exp_points()
+    viz = TemporalPointCloudVisualizer(points_3d)
+    viz.run()
 
 
 if __name__ == '__main__':

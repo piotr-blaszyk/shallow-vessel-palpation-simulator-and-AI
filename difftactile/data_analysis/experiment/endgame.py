@@ -510,7 +510,7 @@ class Endgame:
 
 def main():
     e = Endgame()
-    e.merge_npz_sim_format_poses()
+    e.visualise_line_points()
 
 
 if __name__ == "__main__":

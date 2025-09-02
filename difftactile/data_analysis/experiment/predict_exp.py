@@ -25,10 +25,10 @@ class PredictExp:
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.x_min = -425
-        self.x_max = -245
-        self.y_min = -54
-        self.y_max = 46
+        self.x_min = -0.425
+        self.x_max = -0.245
+        self.y_min = -0.054
+        self.y_max = 0.046
 
         self.phantom_length_x = abs(self.x_max-self.x_min)
         self.phantom_length_y = abs(self.y_max-self.y_min)
@@ -52,7 +52,7 @@ class PredictExp:
         self.init_camera_params()
         self.compute_mapping_2d_3d()
 
-        self.bin_size = 1
+        self.bin_size = 0.001
         self.bin_num_x = math.ceil(self.phantom_length_x / self.bin_size)
         self.bin_num_y = math.ceil(self.phantom_length_y / self.bin_size)
         self.bins = np.zeros(shape=(2, self.bin_num_x, self.bin_num_y), dtype=int)
@@ -91,25 +91,22 @@ class PredictExp:
         points[:, 1] = (points[:, 1] * y_std) + y_mean
         return points
     
-    def get_T_EA(
+    def camera_to_world_transform(
         self,
-        x,
-        y,
-        z,
-        k=None,
-    ):
-        # cos_k = np.cos(k)
-        # sin_k = np.sin(k)
-        # R = np.array([
-        #     [ cos_k,  sin_k, 0],
-        #     [ sin_k, -cos_k, 0],
-        #     [     0,      0, -1]
-        # ])
-        R = np.eye(3)
-        t = np.array([[x], [y], [z]])
-        T = np.eye(4)
+        x_robot: float, 
+        y_robot: float, 
+        z_robot: float, 
+        d: float
+    ) -> np.ndarray:
+        R = np.array([
+            [1,  0,  0],
+            [0, -1,  0],
+            [0,  0, -1]
+        ], dtype=float)
+        t = np.array([x_robot, y_robot, z_robot + d], dtype=float)
+        T = np.eye(4, dtype=float)
         T[:3, :3] = R
-        T[:3, 3:] = t
+        T[:3, 3] = t
         return T
     
     def compute_mapping_2d_3d(self):
@@ -119,9 +116,8 @@ class PredictExp:
                 pixel_coords[i, j, :] = np.array([i, j])
         points_E = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(
             ps=pixel_coords,
-            dist_lens_to_plane=0.019-0.003
+            dist_lens_to_plane=0.019-0.003,
         )
-        points_E *= 1_000
         self.map_2d_3d = points_E
 
     def init_model(self):
@@ -156,22 +152,24 @@ class PredictExp:
     
     def predict_clip(self, i):
         pyg, _, poses, metadata, frame_ix = self.dataset[i]
+        poses /= 1_000
+        metadata[2:] = metadata[2:] / 1_000
         if not (
             metadata[1] == 0 
-            # and metadata[0] == 0 
-            # and frame_ix == 16-7
+            and metadata[0] == 0 
+            and frame_ix == 2
         ):
             return
         with torch.no_grad():
             pyg = pyg.to(self.device)
-            x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = self.model.my_prepare_data(pyg, 1)
-            out = self.model(x, edge_index, edge_attr)
+            x_px, x_mask, edge_index, edge_index_regular_nodes, edge_attr = self.model.my_prepare_data(pyg, 1)
+            out = self.model(x_px, edge_index, edge_attr)
             out = out.squeeze(-1)
             out = out[x_mask]
 
             mask = pyg.mask
             out = out[mask]
-            y = pyg.y[mask]
+            y_px = pyg.y[mask]
             pos = pyg.pos[mask]
 
             probs = torch.sigmoid(out)
@@ -179,7 +177,7 @@ class PredictExp:
             probs = probs.cpu().numpy().astype(np.float32)
             preds = preds.cpu().numpy().astype(np.float32)
         points = pos.cpu().numpy().astype(np.float32)
-        labels = y.cpu().numpy().astype(int)
+        labels = y_px.cpu().numpy().astype(int)
         points = points.reshape((127, 2))
         labels = labels.reshape((127,))
         probs = probs.reshape((127,))
@@ -188,20 +186,21 @@ class PredictExp:
         assert points.min() > 0
         assert points.max() > 100
 
-        x, y, z = poses[self.clip_len//2, :3]
-        t_EA = self.get_T_EA(
-            x,
-            y,
-            z,
-            # np.deg2rad(SYSTEM_PARAMS.geometry.camera_rotation_angle),
+        robot_pos = poses[self.clip_len//2, :3]
+        x_robot, y_robot, z_robot = robot_pos
+        t_EA = self.camera_to_world_transform(
+            x_robot,
+            y_robot,
+            z_robot,
+            d=0.019-0.003,
         )
         for j in range(127):
             prob = probs[j]
             pred = preds[j]
-            x, y = points[j]
+            x_px, y_px = points[j]
             label = labels[j]
 
-            pos_E = self.map_2d_3d[int(x), int(y)]
+            pos_E = self.map_2d_3d[int(x_px), int(y_px)]
             pos_E_homogeneous = np.append(pos_E, 1)
             pos_A_homogeneous = t_EA @ pos_E_homogeneous
             pos_A = pos_A_homogeneous[:3]
@@ -520,7 +519,7 @@ class PredictExp:
         # Define target size for each image
         k = 4
         target_width = 180 * k
-        target_height = 105 * k
+        target_height = 100 * k
         
         # Resize all images to the target size
         resized_images = []

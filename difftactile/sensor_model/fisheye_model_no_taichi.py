@@ -60,8 +60,7 @@ class FisheyeModelNoTaichi:
     @staticmethod
     def project_pix_to_points_3d_plane(
             ps,
-            dist_lens_to_plane=SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.trajectory.press_depth_slide,
-            resolution_down_scaling_factor=None
+            dist_lens_to_plane,
         ):
         # Store original shape and reshape input
         original_shape = ps.shape[:-1]  # all dimensions except the last one
@@ -71,11 +70,10 @@ class FisheyeModelNoTaichi:
         cy = SYSTEM_PARAMS.fisheye_model.principal_point_y
         fx = SYSTEM_PARAMS.fisheye_model.focal_length_x
         fy = SYSTEM_PARAMS.fisheye_model.focal_length_y
-        if resolution_down_scaling_factor is not None:
-            cx /= resolution_down_scaling_factor
-            cy /= resolution_down_scaling_factor
-            fx /= resolution_down_scaling_factor
-            fy /= resolution_down_scaling_factor
+        w = SYSTEM_PARAMS.fisheye_model.target_image_width
+        h = SYSTEM_PARAMS.fisheye_model.target_image_height
+        # cx = w-cx
+        # cy = h-cy
         x_norm = (
             ps_reshaped[:, 0] - cx
         ) / fx
