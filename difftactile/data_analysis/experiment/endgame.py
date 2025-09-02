@@ -510,10 +510,10 @@ class Endgame:
             )
 
     def add_dense_line_data(self):
-        # input_dir = os.path.join(self.root, f"{self.dir}_sim_format_poses")
-        # output_dir = os.path.join(self.root, f"{self.dir}_dense")
-        input_dir = 'difftactile/output/training_data/pickle_20250901_220921_reordered'
-        output_dir = 'difftactile/output/training_data/pickle_20250901_220921_reordered_dense'
+        input_dir = os.path.join(self.root, f"{self.dir}_sim_format_poses")
+        output_dir = os.path.join(self.root, f"{self.dir}_dense")
+        # input_dir = 'difftactile/output/training_data/pickle_20250901_220921_reordered'
+        # output_dir = 'difftactile/output/training_data/pickle_20250901_220921_reordered_dense'
         os.makedirs(output_dir, exist_ok=True)
 
         files = sorted(glob.glob(os.path.join(input_dir, "*.npz")))
@@ -530,8 +530,8 @@ class Endgame:
             markers_mask = data["markers_mask"]
             vein_polyline = data["vein_polyline"]          # (frames, veins, pts, 2)
             vein_polyline_mask = data["vein_polyline_mask"]  # (frames, veins, pts)
-            # poses = data["poses"]
-            # metadata = data["metadata"]
+            poses = data["poses"]
+            metadata = data["metadata"]
 
             num_frames, max_num_veins, num_points, _ = vein_polyline.shape
 
@@ -583,8 +583,122 @@ class Endgame:
                 markers_mask=markers_mask,
                 vein_polyline=vein_polyline,
                 vein_polyline_mask=vein_polyline_mask,
-                # poses=poses,
-                # metadata=metadata,
+                poses=poses,
+                metadata=metadata,
+                vein_classification=vein_classification,
+                vein_regression=vein_regression,
+            )
+
+    @staticmethod
+    def line_dense_to_sparse(vein_classification, vein_regression, cx, cy, r, num_points=50):
+        """
+        Convert dense vein representation (classification + regression) 
+        into sparse polyline format (line points + mask).
+        
+        Args:
+            vein_classification (np.ndarray): shape (num_frames, 4), classification labels (0/1).
+            vein_regression (np.ndarray): shape (num_frames, 4, 3), regression values [cos(2θ), sin(2θ), y_intercept].
+            cx, cy (float): circle center used to define chords.
+            r (float): circle radius.
+            num_points (int): number of points along each line polyline.
+
+        Returns:
+            vein_polyline (np.ndarray): shape (num_frames, 4, num_points, 2).
+            vein_polyline_mask (np.ndarray): shape (num_frames, 4, num_points).
+        """
+        num_frames, num_veins = vein_classification.shape
+        vein_polyline = np.zeros((num_frames, num_veins, num_points, 2), dtype=np.float32)
+        vein_polyline_mask = np.zeros((num_frames, num_veins, num_points), dtype=bool)
+
+        for t in range(num_frames):
+            for i in range(num_veins):
+                if vein_classification[t, i] == 0:
+                    continue  # vein absent
+
+                cos2, sin2, y_intercept = vein_regression[t, i]
+
+                # Reconstruct angle theta from cos(2θ), sin(2θ)
+                theta = 0.5 * math.atan2(sin2, cos2)
+
+                # Direction vector of the line
+                dx, dy = math.cos(theta), math.sin(theta)
+
+                # Point on the line: intersection with vertical line x = cx
+                x0, y0 = cx, y_intercept
+
+                # Solve intersection with circle (x-cx)^2 + (y-cy)^2 = r^2
+                # Parametric line: (x, y) = (x0, y0) + t * (dx, dy)
+                A = dx**2 + dy**2
+                B = 2 * (dx * (x0 - cx) + dy * (y0 - cy))
+                C = (x0 - cx)**2 + (y0 - cy)**2 - r**2
+
+                disc = B**2 - 4 * A * C
+                if disc < 0:
+                    continue  # no intersection
+                sqrt_disc = math.sqrt(disc)
+                t1 = (-B - sqrt_disc) / (2 * A)
+                t2 = (-B + sqrt_disc) / (2 * A)
+
+                p1 = np.array([x0 + t1 * dx, y0 + t1 * dy])
+                p2 = np.array([x0 + t2 * dx, y0 + t2 * dy])
+
+                # Generate evenly spaced points between p1 and p2
+                line_points = np.linspace(p1, p2, num_points)
+
+                vein_polyline[t, i, :, :] = line_points
+                vein_polyline_mask[t, i, :] = True
+
+        return vein_polyline, vein_polyline_mask
+
+    def validate_line_dense_to_sparse(self, cx, cy, r, num_points=50):
+        """
+        Validate dense → sparse reconstruction of vein data.
+
+        Loads all npz files from {self.dir}_dense, reconstructs vein_polyline and
+        vein_polyline_mask from vein_classification + vein_regression, and saves
+        updated npz files to {self.dir}_sparse_dense_sparse_validation.
+
+        Args:
+            cx, cy (float): Circle center used to define chords.
+            r (float): Circle radius.
+            num_points (int): Number of evenly spaced points along each vein chord.
+        """
+        input_dir = os.path.join(self.root, f"{self.dir}_dense")
+        output_dir = os.path.join(self.root, f"{self.dir}_sparse_dense_sparse_validation")
+        os.makedirs(output_dir, exist_ok=True)
+
+        npz_files = sorted(glob.glob(os.path.join(input_dir, "*.npz")))
+        if not npz_files:
+            print(f"No .npz files found in {input_dir}")
+            return
+
+        for npz_path in npz_files:
+            base_name = os.path.basename(npz_path)
+            out_path = os.path.join(output_dir, base_name)
+
+            data = np.load(npz_path, allow_pickle=True)
+
+            markers = data["markers"]
+            markers_mask = data["markers_mask"]
+            poses = data["poses"]
+            metadata = data["metadata"]
+            vein_classification = data["vein_classification"]
+            vein_regression = data["vein_regression"]
+
+            # Reconstruct polyline + mask from dense fields
+            vein_polyline, vein_polyline_mask = Endgame.line_dense_to_sparse(
+                vein_classification, vein_regression, cx, cy, r, num_points
+            )
+
+            # Save with same structure but updated polyline/mask
+            np.savez(
+                out_path,
+                markers=markers,
+                markers_mask=markers_mask,
+                vein_polyline=vein_polyline,
+                vein_polyline_mask=vein_polyline_mask,
+                poses=poses,
+                metadata=metadata,
                 vein_classification=vein_classification,
                 vein_regression=vein_regression,
             )
@@ -593,6 +707,11 @@ class Endgame:
 def main():
     e = Endgame()
     e.add_dense_line_data()
+    # e.validate_line_dense_to_sparse(
+    #     cx=e.cx,
+    #     cy=e.cy,
+    #     r=e.r,
+    # )
 
 
 if __name__ == "__main__":

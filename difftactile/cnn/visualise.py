@@ -420,14 +420,15 @@ class Visualisation:
                 num_workers=NUM_WORKERS
             )
         elif data_source == 'fresh_dataset':  # dataset mode
-            if False:
+            if True:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="exp",
-                    data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+                    # data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+                    data_dir='difftactile/manual_or_experimental_data/endgame/20250901-131547_sparse_dense_sparse_validation/',
                     apply_augmentations=False,
                 )
-            if True:
+            if False:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="sim",

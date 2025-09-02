@@ -709,6 +709,8 @@ class MyDataset(torch.utils.data.Dataset):
         markers_mask = data["markers_mask"]
         veins = data["vein_polyline"]
         veins_mask = data["vein_polyline_mask"]
+        vein_classification = data['vein_classification']
+        vein_regression = data['vein_regression']
         if 'poses' in data:
             poses = data["poses"]
         else:
@@ -724,6 +726,8 @@ class MyDataset(torch.utils.data.Dataset):
         markers_mask = markers_mask[frame_ix : frame_ix + dilated_clip_len : dilation]
         veins = veins[frame_ix : frame_ix + dilated_clip_len : dilation]
         veins_mask = veins_mask[frame_ix : frame_ix + dilated_clip_len : dilation]
+        vein_classification = vein_classification[frame_ix : frame_ix + dilated_clip_len : dilation]
+        vein_regression = vein_regression[frame_ix : frame_ix + dilated_clip_len : dilation]
         if poses is not None:
             poses = poses[frame_ix : frame_ix + dilated_clip_len : dilation]
 
@@ -777,7 +781,11 @@ class MyDataset(torch.utils.data.Dataset):
         points = markers
         points_mask = markers_mask
         pyg = self.generate_pyg_vectorised(
-            points, veins, veins_mask, ground_truth_labels_in=None
+            points, 
+            veins, 
+            veins_mask, 
+            vein_classification, 
+            vein_regression,
         )
         if self.visualisation_mode:
             veins = MyDataset.generate_vein_image(
@@ -822,7 +830,12 @@ class MyDataset(torch.utils.data.Dataset):
                 veins_mask[:, vein_idx, :] = False
 
     def generate_pyg_vectorised(
-        self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in=None
+        self, 
+        clip_points, 
+        clip_labels, 
+        clip_labels_mask,
+        vein_classification,
+        vein_regression,
     ):
         pos = self.get_pos(clip_points)
         mask = self.get_mask()
@@ -830,7 +843,6 @@ class MyDataset(torch.utils.data.Dataset):
             clip_points,
             clip_labels,
             clip_labels_mask,
-            ground_truth_labels_in,
         )
         empty_x = self.get_empty_x()
         node_xy = self.get_node_xy(clip_points)
@@ -902,6 +914,8 @@ class MyDataset(torch.utils.data.Dataset):
             edge_attr_global_spatial=edge_attr_global_spatial,
             edge_index_global_temporal=edge_index_global_temporal,
             edge_attr_global_temporal=edge_attr_global_temporal,
+            vein_classification=vein_classification,
+            vein_regression=vein_regression,
         )
         return pyg_data
 
@@ -912,28 +926,22 @@ class MyDataset(torch.utils.data.Dataset):
             pos[t * self.num_nodes : (t + 1) * self.num_nodes, 0:2] = points
         return pos
 
-    def get_y(self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in):
-        if ground_truth_labels_in is not None:
-            y = ground_truth_labels_in.reshape(
-                (self.clip_len * self.num_nodes,)
-            ).astype(int)
-            return y
-        else:
-            y = np.zeros(shape=(self.clip_len * self.num_nodes,), dtype=int)
-            for t in range(self.clip_len):
-                points = clip_points[t]
-                labels = clip_labels[t]
-                labels_mask = clip_labels_mask[t]
-                labels_filtered = labels[labels_mask]
-                if labels_filtered.size > 0:
-                    distances = cdist(points, labels_filtered)
-                    min_distances = np.min(distances, axis=1)
-                    px_threshold = self.vein_px_thickness
-                    y_t = min_distances < px_threshold
-                else:
-                    y_t = np.zeros(shape=(self.num_nodes,), dtype=int)
-                y[t * self.num_nodes : (t + 1) * self.num_nodes] = y_t
-            return y
+    def get_y(self, clip_points, clip_labels, clip_labels_mask):
+        y = np.zeros(shape=(self.clip_len * self.num_nodes,), dtype=int)
+        for t in range(self.clip_len):
+            points = clip_points[t]
+            labels = clip_labels[t]
+            labels_mask = clip_labels_mask[t]
+            labels_filtered = labels[labels_mask]
+            if labels_filtered.size > 0:
+                distances = cdist(points, labels_filtered)
+                min_distances = np.min(distances, axis=1)
+                px_threshold = self.vein_px_thickness
+                y_t = min_distances < px_threshold
+            else:
+                y_t = np.zeros(shape=(self.num_nodes,), dtype=int)
+            y[t * self.num_nodes : (t + 1) * self.num_nodes] = y_t
+        return y
 
     def get_mask(self):
         mask = np.zeros(shape=(self.clip_len*self.num_nodes,), dtype=bool)
@@ -1194,6 +1202,8 @@ class MyDataset(torch.utils.data.Dataset):
         edge_attr_global_spatial,
         edge_index_global_temporal,
         edge_attr_global_temporal,
+        vein_classification,
+        vein_regression,
     ):
         pos = torch.tensor(pos, dtype=torch.float)
         mask = torch.tensor(mask, dtype=torch.bool)
@@ -1216,6 +1226,12 @@ class MyDataset(torch.utils.data.Dataset):
         edge_attr_global_temporal = torch.tensor(
             edge_attr_global_temporal, dtype=torch.float
         )
+        vein_classification = torch.tensor(
+            vein_classification, dtype=torch.float
+        )
+        vein_regression = torch.tensor(
+            vein_regression, dtype=torch.float
+        )
         pyg_data = Data(
             pos=pos,
             mask=mask,
@@ -1230,6 +1246,8 @@ class MyDataset(torch.utils.data.Dataset):
             edge_attr_global_spatial=edge_attr_global_spatial,
             edge_index_global_temporal=edge_index_global_temporal,
             edge_attr_global_temporal=edge_attr_global_temporal,
+            vein_classification=vein_classification,
+            vein_regression=vein_regression,
         )
         return pyg_data
 

@@ -11,6 +11,7 @@ from torch.utils.data import SubsetRandomSampler
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GINEConv
 from tqdm import tqdm
+from torch_geometric.nn import global_add_pool
 
 from difftactile.cnn.common import *
 from difftactile.cnn.dataset import *
@@ -199,11 +200,18 @@ class GNN(pl.LightningModule):
         self.skip2 = self.skip_layer(latent_dim)
         self.skip3 = self.skip_layer(output_dim)
 
-        self.mlp_output_head = nn.Sequential(
+        self.mlp_classification_head = nn.Sequential(
             nn.Linear(cat_out_dim, cat_out_dim // 2),
             nn.ReLU(),
             self.dropout,
-            nn.Linear(cat_out_dim // 2, output_dim),
+            nn.Linear(cat_out_dim // 2, 4),
+        )
+
+        self.mlp_regression_head = nn.Sequential(
+            nn.Linear(cat_out_dim, cat_out_dim // 2),
+            nn.ReLU(),
+            self.dropout,
+            nn.Linear(cat_out_dim // 2, 12),
         )
 
         self.save_hyperparameters()
@@ -246,7 +254,7 @@ class GNN(pl.LightningModule):
             self.dropout,
         )
 
-    def forward(self, x, edge_index, edge_attr):
+    def forward(self, x, edge_index, edge_attr, batch):
         h0 = x
         h1 = self.block1(h0, edge_index, edge_attr)
         h2 = self.block2(h1, edge_index, edge_attr)
@@ -258,6 +266,10 @@ class GNN(pl.LightningModule):
         h3 = self.skip3(h3)
 
         concat_features = torch.cat([h0, h1, h2, h3], dim=-1)
+        concat_features = global_add_pool(
+            x=concat_features, 
+            batch=batch,
+        )
 
         out = self.mlp_output_head(concat_features)
         return out
@@ -265,7 +277,7 @@ class GNN(pl.LightningModule):
     def shared_step(self, getitem_output, stage):
         batch, empty_visualisation_tensor, poses, metadata, frame_ix = getitem_output
         x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = self.my_prepare_data(batch, batch.num_graphs)
-        out = self(x, edge_index, edge_attr)
+        out = self(x, edge_index, edge_attr, batch.batch)
         out = out.squeeze(-1)
         out = out[x_mask]
         if True or stage == 'val' or stage == 'test':
@@ -569,7 +581,7 @@ class GNN(pl.LightningModule):
         return self.get_accumulator(shape=(), dtype=torch.int32)
     
     def get_accumulator(self, shape, dtype):
-        return {k: torch.zeros(shape, dtype=dtype, device='cuda:0') for k in self.stages_str}
+        return {k: torch.zeros(shape, dtype=dtype, device='cpu') for k in self.stages_str}
     
     def init_accumulators(self):
         self.area_pred_acc = self.get_iou_accumulator()
@@ -760,7 +772,7 @@ def main():
     )
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
-        accelerator='auto',  # Force CPU for better error messages
+        accelerator='cpu',  # Force CPU for better error messages
         enable_checkpointing=True,
         logger=logger,
         log_every_n_steps=1,
@@ -815,7 +827,7 @@ def compute_alpha(dataset, ixs):
     num_pos = 0
     num_neg = 0
     for ix in tqdm(ixs, desc="Computing stats for alpha"):
-        pyg, _ = dataset[ix]
+        pyg, veins, poses, metadata, frame_ix = dataset[ix]
         y = pyg.y.cpu().numpy()
         pos = y.sum()
         neg = y.shape[0] - pos
@@ -832,7 +844,7 @@ def compute_alpha(dataset, ixs):
 def compute_mean_std(dataset, ixs, key):
     vals = []
     for ix in tqdm(ixs, desc=f"Computing stats for {key}"):
-        pyg, _ = dataset[ix]
+        pyg, veins, poses, metadata, frame_ix = dataset[ix]
         val = pyg[key].cpu().numpy()
         vals.append(val)
     vals = np.array(vals)

@@ -191,11 +191,11 @@
         "output_dim": 1,
         "clip_len": 7,
         "learning_rate": 1.000e-03,
-        "batch_size": 16,
+        "batch_size": 2,
         "num_train_batches": 120,
         "num_val_batches": 20,
         "num_epochs": 10,
-        "num_workers": 16,
+        "num_workers": 1,
         "tversky_weight": 0.000e+00,
         "focal_weight": 1.000e+00,
         "connectivity_weight": 0.000e+00,
@@ -416,8 +416,8 @@
         "bo_gp_target_json": "difftactile/output/bo-gp-target.json",
         "bo_all_targets": "difftactile/output/bo_all_targets.json",
         "bo_all_params": "difftactile/output/bo_all_params.json",
-        "exp_data_endgame": "difftactile/manual_or_experimental_data/endgame/20250901-131547_sim_format_poses",
-        "sim_data_endgame": "difftactile/output/training_data/pickle_20250901_220921_reordered"
+        "exp_data_endgame": "difftactile/manual_or_experimental_data/endgame/20250901-131547_dense",
+        "sim_data_endgame": "difftactile/output/training_data/pickle_20250901_220921_reordered_dense"
     },
     "rigid_static": {
         "particle_spacing": 5.000e-03
