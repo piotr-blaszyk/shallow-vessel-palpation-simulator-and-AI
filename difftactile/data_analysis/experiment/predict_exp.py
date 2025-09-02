@@ -23,32 +23,24 @@ class PredictExp:
     def __init__(self):
         self.fisheye_model = FisheyeModelNoTaichi()
         self.synthetic_image_generator = SyntheticImageGenerator()
-        self.sensor_radius = 20
-        self.phantom_length_x = 105
-        self.phantom_length_y = 180
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.load_filter_save_data()
+        self.x_min = -425
+        self.x_max = -245
+        self.y_min = -54
+        self.y_max = 46
 
-        x_start = np.min(self.poses_interpolated[:, 0]) - self.sensor_radius
-        x_end = x_start + self.phantom_length_x
-        y_start = np.max(self.poses_interpolated[:, 1]) + self.sensor_radius
-        y_end = y_start - self.phantom_length_y
-        self.x_min = min(x_start, x_end)
-        self.x_max = max(x_start, x_end)
-        self.y_min = min(y_start, y_end)
-        self.y_max = max(y_start, y_end)
+        self.phantom_length_x = abs(self.x_max-self.x_min)
+        self.phantom_length_y = abs(self.y_max-self.y_min)
 
         self.clip_len = SYSTEM_PARAMS.gnn.clip_len
         self.dilation = 1
         self.dilated_clip_len = self.clip_len * self.dilation
         self.dataset = MyDataset(
-            mode='exp',
-            exp_markers_npz=SYSTEM_PARAMS.files.experiment_og_markers_reordered_filtered_npz,
-            exp_ground_truth_labels_npz=SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_filtered_npz,
-            exp_dilation=self.dilation,
-            scheme='new',
-            normalise_pos=False
+            scheme="single_dataset",
+            sim_exp="exp",
+            data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+            normalise_pos=False,
         )
         with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
             test_data = pickle.load(f)
@@ -65,7 +57,7 @@ class PredictExp:
         self.bin_num_y = math.ceil(self.phantom_length_y / self.bin_size)
         self.bins = np.zeros(shape=(2, self.bin_num_x, self.bin_num_y), dtype=int)
         self.bin_pred = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=float)
-        self.bin_count = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=int)
+        self.bin_trajectory = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=int)
         self.bins_ground_truth = np.zeros(shape=(self.bin_num_x, self.bin_num_y), dtype=int)
         self.debug_bins = np.zeros(shape=(len(self.dataset)), dtype=int)
 
@@ -99,14 +91,21 @@ class PredictExp:
         points[:, 1] = (points[:, 1] * y_std) + y_mean
         return points
     
-    def get_T_EA(self, k, x, y, z):
-        cos_k = np.cos(k)
-        sin_k = np.sin(k)
-        R = np.array([
-            [ cos_k,  sin_k, 0],
-            [ sin_k, -cos_k, 0],
-            [     0,      0, -1]
-        ])
+    def get_T_EA(
+        self,
+        x,
+        y,
+        z,
+        k=None,
+    ):
+        # cos_k = np.cos(k)
+        # sin_k = np.sin(k)
+        # R = np.array([
+        #     [ cos_k,  sin_k, 0],
+        #     [ sin_k, -cos_k, 0],
+        #     [     0,      0, -1]
+        # ])
+        R = np.eye(3)
         t = np.array([[x], [y], [z]])
         T = np.eye(4)
         T[:3, :3] = R
@@ -120,7 +119,7 @@ class PredictExp:
                 pixel_coords[i, j, :] = np.array([i, j])
         points_E = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(
             ps=pixel_coords,
-            dist_lens_to_plane=SYSTEM_PARAMS.scaling_factor_1.distance_from_camera_lens_to_outer_shell_surface - SYSTEM_PARAMS.scaling_factor_1.press_depth_1
+            dist_lens_to_plane=0.019-0.003
         )
         points_E *= 1_000
         self.map_2d_3d = points_E
@@ -139,83 +138,6 @@ class PredictExp:
         self.camera_w_big = 1920
         self.camera_h_big = 1080
 
-    def load_filter_save_data(self):
-        path = SYSTEM_PARAMS.files.experiment_og_markers_reordered_npz
-        data = np.load(path)
-        markers = data['markers']
-        self.markers_mask = data['markers_mask']
-
-        path_fm = SYSTEM_PARAMS.files.experiment_og_frame_mapping_npz
-        data_fm = np.load(path_fm)
-        frame_mapping = data_fm['frame_mapping']
-
-        frames_poses_data = np.load(SYSTEM_PARAMS.files.experiment_og_frames_poses_npz)
-        self.frames_poses = frames_poses_data['output']
-        ground_truth_labels_path = SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_npz
-        ground_truth_labels_data = np.load(ground_truth_labels_path)
-        ground_truth_labels = ground_truth_labels_data['labels']
-
-        # Get the total number of video frames from markers shape
-        num_video_frames = markers.shape[0]
-        
-        # Extract frame indices and poses
-        frame_indices = self.frames_poses[:, 0]
-        poses = self.frames_poses[:, 1:7]
-        
-        # Sort frame indices and poses together
-        sort_idx = np.argsort(frame_indices)
-        frame_indices = frame_indices[sort_idx]
-        poses = poses[sort_idx]
-        
-        # Remove duplicates and very close indices
-        eps = 1e-10  # Small threshold for considering indices as duplicates
-        unique_mask = np.concatenate(([True], np.diff(frame_indices) > eps))
-        frame_indices = frame_indices[unique_mask]
-        poses = poses[unique_mask]
-        
-        # Create interpolation function for each pose dimension
-        interpolators = []
-        for dim in range(6):
-            interpolator = interp1d(frame_indices, poses[:, dim], 
-                                  kind='linear',
-                                  fill_value=np.nan,  # Set values outside range to NaN
-                                  bounds_error=False)  # Allow setting to NaN outside bounds
-            interpolators.append(interpolator)
-        
-        # Initialize the interpolated poses array
-        self.poses_interpolated = np.zeros((num_video_frames, 6))
-        
-        # Interpolate each dimension using the frame mapping
-        for dim in range(6):
-            # Only interpolate for frame indices within the known range
-            self.poses_interpolated[:, dim] = interpolators[dim](frame_mapping)
-
-        # Create a boolean mask for rows without NaN values
-        valid_mask = ~np.isnan(self.poses_interpolated).any(axis=1)
-        
-        # Create index mapping from original to filtered indices
-        original_indices = np.arange(num_video_frames)
-        filtered_indices = np.cumsum(valid_mask) - 1  # -1 to make 0-based
-        self.markers_index_mapping = {orig_idx: filt_idx for orig_idx, filt_idx in zip(original_indices[valid_mask], filtered_indices[valid_mask])}
-        
-        # Filter the arrays using the mask
-        self.poses_interpolated = self.poses_interpolated[valid_mask]
-        markers = markers[valid_mask]
-        self.markers_mask = self.markers_mask[valid_mask]
-        frame_mapping = frame_mapping[valid_mask]
-        ground_truth_labels = ground_truth_labels[valid_mask]
-
-        markers_filtered_path = SYSTEM_PARAMS.files.experiment_og_markers_reordered_filtered_npz
-        ground_truth_labels_filtered_path = SYSTEM_PARAMS.files.experiment_og_ground_truth_labels_filtered_npz
-        np.savez(
-            markers_filtered_path,
-            markers=markers
-        )
-        np.savez(
-            ground_truth_labels_filtered_path,
-            labels=ground_truth_labels
-        )
-
     @staticmethod
     def write_video_to_npz_file(marker_tracker, path):
         n = len(marker_tracker.frame_markers)
@@ -233,72 +155,79 @@ class PredictExp:
         )
     
     def predict_clip(self, i):
-        pyg, _ = self.dataset[i]
+        pyg, _, poses, metadata, frame_ix = self.dataset[i]
+        if not (
+            metadata[1] == 0 
+            # and metadata[0] == 0 
+            # and frame_ix == 16-7
+        ):
+            return
         with torch.no_grad():
             pyg = pyg.to(self.device)
-            x, edge_index, edge_index_regular_nodes, edge_attr = self.model.my_prepare_data(pyg, 1)
+            x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = self.model.my_prepare_data(pyg, 1)
             out = self.model(x, edge_index, edge_attr)
             out = out.squeeze(-1)
+            out = out[x_mask]
+
             mask = pyg.mask
             out = out[mask]
+            y = pyg.y[mask]
+            pos = pyg.pos[mask]
+
             probs = torch.sigmoid(out)
             preds = (probs > 0.5).float()
             probs = probs.cpu().numpy().astype(np.float32)
             preds = preds.cpu().numpy().astype(np.float32)
-        points = pyg.pos.cpu().numpy().astype(np.float32)
-        labels = pyg.y.cpu().numpy().astype(int)
-        points = points.reshape((self.clip_len, 127, 2))
-        labels = labels.reshape((self.clip_len, 127))
-        probs = probs.reshape((self.clip_len, 127,))
-        preds = preds.reshape((self.clip_len, 127,))
+        points = pos.cpu().numpy().astype(np.float32)
+        labels = y.cpu().numpy().astype(int)
+        points = points.reshape((127, 2))
+        labels = labels.reshape((127,))
+        probs = probs.reshape((127,))
+        preds = preds.reshape((127,))
 
         assert points.min() > 0
         assert points.max() > 100
 
-        for t in range(self.clip_len):
-            frame_ix = i + t*self.dilation
-            x, y, z = self.poses_interpolated[frame_ix][:3]
-            t_EA = self.get_T_EA(
-                np.deg2rad(SYSTEM_PARAMS.geometry.camera_rotation_angle),
-                x,
-                y,
-                z
+        x, y, z = poses[self.clip_len//2, :3]
+        t_EA = self.get_T_EA(
+            x,
+            y,
+            z,
+            # np.deg2rad(SYSTEM_PARAMS.geometry.camera_rotation_angle),
+        )
+        for j in range(127):
+            prob = probs[j]
+            pred = preds[j]
+            x, y = points[j]
+            label = labels[j]
+
+            pos_E = self.map_2d_3d[int(x), int(y)]
+            pos_E_homogeneous = np.append(pos_E, 1)
+            pos_A_homogeneous = t_EA @ pos_E_homogeneous
+            pos_A = pos_A_homogeneous[:3]
+            x_A = pos_A[0]
+            y_A = pos_A[1]
+            x_A -= self.x_min
+            y_A -= self.y_min
+            succ = (
+                x_A >= 0 and
+                x_A < self.phantom_length_x and
+                y_A >= 0 and
+                y_A < self.phantom_length_y
             )
-            for j in range(127):
-                prob = probs[t, j]
-                pred = preds[t, j]
-                x, y = points[t, j]
-                label = labels[t, j]
+            if not succ:
+                continue
+            x_A = int(x_A / self.bin_size)
+            y_A = int(y_A / self.bin_size)
 
-                pos_E = self.map_2d_3d[int(x), int(y)]
-                pos_E_homogeneous = np.append(pos_E, 1)
-                pos_A_homogeneous = t_EA @ pos_E_homogeneous
-                pos_A = pos_A_homogeneous[:3]
-                x_A = pos_A[0]
-                y_A = pos_A[1]
-                x_A -= self.x_min
-                y_A -= self.y_min
-                succ = (
-                    x_A >= 0 and
-                    x_A < self.phantom_length_x and
-                    y_A >= 0 and
-                    y_A < self.phantom_length_y
-                )
-                if not succ:
-                    continue
-                x_A = int(x_A / self.bin_size)
-                y_A = int(y_A / self.bin_size)
-
-                self.debug_bins[frame_ix] += 1
-                self.bin_count[x_A, y_A] += (1 if j == 0 else 0)
-                self.bin_pred[x_A, y_A] += pred
-                if label == 1:
-                    self.bins_ground_truth[x_A, y_A] += 1
+            self.bin_trajectory[x_A, y_A] += (1 if j == 0 else 0)
+            self.bin_pred[x_A, y_A] += pred
+            if label == 1:
+                self.bins_ground_truth[x_A, y_A] += 1
 
     def predict_all_clips(self):
         n = len(self.dataset)
-        step_size = 1
-        for i in (tqdm(range(0, n - self.dilated_clip_len, step_size), desc="clip inference")):
+        for i in (tqdm(range(0, n-self.dilated_clip_len), desc="clip inference")):
             self.predict_clip(i)
         
         self.write_probs_to_npz()
@@ -313,20 +242,20 @@ class PredictExp:
 
     @staticmethod
     def transform_image(img):
-        img = img.T
-        img = img[::-1, :]
-        img = img[:, ::-1]
+        # img = img.T
+        # img = img[::-1, :]
+        # img = img[:, ::-1]
         return img
     
     def write_probs_to_npz(self):
         path = SYSTEM_PARAMS.files.exp_probs_npz
         self.bin_pred = PredictExp.transform_image(self.bin_pred)
-        self.bin_count = PredictExp.transform_image(self.bin_count)
+        self.bin_trajectory = PredictExp.transform_image(self.bin_trajectory)
         self.bins_ground_truth = PredictExp.transform_image(self.bins_ground_truth)
         np.savez(
             path,
             bin_prob_sum=self.bin_pred,
-            bin_count=self.bin_count,
+            bin_trajectory=self.bin_trajectory,
             bins_ground_truth=self.bins_ground_truth
         )
     
@@ -334,28 +263,27 @@ class PredictExp:
         path = SYSTEM_PARAMS.files.exp_probs_npz
         data = np.load(path)
         self.bin_pred = data['bin_prob_sum']
-        self.bin_count = data['bin_count']
+        self.bin_trajectory = data['bin_trajectory']
         self.bins_ground_truth = data['bins_ground_truth']
     
     def generate_mask_image(self):
-        res = np.divide(self.bin_pred, self.bin_count, where=self.bin_count != 0)
-        # threshold = np.percentile(res, 50)
-        threshold = 1e-6
-
-        bin_prob_sum_binary = (self.bin_pred > 1e-6).astype(np.int32)
-        img = (bin_prob_sum_binary * 255).astype(np.uint8)
-        img = np.flip(np.flip(img, axis=0), axis=1)
+        img = PredictExp.process_img2(self.bin_pred)
         cv2.imwrite(self.prediction_img_path, img)
 
-        bin_count_binary = (self.bin_count > 0).astype(np.int32)
-        img = (bin_count_binary * 255).astype(np.uint8)
-        img = np.flip(np.flip(img, axis=0), axis=1)
+        img = PredictExp.process_img2(self.bin_trajectory)
         cv2.imwrite(self.sensor_trajectory_img_path, img)
 
-        bins_ground_truth_binary = (self.bins_ground_truth > 0).astype(np.int32)
-        img = (bins_ground_truth_binary * 255).astype(np.uint8)
-        img = np.flip(np.flip(img, axis=0), axis=1)
+        img = PredictExp.process_img2(self.bins_ground_truth)
         cv2.imwrite(self.ground_truth_from_video_img_path, img)
+    
+    @staticmethod
+    def process_img2(img):
+        img = (img > 0).astype(np.int32)
+        img = (img * 255).astype(np.uint8)
+        img = img.T
+        # img = np.flip(img, axis=0)
+        img = np.flip(img, axis=1)
+        return img
     
     @staticmethod
     def compute_npz_grid_search_og():

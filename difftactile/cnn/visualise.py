@@ -474,7 +474,7 @@ class Visualisation:
 
         while True:  # Main loop for continuous data loading
             try:
-                data, labels_images = next(data_iter)
+                data, labels_images, poses, metadata, frame_ix = next(data_iter)
             except StopIteration:
                 print("End of dataset reached. Restarting...")
                 data_iter = iter(data_loader)

@@ -263,7 +263,7 @@ class GNN(pl.LightningModule):
         return out
 
     def shared_step(self, getitem_output, stage):
-        batch, empty_visualisation_tensor = getitem_output
+        batch, empty_visualisation_tensor, poses, metadata, frame_ix = getitem_output
         x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = self.my_prepare_data(batch, batch.num_graphs)
         out = self(x, edge_index, edge_attr)
         out = out.squeeze(-1)

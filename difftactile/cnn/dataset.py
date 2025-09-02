@@ -704,6 +704,14 @@ class MyDataset(torch.utils.data.Dataset):
         markers_mask = data["markers_mask"]
         veins = data["vein_polyline"]
         veins_mask = data["vein_polyline_mask"]
+        if 'poses' in data:
+            poses = data["poses"]
+        else:
+            poses = None
+        if 'metadata' in data:
+            metadata = data["metadata"]
+        else:
+            metadata = None
         if not spawn_vein:
             veins_mask = np.zeros_like(veins_mask, dtype=bool)
         dilated_clip_len = self.clip_len * dilation
@@ -711,6 +719,8 @@ class MyDataset(torch.utils.data.Dataset):
         markers_mask = markers_mask[frame_ix : frame_ix + dilated_clip_len : dilation]
         veins = veins[frame_ix : frame_ix + dilated_clip_len : dilation]
         veins_mask = veins_mask[frame_ix : frame_ix + dilated_clip_len : dilation]
+        if 'poses' in data:
+            poses = poses[frame_ix : frame_ix + dilated_clip_len : dilation]
 
         # vein_present_per_frame = np.any(veins_mask, axis=2)
         # vein_present_all_frames = np.all(vein_present_per_frame, axis=0)
@@ -770,7 +780,7 @@ class MyDataset(torch.utils.data.Dataset):
             veins = torch.tensor(veins, dtype=torch.float32) / 255.0
         else:
             veins = torch.empty(0)
-        return pyg, veins
+        return pyg, veins, poses, metadata, frame_ix
     
     @staticmethod
     def hide_vein_that_dont_move_enough(

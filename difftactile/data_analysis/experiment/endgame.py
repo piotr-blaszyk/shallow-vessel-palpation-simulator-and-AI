@@ -468,9 +468,49 @@ class Endgame:
             )
 
 
+    def merge_npz_sim_format_poses(self):
+        sim_dir = os.path.join(self.root, f"{self.dir}_sim_format")
+        dilated_dir = os.path.join(self.root, f"{self.dir}_dilated")
+        output_dir = os.path.join(self.root, f"{self.dir}_sim_format_poses")
+        os.makedirs(output_dir, exist_ok=True)
+
+        sim_files = sorted(glob.glob(os.path.join(sim_dir, "*.npz")))
+        if not sim_files:
+            print("No sim_format npz files found.")
+            return
+
+        for sim_path in sim_files:
+            base = os.path.basename(sim_path)
+            dilated_path = os.path.join(dilated_dir, base)
+            if not os.path.exists(dilated_path):
+                print(f"Skipping {base}: matching dilated npz not found.")
+                continue
+
+            sim_format_data = np.load(sim_path)
+            dilated_data = np.load(dilated_path)
+
+            markers = sim_format_data["markers"]
+            markers_mask = sim_format_data["markers_mask"]
+            vein_polyline = sim_format_data["vein_polyline"]
+            vein_polyline_mask = sim_format_data["vein_polyline_mask"]
+            poses = dilated_data["output"]
+            metadata = dilated_data["metadata"]
+
+            out_path = os.path.join(output_dir, base)
+            np.savez(
+                out_path,
+                markers=markers,
+                markers_mask=markers_mask,
+                vein_polyline=vein_polyline,
+                vein_polyline_mask=vein_polyline_mask,
+                poses=poses,
+                metadata=metadata,
+            )
+
+
 def main():
     e = Endgame()
-    e.merge_npz_to_sim_format()
+    e.merge_npz_sim_format_poses()
 
 
 if __name__ == "__main__":
