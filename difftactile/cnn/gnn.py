@@ -334,7 +334,7 @@ class GNN(pl.LightningModule):
         #     stage,
         # )
 
-        # self.log(f"{stage}/focal_loss", focal_loss, on_step=True, on_epoch=True, prog_bar=False, batch_size=batch.num_graphs)
+        self.log(f"{stage}/loss", loss, on_step=True, on_epoch=True, prog_bar=False, batch_size=batch.num_graphs*self.clip_len)
         # self.log_per_batch_iou(batch, stage, preds_masked, y_masked)
 
         return loss

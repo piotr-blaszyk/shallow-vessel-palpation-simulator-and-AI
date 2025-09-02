@@ -24,6 +24,7 @@ class Visualisation:
         self.cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
         self.cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
         self.r = SYSTEM_PARAMS.fisheye_model.circle_radius
+        self.clip_len = SYSTEM_PARAMS.gnn.clip_len
 
     @staticmethod
     def calculate_iou(ground_truth, prediction):
@@ -413,6 +414,8 @@ class Visualisation:
         with open(self.test_loader, 'rb') as f:
             test_data = pickle.load(f)
         all_stats = test_data['dataset_stats']
+        target_difficulty = 1.0
+        stats = all_stats[target_difficulty]
 
         if data_source == 'pickled_test_dataset':
             dataset = test_data['dataset']
@@ -424,7 +427,7 @@ class Visualisation:
                 num_workers=NUM_WORKERS
             )
         elif data_source == 'fresh_dataset':  # dataset mode
-            if True:
+            if False:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="exp",
@@ -432,7 +435,7 @@ class Visualisation:
                     data_dir='difftactile/manual_or_experimental_data/endgame/20250901-131547_sparse_dense_sparse_validation/',
                     apply_augmentations=False,
                 )
-            if False:
+            if True:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="sim",
@@ -445,8 +448,6 @@ class Visualisation:
                 val_size=0.0,
                 test_size=0.0
             )
-            target_difficulty = 1.0
-            stats = all_stats[target_difficulty]
             train_dataset.set_stats(stats)
             train_dataset.set_difficulty_level(target_difficulty)
             train_dataset.eval()
@@ -520,7 +521,7 @@ class Visualisation:
 
             # Initialize image stacks for each color channel with white background
             ground_truth_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)
-            prediction_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)
+            prediction_stack = np.zeros((num_frames, labels_h, labels_w, 3), dtype=np.uint8)
             soft_prediction_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)  # New stack for soft predictions
             labels_stack = np.zeros((num_frames, labels_h, labels_w, 3), dtype=np.uint8)
             graph_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)  # New stack for graph visualization
@@ -551,11 +552,16 @@ class Visualisation:
                         ys.append(reg_pred.detach().cpu().numpy())
                     xs = np.array(xs)
                     ys = np.array(ys)
-                    ys = MyDataset.unnormalise_single(
-                        stats['vein_regression_mean'],
-                        stats['vein_regression_std'],
-                        ys,
-                        [2],
+                    # MyDataset.unnormalise_single(
+                    #     stats['vein_regression_mean'],
+                    #     stats['vein_regression_std'],
+                    #     ys,
+                    #     [2],
+                    # )
+                    ys[:, 2] = MyDataset.unnormalise_min_max(
+                        ys[:, 2],
+                        min_val=self.cy-self.r,
+                        max_val=self.cy+self.r,
                     )
                     vein_polyline, vein_polyline_mask = Endgame.line_dense_to_sparse(
                         xs,
@@ -665,8 +671,11 @@ class Visualisation:
                     for v in range(vein_polyline.shape[1]):
                         points = vein_polyline[frame_idx, v][vein_polyline_mask[frame_idx, v]]
                         for point_idx, point in enumerate(points):
-                            if 0 <= point[0] < w and 0 <= point[1] < h:
-                                center = (int(point[0]), int(point[1]))
+                            x, y = point / 4
+                            x = int(x)
+                            y = int(y)
+                            if 0 <= x < labels_w and 0 <= y < labels_h:
+                                center = (x, y)
                                 cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
 
                     
@@ -913,8 +922,8 @@ class Visualisation:
 def main():
     v = Visualisation()
     v.visualise_gnn(
-        mode='dataset', 
-        data_source='fresh_dataset'
+        mode='predictions', 
+        data_source='pickled_test_dataset'
     )
 
 
