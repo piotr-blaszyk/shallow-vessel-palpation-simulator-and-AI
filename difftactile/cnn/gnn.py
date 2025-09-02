@@ -200,18 +200,11 @@ class GNN(pl.LightningModule):
         self.skip2 = self.skip_layer(latent_dim)
         self.skip3 = self.skip_layer(output_dim)
 
-        self.mlp_classification_head = nn.Sequential(
+        self.mlp_output_head = nn.Sequential(
             nn.Linear(cat_out_dim, cat_out_dim // 2),
             nn.ReLU(),
             self.dropout,
-            nn.Linear(cat_out_dim // 2, 4),
-        )
-
-        self.mlp_regression_head = nn.Sequential(
-            nn.Linear(cat_out_dim, cat_out_dim // 2),
-            nn.ReLU(),
-            self.dropout,
-            nn.Linear(cat_out_dim // 2, 12),
+            nn.Linear(cat_out_dim // 2, output_dim),
         )
 
         self.save_hyperparameters()
@@ -266,10 +259,6 @@ class GNN(pl.LightningModule):
         h3 = self.skip3(h3)
 
         concat_features = torch.cat([h0, h1, h2, h3], dim=-1)
-        concat_features = global_add_pool(
-            x=concat_features, 
-            batch=batch,
-        )
 
         out = self.mlp_output_head(concat_features)
         return out
