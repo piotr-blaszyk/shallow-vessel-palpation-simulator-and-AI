@@ -271,6 +271,7 @@ class GNN(pl.LightningModule):
         k = self.clip_len
         my_batch_ix = torch.cat([torch.arange(k).repeat_interleave(127), torch.arange(k)])
         my_batch_ix = torch.cat([my_batch_ix + i*k for i in range(num_graphs)])
+        my_batch_ix = my_batch_ix.to(self.device)
         concat_features = global_add_pool(
             x=concat_features, 
             batch=my_batch_ix,
@@ -349,39 +350,57 @@ class GNN(pl.LightningModule):
             class_loss: scalar BCE loss
             reg_loss: scalar SmoothL1 loss
         """
-
         num_slots = class_out_cur.size(0)
         num_reg_features = reg_gt_cur.numel() // num_slots
-
-        # Reshape regression tensors to [num_slots, num_reg_features]
         reg_out_cur = reg_out_cur.view(num_slots, num_reg_features)
         reg_gt_cur = reg_gt_cur.view(num_slots, num_reg_features)
-
-        # --- Hungarian matching ---
-        # Compute cost matrix: L1 distance between each predicted slot and each GT slot
-        # cost[i,j] = L1 distance between predicted slot i and GT slot j
-        cost_matrix = torch.cdist(reg_out_cur, reg_gt_cur, p=2)  # [num_slots, num_slots]
-
+        cost_matrix = torch.cdist(reg_out_cur, reg_gt_cur, p=2)
         cost_matrix = cost_matrix.unsqueeze(0)
-        # Hungarian assignment
-        # pred_indices, gt_indices = linear_sum_assignment(cost_matrix)
         assignment = batch_linear_assignment(cost_matrix)
         pred_indices, gt_indices = assignment_to_indices(assignment)
-
-        # --- Classification loss ---
-        # Match predicted classification logits to the corresponding ground truth via Hungarian assignment
+        pred_indices = pred_indices.squeeze(0)
+        gt_indices = gt_indices.squeeze(0)
         class_out_matched = class_out_cur[pred_indices]
         class_gt_matched = class_gt_cur[gt_indices]
-
-        # BCE loss expects raw logits
         class_loss = F.binary_cross_entropy_with_logits(class_out_matched, class_gt_matched)
-
-        # --- Regression loss ---
         reg_out_matched = reg_out_cur[pred_indices]
         reg_gt_matched = reg_gt_cur[gt_indices]
         reg_loss = F.smooth_l1_loss(reg_out_matched, reg_gt_matched)
-
         return class_loss, reg_loss
+
+    def get_vein_params(self, class_out_cur, reg_out_cur, class_gt_cur, reg_gt_cur):
+        """
+        Args:
+            class_out_cur: [num_slots] raw logits (float tensor)
+            reg_out_cur: [num_slots*num_reg_features] raw regression outputs
+            class_gt_cur: [num_slots] {0,1} float tensor
+            reg_gt_cur: [num_slots*num_reg_features] flattened ground truth regression
+        Returns:
+            class_loss: scalar BCE loss
+            reg_loss: scalar SmoothL1 loss
+        """
+        num_slots = class_out_cur.size(0)
+        num_reg_features = reg_gt_cur.numel() // num_slots
+        reg_out_cur = reg_out_cur.view(num_slots, num_reg_features)
+        reg_gt_cur = reg_gt_cur.view(num_slots, num_reg_features)
+        cost_matrix = torch.cdist(reg_out_cur, reg_gt_cur, p=2)
+        cost_matrix = cost_matrix.unsqueeze(0)
+        assignment = batch_linear_assignment(cost_matrix)
+        pred_indices, gt_indices = assignment_to_indices(assignment)
+        pred_indices = pred_indices.squeeze(0)
+        gt_indices = gt_indices.squeeze(0)
+
+        class_out_matched = class_out_cur[pred_indices]
+        class_gt_matched = class_gt_cur[gt_indices]
+        reg_out_matched = reg_out_cur[pred_indices]
+        reg_gt_matched = reg_gt_cur[gt_indices]
+
+        probs = torch.sigmoid(class_out_matched)
+        preds_bool = probs > 0.5
+        preds_int = (probs > 0.5).long()
+        reg_out_matched = reg_out_matched.clamp(0.0, 1.0)
+
+        return preds_int, reg_out_matched
 
     def merge_tensors_unvectorised(self, x, y, n, k):
         b = x.shape[0] // n
@@ -653,7 +672,7 @@ class GNN(pl.LightningModule):
         return self.get_accumulator(shape=(), dtype=torch.int32)
     
     def get_accumulator(self, shape, dtype):
-        return {k: torch.zeros(shape, dtype=dtype, device='cpu') for k in self.stages_str}
+        return {k: torch.zeros(shape, dtype=dtype, device='cuda:0') for k in self.stages_str}
     
     def init_accumulators(self):
         self.area_pred_acc = self.get_iou_accumulator()
@@ -844,7 +863,7 @@ def main():
     )
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
-        accelerator='cpu',  # Force CPU for better error messages
+        accelerator='auto',  # Force CPU for better error messages
         enable_checkpointing=True,
         logger=logger,
         log_every_n_steps=1,

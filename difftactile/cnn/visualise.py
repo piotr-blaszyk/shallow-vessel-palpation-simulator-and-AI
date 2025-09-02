@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from difftactile.data_analysis.experiment.endgame import *
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.gnn import *
@@ -20,6 +21,9 @@ class Visualisation:
         elif SYSTEM_PARAMS.meta.cnn_gnn == 1:
             self.model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn
             self.test_loader = SYSTEM_PARAMS.files.test_loader_gnn
+        self.cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
+        self.cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
+        self.r = SYSTEM_PARAMS.fisheye_model.circle_radius
 
     @staticmethod
     def calculate_iou(ground_truth, prediction):
@@ -478,7 +482,7 @@ class Visualisation:
 
         while True:  # Main loop for continuous data loading
             try:
-                data, labels_images, poses, metadata, frame_ix = next(data_iter)
+                batch, labels_images, poses, metadata, frame_ix = next(data_iter)
                 poses = poses.numpy()[0]
                 metadata = metadata.numpy()[0]
                 frame_ix = frame_ix.item()
@@ -526,48 +530,67 @@ class Visualisation:
             if mode == 'predictions':
                 # Get predictions
                 with torch.no_grad():
-                    data = data.to(device)
-                    x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(data, 1)
-                    out = model(x, edge_index, edge_attr)
-                    out = out.squeeze(-1)  # Remove the channel dimension
-                    out = out[x_mask]
-                    # mask = data.mask
-                    # out = out[mask]
-                    probs = torch.sigmoid(out)
-                    pred = (probs > 0.5).float()
+                    batch = batch.to(device)
+                    x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(batch, 1)
+                    class_out, reg_out = model(x, edge_index, edge_attr, batch.batch, batch.num_graphs)
+                    xs = []
+                    ys = []
+                    for g in range(batch.num_graphs*self.clip_len):
+                        class_out_cur = class_out[g]
+                        reg_out_cur = reg_out[g]
+                        class_gt_cur = batch.vein_classification[g]
+                        reg_gt_cur = batch.vein_regression[g]
+                        reg_gt_cur = reg_gt_cur.flatten()
+                        class_pred, reg_pred = model.get_vein_params(
+                            class_out_cur,
+                            reg_out_cur,
+                            class_gt_cur,
+                            reg_gt_cur,
+                        )
+                        xs.append(class_pred.detach().cpu().numpy())
+                        ys.append(reg_pred.detach().cpu().numpy())
+                    xs = np.array(xs)
+                    ys = np.array(ys)
+                    vein_polyline, vein_polyline_mask = Endgame.line_dense_to_sparse(
+                        xs,
+                        ys,
+                        cx=self.cx,
+                        cy=self.cy,
+                        r=self.r,
+                    )
 
-                    assert data.num_graphs == 1
+                    assert batch.num_graphs == 1
                     
-                    # Compute IoU scores per frame
-                    num_nodes_per_frame = SYSTEM_PARAMS.vitactip.num_markers
-                    clip_stats = []
-                    for frame_idx in range(num_frames):
-                        start_idx = frame_idx * num_nodes_per_frame
-                        end_idx = (frame_idx + 1) * num_nodes_per_frame
-                        frame_pred = pred[start_idx:end_idx]
-                        frame_truth = data.y[start_idx:end_idx]
-                        frame_metrics = GNN.iou_score(frame_pred, frame_truth)
-                        fg_iou = frame_metrics[1]
-                        bg_iou = frame_metrics[0]
+                    # # Compute IoU scores per frame
+                    # num_nodes_per_frame = SYSTEM_PARAMS.vitactip.num_markers
+                    # clip_stats = []
+                    # for frame_idx in range(num_frames):
+                    #     start_idx = frame_idx * num_nodes_per_frame
+                    #     end_idx = (frame_idx + 1) * num_nodes_per_frame
+                    #     frame_pred = pred[start_idx:end_idx]
+                    #     frame_truth = batch.y[start_idx:end_idx]
+                    #     frame_metrics = GNN.iou_score(frame_pred, frame_truth)
+                    #     fg_iou = frame_metrics[1]
+                    #     bg_iou = frame_metrics[0]
                         
-                        # Compute confusion matrix
-                        frame_pred = pred[start_idx:end_idx].cpu().numpy()
-                        frame_truth = data.y[start_idx:end_idx].cpu().numpy()
-                        tp = np.sum((frame_pred == 1) & (frame_truth == 1))
-                        tn = np.sum((frame_pred == 0) & (frame_truth == 0))
-                        fp = np.sum((frame_pred == 1) & (frame_truth == 0))
-                        fn = np.sum((frame_pred == 0) & (frame_truth == 1))
-                        clip_stats.append({
-                            'fg_iou': fg_iou,
-                            'bg_iou': bg_iou,
-                            'tp': tp,
-                            'tn': tn,
-                            'fp': fp,
-                            'fn': fn,
-                        })
+                    #     # Compute confusion matrix
+                    #     frame_pred = pred[start_idx:end_idx].cpu().numpy()
+                    #     frame_truth = batch.y[start_idx:end_idx].cpu().numpy()
+                    #     tp = np.sum((frame_pred == 1) & (frame_truth == 1))
+                    #     tn = np.sum((frame_pred == 0) & (frame_truth == 0))
+                    #     fp = np.sum((frame_pred == 1) & (frame_truth == 0))
+                    #     fn = np.sum((frame_pred == 0) & (frame_truth == 1))
+                    #     clip_stats.append({
+                    #         'fg_iou': fg_iou,
+                    #         'bg_iou': bg_iou,
+                    #         'tp': tp,
+                    #         'tn': tn,
+                    #         'fp': fp,
+                    #         'fn': fn,
+                    #     })
                     
-                    probs = probs.cpu().numpy().astype(np.float32)
-                    pred = pred.cpu().numpy().astype(int)
+                    # probs = probs.cpu().numpy().astype(np.float32)
+                    # pred = pred.cpu().numpy().astype(int)
 
             # if data.y.cpu().numpy().sum() == 0 or pred.sum() == 0:
             #     continue
@@ -577,7 +600,7 @@ class Visualisation:
                 # Get marker positions for current frame
                 start_idx = frame_idx * num_nodes_per_frame
                 end_idx = (frame_idx + 1) * num_nodes_per_frame
-                frame_points = data.pos[start_idx:end_idx].cpu().numpy()[:, :2]
+                frame_points = batch.pos[start_idx:end_idx].cpu().numpy()[:, :2]
                 
                 # Transform from (-1,1) to (0,200) range
                 points = (frame_points + 3) / 6 * w  # Now in range (0,200)
@@ -605,7 +628,7 @@ class Visualisation:
                 # Get predictions for current frame
                 start_idx = frame_idx * num_nodes_per_frame
                 end_idx = (frame_idx + 1) * num_nodes_per_frame
-                ground_truth = data.y[start_idx:end_idx].cpu().numpy()
+                ground_truth = batch.y[start_idx:end_idx].cpu().numpy()
                 
                 # Draw markers on ground truth image
                 for point_idx, point in enumerate(points):
@@ -619,55 +642,63 @@ class Visualisation:
                             cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 0), -1, cv2.LINE_AA)
                 
                 if mode == 'predictions':
-                    frame_pred = pred[start_idx:end_idx]
-                    frame_probs = probs[start_idx:end_idx]
+                    # frame_pred = pred[start_idx:end_idx]
+                    # frame_probs = probs[start_idx:end_idx]
                     
                     # Draw markers on prediction image (hard predictions)
-                    for point_idx, point in enumerate(points):
-                        if 0 <= point[0] < w and 0 <= point[1] < h:
-                            center = (int(point[0]), int(point[1]))
-                            if frame_pred[point_idx] == 1:
-                                # Magenta (BGR = (255, 0, 255)) for positive class
+                    # for point_idx, point in enumerate(points):
+                    #     if 0 <= point[0] < w and 0 <= point[1] < h:
+                    #         center = (int(point[0]), int(point[1]))
+                    #         if frame_pred[point_idx] == 1:
+                    #             # Magenta (BGR = (255, 0, 255)) for positive class
+                    #             cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
+                    #         else:
+                    #             # Cyan (BGR = (255, 255, 0)) for negative class
+                    #             cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 0), -1, cv2.LINE_AA)
+                    
+                    for v in range(vein_polyline.shape[1]):
+                        points = vein_polyline[frame_idx, v][vein_polyline_mask[frame_idx, v]]
+                        for point_idx, point in enumerate(points):
+                            if 0 <= point[0] < w and 0 <= point[1] < h:
+                                center = (int(point[0]), int(point[1]))
                                 cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
-                            else:
-                                # Cyan (BGR = (255, 255, 0)) for negative class
-                                cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 255, 0), -1, cv2.LINE_AA)
+
                     
                     # Draw markers on soft prediction image
-                    for point_idx, point in enumerate(points):
-                        if 0 <= point[0] < w and 0 <= point[1] < h:
-                            center = (int(point[0]), int(point[1]))
-                            prob = frame_probs[point_idx]
-                            intensity = int(255 * prob)  # Scale to [0,255]
-                            # Use white color with varying intensity for all points
-                            cv2.circle(soft_prediction_stack[frame_idx], center, MARKER_RADIUS, (intensity, intensity, intensity), -1, cv2.LINE_AA)
+                    # for point_idx, point in enumerate(points):
+                    #     if 0 <= point[0] < w and 0 <= point[1] < h:
+                    #         center = (int(point[0]), int(point[1]))
+                    #         prob = frame_probs[point_idx]
+                    #         intensity = int(255 * prob)  # Scale to [0,255]
+                    #         # Use white color with varying intensity for all points
+                    #         cv2.circle(soft_prediction_stack[frame_idx], center, MARKER_RADIUS, (intensity, intensity, intensity), -1, cv2.LINE_AA)
                     
                     # Draw confusion matrix visualization
-                    for point_idx, point in enumerate(points):
-                        if 0 <= point[0] < w and 0 <= point[1] < h:
-                            center = (int(point[0]), int(point[1]))
-                            pred_val = frame_pred[point_idx]
-                            true_val = ground_truth[point_idx]
+                    # for point_idx, point in enumerate(points):
+                    #     if 0 <= point[0] < w and 0 <= point[1] < h:
+                    #         center = (int(point[0]), int(point[1]))
+                    #         pred_val = frame_pred[point_idx]
+                    #         true_val = ground_truth[point_idx]
                             
-                            # Color coding:
-                            # TP: Lime Green (50, 205, 50)
-                            # TN: Yellow (255, 255, 0)
-                            # FP: Red (255, 0, 0)
-                            # FN: Bright Blue (0, 0, 255)
-                            if pred_val == 1 and true_val == 1:  # TP
-                                color = (50, 205, 50)
-                            elif pred_val == 0 and true_val == 0:  # TN
-                                color = (0, 255, 255)  # BGR format
-                            elif pred_val == 1 and true_val == 0:  # FP
-                                color = (0, 0, 255)
-                            else:  # FN
-                                color = (255, 0, 0)
+                    #         # Color coding:
+                    #         # TP: Lime Green (50, 205, 50)
+                    #         # TN: Yellow (255, 255, 0)
+                    #         # FP: Red (255, 0, 0)
+                    #         # FN: Bright Blue (0, 0, 255)
+                    #         if pred_val == 1 and true_val == 1:  # TP
+                    #             color = (50, 205, 50)
+                    #         elif pred_val == 0 and true_val == 0:  # TN
+                    #             color = (0, 255, 255)  # BGR format
+                    #         elif pred_val == 1 and true_val == 0:  # FP
+                    #             color = (0, 0, 255)
+                    #         else:  # FN
+                    #             color = (255, 0, 0)
                             
-                            cv2.circle(confusion_matrix_stack[frame_idx], center, MARKER_RADIUS, color, -1, cv2.LINE_AA)
+                    #         cv2.circle(confusion_matrix_stack[frame_idx], center, MARKER_RADIUS, color, -1, cv2.LINE_AA)
                     
                     # Draw statistics for current frame
                     stats_img = stats_stack[frame_idx]
-                    frame_stats = clip_stats[frame_idx]
+                    # frame_stats = clip_stats[frame_idx]
                     
                     # Define text positions and font settings
                     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -678,28 +709,28 @@ class Visualisation:
                     y_pos = 40
                     
                     # Draw statistics text
-                    cv2.putText(stats_img, f"Foreground IoU: {frame_stats['fg_iou']:.3f}", (x_pos, y_pos), 
-                              font, font_scale, (0, 0, 0), thickness)
-                    y_pos += line_spacing
+                    # cv2.putText(stats_img, f"Foreground IoU: {frame_stats['fg_iou']:.3f}", (x_pos, y_pos), 
+                    #           font, font_scale, (0, 0, 0), thickness)
+                    # y_pos += line_spacing
                     
-                    cv2.putText(stats_img, f"Background IoU: {frame_stats['bg_iou']:.3f}", (x_pos, y_pos), 
-                              font, font_scale, (0, 0, 0), thickness)
-                    y_pos += line_spacing
+                    # cv2.putText(stats_img, f"Background IoU: {frame_stats['bg_iou']:.3f}", (x_pos, y_pos), 
+                    #           font, font_scale, (0, 0, 0), thickness)
+                    # y_pos += line_spacing
                     
-                    cv2.putText(stats_img, f"True Positives: {frame_stats['tp']}", (x_pos, y_pos), 
-                              font, font_scale, (0, 0, 0), thickness)
-                    y_pos += line_spacing
+                    # cv2.putText(stats_img, f"True Positives: {frame_stats['tp']}", (x_pos, y_pos), 
+                    #           font, font_scale, (0, 0, 0), thickness)
+                    # y_pos += line_spacing
                     
-                    cv2.putText(stats_img, f"True Negatives: {frame_stats['tn']}", (x_pos, y_pos), 
-                              font, font_scale, (0, 0, 0), thickness)
-                    y_pos += line_spacing
+                    # cv2.putText(stats_img, f"True Negatives: {frame_stats['tn']}", (x_pos, y_pos), 
+                    #           font, font_scale, (0, 0, 0), thickness)
+                    # y_pos += line_spacing
                     
-                    cv2.putText(stats_img, f"False Positives: {frame_stats['fp']}", (x_pos, y_pos), 
-                              font, font_scale, (0, 0, 0), thickness)
-                    y_pos += line_spacing
+                    # cv2.putText(stats_img, f"False Positives: {frame_stats['fp']}", (x_pos, y_pos), 
+                    #           font, font_scale, (0, 0, 0), thickness)
+                    # y_pos += line_spacing
                     
-                    cv2.putText(stats_img, f"False Negatives: {frame_stats['fn']}", (x_pos, y_pos), 
-                              font, font_scale, (0, 0, 0), thickness)
+                    # cv2.putText(stats_img, f"False Negatives: {frame_stats['fn']}", (x_pos, y_pos), 
+                    #           font, font_scale, (0, 0, 0), thickness)
 
                 # Get and process labels image for current frame
                 if ground_truth_labels_present:
