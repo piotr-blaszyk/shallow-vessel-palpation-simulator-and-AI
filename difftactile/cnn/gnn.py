@@ -303,7 +303,7 @@ class GNN(pl.LightningModule):
             total_cls_loss += class_loss
             total_reg_loss += reg_loss
 
-        total_loss = 1.0 * total_cls_loss + 1.0 * total_reg_loss
+        total_loss = 1e3 * total_cls_loss + 1.0 * total_reg_loss
 
         # out = out.squeeze(-1)
         # out = out[x_mask]
@@ -334,7 +334,8 @@ class GNN(pl.LightningModule):
         #     stage,
         # )
 
-        self.log(f"{stage}/loss", loss, on_step=True, on_epoch=True, prog_bar=False, batch_size=batch.num_graphs*self.clip_len)
+        self.log(f"{stage}/cls_loss", total_cls_loss, on_step=True, on_epoch=True, prog_bar=stage=='train', batch_size=batch.num_graphs*self.clip_len)
+        self.log(f"{stage}/reg_loss", total_reg_loss, on_step=True, on_epoch=True, prog_bar=stage=='train', batch_size=batch.num_graphs*self.clip_len)
         # self.log_per_batch_iou(batch, stage, preds_masked, y_masked)
 
         return loss
@@ -362,7 +363,7 @@ class GNN(pl.LightningModule):
         gt_indices = gt_indices.squeeze(0)
         class_out_matched = class_out_cur[pred_indices]
         class_gt_matched = class_gt_cur[gt_indices]
-        class_loss = F.binary_cross_entropy_with_logits(class_out_matched, class_gt_matched)
+        class_loss = self.focal_loss(class_out_matched, class_gt_matched)
         reg_out_matched = reg_out_cur[pred_indices]
         reg_gt_matched = reg_gt_cur[gt_indices]
         reg_loss = F.smooth_l1_loss(reg_out_matched, reg_gt_matched)
@@ -569,8 +570,8 @@ class GNN(pl.LightningModule):
         self.my_on_epoch_end('test')
     
     def my_on_epoch_end(self, stage: str):
-        log_on_prog_bar = stage == 'val'
-        # log_on_prog_bar = False
+        # log_on_prog_bar = stage == 'val'
+        log_on_prog_bar = False
         ious = self.compute_ious_acc(stage)
         self.log_dict(
             {f"{stage}_iou/{k}": v for k, v in ious.items()},
