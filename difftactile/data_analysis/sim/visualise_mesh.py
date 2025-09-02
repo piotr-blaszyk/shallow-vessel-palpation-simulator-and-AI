@@ -4,6 +4,7 @@ import numpy as np
 import open3d as o3d
 import pyvista as pv
 import vedo
+from scipy.spatial.distance import pdist
 
 from difftactile.main.constants import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
@@ -282,16 +283,21 @@ class VisualiseMesh:
         plotter.show()
 
 
-def get_T_EA(
-    x,
-    y,
-    z,
-):
-    R = np.eye(3)
-    t = np.array([[x], [y], [z]])
-    T = np.eye(4)
+def camera_to_world_transform(
+    x_robot: float, 
+    y_robot: float, 
+    z_robot: float, 
+    d: float
+) -> np.ndarray:
+    R = np.array([
+        [1,  0,  0],
+        [0, -1,  0],
+        [0,  0, -1]
+    ], dtype=float)
+    t = np.array([x_robot, y_robot, z_robot + d], dtype=float)
+    T = np.eye(4, dtype=float)
     T[:3, :3] = R
-    T[:3, 3:] = t
+    T[:3, 3] = t
     return T
 
 
@@ -300,31 +306,40 @@ def load_endgame_exp_points():
     data = np.load(path)
     points = data['vein_polyline']
     mask = data['vein_polyline_mask']
-    points = points[mask]
-    points = points.reshape(points.shape[0], -1, 2)
+    # points = points[0][mask[0]]
+    # points = points.reshape(points.shape[0], -1, 2)
+    # points = points[0]
     points_E = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(
         ps=points,
         dist_lens_to_plane=0.019-0.003
     )
-    return points_E
+    trans = camera_to_world_transform(
+        0, 0, 0, 0.019
+    )
+    foo = []
+    for i in range(points_E.shape[0]):
+        xs = points_E[i][mask[i]]
+        # max_dist = pdist(xs).max()
+        points_hom = np.hstack([xs, np.ones((xs.shape[0], 1))])
+        transformed_hom = points_hom @ trans.T
+        transformed_points = transformed_hom[:, :3]
+        foo.append(transformed_points)
+
+    return foo
 
 
 class TemporalPointCloudVisualizer:
-    def __init__(self, points_3d: np.ndarray):
-        """
-        points_3d: numpy array of shape (num_timesteps, num_points, 3)
-        """
-        assert points_3d.ndim == 3, "Shape must be (num_timesteps, num_points, 3)"
+    def __init__(self, points_3d):
         self.points_3d = points_3d
-        self.num_timesteps = points_3d.shape[0]
+        self.num_timesteps = len(points_3d)
         self.current_t = 0
 
         # Create point cloud and axis mesh
         self.pcd = o3d.geometry.PointCloud()
         self.pcd.points = o3d.utility.Vector3dVector(self.points_3d[self.current_t])
 
-        _min = np.min(points_3d, axis=(0, 1))
-        _max = np.max(points_3d, axis=(0, 1))
+        _min = np.min(points_3d[0], axis=0)
+        _max = np.max(points_3d[1], axis=0)
         diff = _max - _min
         self.axes = o3d.geometry.TriangleMesh.create_coordinate_frame(
             size=np.max(diff) / 2, origin=[0, 0, 0]

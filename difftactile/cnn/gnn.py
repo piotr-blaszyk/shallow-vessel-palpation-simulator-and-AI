@@ -695,6 +695,7 @@ def main():
         scheme="single_dataset",
         sim_exp="sim",
         data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
+        apply_augmentations=True,
     )
     train_dataset, val_dataset, test_dataset = full_dataset.create_splits(
         train_size=0.7, val_size=0.15, test_size=0.15
@@ -703,6 +704,7 @@ def main():
         scheme="single_dataset",
         sim_exp="exp",
         data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+        apply_augmentations=False,
     )
     all_stats = {}
     target_difficulty = 1.0

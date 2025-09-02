@@ -425,12 +425,14 @@ class Visualisation:
                     scheme="single_dataset",
                     sim_exp="exp",
                     data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+                    apply_augmentations=False,
                 )
             if False:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="sim",
                     data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
+                    apply_augmentations=True,
                 )
             train_dataset, _, _ = full_dataset.create_splits(
                 train_size=1.0,
@@ -475,6 +477,15 @@ class Visualisation:
         while True:  # Main loop for continuous data loading
             try:
                 data, labels_images, poses, metadata, frame_ix = next(data_iter)
+                poses = poses.numpy()[0]
+                metadata = metadata.numpy()[0]
+                frame_ix = frame_ix.item()
+                if not (
+                    metadata[1] == 0 
+                    and metadata[0] == 0 
+                    and frame_ix == 0
+                ):
+                    continue
             except StopIteration:
                 print("End of dataset reached. Restarting...")
                 data_iter = iter(data_loader)
@@ -863,7 +874,7 @@ class Visualisation:
 def main():
     v = Visualisation()
     v.visualise_gnn(
-        mode='predictions', 
+        mode='dataset', 
         data_source='fresh_dataset'
     )
 

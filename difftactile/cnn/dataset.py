@@ -24,6 +24,7 @@ class MyDataset(torch.utils.data.Dataset):
         scheme,
         sim_exp,
         data_dir, # "difftactile/output/training_data/pickle_2025_08_31_reordered"
+        apply_augmentations,
         repeat_factor=1,
         mode="root",
         data_points_today=None,
@@ -49,6 +50,7 @@ class MyDataset(torch.utils.data.Dataset):
             data_points = []
         super().__init__()
         start_time = time.perf_counter()
+        self.apply_augmentations = apply_augmentations
         self.sim_exp = sim_exp
         self.repeat_factor = repeat_factor
         self.vein_px_thickness = SYSTEM_PARAMS.meta.vein_px_thickness
@@ -574,6 +576,7 @@ class MyDataset(torch.utils.data.Dataset):
             data_dir=self.data_dir,
             mode="train",
             data_points=[self.data_points[i] for i in ixs["train_indices"]],
+            apply_augmentations=self.apply_augmentations,
         )
         val_dataset = MyDataset(
             scheme=self.scheme,
@@ -581,6 +584,7 @@ class MyDataset(torch.utils.data.Dataset):
             data_dir=self.data_dir,
             mode="val",
             data_points=[self.data_points[i] for i in ixs["val_indices"]],
+            apply_augmentations=self.apply_augmentations,
         )
         test_dataset = MyDataset(
             scheme=self.scheme,
@@ -588,6 +592,7 @@ class MyDataset(torch.utils.data.Dataset):
             data_dir=self.data_dir,
             mode="test",
             data_points=[self.data_points[i] for i in ixs["test_indices"]],
+            apply_augmentations=self.apply_augmentations,
         )
         res = (train_dataset, val_dataset, test_dataset)
         print(f"split len: {[len(x) for x in res]}")
@@ -719,7 +724,7 @@ class MyDataset(torch.utils.data.Dataset):
         markers_mask = markers_mask[frame_ix : frame_ix + dilated_clip_len : dilation]
         veins = veins[frame_ix : frame_ix + dilated_clip_len : dilation]
         veins_mask = veins_mask[frame_ix : frame_ix + dilated_clip_len : dilation]
-        if 'poses' in data:
+        if poses is not None:
             poses = poses[frame_ix : frame_ix + dilated_clip_len : dilation]
 
         # vein_present_per_frame = np.any(veins_mask, axis=2)
@@ -756,10 +761,11 @@ class MyDataset(torch.utils.data.Dataset):
         # )
         # veins_mask &= labels_signal_mask
 
-        discrete_angles = [0, 60, 120, 180, 240, 300]
-        rotation_angle_deg = NP_RNG.choice(discrete_angles)
-        markers = self.augmentation_rotation(markers, rotation_angle_deg)
-        veins = self.augmentation_rotation(veins, rotation_angle_deg)
+        if self.apply_augmentations:
+            discrete_angles = [0, 60, 120, 180, 240, 300]
+            rotation_angle_deg = NP_RNG.choice(discrete_angles)
+            markers = self.augmentation_rotation(markers, rotation_angle_deg)
+            veins = self.augmentation_rotation(veins, rotation_angle_deg)
         # angle_uniform_shift_rad = NP_RNG.uniform(0, 2 * math.pi)
         # magnitude = NP_RNG.uniform(0, 10)
         # markers = self.uniform_shift(markers, angle_uniform_shift_rad, magnitude)
@@ -780,6 +786,16 @@ class MyDataset(torch.utils.data.Dataset):
             veins = torch.tensor(veins, dtype=torch.float32) / 255.0
         else:
             veins = torch.empty(0)
+
+        if poses is not None:
+            poses = torch.from_numpy(poses)
+        else:
+            poses = torch.empty(0)
+        if metadata is not None:
+            metadata = torch.from_numpy(metadata)
+        else:
+            metadata = torch.empty(0)
+        frame_ix = torch.tensor(frame_ix)
         return pyg, veins, poses, metadata, frame_ix
     
     @staticmethod

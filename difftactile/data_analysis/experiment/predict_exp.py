@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from scipy.interpolate import interp1d
 from tqdm import tqdm
+from scipy.spatial.distance import pdist
 
 from difftactile.cnn.common import Common
 from difftactile.cnn.dataset import *
@@ -41,6 +42,7 @@ class PredictExp:
             sim_exp="exp",
             data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
             normalise_pos=False,
+            apply_augmentations=False,
         )
         with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
             test_data = pickle.load(f)
@@ -152,12 +154,15 @@ class PredictExp:
     
     def predict_clip(self, i):
         pyg, _, poses, metadata, frame_ix = self.dataset[i]
+        poses = poses.numpy()
+        metadata = metadata.numpy()
+        frame_ix = frame_ix.item()
         poses /= 1_000
         metadata[2:] = metadata[2:] / 1_000
         if not (
-            metadata[1] == 0 
-            and metadata[0] == 0 
-            and frame_ix == 2
+            metadata[1] == 0
+            # and metadata[0] == 0 
+            # and frame_ix == 0
         ):
             return
         with torch.no_grad():
@@ -173,7 +178,7 @@ class PredictExp:
             pos = pyg.pos[mask]
 
             probs = torch.sigmoid(out)
-            preds = (probs > 0.5).float()
+            preds = (probs > 0.9).float()
             probs = probs.cpu().numpy().astype(np.float32)
             preds = preds.cpu().numpy().astype(np.float32)
         points = pos.cpu().numpy().astype(np.float32)
@@ -629,7 +634,6 @@ class PredictExp:
         self.generate_mask_image()
         self.downsample_ground_truth_image_to_prediction_shape()
         self.evaluate_downscaled()
-        # self.evaluate_upscaled()
 
 
 def main():
