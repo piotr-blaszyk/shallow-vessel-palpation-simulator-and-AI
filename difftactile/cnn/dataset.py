@@ -50,9 +50,6 @@ class MyDataset(torch.utils.data.Dataset):
             data_points = []
         super().__init__()
         start_time = time.perf_counter()
-        self.cx = SYSTEM_PARAMS.fisheye_model.circle_centre_x
-        self.cy = SYSTEM_PARAMS.fisheye_model.circle_centre_y
-        self.r = SYSTEM_PARAMS.fisheye_model.circle_radius
         self.apply_augmentations = apply_augmentations
         self.sim_exp = sim_exp
         self.repeat_factor = repeat_factor
@@ -902,7 +899,6 @@ class MyDataset(torch.utils.data.Dataset):
             edge_attr_temporal,
             edge_attr_global_spatial,
             edge_attr_global_temporal,
-            vein_regression,
         )
         pyg_data = self.get_pyg_data(
             pos=pos,
@@ -1156,7 +1152,6 @@ class MyDataset(torch.utils.data.Dataset):
         edge_attr_temporal,
         edge_attr_global_spatial,
         edge_attr_global_temporal,
-        vein_regression,
     ):
         if not self.warmup:
             if self.normalise_pos:
@@ -1191,25 +1186,6 @@ class MyDataset(torch.utils.data.Dataset):
                 edge_attr_global_temporal,
                 [],
             )
-            # MyDataset.normalise_single(
-            #     self.vein_regression_mean,
-            #     self.vein_regression_std,
-            #     vein_regression,
-            #     [],
-            # )
-            vein_regression[:, 2] = MyDataset.normalise_min_max(
-                vein_regression[:, 2],
-                min_val=self.cy-self.r,
-                max_val=self.cy+self.r,
-            )
-
-    @staticmethod
-    def normalise_min_max(arr, min_val, max_val):
-        return (arr - min_val) / (max_val - min_val)
-
-    @staticmethod
-    def unnormalise_min_max(norm_arr, min_val, max_val):
-        return norm_arr * (max_val - min_val) + min_val
 
     def get_pyg_data(
         self,
@@ -1280,12 +1256,6 @@ class MyDataset(torch.utils.data.Dataset):
         ixs = np.array(ixs)
         if ixs.size > 0:
             xs[:, ixs] = (xs[:, ixs] - means[ixs]) / stds[ixs]
-
-    @staticmethod
-    def unnormalise_single(means, stds, xs, ixs):
-        ixs = np.array(ixs)
-        if ixs.size > 0:
-            xs[:, ixs] = xs[:, ixs] * stds[ixs] + means[ixs]
 
     def get_clip(
         self, markers, clip_len, dilation, start_ix, ground_truth_labels_in=None
