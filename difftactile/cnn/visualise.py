@@ -420,18 +420,19 @@ class Visualisation:
                 num_workers=NUM_WORKERS
             )
         elif data_source == 'fresh_dataset':  # dataset mode
-            if True:
+            if False:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="exp",
                     data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
                     apply_augmentations=False,
                 )
-            if False:
+            if True:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="sim",
                     data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
+                    # data_dir='difftactile/output/training_data/pickle_20250901_115841/',
                     apply_augmentations=True,
                 )
             train_dataset, _, _ = full_dataset.create_splits(
