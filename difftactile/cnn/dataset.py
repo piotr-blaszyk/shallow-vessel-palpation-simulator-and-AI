@@ -825,7 +825,8 @@ class MyDataset(torch.utils.data.Dataset):
         self, clip_points, clip_labels, clip_labels_mask, ground_truth_labels_in=None
     ):
         pos = self.get_pos(clip_points)
-        mask = self.get_mask()
+        train_mask = self.get_train_mask()
+        test_mask = self.get_test_mask()
         y = self.get_y(
             clip_points,
             clip_labels,
@@ -890,7 +891,8 @@ class MyDataset(torch.utils.data.Dataset):
         )
         pyg_data = self.get_pyg_data(
             pos=pos,
-            mask=mask,
+            train_mask=train_mask,
+            test_mask=test_mask,
             y=y,
             empty_x=empty_x,
             regular_nodes=regular_nodes,
@@ -935,19 +937,24 @@ class MyDataset(torch.utils.data.Dataset):
                 y[t * self.num_nodes : (t + 1) * self.num_nodes] = y_t
             return y
 
-    def get_mask(self):
-        mask = np.zeros(shape=(self.clip_len*self.num_nodes,), dtype=bool)
-        k = self.clip_len // 2
-        start = k*self.num_nodes
-        stop = (k+1)*self.num_nodes
-        # mask[start:stop] = True
-        mask[start:start+7] = True
-        return mask
+    def get_test_mask(self):
+        m1 = self.get_central_rings_mask()
+        m2 = self.get_central_frame_mask()
+        return m1 & m2
 
-    # def get_mask_central_rings(self):
-    #     mask = np.zeros(shape=(self.num_nodes,), dtype=bool)
-    #     mask[:7] = True
-    #     return mask
+    def get_train_mask(self):
+        return self.get_central_rings_mask()
+
+    def get_central_frame_mask(self):
+        mask = np.zeros(shape=(self.clip_len,), dtype=bool)
+        k = self.clip_len//2
+        mask[k] = True
+        return np.repeat(mask, self.num_nodes)
+
+    def get_central_rings_mask(self):
+        mask = np.zeros(shape=(self.num_nodes,), dtype=bool)
+        mask[:19] = True
+        return np.tile(mask, self.clip_len)
     
     def get_empty_x(self):
         empty_x = np.zeros(shape=(self.clip_len * (self.num_nodes+1), 0), dtype=float)
@@ -1188,7 +1195,8 @@ class MyDataset(torch.utils.data.Dataset):
     def get_pyg_data(
         self,
         pos,
-        mask,
+        train_mask,
+        test_mask,
         y,
         empty_x,
         regular_nodes,
@@ -1202,7 +1210,8 @@ class MyDataset(torch.utils.data.Dataset):
         edge_attr_global_temporal,
     ):
         pos = torch.tensor(pos, dtype=torch.float)
-        mask = torch.tensor(mask, dtype=torch.bool)
+        train_mask = torch.tensor(train_mask, dtype=torch.bool)
+        test_mask = torch.tensor(test_mask, dtype=torch.bool)
         y = torch.tensor(y, dtype=torch.long)
         empty_x = torch.tensor(empty_x, dtype=torch.float)
         regular_nodes = torch.tensor(regular_nodes, dtype=torch.float)
@@ -1224,7 +1233,8 @@ class MyDataset(torch.utils.data.Dataset):
         )
         pyg_data = Data(
             pos=pos,
-            mask=mask,
+            train_mask=train_mask,
+            test_mask=test_mask,
             y=y,
             x=empty_x,
             regular_nodes=regular_nodes,
