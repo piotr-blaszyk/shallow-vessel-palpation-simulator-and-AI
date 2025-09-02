@@ -268,13 +268,15 @@ class GNN(pl.LightningModule):
         out = self(x, edge_index, edge_attr)
         out = out.squeeze(-1)
         out = out[x_mask]
-        if stage == 'val' or stage == 'test':
-            mask = batch.test_mask
+        if True or stage == 'val' or stage == 'test':
+            mask = batch.mask
+            out_unmasked = out
+            out_masked = out[mask]
+            y_masked = batch.y[mask]
         else:
-            mask = batch.train_mask
-        out_unmasked = out
-        out_masked = out[mask]
-        y_masked = batch.y[mask]
+            out_unmasked = out
+            out_masked = out
+            y_masked = batch.y
         probs_unmasked = torch.sigmoid(out_unmasked)
         probs_masked = torch.sigmoid(out_masked)
         focal_loss = self.focal_loss(out_masked, y_masked.float())
@@ -320,6 +322,9 @@ class GNN(pl.LightningModule):
         return merged, mask
 
     def my_prepare_data(self, batch, batch_size):
+        pos = batch.pos
+        mask = batch.mask
+        y = batch.y
         regular_nodes = batch.regular_nodes
 
         edge_index_spatial = batch.edge_index_spatial
@@ -810,7 +815,7 @@ def compute_alpha(dataset, ixs):
     num_pos = 0
     num_neg = 0
     for ix in tqdm(ixs, desc="Computing stats for alpha"):
-        pyg, labels_images, poses, metadata, frame_ix = dataset[ix]
+        pyg, _ = dataset[ix]
         y = pyg.y.cpu().numpy()
         pos = y.sum()
         neg = y.shape[0] - pos
@@ -827,7 +832,7 @@ def compute_alpha(dataset, ixs):
 def compute_mean_std(dataset, ixs, key):
     vals = []
     for ix in tqdm(ixs, desc=f"Computing stats for {key}"):
-        pyg, labels_images, poses, metadata, frame_ix = dataset[ix]
+        pyg, _ = dataset[ix]
         val = pyg[key].cpu().numpy()
         vals.append(val)
     vals = np.array(vals)

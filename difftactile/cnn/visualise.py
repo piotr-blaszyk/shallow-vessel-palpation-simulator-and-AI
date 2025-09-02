@@ -529,6 +529,8 @@ class Visualisation:
                     out = model(x, edge_index, edge_attr)
                     out = out.squeeze(-1)  # Remove the channel dimension
                     out = out[x_mask]
+                    # mask = data.mask
+                    # out = out[mask]
                     probs = torch.sigmoid(out)
                     pred = (probs > 0.5).float()
 
@@ -602,13 +604,12 @@ class Visualisation:
                 start_idx = frame_idx * num_nodes_per_frame
                 end_idx = (frame_idx + 1) * num_nodes_per_frame
                 ground_truth = data.y[start_idx:end_idx].cpu().numpy()
-                my_mask = data.train_mask[start_idx:end_idx].cpu().numpy()
                 
                 # Draw markers on ground truth image
                 for point_idx, point in enumerate(points):
                     if 0 <= point[0] < w and 0 <= point[1] < h:
                         center = (int(point[0]), int(point[1]))
-                        if ground_truth[point_idx] == 1 and my_mask[point_idx]:
+                        if ground_truth[point_idx] == 1:
                             # Magenta (BGR = (255, 0, 255)) for positive class
                             cv2.circle(ground_truth_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
                         else:
@@ -623,7 +624,7 @@ class Visualisation:
                     for point_idx, point in enumerate(points):
                         if 0 <= point[0] < w and 0 <= point[1] < h:
                             center = (int(point[0]), int(point[1]))
-                            if frame_pred[point_idx] == 1 and my_mask[point_idx]:
+                            if frame_pred[point_idx] == 1:
                                 # Magenta (BGR = (255, 0, 255)) for positive class
                                 cv2.circle(prediction_stack[frame_idx], center, MARKER_RADIUS, (255, 0, 255), -1, cv2.LINE_AA)
                             else:
@@ -632,37 +633,35 @@ class Visualisation:
                     
                     # Draw markers on soft prediction image
                     for point_idx, point in enumerate(points):
-                        if my_mask[point_idx]:
-                            if 0 <= point[0] < w and 0 <= point[1] < h:
-                                center = (int(point[0]), int(point[1]))
-                                prob = frame_probs[point_idx]
-                                intensity = int(255 * prob)  # Scale to [0,255]
-                                # Use white color with varying intensity for all points
-                                cv2.circle(soft_prediction_stack[frame_idx], center, MARKER_RADIUS, (intensity, intensity, intensity), -1, cv2.LINE_AA)
+                        if 0 <= point[0] < w and 0 <= point[1] < h:
+                            center = (int(point[0]), int(point[1]))
+                            prob = frame_probs[point_idx]
+                            intensity = int(255 * prob)  # Scale to [0,255]
+                            # Use white color with varying intensity for all points
+                            cv2.circle(soft_prediction_stack[frame_idx], center, MARKER_RADIUS, (intensity, intensity, intensity), -1, cv2.LINE_AA)
                     
                     # Draw confusion matrix visualization
                     for point_idx, point in enumerate(points):
-                        if my_mask[point_idx]:
-                            if 0 <= point[0] < w and 0 <= point[1] < h:
-                                center = (int(point[0]), int(point[1]))
-                                pred_val = frame_pred[point_idx]
-                                true_val = ground_truth[point_idx]
-                                
-                                # Color coding:
-                                # TP: Lime Green (50, 205, 50)
-                                # TN: Yellow (255, 255, 0)
-                                # FP: Red (255, 0, 0)
-                                # FN: Bright Blue (0, 0, 255)
-                                if pred_val == 1 and true_val == 1:  # TP
-                                    color = (50, 205, 50)
-                                elif pred_val == 0 and true_val == 0:  # TN
-                                    color = (0, 255, 255)  # BGR format
-                                elif pred_val == 1 and true_val == 0:  # FP
-                                    color = (0, 0, 255)
-                                else:  # FN
-                                    color = (255, 0, 0)
-                                
-                                cv2.circle(confusion_matrix_stack[frame_idx], center, MARKER_RADIUS, color, -1, cv2.LINE_AA)
+                        if 0 <= point[0] < w and 0 <= point[1] < h:
+                            center = (int(point[0]), int(point[1]))
+                            pred_val = frame_pred[point_idx]
+                            true_val = ground_truth[point_idx]
+                            
+                            # Color coding:
+                            # TP: Lime Green (50, 205, 50)
+                            # TN: Yellow (255, 255, 0)
+                            # FP: Red (255, 0, 0)
+                            # FN: Bright Blue (0, 0, 255)
+                            if pred_val == 1 and true_val == 1:  # TP
+                                color = (50, 205, 50)
+                            elif pred_val == 0 and true_val == 0:  # TN
+                                color = (0, 255, 255)  # BGR format
+                            elif pred_val == 1 and true_val == 0:  # FP
+                                color = (0, 0, 255)
+                            else:  # FN
+                                color = (255, 0, 0)
+                            
+                            cv2.circle(confusion_matrix_stack[frame_idx], center, MARKER_RADIUS, color, -1, cv2.LINE_AA)
                     
                     # Draw statistics for current frame
                     stats_img = stats_stack[frame_idx]
@@ -875,7 +874,7 @@ class Visualisation:
 def main():
     v = Visualisation()
     v.visualise_gnn(
-        mode='predictions', 
+        mode='dataset', 
         data_source='fresh_dataset'
     )
 
