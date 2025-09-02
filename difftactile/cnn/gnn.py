@@ -12,6 +12,8 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GINEConv
 from tqdm import tqdm
 from torch_geometric.nn import global_add_pool
+# from scipy.optimize import linear_sum_assignment
+from torch_linear_assignment import batch_linear_assignment, assignment_to_indices
 
 from difftactile.cnn.common import *
 from difftactile.cnn.dataset import *
@@ -254,7 +256,7 @@ class GNN(pl.LightningModule):
             self.dropout,
         )
 
-    def forward(self, x, edge_index, edge_attr, batch):
+    def forward(self, x, edge_index, edge_attr, batch, num_graphs):
         h0 = x
         h1 = self.block1(h0, edge_index, edge_attr)
         h2 = self.block2(h1, edge_index, edge_attr)
@@ -266,50 +268,120 @@ class GNN(pl.LightningModule):
         h3 = self.skip3(h3)
 
         concat_features = torch.cat([h0, h1, h2, h3], dim=-1)
+        k = self.clip_len
+        my_batch_ix = torch.cat([torch.arange(k).repeat_interleave(127), torch.arange(k)])
+        my_batch_ix = torch.cat([my_batch_ix + i*k for i in range(num_graphs)])
         concat_features = global_add_pool(
             x=concat_features, 
-            batch=batch,
+            batch=my_batch_ix,
         )
 
-        out = self.mlp_output_head(concat_features)
-        return out
+        classification_out = self.mlp_classification_head(concat_features)
+        regression_out = self.mlp_regression_head(concat_features)
+        return classification_out, regression_out
 
     def shared_step(self, getitem_output, stage):
         batch, empty_visualisation_tensor, poses, metadata, frame_ix = getitem_output
         x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = self.my_prepare_data(batch, batch.num_graphs)
-        out = self(x, edge_index, edge_attr, batch.batch)
-        out = out.squeeze(-1)
-        out = out[x_mask]
-        if True or stage == 'val' or stage == 'test':
-            mask = batch.mask
-            out_unmasked = out
-            out_masked = out[mask]
-            y_masked = batch.y[mask]
-        else:
-            out_unmasked = out
-            out_masked = out
-            y_masked = batch.y
-        probs_unmasked = torch.sigmoid(out_unmasked)
-        probs_masked = torch.sigmoid(out_masked)
-        focal_loss = self.focal_loss(out_masked, y_masked.float())
-        loss = (
-            self.focal_weight*focal_loss
-        )
-        self.focal_loss_acc[stage] += focal_loss.detach()
+        class_out, reg_out = self(x, edge_index, edge_attr, batch.batch, batch.num_graphs)
+
+        total_cls_loss, total_reg_loss = 0.0, 0.0
+
+        for g in range(batch.num_graphs*self.clip_len):
+            class_out_cur = class_out[g]
+            reg_out_cur = reg_out[g]
+            class_gt_cur = batch.vein_classification[g]
+            reg_gt_cur = batch.vein_regression[g]
+            reg_gt_cur = reg_gt_cur.flatten()
+            class_loss, reg_loss = self.compute_dense_loss(
+                class_out_cur,
+                reg_out_cur,
+                class_gt_cur,
+                reg_gt_cur,
+            )
+            total_cls_loss += class_loss
+            total_reg_loss += reg_loss
+
+        total_loss = 1.0 * total_cls_loss + 1.0 * total_reg_loss
+
+        # out = out.squeeze(-1)
+        # out = out[x_mask]
+        # if stage == 'val' or stage == 'test':
+        #     mask = batch.mask
+        #     out_unmasked = out
+        #     out_masked = out[mask]
+        #     y_masked = batch.y[mask]
+        # else:
+        #     out_unmasked = out
+        #     out_masked = out
+        #     y_masked = batch.y
+        # probs_unmasked = torch.sigmoid(out_unmasked)
+        # probs_masked = torch.sigmoid(out_masked)
+        # focal_loss = self.focal_loss(out_masked, y_masked.float())
+        # loss = (
+        #     self.focal_weight*focal_loss
+        # )
+        loss = total_loss
+        # self.focal_loss_acc[stage] += focal_loss.detach()
         self.total_loss_acc[stage] += loss.detach()
         self.num_batches[stage] += 1
-        preds_masked = (probs_masked > 0.5).to(y_masked)
+        # preds_masked = (probs_masked > 0.5).to(y_masked)
 
-        self.update_iou_acc(
-            preds_masked,
-            y_masked,
-            stage,
-        )
+        # self.update_iou_acc(
+        #     preds_masked,
+        #     y_masked,
+        #     stage,
+        # )
 
-        self.log(f"{stage}/focal_loss", focal_loss, on_step=True, on_epoch=True, prog_bar=False, batch_size=batch.num_graphs)
-        self.log_per_batch_iou(batch, stage, preds_masked, y_masked)
+        # self.log(f"{stage}/focal_loss", focal_loss, on_step=True, on_epoch=True, prog_bar=False, batch_size=batch.num_graphs)
+        # self.log_per_batch_iou(batch, stage, preds_masked, y_masked)
 
         return loss
+
+    def compute_dense_loss(self, class_out_cur, reg_out_cur, class_gt_cur, reg_gt_cur):
+        """
+        Args:
+            class_out_cur: [num_slots] raw logits (float tensor)
+            reg_out_cur: [num_slots*num_reg_features] raw regression outputs
+            class_gt_cur: [num_slots] {0,1} float tensor
+            reg_gt_cur: [num_slots*num_reg_features] flattened ground truth regression
+        Returns:
+            class_loss: scalar BCE loss
+            reg_loss: scalar SmoothL1 loss
+        """
+
+        num_slots = class_out_cur.size(0)
+        num_reg_features = reg_gt_cur.numel() // num_slots
+
+        # Reshape regression tensors to [num_slots, num_reg_features]
+        reg_out_cur = reg_out_cur.view(num_slots, num_reg_features)
+        reg_gt_cur = reg_gt_cur.view(num_slots, num_reg_features)
+
+        # --- Hungarian matching ---
+        # Compute cost matrix: L1 distance between each predicted slot and each GT slot
+        # cost[i,j] = L1 distance between predicted slot i and GT slot j
+        cost_matrix = torch.cdist(reg_out_cur, reg_gt_cur, p=2)  # [num_slots, num_slots]
+
+        cost_matrix = cost_matrix.unsqueeze(0)
+        # Hungarian assignment
+        # pred_indices, gt_indices = linear_sum_assignment(cost_matrix)
+        assignment = batch_linear_assignment(cost_matrix)
+        pred_indices, gt_indices = assignment_to_indices(assignment)
+
+        # --- Classification loss ---
+        # Match predicted classification logits to the corresponding ground truth via Hungarian assignment
+        class_out_matched = class_out_cur[pred_indices]
+        class_gt_matched = class_gt_cur[gt_indices]
+
+        # BCE loss expects raw logits
+        class_loss = F.binary_cross_entropy_with_logits(class_out_matched, class_gt_matched)
+
+        # --- Regression loss ---
+        reg_out_matched = reg_out_cur[pred_indices]
+        reg_gt_matched = reg_gt_cur[gt_indices]
+        reg_loss = F.smooth_l1_loss(reg_out_matched, reg_gt_matched)
+
+        return class_loss, reg_loss
 
     def merge_tensors_unvectorised(self, x, y, n, k):
         b = x.shape[0] // n

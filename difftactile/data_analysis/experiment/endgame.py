@@ -510,10 +510,10 @@ class Endgame:
             )
 
     def add_dense_line_data(self):
-        input_dir = os.path.join(self.root, f"{self.dir}_sim_format_poses")
-        output_dir = os.path.join(self.root, f"{self.dir}_dense")
-        # input_dir = 'difftactile/output/training_data/pickle_20250901_220921_reordered'
-        # output_dir = 'difftactile/output/training_data/pickle_20250901_220921_reordered_dense'
+        # input_dir = os.path.join(self.root, f"{self.dir}_sim_format_poses")
+        # output_dir = os.path.join(self.root, f"{self.dir}_dense")
+        input_dir = 'difftactile/output/training_data/pickle_20250901_220921_reordered'
+        output_dir = 'difftactile/output/training_data/pickle_20250901_220921_reordered_dense'
         os.makedirs(output_dir, exist_ok=True)
 
         files = sorted(glob.glob(os.path.join(input_dir, "*.npz")))
@@ -530,13 +530,13 @@ class Endgame:
             markers_mask = data["markers_mask"]
             vein_polyline = data["vein_polyline"]          # (frames, veins, pts, 2)
             vein_polyline_mask = data["vein_polyline_mask"]  # (frames, veins, pts)
-            poses = data["poses"]
-            metadata = data["metadata"]
+            # poses = data["poses"]
+            # metadata = data["metadata"]
 
             num_frames, max_num_veins, num_points, _ = vein_polyline.shape
 
-            vein_classification = np.zeros((num_frames, max_num_veins), dtype=np.int32)
-            vein_regression = np.zeros((num_frames, max_num_veins, 3), dtype=np.float32)
+            vein_classification = np.zeros((num_frames, 4), dtype=np.int32)
+            vein_regression = np.zeros((num_frames, 4, 3), dtype=np.float32)
 
             # You should already know cx, cy
             cx, cy = self.cx, self.cy  # Make sure these exist in your class
@@ -583,8 +583,8 @@ class Endgame:
                 markers_mask=markers_mask,
                 vein_polyline=vein_polyline,
                 vein_polyline_mask=vein_polyline_mask,
-                poses=poses,
-                metadata=metadata,
+                # poses=poses,
+                # metadata=metadata,
                 vein_classification=vein_classification,
                 vein_regression=vein_regression,
             )
