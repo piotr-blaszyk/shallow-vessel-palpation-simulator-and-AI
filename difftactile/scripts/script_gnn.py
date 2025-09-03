@@ -2,5 +2,5 @@ from difftactile.cnn.gnn import *
 
 if __name__ == '__main__':
     # pass
-    main()
-    # choose_optimal_threshold()
+    # main()
+    evaluate_and_plot_roc()

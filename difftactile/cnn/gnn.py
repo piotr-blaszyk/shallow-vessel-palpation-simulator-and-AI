@@ -12,6 +12,8 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GINEConv
 from tqdm import tqdm
 from torch_geometric.nn import global_add_pool
+from sklearn.metrics import roc_auc_score, roc_curve
+import matplotlib.pyplot as plt
 
 from difftactile.cnn.common import *
 from difftactile.cnn.dataset import *
@@ -82,7 +84,7 @@ class MyBlock(nn.Module):
         out_dim,
     ):
         super(MyBlock, self).__init__()
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.3)
         self.conv = GINEConv(
             nn.Sequential(
                 nn.Linear(in_dim, latent_dim),
@@ -192,8 +194,8 @@ class GNN(pl.LightningModule):
             out_dim=output_dim,
         )
 
-        self.dropout = nn.Dropout(p=0.2)
-        self.input_dropout = nn.Dropout(p=0.0)
+        self.dropout = nn.Dropout(p=0.3)
+        self.input_dropout = nn.Dropout(p=0.1)
 
         self.skip0 = self.skip_layer(input_dim)
         self.skip1 = self.skip_layer(latent_dim)
@@ -312,10 +314,10 @@ class GNN(pl.LightningModule):
         
         for i in range(b):
             merged.append(x_reshaped[i])
-            mask.append(torch.ones(n, dtype=torch.bool))   # True for x
+            mask.append(torch.ones(n, dtype=torch.bool))
             
             merged.append(y_reshaped[i])
-            mask.append(torch.zeros(k, dtype=torch.bool))  # False for y
+            mask.append(torch.zeros(k, dtype=torch.bool))
         
         merged = torch.cat(merged, dim=0)
         mask = torch.cat(mask, dim=0)
@@ -373,11 +375,6 @@ class GNN(pl.LightningModule):
             global_spatial_edges,
             global_temporal_edges,
         ], dim=0)
-
-        # x = torch.cat([
-        #     regular_nodes,
-        #     global_nodes,
-        # ], dim=0)
 
         x, x_mask = self.merge_tensors_unvectorised(
             regular_nodes,
@@ -468,7 +465,7 @@ class GNN(pl.LightningModule):
     
     def my_on_epoch_end(self, stage: str):
         log_on_prog_bar = stage == 'val'
-        # log_on_prog_bar = False
+
         ious = self.compute_ious_acc(stage)
         self.log_dict(
             {f"{stage}_iou/{k}": v for k, v in ious.items()},
@@ -761,7 +758,7 @@ def main():
     )
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
-        accelerator='auto',  # Force CPU for better error messages
+        accelerator='auto',
         enable_checkpointing=True,
         logger=logger,
         log_every_n_steps=1,
@@ -780,12 +777,6 @@ def main():
     )
     start = time.perf_counter()
     trainer.fit(model, datamodule=data_module)
-
-    # Load the best model according to validation performance
-    # best_model_path = checkpoint_cb.best_model_path
-    # print(f"\nLoading best checkpoint from {best_model_path}")
-    # best_model = GNN.load_from_checkpoint(best_model_path)
-    # best_model.set_stats(all_stats[target_difficulty])
 
     print("\nTesting on simulation data:")
     trainer.test(model, datamodule=data_module)
@@ -856,3 +847,92 @@ def compute_mean_std(dataset, ixs, key):
         f"{key}_mean": vals_mean,
         f"{key}_std": vals_std,
     }
+
+def evaluate_and_plot_roc():
+    model = GNN()
+    model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn))
+    model.eval()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
+        test_data = pickle.load(f)
+    all_stats = test_data['dataset_stats']
+
+    full_dataset = MyDataset(
+        scheme="single_dataset",
+        sim_exp="exp",
+        data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+        apply_augmentations=False,
+    )
+    train_dataset, _, _ = full_dataset.create_splits(
+        train_size=1.0,
+        val_size=0.0,
+        test_size=0.0
+    )
+    target_difficulty = 1.0
+    stats = all_stats[target_difficulty]
+    train_dataset.set_stats(stats)
+    train_dataset.set_difficulty_level(target_difficulty)
+    train_dataset.eval()
+    data_loader = DataLoader(
+        train_dataset,
+        batch_size=16,
+        shuffle=False,
+        num_workers=16,
+        pin_memory=False,
+        persistent_workers=False,
+    )
+
+    all_probs = []
+    all_labels = []
+
+    with torch.no_grad():
+        for batch, labels_images, poses, metadata, frame_ix in data_loader:
+            batch = batch.to(device)
+
+            x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(batch, batch.num_graphs)
+            out = model(x, edge_index, edge_attr, batch.batch)
+            out = out.squeeze(-1)
+            out = out[x_mask]
+            mask = batch.mask
+            out = out[mask]
+            probs = torch.sigmoid(out)
+            labels = batch.y[mask]
+            all_probs.append(probs.cpu())
+            all_labels.append(labels.cpu())
+
+    all_probs = torch.cat(all_probs).numpy()
+    all_labels = torch.cat(all_labels).numpy()
+
+    auc = roc_auc_score(all_labels, all_probs)
+    fpr, tpr, _ = roc_curve(all_labels, all_probs)
+
+    thresholds = np.linspace(0.0, 1.0, 20)
+    tpr_list, fpr_list = [], []
+    for thr in thresholds:
+        preds = (all_probs >= thr).astype(int)
+        tp = np.sum((preds == 1) & (all_labels == 1))
+        fp = np.sum((preds == 1) & (all_labels == 0))
+        tn = np.sum((preds == 0) & (all_labels == 0))
+        fn = np.sum((preds == 0) & (all_labels == 1))
+        tpr_list.append(tp / (tp + fn) if (tp + fn) > 0 else 0.0)
+        fpr_list.append(fp / (fp + tn) if (fp + tn) > 0 else 0.0)
+
+    plt.figure(figsize=(7, 6))
+    plt.plot(fpr, tpr, label=f"ROC curve (AUC = {auc:.3f})", alpha=0.8)
+    plt.scatter(fpr_list, tpr_list, color="red", s=30, label="20 thresholds")
+
+    for thr, x, y in zip(thresholds, fpr_list, tpr_list):
+        plt.text(x, y, f"{thr:.2f}", fontsize=8, ha="left", va="bottom")
+
+    plt.plot([0, 1], [0, 1], "k--", alpha=0.5)
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve for Node Classification GNN")
+    plt.legend(loc="lower right")
+    plt.grid(True, alpha=0.3)
+    plt.savefig('difftactile/output/roc_curve.pdf', format="pdf", dpi=300)
+    plt.show()
+
+    return auc

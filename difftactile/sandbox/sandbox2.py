@@ -1,90 +1,52 @@
-import os
-import glob
+from sklearn.metrics import roc_auc_score, roc_curve
+import matplotlib.pyplot as plt
 import numpy as np
-import math
 
-class Endgame:
-    # ... other methods ...
+def evaluate_and_plot_roc(model, dataloader, device="cpu"):
+    model.eval()
+    all_probs = []
+    all_labels = []
 
-    def add_dense_line_data(self):
-        input_dir = os.path.join(self.root, f"{self.dir}_sim_format_poses")
-        output_dir = os.path.join(self.root, f"{self.dir}_dense")
-        os.makedirs(output_dir, exist_ok=True)
+    with torch.no_grad():
+        for batch in dataloader:
+            batch = batch.to(device)
+            out = model(batch)  # shape: [num_nodes, num_classes]
+            probs = torch.softmax(out, dim=-1)[:, 1]  # probability of class=1
+            labels = batch.y  # true labels per node
+            all_probs.append(probs.cpu())
+            all_labels.append(labels.cpu())
 
-        files = sorted(glob.glob(os.path.join(input_dir, "*.npz")))
-        if not files:
-            print("No sim_format_poses npz files found.")
-            return
+    all_probs = torch.cat(all_probs).numpy()
+    all_labels = torch.cat(all_labels).numpy()
 
-        for path in files:
-            base = os.path.basename(path)
-            data = np.load(path)
+    # Compute AUC
+    auc = roc_auc_score(all_labels, all_probs)
 
-            # Extract existing arrays
-            markers = data["markers"]
-            markers_mask = data["markers_mask"]
-            vein_polyline = data["vein_polyline"]          # (frames, veins, pts, 2)
-            vein_polyline_mask = data["vein_polyline_mask"]  # (frames, veins, pts)
-            poses = data["poses"]
-            metadata = data["metadata"]
+    # Compute ROC curve (with sklearn default 100 thresholds)
+    fpr, tpr, _ = roc_curve(all_labels, all_probs)
 
-            num_frames, max_num_veins, num_points, _ = vein_polyline.shape
+    # Now compute TPR/FPR manually for 20 thresholds
+    thresholds = np.linspace(0.0, 1.0, 20)
+    tpr_list, fpr_list = [], []
+    for thr in thresholds:
+        preds = (all_probs >= thr).astype(int)
+        tp = np.sum((preds == 1) & (all_labels == 1))
+        fp = np.sum((preds == 1) & (all_labels == 0))
+        tn = np.sum((preds == 0) & (all_labels == 0))
+        fn = np.sum((preds == 0) & (all_labels == 1))
+        tpr_list.append(tp / (tp + fn) if (tp + fn) > 0 else 0.0)
+        fpr_list.append(fp / (fp + tn) if (fp + tn) > 0 else 0.0)
 
-            vein_classification = np.zeros((num_frames, max_num_veins), dtype=np.int32)
-            vein_regression = np.zeros((num_frames, max_num_veins, 3), dtype=np.float32)
+    # Plot
+    plt.figure(figsize=(7, 6))
+    plt.plot(fpr, tpr, label=f"ROC curve (AUC = {auc:.3f})", alpha=0.8)
+    plt.scatter(fpr_list, tpr_list, color="red", s=30, label="20 thresholds")
+    plt.plot([0, 1], [0, 1], "k--", alpha=0.5)
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve for Node Classification GNN")
+    plt.legend(loc="lower right")
+    plt.grid(True, alpha=0.3)
+    plt.show()
 
-            # You should already know cx, cy
-            cx, cy = self.cx, self.cy  # Make sure these exist in your class
-
-            for t in range(num_frames):
-                for i in range(max_num_veins):
-                    vein = vein_polyline[t, i][vein_polyline_mask[t, i]]
-
-                    if len(vein) < 2:
-                        # Not enough points → no vein
-                        vein_classification[t, i] = 0
-                        vein_regression[t, i] = [0, 0, 0]
-                        continue
-
-                    # Compute pairwise distances to find furthest apart points
-                    dmax = -1
-                    p1 = p2 = None
-                    for a in range(len(vein)):
-                        for b in range(a + 1, len(vein)):
-                            d = np.linalg.norm(vein[a] - vein[b])
-                            if d > dmax:
-                                dmax = d
-                                p1, p2 = vein[a], vein[b]
-
-                    # Construct vector (dx, dy)
-                    dx, dy = p2 - p1
-                    theta = math.atan2(dy, dx)
-
-                    # cos(2θ), sin(2θ)
-                    cos2 = math.cos(2 * theta)
-                    sin2 = math.sin(2 * theta)
-
-                    # Line equation: y = m(x - x0) + y0
-                    if dx != 0:
-                        m = dy / dx
-                        y_intercept = m * (cx - p1[0]) + p1[1]
-                    else:
-                        y_intercept = cy  # vertical line, intersect at cy
-
-                    vein_classification[t, i] = 1
-                    vein_regression[t, i] = [cos2, sin2, y_intercept]
-
-            # Save with extra fields
-            out_path = os.path.join(output_dir, base)
-            np.savez(
-                out_path,
-                markers=markers,
-                markers_mask=markers_mask,
-                vein_polyline=vein_polyline,
-                vein_polyline_mask=vein_polyline_mask,
-                poses=poses,
-                metadata=metadata,
-                vein_classification=vein_classification,
-                vein_regression=vein_regression,
-            )
-            print(f"Saved dense file: {out_path}")
+    return auc

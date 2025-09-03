@@ -527,7 +527,7 @@ class Visualisation:
                 # Get predictions
                 with torch.no_grad():
                     batch = batch.to(device)
-                    x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(batch, 1)
+                    x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(batch, batch.num_graphs)
                     out = model(x, edge_index, edge_attr, batch.batch)
                     out = out.squeeze(-1)  # Remove the channel dimension
                     out = out[x_mask]
