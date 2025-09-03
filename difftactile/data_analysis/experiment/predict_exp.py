@@ -153,7 +153,7 @@ class PredictExp:
         )
     
     def predict_clip(self, i):
-        pyg, _, poses, metadata, frame_ix = self.dataset[i]
+        batch, empty_visualisation_tensor, poses, metadata, frame_ix = self.dataset[i]
         poses = poses.numpy()
         metadata = metadata.numpy()
         frame_ix = frame_ix.item()
@@ -166,19 +166,19 @@ class PredictExp:
         ):
             return
         with torch.no_grad():
-            pyg = pyg.to(self.device)
-            x_px, x_mask, edge_index, edge_index_regular_nodes, edge_attr = self.model.my_prepare_data(pyg, 1)
-            out = self.model(x_px, edge_index, edge_attr)
+            batch = batch.to(self.device)
+            x_px, x_mask, edge_index, edge_index_regular_nodes, edge_attr = self.model.my_prepare_data(batch, 1)
+            out = self.model(x_px, edge_index, edge_attr, batch.batch)
             out = out.squeeze(-1)
             out = out[x_mask]
 
-            mask = pyg.mask
+            mask = batch.mask
             out = out[mask]
-            y_px = pyg.y[mask]
-            pos = pyg.pos[mask]
+            y_px = batch.y[mask]
+            pos = batch.pos[mask]
 
             probs = torch.sigmoid(out)
-            preds = (probs > 0.9).float()
+            preds = (probs > 0.6).float()
             probs = probs.cpu().numpy().astype(np.float32)
             preds = preds.cpu().numpy().astype(np.float32)
         points = pos.cpu().numpy().astype(np.float32)

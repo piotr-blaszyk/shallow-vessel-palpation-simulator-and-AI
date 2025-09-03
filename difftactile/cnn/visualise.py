@@ -425,7 +425,6 @@ class Visualisation:
                     scheme="single_dataset",
                     sim_exp="exp",
                     data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
-                    # data_dir='difftactile/manual_or_experimental_data/endgame/20250901-131547_sparse_dense_sparse_validation/',
                     apply_augmentations=False,
                 )
             if False:
@@ -433,7 +432,6 @@ class Visualisation:
                     scheme="single_dataset",
                     sim_exp="sim",
                     data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
-                    # data_dir='difftactile/output/training_data/pickle_20250901_115841/',
                     apply_augmentations=True,
                 )
             train_dataset, _, _ = full_dataset.create_splits(
@@ -534,7 +532,7 @@ class Visualisation:
                     # mask = data.mask
                     # out = out[mask]
                     probs = torch.sigmoid(out)
-                    pred = (probs > 0.5).float()
+                    pred = (probs > 0.9).float()
 
                     assert batch.num_graphs == 1
                     
