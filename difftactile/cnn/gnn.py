@@ -672,6 +672,7 @@ class MyDataModule(pl.LightningDataModule):
 
 
 def main():
+    return
     BATCH_SIZE = SYSTEM_PARAMS.gnn.batch_size
     NUM_EPOCHS = SYSTEM_PARAMS.gnn.num_epochs
     NUM_WORKERS = SYSTEM_PARAMS.gnn.num_workers
