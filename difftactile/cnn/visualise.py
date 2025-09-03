@@ -424,8 +424,8 @@ class Visualisation:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="exp",
-                    # data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
-                    data_dir='difftactile/manual_or_experimental_data/endgame/20250901-131547_sparse_dense_sparse_validation/',
+                    data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+                    # data_dir='difftactile/manual_or_experimental_data/endgame/20250901-131547_sparse_dense_sparse_validation/',
                     apply_augmentations=False,
                 )
             if False:
@@ -478,7 +478,7 @@ class Visualisation:
 
         while True:  # Main loop for continuous data loading
             try:
-                data, labels_images, poses, metadata, frame_ix = next(data_iter)
+                batch, labels_images, poses, metadata, frame_ix = next(data_iter)
                 poses = poses.numpy()[0]
                 metadata = metadata.numpy()[0]
                 frame_ix = frame_ix.item()
@@ -526,9 +526,9 @@ class Visualisation:
             if mode == 'predictions':
                 # Get predictions
                 with torch.no_grad():
-                    data = data.to(device)
-                    x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(data, 1)
-                    out = model(x, edge_index, edge_attr)
+                    batch = batch.to(device)
+                    x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(batch, 1)
+                    out = model(x, edge_index, edge_attr, batch.batch)
                     out = out.squeeze(-1)  # Remove the channel dimension
                     out = out[x_mask]
                     # mask = data.mask
@@ -536,7 +536,7 @@ class Visualisation:
                     probs = torch.sigmoid(out)
                     pred = (probs > 0.5).float()
 
-                    assert data.num_graphs == 1
+                    assert batch.num_graphs == 1
                     
                     # Compute IoU scores per frame
                     num_nodes_per_frame = SYSTEM_PARAMS.vitactip.num_markers
@@ -545,14 +545,14 @@ class Visualisation:
                         start_idx = frame_idx * num_nodes_per_frame
                         end_idx = (frame_idx + 1) * num_nodes_per_frame
                         frame_pred = pred[start_idx:end_idx]
-                        frame_truth = data.y[start_idx:end_idx]
+                        frame_truth = batch.y[start_idx:end_idx]
                         frame_metrics = GNN.iou_score(frame_pred, frame_truth)
                         fg_iou = frame_metrics[1]
                         bg_iou = frame_metrics[0]
                         
                         # Compute confusion matrix
                         frame_pred = pred[start_idx:end_idx].cpu().numpy()
-                        frame_truth = data.y[start_idx:end_idx].cpu().numpy()
+                        frame_truth = batch.y[start_idx:end_idx].cpu().numpy()
                         tp = np.sum((frame_pred == 1) & (frame_truth == 1))
                         tn = np.sum((frame_pred == 0) & (frame_truth == 0))
                         fp = np.sum((frame_pred == 1) & (frame_truth == 0))
@@ -577,7 +577,7 @@ class Visualisation:
                 # Get marker positions for current frame
                 start_idx = frame_idx * num_nodes_per_frame
                 end_idx = (frame_idx + 1) * num_nodes_per_frame
-                frame_points = data.pos[start_idx:end_idx].cpu().numpy()[:, :2]
+                frame_points = batch.pos[start_idx:end_idx].cpu().numpy()[:, :2]
                 
                 # Transform from (-1,1) to (0,200) range
                 points = (frame_points + 3) / 6 * w  # Now in range (0,200)
@@ -605,7 +605,7 @@ class Visualisation:
                 # Get predictions for current frame
                 start_idx = frame_idx * num_nodes_per_frame
                 end_idx = (frame_idx + 1) * num_nodes_per_frame
-                ground_truth = data.y[start_idx:end_idx].cpu().numpy()
+                ground_truth = batch.y[start_idx:end_idx].cpu().numpy()
                 
                 # Draw markers on ground truth image
                 for point_idx, point in enumerate(points):
@@ -876,7 +876,7 @@ class Visualisation:
 def main():
     v = Visualisation()
     v.visualise_gnn(
-        mode='dataset', 
+        mode='predictions', 
         data_source='fresh_dataset'
     )
 

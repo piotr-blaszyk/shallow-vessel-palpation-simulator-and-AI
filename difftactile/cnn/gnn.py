@@ -82,7 +82,7 @@ class MyBlock(nn.Module):
         out_dim,
     ):
         super(MyBlock, self).__init__()
-        self.dropout = nn.Dropout(p=0.3)
+        self.dropout = nn.Dropout(p=0.2)
         self.conv = GINEConv(
             nn.Sequential(
                 nn.Linear(in_dim, latent_dim),
@@ -192,8 +192,8 @@ class GNN(pl.LightningModule):
             out_dim=output_dim,
         )
 
-        self.dropout = nn.Dropout(p=0.3)
-        self.input_dropout = nn.Dropout(p=0.1)
+        self.dropout = nn.Dropout(p=0.2)
+        self.input_dropout = nn.Dropout(p=0.0)
 
         self.skip0 = self.skip_layer(input_dim)
         self.skip1 = self.skip_layer(latent_dim)
@@ -269,7 +269,7 @@ class GNN(pl.LightningModule):
         out = self(x, edge_index, edge_attr, batch.batch)
         out = out.squeeze(-1)
         out = out[x_mask]
-        if True or stage == 'val' or stage == 'test':
+        if stage == 'val' or stage == 'test':
             mask = batch.mask
             out_unmasked = out
             out_masked = out[mask]
@@ -570,7 +570,7 @@ class GNN(pl.LightningModule):
         return self.get_accumulator(shape=(), dtype=torch.int32)
     
     def get_accumulator(self, shape, dtype):
-        return {k: torch.zeros(shape, dtype=dtype, device='cpu') for k in self.stages_str}
+        return {k: torch.zeros(shape, dtype=dtype, device='cuda:0') for k in self.stages_str}
     
     def init_accumulators(self):
         self.area_pred_acc = self.get_iou_accumulator()
@@ -761,7 +761,7 @@ def main():
     )
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
-        accelerator='cpu',  # Force CPU for better error messages
+        accelerator='auto',  # Force CPU for better error messages
         enable_checkpointing=True,
         logger=logger,
         log_every_n_steps=1,
@@ -776,9 +776,17 @@ def main():
         num_workers=NUM_WORKERS,
         pin_memory=False,
         persistent_workers=False,
+        shuffle=False,
     )
     start = time.perf_counter()
     trainer.fit(model, datamodule=data_module)
+
+    # Load the best model according to validation performance
+    # best_model_path = checkpoint_cb.best_model_path
+    # print(f"\nLoading best checkpoint from {best_model_path}")
+    # best_model = GNN.load_from_checkpoint(best_model_path)
+    # best_model.set_stats(all_stats[target_difficulty])
+
     print("\nTesting on simulation data:")
     trainer.test(model, datamodule=data_module)
     print("\nTesting on experimental data (end game):")
