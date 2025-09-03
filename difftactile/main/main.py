@@ -722,7 +722,12 @@ class Contact:
             [935, 881],
             [1197, 899]
         ], dtype=float)
-        self.exp_vein_3d_coords_E_np = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(self.exp_vein_2d_coords)
+        foo = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface
+        bar = SYSTEM_PARAMS.trajectory.press_depth_slide
+        self.exp_vein_3d_coords_E_np = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(
+            ps=self.exp_vein_2d_coords,
+            dist_lens_to_plane=foo-bar,
+        )
         self.exp_vein_3d_coords_E = ti.Vector.field(
             3, dtype=float, shape=(self.exp_vein_3d_coords_E_np.shape[0],), needs_grad=False
         )
@@ -750,7 +755,12 @@ class Contact:
         validation_point_2d = np.array([
             [1028, 947]
         ])
-        self.validation_point_3d_E_np = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(validation_point_2d)
+        foo = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface
+        bar = SYSTEM_PARAMS.trajectory.press_depth_slide
+        self.validation_point_3d_E_np = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(
+            ps=validation_point_2d,
+            dist_lens_to_plane=foo-bar,
+        )
         with open(SYSTEM_PARAMS.files.validation_point_E, "wb") as f:
             pickle.dump(self.validation_point_3d_E_np, f)
         self.validation_point_3d_E = ti.Vector.field(
@@ -2187,8 +2197,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.phantom_centroid_pose[:3]
-        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
-        self.camera.up(0, 1, 0)
+        self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(3)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -2228,11 +2238,11 @@ class Contact:
             radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
         self.phantom.compute_grid_colours()
-        # self.scene.particles(
-        #     self.phantom.grid_positions,
-        #     per_vertex_color=self.phantom.grid_colours,
-        #     radius=SYSTEM_PARAMS.visualisation.particle_size_normal*5,
-        # )
+        self.scene.particles(
+            self.phantom.grid_positions,
+            per_vertex_color=self.phantom.grid_colours,
+            radius=SYSTEM_PARAMS.visualisation.particle_size_normal*2.5,
+        )
         self.scene.particles(
             self.vein.particles_A,
             color=(1.0, 1.0, 0.0),
@@ -2245,16 +2255,16 @@ class Contact:
         )
         self.update_vitactip_tip_point()
         self.update_clock_arm_points_3d()
-        self.scene.particles(
-            self.vitactip_tip_point,
-            color=(1.0, 0.0, 0.0),
-            radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
-        )
-        self.scene.particles(
-            self.clock_arm_points_3d,
-            per_vertex_color=self.clock_arm_points_per_vertex_color,
-            radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
-        )
+        # self.scene.particles(
+        #     self.vitactip_tip_point,
+        #     color=(1.0, 0.0, 0.0),
+        #     radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
+        # )
+        # self.scene.particles(
+        #     self.clock_arm_points_3d,
+        #     per_vertex_color=self.clock_arm_points_per_vertex_color,
+        #     radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
+        # )
         self.canvas.scene(self.scene)
         self.window.show()
 
@@ -2552,8 +2562,8 @@ class Contact:
                             SYSTEM_PARAMS.contact.num_sub_frames - 1
                         )
                         self.visualisation_update_gui(ts)
-                        # if ts % 10 == 0:
-                        #     self.record_vitactip_mesh()
+                        if ts % 10 == 0:
+                            self.record_vitactip_mesh()
                         # target = self.current_target_idx[None]
                         if (
                             ts > 80
@@ -2570,7 +2580,7 @@ class Contact:
                             break
                     self.write_training_data_to_file(file_num)
                     file_num += 1
-                    # self.write_vitactip_mesh_to_file()
+                    self.write_vitactip_mesh_to_file()
                     
                     self.reset_loss()
                     self.batch_loss.fill(0.0)

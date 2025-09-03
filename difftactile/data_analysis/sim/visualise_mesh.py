@@ -5,6 +5,7 @@ import open3d as o3d
 import pyvista as pv
 import vedo
 from scipy.spatial.distance import pdist
+from scipy.spatial import Delaunay
 
 from difftactile.main.constants import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
@@ -12,7 +13,48 @@ from difftactile.sensor_model.fisheye_model_no_taichi import *
 
 class VisualiseMesh:
     def __init__(self):
-        self.load_endgame_exp_points()
+        self.load_gmsh_data_only()
+        # self.load_vitactip_mesh_video()
+        self.load_is_fixed_layer()
+        self.apply_is_fixed_layer()
+        self.tetrahedra = self.alpha_shape_3d(
+            points=self.points,
+            alpha=5.0,
+        )
+    
+    def alpha_shape_3d(self, points, alpha):
+        if len(points) < 4:
+            raise ValueError("Need at least 4 points")
+
+        delaunay = Delaunay(points)
+        tetrahedra = delaunay.simplices  # (num_tetrahedra, 4)
+
+        A = points[tetrahedra[:,0]]
+        B = points[tetrahedra[:,1]]
+        C = points[tetrahedra[:,2]]
+        D = points[tetrahedra[:,3]]
+
+        # Relative vectors
+        AB, AC, AD = B - A, C - A, D - A
+        AB2 = np.sum(AB**2, axis=1)
+        AC2 = np.sum(AC**2, axis=1)
+        AD2 = np.sum(AD**2, axis=1)
+
+        # Build system: M x = rhs
+        M = np.stack([AB, AC, AD], axis=1)        # (n,3,3)
+        rhs = np.stack([AB2, AC2, AD2], axis=1)   # (n,3)
+
+        # Solve per tetrahedron
+        try:
+            invM = np.linalg.inv(M)               # (n,3,3)
+            centers = np.einsum("nij,nj->ni", invM, rhs / 2.0)
+        except np.linalg.LinAlgError:
+            centers = np.full_like(rhs, np.inf)
+
+        radii = np.linalg.norm(centers, axis=1)
+
+        mask = radii < alpha
+        return tetrahedra[mask]
     
     def load_endgame_exp_points(self):
         path = 'difftactile/manual_or_experimental_data/endgame/20250901-131547_sim_format_poses/metadata_0.0_0.0.npz'
@@ -128,7 +170,8 @@ class VisualiseMesh:
         self.is_fixed_layer = data['is_fixed_layer']
     
     def apply_is_fixed_layer(self):
-        self.points = self.points[self.is_fixed_layer == 1]
+        mask = self.is_fixed_layer == 0
+        self.points = self.points[mask]
     
     def use_dome_surface_points(self):
         # self.point_coordinates = self.point_coordinates[self.mesh_data['dome_surface_node_tags']]
@@ -374,12 +417,12 @@ class TemporalPointCloudVisualizer:
 
 
 def main():
-    # visualise_mesh = VisualiseMesh()
-    # visualise_mesh.visualise_point_cloud()
+    visualise_mesh = VisualiseMesh()
+    visualise_mesh.visualise_tetrahedra_vedo()
 
-    points_3d = load_endgame_exp_points()
-    viz = TemporalPointCloudVisualizer(points_3d)
-    viz.run()
+    # points_3d = load_endgame_exp_points()
+    # viz = TemporalPointCloudVisualizer(points_3d)
+    # viz.run()
 
 
 if __name__ == '__main__':

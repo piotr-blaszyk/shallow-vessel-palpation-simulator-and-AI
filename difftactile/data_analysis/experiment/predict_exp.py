@@ -159,12 +159,12 @@ class PredictExp:
         frame_ix = frame_ix.item()
         poses /= 1_000
         metadata[2:] = metadata[2:] / 1_000
-        if not (
-            metadata[1] == 0
-            # and metadata[0] == 0 
-            # and frame_ix == 0
-        ):
-            return
+        # if not (
+        #     metadata[1] == 0
+        #     # and metadata[0] == 0 
+        #     # and frame_ix == 0
+        # ):
+        #     return
         with torch.no_grad():
             batch = batch.to(self.device)
             x_px, x_mask, edge_index, edge_index_regular_nodes, edge_attr = self.model.my_prepare_data(batch, 1)
@@ -178,7 +178,7 @@ class PredictExp:
             pos = batch.pos[mask]
 
             probs = torch.sigmoid(out)
-            preds = (probs > 0.7).float()
+            preds = (probs > 0.58).float()
             probs = probs.cpu().numpy().astype(np.float32)
             preds = preds.cpu().numpy().astype(np.float32)
         points = pos.cpu().numpy().astype(np.float32)
@@ -565,7 +565,13 @@ class PredictExp:
                     bbox=dict(facecolor='black', alpha=0.7))
         
         plt.tight_layout()
-        plt.savefig(SYSTEM_PARAMS.files.exp_overlay_downscaled)
+        plt.savefig(
+            SYSTEM_PARAMS.files.exp_overlay_downscaled,
+            format="pdf",
+            dpi=300,
+            bbox_inches="tight",
+            pad_inches=0
+        )
         plt.show()
         plt.close()
 
@@ -628,8 +634,8 @@ class PredictExp:
         plt.close()
 
     def go(self):
-        self.predict_all_clips()
-        self.write_probs_to_npz()
+        # self.predict_all_clips()
+        # self.write_probs_to_npz()
         self.load_probs_from_npz()
         self.generate_mask_image()
         self.downsample_ground_truth_image_to_prediction_shape()

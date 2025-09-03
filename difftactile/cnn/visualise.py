@@ -532,7 +532,7 @@ class Visualisation:
                     # mask = data.mask
                     # out = out[mask]
                     probs = torch.sigmoid(out)
-                    pred = (probs > 0.9).float()
+                    pred = (probs > 0.58).float()
 
                     assert batch.num_graphs == 1
                     

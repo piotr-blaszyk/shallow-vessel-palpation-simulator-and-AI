@@ -706,7 +706,8 @@ class Endgame:
 
 def main():
     e = Endgame()
-    e.add_dense_line_data()
+    e.visualise_line_points()
+    # e.add_dense_line_data()
     # e.validate_line_dense_to_sparse(
     #     cx=e.cx,
     #     cy=e.cy,

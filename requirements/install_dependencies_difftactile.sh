@@ -29,5 +29,6 @@ uv pip install matplotlib
 uv pip install -U 'tensorboardX'
 uv pip install -U 'tensorboard'
 uv pip install open3d
+uv pip install gmsh
 
 echo "All dependencies installed successfully!" 

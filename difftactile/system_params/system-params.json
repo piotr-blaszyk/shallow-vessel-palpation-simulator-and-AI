@@ -163,7 +163,7 @@
         "mpm_pad_single": 5.000e-02
     },
     "scaling_factor_1": {
-        "distance_from_camera_lens_to_outer_shell_surface": 0.019,
+        "distance_from_camera_lens_to_outer_shell_surface": 1.900e-02,
         "press_depth_1": 4.000e-03
     },
     "meta": {
@@ -355,7 +355,7 @@
         "exp_video_npz_reordered": "difftactile/output/exp_video_reordered.npz",
         "exp_probs_npz": "difftactile/output/exp_probs.npz",
         "exp_overlay_upscaled": "difftactile/output/exp_overlay_upscaled.png",
-        "exp_overlay_downscaled": "difftactile/output/exp_overlay_downscaled.png",
+        "exp_overlay_downscaled": "difftactile/output/exp_overlay_downscaled.pdf",
         "exp_trajectories": "difftactile/output/exp_trajectories",
         "empty_data_dir": "difftactile/output/empty_data_dir",
         "dataset_root": "difftactile/output/training_data/pickle_{:s}",

@@ -221,8 +221,6 @@ class ComputeEdges:
             
             # Draw a circle at the point
             cv2.circle(img, (x, y), radius=3, color=(0, 0, 255), thickness=-1)  # Red filled circle
-            
-            degree = neighbour_counts[i]
             cv2.putText(img, str(i), (x + 5, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 
                         fontScale=0.5, color=(0, 255, 0), thickness=1)  # Green text
 
@@ -240,6 +238,48 @@ class ComputeEdges:
 
         # Save the image
         cv2.imwrite(SYSTEM_PARAMS.files.voronoi_image, img)
+
+    @staticmethod
+    def visualise_flat_sensor():
+        # Load the default state image
+        dir = SYSTEM_PARAMS.files.da_dir
+        file_path = SYSTEM_PARAMS.files.flat_sensor_default_state
+        file_path = f'{dir}{file_path}'
+        img = cv2.imread(file_path)
+        if img is None:
+            raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.flat_sensor_default_state}")
+
+        path = SYSTEM_PARAMS.files.flat_sensor_default_state_npz
+        data = np.load(path)
+        points = data['points']
+
+        base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
+        adjacency_matrix = base_graph_data['adjacency_matrix']
+
+        # Draw each point with its new index
+        for i, (x, y) in enumerate(points):
+            # Convert to integer coordinates
+            x, y = int(x), int(y)
+            
+            # Draw a circle at the point
+            cv2.circle(img, (x, y), radius=3, color=(0, 0, 255), thickness=-1)  # Red filled circle
+            cv2.putText(img, str(i), (x + 5, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 
+                        fontScale=0.5, color=(0, 0, 255), thickness=2)  # Green text
+
+        # Draw edges between connected nodes
+        for edge in adjacency_matrix:
+            start_idx, end_idx = edge
+            start_point = tuple(map(int, points[start_idx]))
+            end_point = tuple(map(int, points[end_idx]))
+            cv2.line(img, start_point, end_point, color=(255, 255, 0), thickness=1)  # Yellow lines
+
+        # Display the image
+        cv2.imshow('Marker Positions', img)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+        # Save the image
+        cv2.imwrite('difftactile/output/flat_sensor_connectivity.png', img)
 
     @staticmethod
     def num_markers_in_ring(k):
@@ -332,8 +372,9 @@ class ComputeEdges:
 
 
 def main():
-    ComputeEdges.compute_base_graph_connectivity()
+    # ComputeEdges.compute_base_graph_connectivity()
     # ComputeEdges.validate_graph_connectivity_algorithm()
+    ComputeEdges.visualise_flat_sensor()
 
 
 if __name__ == '__main__':

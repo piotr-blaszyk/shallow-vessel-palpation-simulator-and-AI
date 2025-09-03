@@ -1,52 +1,31 @@
-from sklearn.metrics import roc_auc_score, roc_curve
-import matplotlib.pyplot as plt
 import numpy as np
+from scipy.spatial import Delaunay
 
-def evaluate_and_plot_roc(model, dataloader, device="cpu"):
-    model.eval()
-    all_probs = []
-    all_labels = []
+def alpha_shape_3d(points, alpha):
+    if len(points) < 4:
+        raise ValueError("Need at least 4 points")
+    delaunay = Delaunay(points)
+    tetrahedra = delaunay.simplices
 
-    with torch.no_grad():
-        for batch in dataloader:
-            batch = batch.to(device)
-            out = model(batch)  # shape: [num_nodes, num_classes]
-            probs = torch.softmax(out, dim=-1)[:, 1]  # probability of class=1
-            labels = batch.y  # true labels per node
-            all_probs.append(probs.cpu())
-            all_labels.append(labels.cpu())
+    A = points[tetrahedra[:,0]]
+    B = points[tetrahedra[:,1]]
+    C = points[tetrahedra[:,2]]
+    D = points[tetrahedra[:,3]]
+    AB, AC, AD = B - A, C - A, D - A
 
-    all_probs = torch.cat(all_probs).numpy()
-    all_labels = torch.cat(all_labels).numpy()
+    volume = np.einsum('ij,ij->i', np.cross(AB, AC), AD) / 6.0
+    volume = np.abs(volume)
+    AB2 = np.sum(AB**2, axis=1)
+    AC2 = np.sum(AC**2, axis=1)
+    AD2 = np.sum(AD**2, axis=1)
+    M = np.stack([AB, AC, AD], axis=1)
+    rhs = np.stack([AB2, AC2, AD2], axis=1) / 2.0
 
-    # Compute AUC
-    auc = roc_auc_score(all_labels, all_probs)
-
-    # Compute ROC curve (with sklearn default 100 thresholds)
-    fpr, tpr, _ = roc_curve(all_labels, all_probs)
-
-    # Now compute TPR/FPR manually for 20 thresholds
-    thresholds = np.linspace(0.0, 1.0, 20)
-    tpr_list, fpr_list = [], []
-    for thr in thresholds:
-        preds = (all_probs >= thr).astype(int)
-        tp = np.sum((preds == 1) & (all_labels == 1))
-        fp = np.sum((preds == 1) & (all_labels == 0))
-        tn = np.sum((preds == 0) & (all_labels == 0))
-        fn = np.sum((preds == 0) & (all_labels == 1))
-        tpr_list.append(tp / (tp + fn) if (tp + fn) > 0 else 0.0)
-        fpr_list.append(fp / (fp + tn) if (fp + tn) > 0 else 0.0)
-
-    # Plot
-    plt.figure(figsize=(7, 6))
-    plt.plot(fpr, tpr, label=f"ROC curve (AUC = {auc:.3f})", alpha=0.8)
-    plt.scatter(fpr_list, tpr_list, color="red", s=30, label="20 thresholds")
-    plt.plot([0, 1], [0, 1], "k--", alpha=0.5)
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
-    plt.title("ROC Curve for Node Classification GNN")
-    plt.legend(loc="lower right")
-    plt.grid(True, alpha=0.3)
-    plt.show()
-
-    return auc
+    try:
+        centers = np.linalg.solve(M, rhs)
+    except np.linalg.LinAlgError:
+        centers = np.full_like(rhs, np.inf)
+    radii = np.linalg.norm(centers, axis=1)
+    mask = radii < alpha
+    
+    return tetrahedra[mask]
