@@ -169,7 +169,7 @@
     "meta": {
         "target_courant_number": 1.000e-01,
         "enable_tactile_map": 1,
-        "enable_pid_controller": 1,
+        "enable_pid_controller": 0,
         "distance_scaling_factor": 5.000e+00,
         "youngs_modulus_scaling_factor": 1.000e+00,
         "px_dist_adjacent_markers": 3.812e+01,
@@ -213,8 +213,8 @@
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,
         "camera_offset": 5.000e+00,
-        "particle_size_normal": 9.000e-05,
-        "particle_size_keypoint": 9.000e-04,
+        "particle_size_normal": 9.000e-04,
+        "particle_size_keypoint": 9.000e-03,
         "tactile_readout_width": 9.600e+02,
         "tactile_readout_height": 5.400e+02,
         "window_3d_width": 9.600e+02,

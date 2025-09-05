@@ -2197,8 +2197,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.phantom_centroid_pose[:3]
-        self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
-        self.camera.up(0, 0, 1)
+        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
+        self.camera.up(0, 1, 0)
         self.camera.lookat(x, y, z)
         self.camera.fov(3)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -2238,11 +2238,11 @@ class Contact:
             radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
         )
         self.phantom.compute_grid_colours()
-        self.scene.particles(
-            self.phantom.grid_positions,
-            per_vertex_color=self.phantom.grid_colours,
-            radius=SYSTEM_PARAMS.visualisation.particle_size_normal*2.5,
-        )
+        # self.scene.particles(
+        #     self.phantom.grid_positions,
+        #     per_vertex_color=self.phantom.grid_colours,
+        #     radius=SYSTEM_PARAMS.visualisation.particle_size_normal*2.5,
+        # )
         self.scene.particles(
             self.vein.particles_A,
             color=(1.0, 1.0, 0.0),
