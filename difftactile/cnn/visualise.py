@@ -726,11 +726,11 @@ class Visualisation:
                 cv2.imshow(f'Ground Truth {sequence_idx}', ground_truth_stack[current_frame])
                 if mode == 'predictions':
                     cv2.imshow(f'Hard Prediction {sequence_idx}', prediction_stack[current_frame])
-                    cv2.imshow(f'Soft Prediction {sequence_idx}', soft_prediction_stack[current_frame])
                     cv2.imshow(f'Confusion Matrix {sequence_idx}', confusion_matrix_stack[current_frame])
-                    cv2.imshow(f'Frame Statistics {sequence_idx}', stats_stack[current_frame])
-                cv2.imshow(f'Labels Image {sequence_idx}', labels_stack[current_frame])
-                cv2.imshow(f'Graph Connectivity {sequence_idx}', graph_stack[current_frame])
+                    cv2.imshow(f'Soft Prediction {sequence_idx}', soft_prediction_stack[current_frame])
+                    # cv2.imshow(f'Frame Statistics {sequence_idx}', stats_stack[current_frame])
+                # cv2.imshow(f'Labels Image {sequence_idx}', labels_stack[current_frame])
+                # cv2.imshow(f'Graph Connectivity {sequence_idx}', graph_stack[current_frame])
 
                 # Position windows side by side
                 sep_w = 20
@@ -738,14 +738,15 @@ class Visualisation:
                 cv2.moveWindow(f'Ground Truth {sequence_idx}', 0, 0)
                 if mode == 'predictions':
                     cv2.moveWindow(f'Hard Prediction {sequence_idx}', w + sep_w, 0)
+                    cv2.moveWindow(f'Confusion Matrix {sequence_idx}', 0, h + sep_h)
                     cv2.moveWindow(f'Soft Prediction {sequence_idx}', w + sep_w, h + sep_h)
-                    cv2.moveWindow(f'Confusion Matrix {sequence_idx}', 2 * (w + sep_w), 0)
-                    cv2.moveWindow(f'Labels Image {sequence_idx}', 2 * (w + sep_w), h + sep_h)
-                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', 3 * (w + sep_w), 0)
-                    cv2.moveWindow(f'Frame Statistics {sequence_idx}', 0, h + sep_h)
+                    # cv2.moveWindow(f'Labels Image {sequence_idx}', 2 * (w + sep_w), h + sep_h)
+                    # cv2.moveWindow(f'Graph Connectivity {sequence_idx}', 3 * (w + sep_w), 0)
+                    # cv2.moveWindow(f'Frame Statistics {sequence_idx}', 0, h + sep_h)
                 else:
-                    cv2.moveWindow(f'Labels Image {sequence_idx}', w + sep_w, 0)
-                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', w + sep_w, labels_h + sep_h)
+                    # cv2.moveWindow(f'Labels Image {sequence_idx}', w + sep_w, 0)
+                    # cv2.moveWindow(f'Graph Connectivity {sequence_idx}', w + sep_w, labels_h + sep_h)
+                    pass
 
                 # Handle keyboard input
                 key = cv2.waitKey(0) & 0xFF
