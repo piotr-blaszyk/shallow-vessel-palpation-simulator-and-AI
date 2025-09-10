@@ -7,7 +7,7 @@ import csv
 class DomainAdaptationLineChart:
     def __init__(self):
         self.targets = "difftactile/output/bo_all_targets.json"
-        self.params = "difftactile/output/bo_all_params.json"
+        self.params = "difftactile/output/bo_all_params_renamed.json"
         self.csv_output = "difftactile/output/bo_merged.csv"
 
     def generate_line_chart(self):
@@ -22,8 +22,8 @@ class DomainAdaptationLineChart:
         n = len(targets)
         k = len(param_keys)
 
-        # Column names: ["target"] + param_keys
-        col_names = ["target"] + param_keys
+        # Column names: ["MAE"] + param_keys
+        col_names = ["MAE"] + param_keys
 
         # Create numpy array of shape (n, 1+k)
         data = np.zeros((n, 1 + k))
@@ -37,15 +37,15 @@ class DomainAdaptationLineChart:
         data_norm = (data - data_min) / (data_max - data_min + 1e-12)
 
         # --- Plot ---
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(10, 5))
 
         for j, col in enumerate(col_names):
-            if col == "target":
+            if col == "MAE":
                 plt.plot(
                     range(n),
                     data_norm[:, j],
                     label=col,
-                    linewidth=3.0,
+                    linewidth=12.0,
                     color="red"
                 )
             else:
@@ -53,14 +53,34 @@ class DomainAdaptationLineChart:
                     range(n),
                     data_norm[:, j],
                     label=col,
-                    linewidth=1.5
+                    linewidth=6.0
                 )
 
-        plt.xlabel("Bayesian Optimisation step number")
-        plt.ylabel("Target and parameter values")
-        plt.title("Normalised Targets and Parameters over BO Steps")
-        plt.legend()
-        plt.grid(True, linestyle="--", alpha=0.6)
+        fontsize = 20
+        # Axis labels with larger, bold font
+        plt.xlabel("Bayesian Optimisation step number", fontsize=fontsize, fontweight="bold")
+        plt.ylabel("Normalised target\nand parameter values", fontsize=fontsize, fontweight="bold")
+
+        # Tick labels with larger, bold font
+        plt.tick_params(axis="both", which="major", labelsize=fontsize)
+        for label in plt.gca().get_xticklabels() + plt.gca().get_yticklabels():
+            label.set_fontweight("bold")
+
+        # Legend with larger, bold font
+        # plt.legend(fontsize=1000, prop={"weight": "bold"})
+        # plt.legend(prop={"size": 16, "weight": "bold"})
+        plt.legend(
+            prop={"size": 16, "weight": "bold"},
+            loc="upper left",
+            bbox_to_anchor=(1.05, 1),
+            borderaxespad=0
+        )
+
+        plt.grid(True, linestyle="--", alpha=0.6, linewidth=6.0)
+        for spine in plt.gca().spines.values():
+            spine.set_linewidth(6.0)
+        # plt.tight_layout(rect=[0, 0, 0.85, 1])  # shrink plot to make room for legend
+        plt.subplots_adjust(right=0.8)
         plt.tight_layout()
         plt.savefig("difftactile/output/domain_adaptation_line_chart.pdf", format="pdf", dpi=300)
         plt.show()
@@ -95,4 +115,4 @@ class DomainAdaptationLineChart:
 
 if __name__ == '__main__':
     chart = DomainAdaptationLineChart()
-    chart.merge_clean_write()
+    chart.generate_line_chart()
