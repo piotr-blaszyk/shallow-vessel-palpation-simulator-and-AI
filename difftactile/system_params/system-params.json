@@ -169,7 +169,7 @@
     "meta": {
         "target_courant_number": 1.000e-01,
         "enable_tactile_map": 1,
-        "enable_pid_controller": 0,
+        "enable_pid_controller": 1,
         "distance_scaling_factor": 5.000e+00,
         "youngs_modulus_scaling_factor": 1.000e+00,
         "px_dist_adjacent_markers": 3.812e+01,
