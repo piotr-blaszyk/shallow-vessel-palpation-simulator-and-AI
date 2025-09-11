@@ -5,7 +5,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 from difftactile.cnn.dataset import *
@@ -434,18 +434,18 @@ class Visualisation:
                     data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
                     apply_augmentations=True,
                 )
-            train_dataset, _, _ = full_dataset.create_splits(
-                train_size=1.0,
+            _, _, test_dataset = full_dataset.create_splits(
+                train_size=0.0,
                 val_size=0.0,
-                test_size=0.0
+                test_size=1.0
             )
             target_difficulty = 1.0
             stats = all_stats[target_difficulty]
-            train_dataset.set_stats(stats)
-            train_dataset.set_difficulty_level(target_difficulty)
-            train_dataset.eval()
+            test_dataset.set_stats(stats)
+            test_dataset.set_difficulty_level(target_difficulty)
+            test_dataset.eval()
             data_loader = DataLoader(
-                train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+                test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
             )
         elif data_source == 'exp_npz':
             exp_test_dataset_grid_search = MyDataset(
@@ -473,10 +473,12 @@ class Visualisation:
 
         data_iter = iter(data_loader)
         sequence_idx = 0
+        data_list = list(data_iter)
 
         while True:  # Main loop for continuous data loading
             try:
-                batch, labels_images, poses, metadata, frame_ix = next(data_iter)
+                # batch, labels_images, poses, metadata, frame_ix = next(data_iter)
+                batch, labels_images, poses, metadata, frame_ix = data_list[sequence_idx]
                 poses = poses.numpy()[0]
                 metadata = metadata.numpy()[0]
                 frame_ix = frame_ix.item()
@@ -758,8 +760,14 @@ class Visualisation:
                         cv2.waitKey(1)
                         time.sleep(0.1)
                     return
+                elif key == ord('x'):
+                    sequence_idx -= 1
+                    sequence_idx = max(min(sequence_idx, len(test_dataset)), 0)
+                    cv2.destroyAllWindows()
+
                 elif key == ord('c'):  # Close current sequence and load next
                     sequence_idx += 1
+                    sequence_idx = max(min(sequence_idx, len(test_dataset)), 0)
                     cv2.destroyAllWindows()
                     break
                 elif key == ord('j'):  # Previous frame

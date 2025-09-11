@@ -1115,7 +1115,7 @@ class Contact:
         x2 = cx + r22 * np.cos(theta + np.pi)
         y2 = cy + r22 * np.sin(theta + np.pi)
 
-        if True:
+        if False:
             xr = NP_RNG.uniform(-5, 5)
             yr = NP_RNG.uniform(-5, 5)
             zr = NP_RNG.uniform(0, 60)
@@ -2531,12 +2531,12 @@ class Contact:
             for j in range(2):
                 print(f"training trajectory: {i}/{SYSTEM_PARAMS.contact.num_training_trajectories - 1}; substep: {j}/5")
                 self.generate_trajectories()
-                if j < 1:
+                if False and j < 1:
                     self.collision_ixs = [0, 2]
                 else:
                     self.collision_ixs = [0]
                 self.randomise_contact_params()
-                for traj_ix in range(3, 4):
+                for traj_ix in range(0, 4):
                     self.trajectory_ix[None] = traj_ix
                     trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
                     # print(f'executing trajectory: {trajectory_name}')

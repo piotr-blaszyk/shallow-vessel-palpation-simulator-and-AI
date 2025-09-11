@@ -120,7 +120,7 @@ class Phantom:
             particles_B,
         )
         mask = self.vein.get_vein_mask(particles_A)
-        particles_B = particles_B[~mask]
+        # particles_B = particles_B[~mask]
         self.num_particles = len(particles_B)
         self.particles_B = ti.Vector.field(
             3, dtype=float, shape=(self.num_particles,), needs_grad=False
