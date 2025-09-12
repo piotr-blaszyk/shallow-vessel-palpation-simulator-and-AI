@@ -1,9 +1,15 @@
 import json
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import csv
 import cv2
 from scipy.optimize import linear_sum_assignment
+import pandas as pd
+
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
+
 
 class DomainAdaptationLineChart:
     def __init__(self):
@@ -12,36 +18,27 @@ class DomainAdaptationLineChart:
         self.csv_output = "difftactile/output/bo_merged.csv"
 
     def generate_line_chart(self):
-        # --- Load data ---
         with open(self.targets, "r") as f:
             targets = json.load(f)  # list of floats, length n
         with open(self.params, "r") as f:
             params = json.load(f)   # list of dicts, length n
-
-        # --- Build numpy array ---
+        
         param_keys = list(params[0].keys())  # get the k keys
         n = len(targets)
         k = len(param_keys)
-
-        # Column names: ["MAE"] + param_keys
-        col_names = ["MAE"] + param_keys
-
-        # Create numpy array of shape (n, 1+k)
+        col_names = ["mean average error"] + param_keys
         data = np.zeros((n, 1 + k))
         data[:, 0] = np.array(targets)
         for j, key in enumerate(param_keys):
             data[:, j + 1] = np.array([p[key] for p in params])
 
-        # --- Min-max normalization ---
         data_min = data.min(axis=0)
         data_max = data.max(axis=0)
         data_norm = (data - data_min) / (data_max - data_min + 1e-12)
-
-        # --- Plot ---
         plt.figure(figsize=(10, 5))
 
         for j, col in enumerate(col_names):
-            if col == "MAE":
+            if col == "mean average error":
                 plt.plot(
                     range(n),
                     data_norm[:, j],
@@ -58,35 +55,84 @@ class DomainAdaptationLineChart:
                 )
 
         fontsize = 20
-        # Axis labels with larger, bold font
         plt.xlabel("Bayesian Optimisation step number", fontsize=fontsize, fontweight="bold")
         plt.ylabel("Normalised target\nand parameter values", fontsize=fontsize, fontweight="bold")
-
-        # Tick labels with larger, bold font
         plt.tick_params(axis="both", which="major", labelsize=fontsize)
         for label in plt.gca().get_xticklabels() + plt.gca().get_yticklabels():
             label.set_fontweight("bold")
-
-        # Legend with larger, bold font
-        # plt.legend(fontsize=1000, prop={"weight": "bold"})
-        # plt.legend(prop={"size": 16, "weight": "bold"})
         plt.legend(
             prop={"size": 16, "weight": "bold"},
             loc="upper left",
             bbox_to_anchor=(1.05, 1),
             borderaxespad=0
         )
-
+        
         plt.grid(True, linestyle="--", alpha=0.6, linewidth=6.0)
         for spine in plt.gca().spines.values():
             spine.set_linewidth(6.0)
-        # plt.tight_layout(rect=[0, 0, 0.85, 1])  # shrink plot to make room for legend
         plt.subplots_adjust(right=0.8)
         plt.tight_layout()
         plt.savefig("difftactile/output/domain_adaptation_line_chart.pdf", format="pdf", dpi=300)
         plt.show()
 
         return data, col_names, data_norm
+
+    def generate_ridgeline_chart(self):
+        # Load data
+        with open(self.targets, "r") as f:
+            targets = json.load(f)  # list of floats, length n
+        with open(self.params, "r") as f:
+            params = json.load(f)   # list of dicts, length n
+
+        # Build dataframe
+        param_keys = list(params[0].keys())  # get parameter names
+        n = len(targets)
+        k = len(param_keys)
+        col_names = ["mean average error"] + param_keys
+
+        data = np.zeros((n, 1 + k))
+        data[:, 0] = np.array(targets)
+        for j, key in enumerate(param_keys):
+            data[:, j + 1] = np.array([p[key] for p in params])
+
+        df = pd.DataFrame(data, columns=col_names)
+
+        # Normalize each column independently
+        df_norm = (df - df.min()) / (df.max() - df.min() + 1e-12)
+
+        # Ridgeline plot
+        plt.figure(figsize=(12, 8))
+        offset = 1.2  # vertical spacing between ridgelines
+
+        x = np.arange(n)
+        for i, col in enumerate(col_names):
+            y = df_norm[col] + i * offset
+            if col == "mean average error":
+                plt.plot(x, y, color="red", linewidth=2.5, label=col, zorder=3)
+                plt.fill_between(x, i * offset, y, color="red", alpha=0.25)
+            else:
+                plt.plot(x, y, linewidth=1.5, label=col, zorder=2)
+                plt.fill_between(x, i * offset, y, alpha=0.25)
+
+        # Formatting
+        fontsize = 20
+        plt.xlabel("Bayesian Optimisation step number", fontsize=fontsize, fontweight="bold")
+        plt.ylabel("Normalised value", fontsize=fontsize, fontweight="bold")
+        plt.yticks(
+            [i * offset for i in range(len(col_names))],
+            col_names,
+            fontsize=fontsize,
+            fontweight="bold"
+        )
+        plt.xticks(fontsize=fontsize, fontweight="bold")
+        plt.grid(True, linestyle="--", alpha=0.4)
+        # plt.title("Ridgeline of Normalised Target and Parameters", fontsize=16, fontweight="bold")
+
+        plt.tight_layout()
+        plt.savefig("difftactile/output/domain_adaptation_ridgeline_chart.pdf", format="pdf", dpi=300)
+        plt.show()
+
+        return df, col_names, df_norm
 
     def merge_clean_write(self):
         # --- Load data ---
@@ -112,45 +158,8 @@ class DomainAdaptationLineChart:
                     key: f"{row[key]:.1e}" for key in fieldnames
                 }
                 writer.writerow(formatted_row)
-    
+
     def post_process_images(self):
-        # Load the image
-        img = cv2.imread("difftactile/output/da_overlay_press.png")
-
-        # Split into channels
-        b, g, r = cv2.split(img)
-
-        # Threshold the green channel
-        _, mask = cv2.threshold(g, 250, 255, cv2.THRESH_BINARY)
-
-        # Clean up small noise using morphology
-        kernel = np.ones((3, 3), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-
-        # Find contours of the green dots
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        positions = []
-        for cnt in contours:
-            M = cv2.moments(cnt)
-            if M["m00"] != 0:  # avoid division by zero
-                cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
-                positions.append((cx, cy))
-
-                # Draw detected centers on the original image
-                cv2.circle(img, (cx, cy), 5, (255, 0, 0), -1)
-
-        # Print results
-        print("Detected positions:", positions)
-
-        # Show the results
-        cv2.imshow("Mask", mask)
-        cv2.imshow("Detected Dots", img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
-    def post_process_images_2(self):
         img = cv2.imread("difftactile/output/da_overlay_twist_z.png")
         b, g, r = cv2.split(img)
 
@@ -197,8 +206,6 @@ class DomainAdaptationLineChart:
         cv2.destroyAllWindows()
 
 
-
-
 if __name__ == '__main__':
     chart = DomainAdaptationLineChart()
-    chart.post_process_images_2()
+    chart.generate_ridgeline_chart()
