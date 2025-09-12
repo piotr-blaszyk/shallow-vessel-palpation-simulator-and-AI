@@ -2,8 +2,7 @@ import glob
 import os
 import pickle
 
-if False:
-    import cv2
+import cv2
 import numpy as np
 
 from difftactile.main.constants import *
