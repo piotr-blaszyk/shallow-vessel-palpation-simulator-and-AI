@@ -1326,21 +1326,21 @@ class MyDataset(torch.utils.data.Dataset):
         labels = MyDataset.downscale(self.k, labels)
         return images[self.clip_len // 2, :, :]
 
-    @staticmethod
-    def generate_markers_image(h, w, points, points_mask):
-        if points.shape[-1] == 0:
-            return np.zeros((points.shape[0], h, w), dtype=np.uint8)
-        images = np.zeros((points.shape[0], h, w), dtype=np.uint8)
-        marker_masks = np.zeros((points.shape[0], h, w), dtype=np.uint8)
-        for t in range(points.shape[0]):
-            filtered_points = []
-            for i, point in enumerate(points[t]):
-                if points_mask[t, i]:
-                    filtered_points.append(point)
-                    MyDataset.draw_point(images, t, point)
-            markers_mask = SyntheticImageGenerator.compute_mask(h, w, filtered_points)
-            marker_masks[t, :, :] = markers_mask
-        return images, marker_masks
+    # @staticmethod
+    # def generate_markers_image(h, w, points, points_mask):
+    #     if points.shape[-1] == 0:
+    #         return np.zeros((points.shape[0], h, w), dtype=np.uint8)
+    #     images = np.zeros((points.shape[0], h, w), dtype=np.uint8)
+    #     marker_masks = np.zeros((points.shape[0], h, w), dtype=np.uint8)
+    #     for t in range(points.shape[0]):
+    #         filtered_points = []
+    #         for i, point in enumerate(points[t]):
+    #             if points_mask[t, i]:
+    #                 filtered_points.append(point)
+    #                 MyDataset.draw_point(images, t, point)
+    #         markers_mask = SyntheticImageGenerator.compute_mask(h, w, filtered_points)
+    #         marker_masks[t, :, :] = markers_mask
+    #     return images, marker_masks
 
     @staticmethod
     def draw_point(images, t, point, n=8, intensity=(255, 255, 255)):

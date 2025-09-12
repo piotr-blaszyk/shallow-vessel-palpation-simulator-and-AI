@@ -567,7 +567,7 @@ class GNN(pl.LightningModule):
         return self.get_accumulator(shape=(), dtype=torch.int32)
     
     def get_accumulator(self, shape, dtype):
-        return {k: torch.zeros(shape, dtype=dtype, device='cuda:0') for k in self.stages_str}
+        return {k: torch.zeros(shape, dtype=dtype, device='cpu') for k in self.stages_str}
     
     def init_accumulators(self):
         self.area_pred_acc = self.get_iou_accumulator()
@@ -853,7 +853,7 @@ def evaluate_and_plot_roc():
     if True:
         model = GNN()
         model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn))
-        model.eval()
+        # model.eval()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
 
@@ -876,7 +876,7 @@ def evaluate_and_plot_roc():
         stats = all_stats[target_difficulty]
         train_dataset.set_stats(stats)
         train_dataset.set_difficulty_level(target_difficulty)
-        train_dataset.eval()
+        # train_dataset.eval()
         data_loader = DataLoader(
             train_dataset,
             batch_size=16,

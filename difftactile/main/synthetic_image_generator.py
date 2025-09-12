@@ -1,4 +1,5 @@
-import cv2
+if False:
+    import cv2
 import numpy as np
 from scipy.spatial import Delaunay
 from shapely.geometry import MultiLineString, Polygon
