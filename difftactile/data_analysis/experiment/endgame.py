@@ -277,7 +277,7 @@ class Endgame:
             frame_annots = annotations[avi_path][frame_idx]
             for idx, pt in enumerate(frame_annots):
                 color = colors[idx % len(colors)]
-                cv2.circle(display, (int(pt[0]), int(pt[1])), 6, color, -1)
+                cv2.circle(display, (int(pt[0]), int(pt[1])), 30, color, -1)
             text = f"Video {video_idx + 1}/{len(avi_files)} | Frame {frame_idx + 1}/{n_frames} | Annotations {len(frame_annots)}/4"
             cv2.putText(
                 display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
@@ -343,6 +343,9 @@ class Endgame:
             line_points = np.zeros(
                 (num_frames, max_lines, num_pts, 2), dtype=np.float32
             )
+            annotation_points = np.zeros(
+                (num_frames, max_lines, 2), dtype=np.float32
+            )
             mask = np.zeros((num_frames, max_lines), dtype=bool)
             for fi, frame_pts in enumerate(ann):
                 for li, pt in enumerate(frame_pts[:max_lines]):
@@ -360,10 +363,12 @@ class Endgame:
                     line_points[fi, li, :, 0] = xs
                     line_points[fi, li, :, 1] = ys
                     mask[fi, li] = True
+                    annotation_points[fi, li] = P0
             np.savez(
                 out_path,
                 line_points=line_points,
                 mask=mask,
+                annotation_points=annotation_points,
             )
 
     def visualise_line_points(self):
@@ -402,14 +407,18 @@ class Endgame:
             data = np.load(npz_path)
             line_points = data["line_points"]
             mask = data["mask"]
+            annotation_points = data['annotation_points']
             display = frame.copy()
             if frame_idx < line_points.shape[0]:
                 for line_idx in range(4):
                     if mask[frame_idx, line_idx]:
                         pts = line_points[frame_idx, line_idx]
                         for x, y in pts.astype(int):
-                            cv2.circle(display, (x, y), 2, colors[line_idx], -1)
-            cv2.circle(display, (cx, cy), radius=r, color=(0, 255, 255), thickness=3)
+                            cv2.circle(display, (x, y), 10, colors[line_idx], -1)
+                        p0 = annotation_points[frame_idx, line_idx]
+                        x0, y0 = p0
+                        cv2.circle(display, (int(x0), int(y0)), 30, colors[line_idx], -1)
+            # cv2.circle(display, (cx, cy), radius=r, color=(0, 255, 255), thickness=3)
             text = f"Video {video_idx + 1}/{len(common_keys)} | Frame {frame_idx + 1}/{n_frames}"
             cv2.putText(
                 display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
@@ -706,8 +715,9 @@ class Endgame:
 
 def main():
     e = Endgame()
-    e.visualise_line_points()
-    # e.add_dense_line_data()
+    e.visualise_videos()
+    # e.annotations_to_line_points()
+    # e.visualise_line_points()
     # e.validate_line_dense_to_sparse(
     #     cx=e.cx,
     #     cy=e.cy,
