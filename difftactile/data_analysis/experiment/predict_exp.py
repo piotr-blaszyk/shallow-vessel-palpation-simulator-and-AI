@@ -24,7 +24,8 @@ class PredictExp:
     def __init__(self):
         self.fisheye_model = FisheyeModelNoTaichi()
         self.synthetic_image_generator = SyntheticImageGenerator()
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if False:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.x_min = -0.425
         self.x_max = -0.245
@@ -50,7 +51,8 @@ class PredictExp:
         self.dataset.set_stats(self.stats)
         self.dataset.set_difficulty_level(1.0)
 
-        self.init_model()
+        if False:
+            self.init_model()
         self.init_camera_params()
         self.compute_mapping_2d_3d()
 
