@@ -1,0 +1,24 @@
+each of the 10 steaks is 5 mm thick
+- 20260228-230937: straw on top (z=32)
+- 20260228-231646: straw beneath 1 steak (z=32)
+- 20260228-231939: straw beneath 1 steak (z=31)
+- 20260228-232013: straw beneath 1 steak (z=30)
+- 20260228-232534: straw beneath 2 steaks (z=30)
+- 20260228-232632: straw beneath 2 steaks (z=32)
+- 20260228-233031: straw beneath 3 steaks (z=30)
+- 20260228-233454: straw beneath 4 steaks (z=30)
+- 20260228-233825: straw beneath 6 steaks (z=30)
+- 20260228-233958: straw beneath 6 steaks (z=29)
+- 20260228-234106: straw beneath 6 steaks (z=28)
+- 20260228-234219: straw beneath 6 steaks (z=27)
+- 20260228-234337: straw beneath 6 steaks (z=26)
+- 20260228-234613: no straw (z=26)
+- 20260228-234824: no straw (z=25)
+- 20260228-235519: 2 straws beneath 2 steaks (z=32)
+- 20260228-235639: 2 straws beneath 2 steaks (z=30)
+- 20260228-235749: 2 straws beneath 2 steaks (z=29)
+- 20260301-000249: 3 straws beneath 2 steaks (z=32) - noisy signal, only 1 straw visible
+- 20260301-000537: 3 straws beneath 2 steaks (z=30) - only 2 straws visible
+- 20260301-000735: 3 straws beneath 2 steaks (z=28) - only 2.5 straws visible
+- 20260301-000849: 3 straws beneath 2 steaks (z=26) - 3 straws visible
+- 20260301-001457: 1 silicone straw beneath 2 steaks (z=26)
