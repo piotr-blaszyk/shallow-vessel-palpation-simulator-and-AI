@@ -28,9 +28,8 @@ class MarkerTracker:
 
     def extract_frames(
             self, 
-            input_path, 
-            frame_mapping_npz_out=None,
-            seconds_per_frame=None
+            input_path,
+            mode=None,
         ):
         cap = cv2.VideoCapture(str(input_path))
         while cap.isOpened():
@@ -39,12 +38,18 @@ class MarkerTracker:
                 break
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             self.frames.append(frame)
-            markers, _, _ = FisheyeModelNoTaichi.get_marker_image(gray)
+            markers, _, _ = FisheyeModelNoTaichi.get_marker_image(gray, mode=mode)
             if len(markers) > 0:
                 self.frame_markers.append(markers)
             else:
                 self.frame_markers.append(np.array([]))
         cap.release()
+
+        default_markers = np.load(SYSTEM_PARAMS.files.init_marker_positions_npz)["points"]
+        if len(self.frame_markers) > 0:
+            self.frame_markers[0] = default_markers
+        else:
+            self.frame_markers.append(default_markers)
 
     def match_consecutive_frames(self):
         for i in range(len(self.frame_markers) - 1):

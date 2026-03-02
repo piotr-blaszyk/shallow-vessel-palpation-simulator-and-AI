@@ -335,12 +335,14 @@ class IrosPreprocessData:
             video_in=str(decimated_video),
             video_out=str(markers_vis_avi),
             npz_out=str(markers_raw_npz),
+            mode='iros',
         )
         PredictExp.compute_npz_helper2(
             video_in=str(decimated_video),
             video_out=str(markers_reordered_vis_avi),
             npz_in=str(markers_raw_npz),
             npz_out=str(markers_reordered_npz),
+            mode='iros',
         )
         with np.load(markers_reordered_npz) as data:
             markers = data["markers"].astype(np.float32)
@@ -363,7 +365,11 @@ class IrosPreprocessData:
             raise RuntimeError("No overlapping trial IDs between input folder and spec")
 
         print(f"Found {len(common_trials)} trials to process")
+        i = 0
         for trial_id in common_trials:
+            i += 1
+            if i == 1:
+                continue
             cfg = spec_cfg[trial_id]
             avi_path, pose_npz_path = pairs[trial_id]
             print(f"Processing {trial_id}")
@@ -407,6 +413,7 @@ class IrosPreprocessData:
                 f"Saved {trial_id}: marker_positions {markers_xy.shape}, "
                 f"marker_labels {labels.shape}"
             )
+            break
 
 
 def main():

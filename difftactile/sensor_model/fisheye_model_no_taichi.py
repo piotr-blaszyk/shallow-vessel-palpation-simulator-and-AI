@@ -94,7 +94,7 @@ class FisheyeModelNoTaichi:
         return ps_3d.reshape(*original_shape, 3)
 
     @staticmethod
-    def get_marker_image(img):
+    def get_marker_image(img, mode=None):
         if len(img.shape) == 3:
             source_height, source_width = img.shape[:2]
         else:
@@ -102,19 +102,57 @@ class FisheyeModelNoTaichi:
         scale_x = source_width / SYSTEM_PARAMS.fisheye_model.target_image_width
         scale_y = source_height / SYSTEM_PARAMS.fisheye_model.target_image_height
         params = cv2.SimpleBlobDetector_Params()
-        
-        # Filter by intensity (darkness)
-        params.filterByColor = True
-        params.blobColor = 0  # 0 for dark blobs, 255 for light blobs
-        params.minThreshold = 0
-        params.maxThreshold = 200  # Adjust this value to control how dark the blob must be
-        
-        # Filter by size
-        params.filterByArea = True
-        # areas=[809, 1206]
-        # sizes=[16.1, 19.5]
-        params.minArea = 120  # Minimum area in pixels
-        params.maxArea = 1000  # Maximum area in pixels
+
+        if mode == "iros-first-run":
+            params.minThreshold = 0
+            params.maxThreshold = 150
+            params.thresholdStep = 1
+            params.minDistBetweenBlobs = 40
+            params.filterByArea = True
+            params.minArea = 300
+            params.maxArea = 600
+            params.filterByCircularity = False
+            params.minCircularity = 0.8
+            params.maxCircularity = 1e+37
+            params.filterByInertia = False
+            params.minInertiaRatio = 0.1
+            params.maxInertiaRatio = 1e+37
+            params.filterByConvexity = False
+            params.minConvexity = 0.95
+            params.maxConvexity = 1e+37
+            params.filterByColor = True
+            params.blobColor = 0
+            params.minRepeatability = 10
+        elif mode == "iros":
+            params.minThreshold = 0
+            params.maxThreshold = 200
+            params.thresholdStep = 1
+            params.minDistBetweenBlobs = 25
+            params.filterByArea = True
+            params.minArea = 300
+            params.maxArea = 600
+            params.filterByCircularity = True
+            params.minCircularity = 0.4
+            params.maxCircularity = 1e+37
+            params.filterByInertia = True
+            params.minInertiaRatio = 0.1
+            params.maxInertiaRatio = 1e+37
+            params.filterByConvexity = True
+            params.minConvexity = 0.5
+            params.maxConvexity = 1e+37
+            params.filterByColor = True
+            params.blobColor = 0
+            params.minRepeatability = 10
+        else:
+            params.filterByColor = True
+            params.blobColor = 0
+            params.minThreshold = 0
+            params.maxThreshold = 200
+            params.filterByArea = True
+            # areas=[809, 1206]
+            # sizes=[16.1, 19.5]
+            params.minArea = 120
+            params.maxArea = 1000
         
         detector = cv2.SimpleBlobDetector_create(params)
         keypoints = detector.detect(img)
@@ -142,7 +180,15 @@ class FisheyeModelNoTaichi:
         sizes = np.array(sizes)
         areas.sort()
         sizes.sort()
-        # print(f'area_min: {areas.min()}; area_mean: {areas.mean()}; area_max: {areas.max()}')
+        percentiles = np.percentile(areas, [0, 25, 50, 75, 100])
+        print(
+            "area_percentiles (assuming perfectly circular shape) "
+            f"p0: {percentiles[0]:.0f}; "
+            f"p25: {percentiles[1]:.0f}; "
+            f"p50: {percentiles[2]:.0f}; "
+            f"p75: {percentiles[3]:.0f}; "
+            f"p100: {percentiles[4]:.0f}"
+        )
         return MarkerCenter, circle_center, circle_radius
 
     @staticmethod
@@ -325,14 +371,50 @@ class FisheyeModelNoTaichi:
     @staticmethod
     def save_init_marker_positions():
         img = cv2.imread(
-            SYSTEM_PARAMS.files.vitactip_photo_default_state, cv2.IMREAD_GRAYSCALE
+            SYSTEM_PARAMS.files.iros_sensor_default_state, cv2.IMREAD_GRAYSCALE
         )
         if img is None:
             raise FileNotFoundError(
                 "Could not find or open "
-                + SYSTEM_PARAMS.files.vitactip_photo_default_state
+                + SYSTEM_PARAMS.files.iros_sensor_default_state
             )
-        marker_positions, circle_center, circle_radius = FisheyeModelNoTaichi.get_marker_image(img)
+        # mode = 'iros'
+        mode = 'iros-first-run'
+        marker_positions, circle_center, circle_radius = FisheyeModelNoTaichi.get_marker_image(img, mode=mode)
+        if mode == 'iros-first-run':
+            extra_markers = np.array([[872, 300], [1364, 577], [718, 592]], dtype=np.float32)
+            marker_positions = np.asarray(marker_positions, dtype=np.float32).reshape(-1, 2)
+            marker_positions = np.vstack([marker_positions, extra_markers])
+
+        detected_markers_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        marker_positions = np.asarray(marker_positions, dtype=np.float32).reshape(-1, 2)
+        for marker_idx, (x, y) in enumerate(marker_positions):
+            x, y = int(x), int(y)
+            cv2.circle(
+                detected_markers_img,
+                (x, y),
+                radius=3,
+                color=(0, 0, 255),
+                thickness=-1,
+            )
+            cv2.putText(
+                detected_markers_img,
+                str(marker_idx),
+                (x + 5, y + 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.5,
+                color=(0, 255, 0),
+                thickness=1,
+            )
+        detected_markers_image_path = (
+            os.path.splitext(SYSTEM_PARAMS.files.init_marker_positions_npz)[0]
+            + "-detected-markers.png"
+        )
+        cv2.imwrite(detected_markers_image_path, detected_markers_img)
+
+        assert marker_positions.shape == (127, 2), (
+            f"Expected marker_positions shape (127, 2), got {marker_positions.shape}"
+        )
         # Save as pickle
         with open(SYSTEM_PARAMS.files.init_marker_positions, "wb") as f:
             pickle.dump(marker_positions, f)

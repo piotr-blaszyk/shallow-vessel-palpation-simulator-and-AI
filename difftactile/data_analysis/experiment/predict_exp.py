@@ -382,9 +382,10 @@ class PredictExp:
         video_out,
         npz_in,
         npz_out,
+        mode=None,
     ):
         marker_tracker = MarkerTracker()
-        marker_tracker.extract_frames(video_in)
+        marker_tracker.extract_frames(video_in, mode=mode)
         HungarianExp.reorder_exp_points(
             input_path=npz_in,
             output_path=npz_out,
@@ -401,9 +402,10 @@ class PredictExp:
         video_in,
         video_out,
         npz_out,
+        mode=None,
     ):
         marker_tracker = MarkerTracker()
-        marker_tracker.extract_frames(video_in)
+        marker_tracker.extract_frames(video_in, mode=mode)
         PredictExp.write_video_to_npz_file(
             marker_tracker=marker_tracker,
             path=npz_out,

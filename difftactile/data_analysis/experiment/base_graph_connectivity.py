@@ -34,25 +34,43 @@ class ComputeEdges:
     @staticmethod
     def compute_base_graph_connectivity():
         img = cv2.imread(
-            SYSTEM_PARAMS.files.vitactip_photo_default_state,
+            SYSTEM_PARAMS.files.iros_sensor_default_state,
             cv2.IMREAD_GRAYSCALE,
         )
         if img is None:
             raise FileNotFoundError(
-                f"Could not load image from {SYSTEM_PARAMS.files.vitactip_photo_default_state}"
+                f"Could not load image from {SYSTEM_PARAMS.files.iros_sensor_default_state}"
             )
-        points, _, _ = FisheyeModelNoTaichi.get_marker_image(img)
+        marker_data = np.load(SYSTEM_PARAMS.files.init_marker_positions_npz)
+        points = marker_data["points"]
+
+        detected_markers_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        for marker_idx, (x, y) in enumerate(points):
+            x, y = int(x), int(y)
+            cv2.circle(detected_markers_img, (x, y), radius=3, color=(0, 0, 255), thickness=-1)
+            cv2.putText(
+                detected_markers_img,
+                str(marker_idx),
+                (x + 5, y + 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.5,
+                color=(0, 255, 0),
+                thickness=1,
+            )
+        detected_markers_image_path = SYSTEM_PARAMS.files.voronoi_image.rsplit('.', 1)[0] + "-detected-markers.png"
+        cv2.imwrite(detected_markers_image_path, detected_markers_img)
+
         if len(points) != 127:
             raise ValueError(f"Expected 127 markers, but found {len(points)}")
 
         key_marker_targets = np.array([
-            [1036, 586],
-            [1157, 378],
-            [1275, 584],
-            [1159, 793],
-            [921, 799],
-            [795, 591],
-            [914, 378],
+            [1039, 582],
+            [1199, 300],
+            [1366, 576],
+            [1211, 858],
+            [888, 868],
+            [720, 592],
+            [874, 301],
         ], dtype=float)
         key_marker_indices = ComputeEdges._find_closest_unique_indices(
             points,
@@ -61,9 +79,9 @@ class ComputeEdges:
         center_idx = int(key_marker_indices[0])
         line_point_ixs = key_marker_indices[1:]
 
-        key_marker_img = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
+        key_marker_img = cv2.imread(SYSTEM_PARAMS.files.iros_sensor_default_state)
         if key_marker_img is None:
-            raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.vitactip_photo_default_state}")
+            raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.iros_sensor_default_state}")
         for i, marker_idx in enumerate(key_marker_indices):
             x, y = map(int, points[int(marker_idx)])
             cv2.circle(key_marker_img, (x, y), radius=6, color=(0, 0, 255), thickness=-1)
@@ -207,9 +225,9 @@ class ComputeEdges:
             dist_from_centre=norms_all,
         )
 
-        img = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
+        img = cv2.imread(SYSTEM_PARAMS.files.iros_sensor_default_state)
         if img is None:
-            raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.vitactip_photo_default_state}")
+            raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.iros_sensor_default_state}")
 
         for i, (x, y) in enumerate(points):
             x, y = int(x), int(y)
