@@ -948,4 +948,6 @@ def evaluate_and_plot_roc():
     plt.savefig('difftactile/output/roc_curve.pdf', format="pdf", dpi=300)
     plt.show()
 
+    print(f'auc: {auc}')
+
     return auc
