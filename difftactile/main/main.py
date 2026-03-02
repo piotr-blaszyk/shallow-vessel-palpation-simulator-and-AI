@@ -5,6 +5,7 @@ import os
 import pickle
 import time
 from pathlib import Path
+import time
 
 import cv2
 import matplotlib.pyplot as plt
@@ -1114,7 +1115,7 @@ class Contact:
         x2 = cx + r22 * np.cos(theta + np.pi)
         y2 = cy + r22 * np.sin(theta + np.pi)
 
-        if True:
+        if False:
             xr = NP_RNG.uniform(-5, 5)
             yr = NP_RNG.uniform(-5, 5)
             zr = NP_RNG.uniform(0, 60)
@@ -2174,16 +2175,18 @@ class Contact:
         self.tactile_canvas.circles(
             self.sim_markers_deformed, radius=0.01, color=(1, 0, 0)
         )
-        self.tactile_canvas.circles(
-            self.clock_arm_points,
-            radius=0.02,
-            per_vertex_color=self.clock_arm_points_per_vertex_color,
-        )
-        self.tactile_canvas.circles(
-            self.vein_2d_projection_flat,
-            radius=0.01,
-            color=(0, 0, 1)
-        )
+        if True:
+            self.tactile_canvas.circles(
+                self.clock_arm_points,
+                radius=0.02,
+                per_vertex_color=self.clock_arm_points_per_vertex_color,
+            )
+        if self.collision2_contact_flat[None] == 1 and 2 in self.collision_ixs:
+            self.tactile_canvas.circles(
+                self.vein_2d_projection_flat,
+                radius=0.01,
+                color=(0, 0, 1)
+            )
         self.tactile_window.show()
 
     def visualisation_set_up_gui(self):
@@ -2197,8 +2200,8 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.phantom_centroid_pose[:3]
-        self.camera.position(x, y, z+SYSTEM_PARAMS.visualisation.camera_offset)
-        self.camera.up(0, 1, 0)
+        self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
+        self.camera.up(0, 0, 1)
         self.camera.lookat(x, y, z)
         self.camera.fov(3)
         self.tactile_window = ti.ui.Window("tactile readout", (
@@ -2243,11 +2246,12 @@ class Contact:
         #     per_vertex_color=self.phantom.grid_colours,
         #     radius=SYSTEM_PARAMS.visualisation.particle_size_normal*2.5,
         # )
-        self.scene.particles(
-            self.vein.particles_A,
-            color=(1.0, 1.0, 0.0),
-            radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
-        )
+        if 2 in self.collision_ixs:
+            self.scene.particles(
+                self.vein.particles_A,
+                color=(1.0, 1.0, 0.0),
+                radius=SYSTEM_PARAMS.visualisation.particle_size_normal,
+            )
         self.scene.particles(
             self.sensor_points,
             color=(0.0, 1.0, 0.0),
@@ -2260,11 +2264,11 @@ class Contact:
         #     color=(1.0, 0.0, 0.0),
         #     radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
         # )
-        # self.scene.particles(
-        #     self.clock_arm_points_3d,
-        #     per_vertex_color=self.clock_arm_points_per_vertex_color,
-        #     radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint,
-        # )
+        self.scene.particles(
+            self.clock_arm_points_3d,
+            per_vertex_color=self.clock_arm_points_per_vertex_color,
+            radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint/3,
+        )
         self.canvas.scene(self.scene)
         self.window.show()
 
@@ -2524,15 +2528,15 @@ class Contact:
                 else:
                     self.bo.my_suggest_optimise()
                 self.set_contact_params_from_bo()
-            for j in range(5):
+            for j in range(2):
                 print(f"training trajectory: {i}/{SYSTEM_PARAMS.contact.num_training_trajectories - 1}; substep: {j}/5")
                 self.generate_trajectories()
-                if j < 4:
+                if False and j < 1:
                     self.collision_ixs = [0, 2]
                 else:
                     self.collision_ixs = [0]
                 self.randomise_contact_params()
-                for traj_ix in range(3, 4):
+                for traj_ix in range(0, 4):
                     self.trajectory_ix[None] = traj_ix
                     trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
                     # print(f'executing trajectory: {trajectory_name}')
@@ -2625,7 +2629,6 @@ def main():
     contact_model.get_keypoint_indices_and_validate()
     # contact_model.set_up_torch_params()
     
-    import time
     start_time = time.perf_counter()
     contact_model.collect_training_data()
     end_time = time.perf_counter()

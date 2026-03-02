@@ -24,7 +24,8 @@ class PredictExp:
     def __init__(self):
         self.fisheye_model = FisheyeModelNoTaichi()
         self.synthetic_image_generator = SyntheticImageGenerator()
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if False:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.x_min = -0.425
         self.x_max = -0.245
@@ -56,7 +57,8 @@ class PredictExp:
             self.stats = all_stats[target_difficulty]
         self.dataset.set_stats(self.stats)
 
-        self.init_model()
+        if False:
+            self.init_model()
         self.init_camera_params()
         self.compute_mapping_2d_3d()
 
@@ -499,16 +501,19 @@ class PredictExp:
         
         # Create confusion matrix overlay
         confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth_from_video, prediction)
+        confusion_overlay = (confusion_overlay * 255).astype(np.uint8)
+        confusion_overlay_path = 'difftactile/output/confusion_overlay_vein_map.png'
+        cv2.imwrite(confusion_overlay_path, confusion_overlay)
         
         # Load all images for visualization
         images = {
             'Original Ground Truth': cv2.imread(self.ground_truth_img_path, cv2.IMREAD_GRAYSCALE),
-            'Downsampled Ground Truth': cv2.imread(self.ground_truth_img_downsampled_path, cv2.IMREAD_GRAYSCALE),
+            # 'Downsampled Ground Truth': cv2.imread(self.ground_truth_img_downsampled_path, cv2.IMREAD_GRAYSCALE),
             'Ground Truth from Video': (ground_truth_from_video * 255).astype(np.uint8),
-            'Sensor Trajectory': cv2.imread(self.sensor_trajectory_img_path, cv2.IMREAD_GRAYSCALE),
-            'Feasible Ground Truth': cv2.imread(self.ground_truth_feasible_img_path, cv2.IMREAD_GRAYSCALE),
+            # 'Sensor Trajectory': cv2.imread(self.sensor_trajectory_img_path, cv2.IMREAD_GRAYSCALE),
+            # 'Feasible Ground Truth': cv2.imread(self.ground_truth_feasible_img_path, cv2.IMREAD_GRAYSCALE),
             'Prediction': cv2.imread(self.prediction_img_path, cv2.IMREAD_GRAYSCALE),
-            'Confusion Overlay': (confusion_overlay * 255).astype(np.uint8),
+            'Confusion Overlay': confusion_overlay,
         }
 
         # Create GBR overlay image
@@ -523,7 +528,7 @@ class PredictExp:
         gbr_overlay[prediction_img > 127] = [255, 0, 255]  # Magenta in BGR
         
         # Add GBR overlay to images dictionary
-        images['GBR Overlay'] = gbr_overlay
+        # images['GBR Overlay'] = gbr_overlay
 
         # Check if all images were loaded successfully
         if any(img is None for img in images.values()):
@@ -541,7 +546,7 @@ class PredictExp:
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
             resized = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_NEAREST)
             resized_images.append(resized)
-        
+
         # Create a 3x3 grid
         grid = np.zeros((target_height * 3, target_width * 3, 3), dtype=np.uint8)
         

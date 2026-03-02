@@ -567,7 +567,7 @@ class GNN(pl.LightningModule):
         return self.get_accumulator(shape=(), dtype=torch.int32)
     
     def get_accumulator(self, shape, dtype):
-        return {k: torch.zeros(shape, dtype=dtype, device='cuda:0') for k in self.stages_str}
+        return {k: torch.zeros(shape, dtype=dtype, device='cpu') for k in self.stages_str}
     
     def init_accumulators(self):
         self.area_pred_acc = self.get_iou_accumulator()
@@ -850,89 +850,104 @@ def compute_mean_std(dataset, ixs, key):
     }
 
 def evaluate_and_plot_roc():
-    model = GNN()
-    model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn))
-    model.eval()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
+    if True:
+        model = GNN()
+        model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn))
+        model.eval()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
 
-    with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
-        test_data = pickle.load(f)
-    all_stats = test_data['dataset_stats']
+        with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
+            test_data = pickle.load(f)
+        all_stats = test_data['dataset_stats']
 
-    full_dataset = MyDataset(
-        scheme="single_dataset",
-        sim_exp="exp",
-        data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
-        apply_augmentations=False,
-    )
-    train_dataset, _, _ = full_dataset.create_splits(
-        train_size=1.0,
-        val_size=0.0,
-        test_size=0.0
-    )
-    target_difficulty = 1.0
-    stats = all_stats[target_difficulty]
-    train_dataset.set_stats(stats)
-    train_dataset.set_difficulty_level(target_difficulty)
-    train_dataset.eval()
-    data_loader = DataLoader(
-        train_dataset,
-        batch_size=16,
-        shuffle=False,
-        num_workers=16,
-        pin_memory=False,
-        persistent_workers=False,
-    )
+        full_dataset = MyDataset(
+            scheme="single_dataset",
+            sim_exp="exp",
+            data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+            apply_augmentations=False,
+        )
+        train_dataset, _, _ = full_dataset.create_splits(
+            train_size=1.0,
+            val_size=0.0,
+            test_size=0.0
+        )
+        target_difficulty = 1.0
+        stats = all_stats[target_difficulty]
+        train_dataset.set_stats(stats)
+        train_dataset.set_difficulty_level(target_difficulty)
+        train_dataset.eval()
+        data_loader = DataLoader(
+            train_dataset,
+            batch_size=16,
+            shuffle=False,
+            num_workers=16,
+            pin_memory=False,
+            persistent_workers=False,
+        )
 
-    all_probs = []
-    all_labels = []
+        all_probs = []
+        all_labels = []
 
-    with torch.no_grad():
-        for batch, labels_images, poses, metadata, frame_ix in data_loader:
-            batch = batch.to(device)
+        with torch.no_grad():
+            for batch, labels_images, poses, metadata, frame_ix in data_loader:
+                batch = batch.to(device)
 
-            x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(batch, batch.num_graphs)
-            out = model(x, edge_index, edge_attr, batch.batch)
-            out = out.squeeze(-1)
-            out = out[x_mask]
-            mask = batch.mask
-            out = out[mask]
-            probs = torch.sigmoid(out)
-            labels = batch.y[mask]
-            all_probs.append(probs.cpu())
-            all_labels.append(labels.cpu())
+                x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(batch, batch.num_graphs)
+                out = model(x, edge_index, edge_attr, batch.batch)
+                out = out.squeeze(-1)
+                out = out[x_mask]
+                mask = batch.mask
+                out = out[mask]
+                probs = torch.sigmoid(out)
+                labels = batch.y[mask]
+                all_probs.append(probs.cpu())
+                all_labels.append(labels.cpu())
 
-    all_probs = torch.cat(all_probs).numpy()
-    all_labels = torch.cat(all_labels).numpy()
+        all_probs = torch.cat(all_probs).numpy()
+        all_labels = torch.cat(all_labels).numpy()
 
-    auc = roc_auc_score(all_labels, all_probs)
-    fpr, tpr, _ = roc_curve(all_labels, all_probs)
+        auc = roc_auc_score(all_labels, all_probs)
+        fpr, tpr, _ = roc_curve(all_labels, all_probs)
 
-    thresholds = np.linspace(0.0, 1.0, 20)
-    tpr_list, fpr_list = [], []
-    for thr in thresholds:
-        preds = (all_probs >= thr).astype(int)
-        tp = np.sum((preds == 1) & (all_labels == 1))
-        fp = np.sum((preds == 1) & (all_labels == 0))
-        tn = np.sum((preds == 0) & (all_labels == 0))
-        fn = np.sum((preds == 0) & (all_labels == 1))
-        tpr_list.append(tp / (tp + fn) if (tp + fn) > 0 else 0.0)
-        fpr_list.append(fp / (fp + tn) if (fp + tn) > 0 else 0.0)
+        thresholds = np.linspace(0.0, 1.0, 20)
+        tpr_list, fpr_list = [], []
+        for thr in thresholds:
+            preds = (all_probs >= thr).astype(int)
+            tp = np.sum((preds == 1) & (all_labels == 1))
+            fp = np.sum((preds == 1) & (all_labels == 0))
+            tn = np.sum((preds == 0) & (all_labels == 0))
+            fn = np.sum((preds == 0) & (all_labels == 1))
+            tpr_list.append(tp / (tp + fn) if (tp + fn) > 0 else 0.0)
+            fpr_list.append(fp / (fp + tn) if (fp + tn) > 0 else 0.0)
+    
+    if False:
+        fpr_list = np.linspace(0, 1, 11)
+        tpr_list = fpr_list ** 0.5
+        fpr = fpr_list
+        tpr = tpr_list
+        auc = 0.75
+        thresholds = np.linspace(0, 1, 11)
 
+    fontsize = 20
     plt.figure(figsize=(7, 6))
-    plt.plot(fpr, tpr, label=f"ROC curve (AUC = {auc:.3f})", alpha=0.8)
-    plt.scatter(fpr_list, tpr_list, color="red", s=30, label="20 thresholds")
+    plt.plot(fpr, tpr, label=f"ROC curve", alpha=0.8, linewidth=6.0)
+    plt.scatter(fpr_list, tpr_list, color="red", s=200, label="thresholds")
 
     for thr, x, y in zip(thresholds, fpr_list, tpr_list):
-        plt.text(x, y, f"{thr:.2f}", fontsize=8, ha="left", va="bottom")
+        plt.text(x, y, f"{thr:.2f}", fontsize=fontsize, ha="left", va="bottom", fontweight="bold")
+    
+    plt.tick_params(axis="both", which="major", labelsize=fontsize)
+    for label in plt.gca().get_xticklabels() + plt.gca().get_yticklabels():
+        label.set_fontweight("bold")
 
-    plt.plot([0, 1], [0, 1], "k--", alpha=0.5)
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
-    plt.title("ROC Curve for Node Classification GNN")
-    plt.legend(loc="lower right")
-    plt.grid(True, alpha=0.3)
+    plt.plot([0, 1], [0, 1], "k-", alpha=0.5, linewidth=6.0)
+    plt.xlabel("False Positive Rate", fontsize=fontsize, fontweight="bold")
+    plt.ylabel("True Positive Rate", fontsize=fontsize, fontweight="bold")
+    plt.grid(True, linestyle="--", alpha=0.3, linewidth=3.0)
+    for spine in plt.gca().spines.values():
+        spine.set_linewidth(3.0)
+    plt.tight_layout()
     plt.savefig('difftactile/output/roc_curve.pdf', format="pdf", dpi=300)
     plt.show()
 

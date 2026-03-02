@@ -5,7 +5,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 from difftactile.cnn.dataset import *
@@ -434,18 +434,18 @@ class Visualisation:
                     data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
                     apply_augmentations=True,
                 )
-            train_dataset, _, _ = full_dataset.create_splits(
-                train_size=1.0,
+            _, _, test_dataset = full_dataset.create_splits(
+                train_size=0.0,
                 val_size=0.0,
-                test_size=0.0
+                test_size=1.0
             )
             target_difficulty = 1.0
             stats = all_stats[target_difficulty]
-            train_dataset.set_stats(stats)
-            train_dataset.set_difficulty_level(target_difficulty)
-            train_dataset.eval()
+            test_dataset.set_stats(stats)
+            test_dataset.set_difficulty_level(target_difficulty)
+            test_dataset.eval()
             data_loader = DataLoader(
-                train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+                test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
             )
         elif data_source == 'exp_npz':
             exp_test_dataset_grid_search = MyDataset(
@@ -472,11 +472,17 @@ class Visualisation:
             )
 
         data_iter = iter(data_loader)
-        sequence_idx = 0
+        data_list = list(data_iter)
+        gt = []
+        sp = []
+        hp = []
+        co = []
+        meta = []
 
-        while True:  # Main loop for continuous data loading
+        for sequence_idx in range(len(data_list)):  # Main loop for continuous data loading
             try:
-                batch, labels_images, poses, metadata, frame_ix = next(data_iter)
+                # batch, labels_images, poses, metadata, frame_ix = next(data_iter)
+                batch, labels_images, poses, metadata, frame_ix = data_list[sequence_idx]
                 poses = poses.numpy()[0]
                 metadata = metadata.numpy()[0]
                 frame_ix = frame_ix.item()
@@ -513,6 +519,7 @@ class Visualisation:
             MARKER_RADIUS = MARKER_SIZE // 2
 
             # Initialize image stacks for each color channel with white background
+            metadata_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)
             ground_truth_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)
             prediction_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)
             soft_prediction_stack = np.zeros((num_frames, h, w, 3), dtype=np.uint8)  # New stack for soft predictions
@@ -717,56 +724,146 @@ class Visualisation:
                     pass
 
             # Display loop
-            current_frame = 0
-            while True:
-                # Show images from pre-computed stacks
-                title_prefix = f'Frame {current_frame}/{num_frames-1} '
-                title_prefix += '(Central Frame) ' if current_frame == central_frame else ''
-                
-                cv2.imshow(f'Ground Truth {sequence_idx}', ground_truth_stack[current_frame])
-                if mode == 'predictions':
-                    cv2.imshow(f'Hard Prediction {sequence_idx}', prediction_stack[current_frame])
-                    cv2.imshow(f'Soft Prediction {sequence_idx}', soft_prediction_stack[current_frame])
-                    cv2.imshow(f'Confusion Matrix {sequence_idx}', confusion_matrix_stack[current_frame])
-                    cv2.imshow(f'Frame Statistics {sequence_idx}', stats_stack[current_frame])
-                cv2.imshow(f'Labels Image {sequence_idx}', labels_stack[current_frame])
-                cv2.imshow(f'Graph Connectivity {sequence_idx}', graph_stack[current_frame])
+            current_frame = SYSTEM_PARAMS.gnn.clip_len // 2
 
-                # Position windows side by side
-                sep_w = 20
-                sep_h = 130
-                cv2.moveWindow(f'Ground Truth {sequence_idx}', 0, 0)
-                if mode == 'predictions':
-                    cv2.moveWindow(f'Hard Prediction {sequence_idx}', w + sep_w, 0)
-                    cv2.moveWindow(f'Soft Prediction {sequence_idx}', w + sep_w, h + sep_h)
-                    cv2.moveWindow(f'Confusion Matrix {sequence_idx}', 2 * (w + sep_w), 0)
-                    cv2.moveWindow(f'Labels Image {sequence_idx}', 2 * (w + sep_w), h + sep_h)
-                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', 3 * (w + sep_w), 0)
-                    cv2.moveWindow(f'Frame Statistics {sequence_idx}', 0, h + sep_h)
-                else:
-                    cv2.moveWindow(f'Labels Image {sequence_idx}', w + sep_w, 0)
-                    cv2.moveWindow(f'Graph Connectivity {sequence_idx}', w + sep_w, labels_h + sep_h)
+            meta_cur = metadata_stack[current_frame]
 
-                # Handle keyboard input
-                key = cv2.waitKey(0) & 0xFF
+            traj_ix = sequence_idx // 20
+            direction = 'right' if (sequence_idx % 20) // 10 == 0 else 'left'
+            small_frame_ix = sequence_idx % 10
+
+            text1 = f"trajectory: {traj_ix+1}/5"
+            text2 = f"direction: {direction}"
+            text3 = f"frame number: {small_frame_ix+1}/10"
+            org1 = (10, 50)
+            org2 = (10, 100)
+            org3 = (10, 150)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 1
+            color = (255, 255, 255)
+            thickness = 3
+
+            cv2.putText(meta_cur, text1, org1, font, font_scale, color, thickness, cv2.LINE_AA)
+            cv2.putText(meta_cur, text2, org2, font, font_scale, color, thickness, cv2.LINE_AA)
+            cv2.putText(meta_cur, text3, org3, font, font_scale, color, thickness, cv2.LINE_AA)
+
+            meta.append(meta_cur)
+            gt.append(ground_truth_stack[current_frame])
+            sp.append(soft_prediction_stack[current_frame])
+            hp.append(prediction_stack[current_frame])
+            co.append(confusion_matrix_stack[current_frame])
+
+        def filter_right(arr):
+            return [x for i in range(0, len(arr), 20) for x in arr[i:i+10]]
+
+        def filter_left(arr):
+            return [x for i in range(0, len(arr), 20) for x in arr[i+10:i+20]]
+        
+        meta = filter_left(meta)
+        gt = filter_left(gt)
+        sp = filter_left(sp)
+        hp = filter_left(hp)
+        co = filter_left(co)
+
+        need_to_wait_3 = True
+        for sequence_idx_3 in range(len(meta)):
+            cv2.imshow('Ground Truth', gt[sequence_idx_3])
+            if mode == 'predictions':
+                cv2.imshow('Hard Prediction', hp[sequence_idx_3])
+                cv2.imshow('Confusion Matrix', co[sequence_idx_3])
+                cv2.imshow('Soft Prediction', sp[sequence_idx_3])
+                cv2.imshow('Metadata', meta[sequence_idx_3])
+            
+            sep_w = 20
+            sep_h = 130
+            cv2.moveWindow('Ground Truth', 0, 0)
+            if mode == 'predictions':
+                cv2.moveWindow('Hard Prediction', w + sep_w, 0)
+                cv2.moveWindow('Confusion Matrix', 0, h + sep_h)
+                cv2.moveWindow('Soft Prediction', w + sep_w, h + sep_h)
+                cv2.moveWindow('Metadata', 2 * (w + sep_w), 0)
+            
+            if need_to_wait_3:
+                # first frame delay
+                cv2.waitKey(4000)
+                need_to_wait_3 = False
+            
+            # delay between frames
+            if sequence_idx_3 % 10 == 9:
+                foo = 2_000
+            else:
+                foo = 500
+            if cv2.waitKey(foo) & 0xFF == ord('q'):  # wait 0.5s, press 'q' to quit
+                break
+
+        cv2.waitKey(4000)
+        cv2.destroyAllWindows()
+        return
+
+        sequence_idx_2 = 0
+        need_to_wait = True
+        while True:
+            # Show images from pre-computed stacks
+            # title_prefix = f'Frame {current_frame}/{num_frames-1} '
+            # title_prefix += '(Central Frame) ' if current_frame == central_frame else ''
+            
+            cv2.imshow(f'Ground Truth', gt[sequence_idx_2])
+            if mode == 'predictions':
+                cv2.imshow(f'Hard Prediction', hp[sequence_idx_2])
+                cv2.imshow(f'Confusion Matrix', co[sequence_idx_2])
+                cv2.imshow(f'Soft Prediction', sp[sequence_idx_2])
+                cv2.imshow(f'Metadata', meta[sequence_idx_2])
+                # cv2.imshow(f'Frame Statistics', stats_stack[current_frame])
+            # cv2.imshow(f'Labels Image', labels_stack[current_frame])
+            # cv2.imshow(f'Graph Connectivity', graph_stack[current_frame])
+
+            # Position windows side by side
+            sep_w = 20
+            sep_h = 130
+            cv2.moveWindow(f'Ground Truth', 0, 0)
+            if mode == 'predictions':
+                cv2.moveWindow(f'Hard Prediction', w + sep_w, 0)
+                cv2.moveWindow(f'Confusion Matrix', 0, h + sep_h)
+                cv2.moveWindow(f'Soft Prediction', w + sep_w, h + sep_h)
+                cv2.moveWindow(f'Metadata', 2*(w + sep_w), 0)
+                # cv2.moveWindow(f'Labels Image', 2 * (w + sep_w), h + sep_h)
+                # cv2.moveWindow(f'Graph Connectivity', 3 * (w + sep_w), 0)
+                # cv2.moveWindow(f'Frame Statistics', 0, h + sep_h)
+            else:
+                # cv2.moveWindow(f'Labels Image', w + sep_w, 0)
+                # cv2.moveWindow(f'Graph Connectivity', w + sep_w, labels_h + sep_h)
+                pass
                 
-                if key == ord('q'):  # Quit visualization
-                    cv2.destroyAllWindows()
-                    # Force destruction of all windows and clear any pending events
-                    for i in range(10):  # Multiple calls to handle race conditions
-                        cv2.waitKey(1)
-                        time.sleep(0.1)
-                    return
-                elif key == ord('c'):  # Close current sequence and load next
-                    sequence_idx += 1
-                    cv2.destroyAllWindows()
-                    break
-                elif key == ord('j'):  # Previous frame
-                    current_frame = max(0, current_frame - 1)
-                elif key == ord('k'):  # Next frame
-                    current_frame = min(num_frames - 1, current_frame + 1)
-                elif key == ord('d'):
-                    foo = 7
+            if need_to_wait:
+                time.sleep(10)
+                need_to_wait = False
+
+            # Handle keyboard input
+            key = cv2.waitKey(0) & 0xFF
+            
+            if key == ord('q'):  # Quit visualization
+                cv2.destroyAllWindows()
+                # Force destruction of all windows and clear any pending events
+                for i in range(10):  # Multiple calls to handle race conditions
+                    cv2.waitKey(1)
+                    time.sleep(0.1)
+                return
+            elif key == ord('x'):
+                sequence_idx_2 -= 1
+                sequence_idx_2 = max(min(sequence_idx_2, len(meta)-1), 0)
+                # cv2.destroyAllWindows()
+
+            elif key == ord('c'):  # Close current sequence and load next
+                sequence_idx_2 += 1
+                sequence_idx_2 = max(min(sequence_idx_2, len(meta)-1), 0)
+                # cv2.destroyAllWindows()
+                # break
+            # elif key == ord('j'):  # Previous frame
+            #     current_frame = max(0, current_frame - 1)
+            # elif key == ord('k'):  # Next frame
+            #     current_frame = min(num_frames - 1, current_frame + 1)
+            elif key == ord('d'):
+                foo = 7
         
         cv2.destroyAllWindows()
         for i in range(10):
