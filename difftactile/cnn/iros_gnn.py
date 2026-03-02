@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger
 from torch.utils.data import SubsetRandomSampler
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GINEConv
@@ -631,7 +631,7 @@ class MyDataModule(pl.LightningDataModule):
         sampler = SubsetRandomSampler(
             self.current_train_indices, generator=self.generator
         )
-        print(f"train dataset difficulty: {self.train_dataset.difficulty_fyi}")
+        # print(f"train dataset difficulty: {self.train_dataset.difficulty_fyi}")
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
@@ -647,7 +647,7 @@ class MyDataModule(pl.LightningDataModule):
         sampler = SubsetRandomSampler(
             self.current_val_indices, generator=self.generator
         )
-        print(f"val dataset difficulty: {self.train_dataset.difficulty_fyi}")
+        # print(f"val dataset difficulty: {self.train_dataset.difficulty_fyi}")
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
@@ -658,7 +658,7 @@ class MyDataModule(pl.LightningDataModule):
         )
 
     def test_dataloader(self):
-        print(f"test dataset difficulty: {self.train_dataset.difficulty_fyi}")
+        # print(f"test dataset difficulty: {self.train_dataset.difficulty_fyi}")
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
@@ -675,18 +675,21 @@ def main():
     BATCH_SIZE = SYSTEM_PARAMS.gnn.batch_size
     NUM_EPOCHS = SYSTEM_PARAMS.gnn.num_epochs
     NUM_WORKERS = SYSTEM_PARAMS.gnn.num_workers
-    NUM_TRAIN_BATCHES = SYSTEM_PARAMS.gnn.num_train_batches
-    NUM_VAL_BATCHES = SYSTEM_PARAMS.gnn.num_val_batches
-    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * NUM_TRAIN_BATCHES
-    VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * NUM_VAL_BATCHES
+    TRAIN_EPOCH_SUBSET_SIZE = 10_000
+    VAL_EPOCH_SUBSET_SIZE = 10_000
     tensor_board_root_dir = 'lightning_logs'
     timestamp = time.strftime('%Y%m%d_%H%M%S')
     tensor_board_experiment_dir = f"gnn"
     tensor_board_full_dir = f'{tensor_board_root_dir}/{tensor_board_experiment_dir}'
     print(f'tensorboard directory: {tensor_board_full_dir}')
-    logger = TensorBoardLogger(
-        save_dir=tensor_board_root_dir,
-        name=tensor_board_experiment_dir,
+    # logger = TensorBoardLogger(
+    #     save_dir=tensor_board_root_dir,
+    #     name=tensor_board_experiment_dir,
+    #     version=f"run_{timestamp}",
+    # )
+    logger = CSVLogger(
+        save_dir="logs",
+        name="my_experiment",
         version=f"run_{timestamp}",
     )
     meat_dataset = MyDataset(
@@ -694,6 +697,7 @@ def main():
         sim_exp='apple',
         data_dir='banana',
         apply_augmentations='cherry',
+        name='meat',
     )
     train_dataset, val_dataset, test_dataset = meat_dataset.create_splits()
     silicone_dataset = MyDataset(
@@ -701,6 +705,7 @@ def main():
         sim_exp="exp",
         data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
         apply_augmentations=False,
+        name='silicone',
     )
     stats = compute_stats(train_dataset, BATCH_SIZE)
     alpha_neg = stats["alpha_neg"]
@@ -764,15 +769,19 @@ def main():
     start = time.perf_counter()
     trainer.fit(model, datamodule=data_module)
 
+    best_model_path = checkpoint_cb.best_model_path
+    if not best_model_path:
+        raise RuntimeError("No best checkpoint was saved; cannot test best model.")
+    best_model = GNN.load_from_checkpoint(best_model_path)
     print("\nTesting on silicone dataset:")
-    trainer.test(model, dataloaders=silicone_loader)
+    trainer.test(best_model, dataloaders=silicone_loader)
     end = time.perf_counter()
     duration = end - start
     print(
         f"\nTraining and testing completed in {duration:.2f} seconds ({duration / 60:.2f} minutes)"
     )
     os.makedirs("saved_models_iros", exist_ok=True)
-    torch.save(model.state_dict(), SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros)
+    torch.save(best_model.state_dict(), SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros)
 
 
 def compute_stats(dataset, batch_size):
@@ -847,6 +856,7 @@ def evaluate_and_plot_roc():
         sim_exp="exp",
         data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
         apply_augmentations=False,
+        name='silicone',
     )
     train_dataset, _, _ = silicone_dataset.create_splits(
         train_size=1.0,

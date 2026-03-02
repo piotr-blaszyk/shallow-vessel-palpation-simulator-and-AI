@@ -55,6 +55,7 @@ class MyDataset(torch.utils.data.Dataset):
         exp_ground_truth_labels_npz=None,
         exp_dilation=None,
         dilation_iros=1,
+        name=None,
     ):
         # Initialize mutable defaults
         if data_points_today is None:
@@ -150,7 +151,10 @@ class MyDataset(torch.utils.data.Dataset):
             print(
                 f"Time taken to initialise dataset: {end_time - start_time:.2f} seconds"
             )
-            print(f"num data points: {len(self.data_points):,}")
+            if scheme == "iros":
+                print(f"dataset name: [{name}]; num data points: {len(self.iros_data):,}")
+            else:
+                print(f"dataset name: [{name}]; num data points: {len(self.data_points):,}")
     
     def populate_clips_single_dataset_scheme_train(self):
         self.files = MyDataset.get_folder_files(self.data_dir)
@@ -192,8 +196,11 @@ class MyDataset(torch.utils.data.Dataset):
 
     def populate_clips_iros(self):
         self.iros_data = []
+        allowed_trial_ids = set(IROS_TRAIN_TRIALS) | set(IROS_VALIDATION_TRIALS)
         trial_ids = sorted(os.listdir(IROS_CLEAN_DATA_DIR))
         for trial_id in trial_ids:
+            if trial_id not in allowed_trial_ids:
+                continue
             trial_folder_path = os.path.join(IROS_CLEAN_DATA_DIR, trial_id)
             if not os.path.isdir(trial_folder_path):
                 continue
