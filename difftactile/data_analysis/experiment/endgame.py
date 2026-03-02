@@ -712,16 +712,16 @@ def main():
     e.extract_markers()
     e.reorder_interpolate_markers()
     # e.annotate()
-    # e.annotations_to_line_points()
-    # e.visualise_line_points()
+    e.annotations_to_line_points()
+    e.visualise_line_points()
     e.merge_npz_to_sim_format()
     e.merge_npz_sim_format_poses()
     e.add_dense_line_data()
-    # e.validate_line_dense_to_sparse(
-    #     cx=e.cx,
-    #     cy=e.cy,
-    #     r=e.r,
-    # )
+    e.validate_line_dense_to_sparse(
+        cx=e.cx,
+        cy=e.cy,
+        r=e.r,
+    )
 
 
 if __name__ == "__main__":
