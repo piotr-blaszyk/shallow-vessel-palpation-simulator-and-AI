@@ -54,6 +54,7 @@ class MyDataset(torch.utils.data.Dataset):
         exp_markers_npz=None,
         exp_ground_truth_labels_npz=None,
         exp_dilation=None,
+        dilation_iros=1,
     ):
         # Initialize mutable defaults
         if data_points_today is None:
@@ -120,7 +121,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.data_points = data_points
         self.iros_data = iros_data
         self.data_dir = data_dir
-        self.dilation = getattr(SYSTEM_PARAMS.dataset, "dilation", 1)
+        self.dilation_iros = dilation_iros
         if mode == "root":
             if scheme == "old":
                 self.populate_clips_old_scheme()
@@ -202,16 +203,16 @@ class MyDataset(torch.utils.data.Dataset):
             with np.load(marker_positions_path) as marker_positions_data:
                 marker_positions = marker_positions_data["marker_positions"]
             total_frames = marker_positions.shape[0]
-            dilated_clip_len = self.clip_len * self.dilation
+            dilated_clip_len = self.clip_len * self.dilation_iros
             if total_frames < dilated_clip_len:
                 continue
             num_possible_starts = total_frames - dilated_clip_len + 1
             for start_ix in range(num_possible_starts):
                 video_frame_indices = list(
-                    range(start_ix, start_ix + dilated_clip_len, self.dilation)
+                    range(start_ix, start_ix + dilated_clip_len, self.dilation_iros)
                 )
                 self.iros_data.append(
-                    (trial_folder_path, self.dilation, video_frame_indices)
+                    (trial_folder_path, self.dilation_iros, video_frame_indices)
                 )
         self.data_points = self.iros_data
 
