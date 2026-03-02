@@ -11,7 +11,7 @@
             "request": "launch",
             "module": "difftactile.scripts.${fileBasenameNoExtension}",
             "console": "integratedTerminal",
-            "cwd": "/home/psb120/Documents/DiffTactile",
+            "cwd": "${workspaceFolder}",
         },
     
         {

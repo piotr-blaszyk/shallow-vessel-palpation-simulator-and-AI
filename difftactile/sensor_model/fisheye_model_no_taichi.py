@@ -106,7 +106,7 @@ class FisheyeModelNoTaichi:
         if mode == "iros-first-run":
             params.minThreshold = 0
             params.maxThreshold = 150
-            params.thresholdStep = 1
+            params.thresholdStep = 5
             params.minDistBetweenBlobs = 40
             params.filterByArea = True
             params.minArea = 300
@@ -122,11 +122,11 @@ class FisheyeModelNoTaichi:
             params.maxConvexity = 1e+37
             params.filterByColor = True
             params.blobColor = 0
-            params.minRepeatability = 10
+            params.minRepeatability = 4
         elif mode == "iros":
             params.minThreshold = 0
             params.maxThreshold = 200
-            params.thresholdStep = 1
+            params.thresholdStep = 5
             params.minDistBetweenBlobs = 25
             params.filterByArea = True
             params.minArea = 300
@@ -142,7 +142,7 @@ class FisheyeModelNoTaichi:
             params.maxConvexity = 1e+37
             params.filterByColor = True
             params.blobColor = 0
-            params.minRepeatability = 10
+            params.minRepeatability = 4
         else:
             params.filterByColor = True
             params.blobColor = 0
@@ -181,14 +181,15 @@ class FisheyeModelNoTaichi:
         areas.sort()
         sizes.sort()
         percentiles = np.percentile(areas, [0, 25, 50, 75, 100])
-        print(
-            "area_percentiles (assuming perfectly circular shape) "
-            f"p0: {percentiles[0]:.0f}; "
-            f"p25: {percentiles[1]:.0f}; "
-            f"p50: {percentiles[2]:.0f}; "
-            f"p75: {percentiles[3]:.0f}; "
-            f"p100: {percentiles[4]:.0f}"
-        )
+        if False:
+            print(
+                "area_percentiles (assuming perfectly circular shape) "
+                f"p0: {percentiles[0]:.0f}; "
+                f"p25: {percentiles[1]:.0f}; "
+                f"p50: {percentiles[2]:.0f}; "
+                f"p75: {percentiles[3]:.0f}; "
+                f"p100: {percentiles[4]:.0f}"
+            )
         return MarkerCenter, circle_center, circle_radius
 
     @staticmethod

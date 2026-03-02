@@ -243,6 +243,15 @@ class ComputeEdges:
 
         cv2.imwrite(SYSTEM_PARAMS.files.voronoi_image, img)
 
+        apple = np.load(SYSTEM_PARAMS.files.init_marker_positions_npz)
+        peas = apple['points']
+        conn = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
+        _, mango, _ = Adjacency.get_graph_connectivity_helper(conn, peas)
+        np.savez(
+            SYSTEM_PARAMS.files.iros_marker_locations_ordered,
+            points=mango,
+        )
+
     @staticmethod
     def visualise_flat_sensor():
         # Load the default state image
@@ -253,7 +262,7 @@ class ComputeEdges:
         if img is None:
             raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.flat_sensor_default_state}")
 
-        path = SYSTEM_PARAMS.files.flat_sensor_default_state_npz
+        path = SYSTEM_PARAMS.files.iros_marker_locations_ordered
         data = np.load(path)
         points = data['points']
 

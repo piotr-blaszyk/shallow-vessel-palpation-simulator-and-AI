@@ -412,6 +412,7 @@
         "da_twist_x_npz": "difftactile/output/da_twist_x.npz",
         "da_slide_npz": "difftactile/output/da_slide.npz",
         "flat_sensor_default_state_npz": "difftactile/output/flat_sensor_default_state.npz",
+        "iros_marker_locations_ordered": "difftactile/output/iros_marker_locations_ordered.npz",
         "da_overlay": "difftactile/output/da_overlay_{:s}.png",
         "bo_gp_json": "difftactile/system_params/bo-gp.json",
         "bo_gp_target_json": "difftactile/output/bo-gp-target.json",

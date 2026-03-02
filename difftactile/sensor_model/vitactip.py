@@ -35,7 +35,7 @@ class ViTacTip:
         default_photo = SYSTEM_PARAMS.files.flat_sensor_default_state
         dir = SYSTEM_PARAMS.files.da_dir
         self.default_photo = f'{dir}{default_photo}'
-        self.default_npz = SYSTEM_PARAMS.files.flat_sensor_default_state_npz
+        self.default_npz = SYSTEM_PARAMS.files.iros_marker_locations_ordered
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
         self.dt[None] = SYSTEM_PARAMS.contact.dt_override
         self.rayleigh_damping_alpha = ti.field(dtype=ti.f32, shape=(), needs_grad=False)

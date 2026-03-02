@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 import cv2
 import numpy as np
 from scipy.interpolate import interp1d
+from tqdm import tqdm
 
 from difftactile.data_analysis.experiment.predict_exp import PredictExp
 from difftactile.sensor_model.fisheye_model_no_taichi import FisheyeModelNoTaichi
@@ -364,15 +365,11 @@ class IrosPreprocessData:
         if not common_trials:
             raise RuntimeError("No overlapping trial IDs between input folder and spec")
 
-        print(f"Found {len(common_trials)} trials to process")
         i = 0
-        for trial_id in common_trials:
+        for trial_id in tqdm(common_trials, desc="Processing trials"):
             i += 1
-            if i == 1:
-                continue
             cfg = spec_cfg[trial_id]
             avi_path, pose_npz_path = pairs[trial_id]
-            print(f"Processing {trial_id}")
 
             decimated_video, decimated_poses = self._decimate_video_and_poses(
                 avi_path=avi_path,
@@ -387,8 +384,7 @@ class IrosPreprocessData:
 
             n_frames = min(len(decimated_poses), markers_xy.shape[0])
             if n_frames == 0:
-                print(f"Skipping {trial_id}: no valid decimated frames")
-                continue
+                raise Exception(f"Trial {trial_id} has no valid decimated frames")
             markers_xy = markers_xy[:n_frames]
             decimated_poses = decimated_poses[:n_frames]
 
@@ -409,11 +405,6 @@ class IrosPreprocessData:
                 trial_out_dir / "marker_labels.npz",
                 marker_labels=labels,
             )
-            print(
-                f"Saved {trial_id}: marker_positions {markers_xy.shape}, "
-                f"marker_labels {labels.shape}"
-            )
-            break
 
 
 def main():
