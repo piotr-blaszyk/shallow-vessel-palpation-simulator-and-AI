@@ -18,6 +18,23 @@ from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 
 
+IROS_CLEAN_DATA_DIR = "/home/psb120/Documents/diff-tactile-fork/difftactile/manual_or_experimental_data/iros_training_data/clean/"
+IROS_TRAIN_TRIALS = [
+    "20260228-230937",
+    "20260228-232013",
+    "20260228-232632",
+    "20260228-233031",
+    "20260228-233454",
+    "20260228-234824",
+    "20260228-235749",
+]
+IROS_VALIDATION_TRIALS = [
+    "20260228-234337",
+    "20260301-000849",
+    "20260301-001457",
+]
+
+
 class MyDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -32,6 +49,7 @@ class MyDataset(torch.utils.data.Dataset):
         data_points_pos=None,
         data_points_neg=None,
         data_points=None,
+        iros_data=None,
         normalise_pos=True,
         exp_markers_npz=None,
         exp_ground_truth_labels_npz=None,
@@ -48,6 +66,8 @@ class MyDataset(torch.utils.data.Dataset):
             data_points_neg = []
         if data_points is None:
             data_points = []
+        if iros_data is None:
+            iros_data = []
         super().__init__()
         start_time = time.perf_counter()
         self.apply_augmentations = apply_augmentations
@@ -98,7 +118,9 @@ class MyDataset(torch.utils.data.Dataset):
         self.data_points_pos = data_points_pos
         self.data_points_neg = data_points_neg
         self.data_points = data_points
+        self.iros_data = iros_data
         self.data_dir = data_dir
+        self.dilation = getattr(SYSTEM_PARAMS.dataset, "dilation", 1)
         if mode == "root":
             if scheme == "old":
                 self.populate_clips_old_scheme()
@@ -109,6 +131,8 @@ class MyDataset(torch.utils.data.Dataset):
                     self.populate_clips_single_dataset_scheme_train()
                 else:
                     self.populate_clips_single_dataset_scheme_test()
+            elif scheme == "iros":
+                self.populate_clips_iros()
         elif mode == "exp":
             self.compute_data_points_exp()
         elif mode != "dummy":
@@ -117,6 +141,8 @@ class MyDataset(torch.utils.data.Dataset):
             elif scheme == "new":
                 self.compute_data_points_new_scheme()
             elif scheme == "single_dataset":
+                pass
+            elif scheme == "iros":
                 pass
         end_time = time.perf_counter()
         if mode == "root":
@@ -162,6 +188,32 @@ class MyDataset(torch.utils.data.Dataset):
                     self.data_points.append(
                         (file_path, start_ix, dilation)
                     )
+
+    def populate_clips_iros(self):
+        self.iros_data = []
+        trial_ids = sorted(os.listdir(IROS_CLEAN_DATA_DIR))
+        for trial_id in trial_ids:
+            trial_folder_path = os.path.join(IROS_CLEAN_DATA_DIR, trial_id)
+            if not os.path.isdir(trial_folder_path):
+                continue
+            marker_positions_path = os.path.join(trial_folder_path, "marker_positions.npz")
+            if not os.path.exists(marker_positions_path):
+                continue
+            with np.load(marker_positions_path) as marker_positions_data:
+                marker_positions = marker_positions_data["marker_positions"]
+            total_frames = marker_positions.shape[0]
+            dilated_clip_len = self.clip_len * self.dilation
+            if total_frames < dilated_clip_len:
+                continue
+            num_possible_starts = total_frames - dilated_clip_len + 1
+            for start_ix in range(num_possible_starts):
+                video_frame_indices = list(
+                    range(start_ix, start_ix + dilated_clip_len, self.dilation)
+                )
+                self.iros_data.append(
+                    (trial_folder_path, self.dilation, video_frame_indices)
+                )
+        self.data_points = self.iros_data
 
     @staticmethod
     def get_folder_files(path):
@@ -360,6 +412,8 @@ class MyDataset(torch.utils.data.Dataset):
         print("clips have now been populated!")
 
     def __len__(self):
+        if self.scheme == "iros":
+            return len(self.iros_data)
         return len(self.data_points)
 
     @staticmethod
@@ -384,6 +438,8 @@ class MyDataset(torch.utils.data.Dataset):
             return self.create_splits_new_scheme(*args, **kwargs)
         elif self.scheme == "single_dataset":
             return self.create_splits_single_dataset_scheme(*args, **kwargs)
+        elif self.scheme == "iros":
+            return self.create_splits_iros(*args, **kwargs)
 
     def create_splits_old_scheme(self, train_size, val_size, test_size):
         """Split dataset while ensuring all clips from the same trajectory stay together"""
@@ -598,6 +654,46 @@ class MyDataset(torch.utils.data.Dataset):
         print(f"split len: {[len(x) for x in res]}")
         return res
 
+    def create_splits_iros(self, *args, **kwargs):
+        train_trial_set = set(IROS_TRAIN_TRIALS)
+        validation_trial_set = set(IROS_VALIDATION_TRIALS)
+        train_data = []
+        val_data = []
+        for data_point in self.iros_data:
+            trial_folder_path, dilation, video_frame_indices = data_point
+            trial_id = os.path.basename(trial_folder_path)
+            if trial_id in train_trial_set:
+                train_data.append((trial_folder_path, dilation, video_frame_indices))
+            elif trial_id in validation_trial_set:
+                val_data.append((trial_folder_path, dilation, video_frame_indices))
+        train_dataset = MyDataset(
+            scheme=self.scheme,
+            sim_exp=self.sim_exp,
+            data_dir=self.data_dir,
+            mode="train",
+            iros_data=train_data,
+            apply_augmentations=self.apply_augmentations,
+        )
+        val_dataset = MyDataset(
+            scheme=self.scheme,
+            sim_exp=self.sim_exp,
+            data_dir=self.data_dir,
+            mode="val",
+            iros_data=val_data,
+            apply_augmentations=self.apply_augmentations,
+        )
+        test_dataset = MyDataset(
+            scheme=self.scheme,
+            sim_exp=self.sim_exp,
+            data_dir=self.data_dir,
+            mode="test",
+            iros_data=[],
+            apply_augmentations=self.apply_augmentations,
+        )
+        res = (train_dataset, val_dataset, test_dataset)
+        print(f"split len: {[len(x) for x in res]}")
+        return res
+
     def compute_file_contains_vein(self, file_path):
         file_name = os.path.basename(file_path)
         file_num = int(file_name.split("_")[1][:4])
@@ -679,6 +775,9 @@ class MyDataset(torch.utils.data.Dataset):
             return np.array([-1.0, -1.0])
 
     def __getitem__(self, idx):
+        if self.scheme == "iros":
+            res = self.getitem_iros(idx)
+            return res
         if self.mode == "exp":
             frame_ix = self.data_points[idx]
             pyg = self.get_clip(
@@ -804,6 +903,103 @@ class MyDataset(torch.utils.data.Dataset):
         else:
             metadata = torch.empty(0)
         frame_ix = torch.tensor(frame_ix)
+        return pyg, veins, poses, metadata, frame_ix
+
+    def getitem_iros(self, idx):
+        trial_folder_path, dilation, video_frame_indices = self.iros_data[idx]
+        marker_positions_path = os.path.join(trial_folder_path, "marker_positions.npz")
+        marker_labels_path = os.path.join(trial_folder_path, "marker_labels.npz")
+        with np.load(marker_positions_path) as marker_positions_data:
+            marker_positions = marker_positions_data["marker_positions"]
+        with np.load(marker_labels_path) as marker_labels_data:
+            marker_labels = marker_labels_data["marker_labels"]
+
+        points = marker_positions[video_frame_indices]
+        y_clip = marker_labels[video_frame_indices]
+
+        discrete_angles = [0, 60, 120, 180, 240, 300]
+        rotation_angle_deg = NP_RNG.choice(discrete_angles)
+        points = self.augmentation_rotation(points, rotation_angle_deg)
+
+        pos = self.get_pos(points)
+        mask = self.get_mask()
+        y = y_clip.reshape(-1).astype(int)
+        empty_x = self.get_empty_x()
+        node_xy = self.get_node_xy(points)
+        node_base_graph_polar_coords = self.get_node_base_graph_polar_coords()
+        node_one_hot_encoding = self.get_node_one_hot_encoding()
+        time_one_hot_encoding = self.get_time_one_hot_encoding()
+        regular_nodes = np.concatenate(
+            [
+                node_xy,
+                node_base_graph_polar_coords,
+                node_one_hot_encoding,
+                time_one_hot_encoding,
+            ],
+            axis=1,
+        )
+        edge_index_spatial = self.get_edge_index_spatial()
+        spatial_edge_dist_dx_dy_cos_sin = self.get_spatial_edge_dist_dx_dy_cos_sin(points)
+        edge_attr_spatial = np.concatenate(
+            [
+                spatial_edge_dist_dx_dy_cos_sin,
+            ],
+            axis=1,
+        )
+        edge_index_temporal = self.get_edge_index_temporal()
+        temporal_edge_dist_dx_dy_cos_sin = self.get_temporal_edge_dist_dx_dy_cos_sin(points)
+        temporal_edge_time_direction = self.get_temporal_edge_time_direction()
+        edge_attr_temporal = np.concatenate(
+            [
+                temporal_edge_dist_dx_dy_cos_sin,
+                temporal_edge_time_direction,
+            ],
+            axis=1,
+        )
+        edge_index_global_spatial = self.get_edge_index_global_spatial()
+        edge_attr_global_spatial = self.get_empty_edge_attr_global_spatial()
+        edge_index_global_temporal = self.get_edge_index_global_temporal()
+        global_temporal_edge_time_direction = self.get_global_temporal_edge_time_direction()
+        edge_attr_global_temporal = np.concatenate(
+            [
+                global_temporal_edge_time_direction,
+            ],
+            axis=1,
+        )
+        self.normalise(
+            pos,
+            regular_nodes,
+            edge_attr_spatial,
+            edge_attr_temporal,
+            edge_attr_global_spatial,
+            edge_attr_global_temporal,
+        )
+
+        vein_classification = y_clip.astype(float)
+        vein_regression = np.zeros_like(vein_classification, dtype=float)
+
+        pyg = self.get_pyg_data(
+            pos=pos,
+            mask=mask,
+            y=y,
+            empty_x=empty_x,
+            regular_nodes=regular_nodes,
+            edge_index_spatial=edge_index_spatial,
+            edge_attr_spatial=edge_attr_spatial,
+            edge_index_temporal=edge_index_temporal,
+            edge_attr_temporal=edge_attr_temporal,
+            edge_index_global_spatial=edge_index_global_spatial,
+            edge_attr_global_spatial=edge_attr_global_spatial,
+            edge_index_global_temporal=edge_index_global_temporal,
+            edge_attr_global_temporal=edge_attr_global_temporal,
+            vein_classification=vein_classification,
+            vein_regression=vein_regression,
+        )
+
+        veins = torch.empty(0)
+        poses = torch.empty(0)
+        metadata = torch.empty(0)
+        frame_ix = torch.tensor(-1)
         return pyg, veins, poses, metadata, frame_ix
     
     @staticmethod
