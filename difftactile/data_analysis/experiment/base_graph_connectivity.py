@@ -7,6 +7,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from difftactile.cnn.dataset import *
 from difftactile.data_analysis.experiment.adjacency import *
 from difftactile.main.constants import *
+from difftactile.sensor_model.fisheye_model_no_taichi import FisheyeModelNoTaichi
 
 
 class ComputeEdges:
@@ -14,73 +15,104 @@ class ComputeEdges:
         pass
 
     @staticmethod
+    def _find_closest_unique_indices(points, target_points):
+        points = np.asarray(points, dtype=float)
+        target_points = np.asarray(target_points, dtype=float)
+        selected_indices = []
+        used_indices = set()
+
+        for target in target_points:
+            distances = np.linalg.norm(points - target, axis=1)
+            if used_indices:
+                distances[list(used_indices)] = np.inf
+            closest_idx = int(np.argmin(distances))
+            selected_indices.append(closest_idx)
+            used_indices.add(closest_idx)
+
+        return np.array(selected_indices, dtype=int)
+
+    @staticmethod
     def compute_base_graph_connectivity():
-        # Load marker positions from npz file
-        path = SYSTEM_PARAMS.files.init_marker_positions_npz
-        data = np.load(path)
-        points = data['points']  # shape: (num_points, 2)
+        img = cv2.imread(
+            SYSTEM_PARAMS.files.vitactip_photo_default_state,
+            cv2.IMREAD_GRAYSCALE,
+        )
+        if img is None:
+            raise FileNotFoundError(
+                f"Could not load image from {SYSTEM_PARAMS.files.vitactip_photo_default_state}"
+            )
+        points, _, _ = FisheyeModelNoTaichi.get_marker_image(img)
+        if len(points) != 127:
+            raise ValueError(f"Expected 127 markers, but found {len(points)}")
 
-        # Get the central point (index 91)
-        center_point = points[91]
-        
-        # Compute vectors from center to all points
-        vectors = points - center_point  # Broadcasting will create vectors for all points
-        
-        # Compute magnitudes and angles
+        key_marker_targets = np.array([
+            [1036, 586],
+            [1157, 378],
+            [1275, 584],
+            [1159, 793],
+            [921, 799],
+            [795, 591],
+            [914, 378],
+        ], dtype=float)
+        key_marker_indices = ComputeEdges._find_closest_unique_indices(
+            points,
+            key_marker_targets,
+        )
+        center_idx = int(key_marker_indices[0])
+        line_point_ixs = key_marker_indices[1:]
+
+        key_marker_img = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
+        if key_marker_img is None:
+            raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.vitactip_photo_default_state}")
+        for i, marker_idx in enumerate(key_marker_indices):
+            x, y = map(int, points[int(marker_idx)])
+            cv2.circle(key_marker_img, (x, y), radius=6, color=(0, 0, 255), thickness=-1)
+            cv2.putText(
+                key_marker_img,
+                str(i),
+                (x + 8, y + 8),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.7,
+                color=(0, 255, 0),
+                thickness=2,
+            )
+        key_markers_image_path = SYSTEM_PARAMS.files.voronoi_image.rsplit('.', 1)[0] + "-key-markers.png"
+        cv2.imwrite(key_markers_image_path, key_marker_img)
+
+        center_point = points[center_idx]
+        vectors = points - center_point
         magnitudes = np.sqrt(np.sum(vectors**2, axis=1))
-        
-        # Compute angles in degrees (clockwise from 12 o'clock)
-        # In OpenCV coordinates:
-        # - 12 o'clock is (0, -1) = 0 degrees
-        # - 3 o'clock is (1, 0) = 90 degrees
-        # - 6 o'clock is (0, 1) = 180 degrees
-        # - 9 o'clock is (-1, 0) = 270 degrees
-        angles = np.degrees(np.arctan2(vectors[:, 0], -vectors[:, 1]))  # Note: x/(-y) for clockwise from 12
-        angles = np.mod(angles, 360)  # Ensure angles are in [0, 360)
+        angles = np.degrees(np.arctan2(vectors[:, 0], -vectors[:, 1]))
+        angles = np.mod(angles, 360)
 
-        line_point_ixs = [
-            126,
-            102,
-            124,
-            10,
-            2,
-            31,
-        ]
         line_point_ixs = np.array(line_point_ixs, dtype=int)
+        corner_angles = angles[line_point_ixs]
         angle_ranges = np.array([
-            [angles[39], angles[106]],
-            [angles[106], angles[116]],
-            [angles[116], angles[12]],
-            [angles[12], angles[40]],
-            [angles[40], angles[55]],
-            [angles[55], angles[39]],
+            [corner_angles[0], corner_angles[1]],
+            [corner_angles[1], corner_angles[2]],
+            [corner_angles[2], corner_angles[3]],
+            [corner_angles[3], corner_angles[4]],
+            [corner_angles[4], corner_angles[5]],
+            [corner_angles[5], corner_angles[0]],
         ], dtype=float)
 
         projected_magnitudes = np.zeros(shape=magnitudes.shape)
-
-        # Compute line equations for each line from center to specified points
-        # Each line equation will be stored as (unit_vector_x, unit_vector_y)
         line_equations = []
         for line_point_idx in line_point_ixs:
-            # Get vector from center to point
             line_vector = vectors[line_point_idx]
-            # Convert to unit vector
             line_magnitude = np.sqrt(np.sum(line_vector**2))
             unit_vector = line_vector / line_magnitude
             line_equations.append(unit_vector)
         line_equations = np.array(line_equations)
 
-        # Project each point onto its corresponding line based on angle
         for i in range(len(points)):
-            if i == 91:  # Skip center point
+            if i == center_idx:
                 projected_magnitudes[i] = 0
                 continue
-            
-            # Find which angle range (and thus which line) this point belongs to
+
             point_angle = angles[i]
             line_idx = None
             for j, (start_angle, end_angle) in enumerate(angle_ranges):
-                # Handle the case where the range crosses 360 degrees
                 if start_angle > end_angle:
                     if point_angle >= start_angle or point_angle <= end_angle:
                         line_idx = j
@@ -89,93 +121,65 @@ class ComputeEdges:
                     if start_angle <= point_angle <= end_angle:
                         line_idx = j
                         break
-            
+
             if line_idx is not None:
-                # Project the point onto the corresponding line
-                # The projection is (v · u)u where v is our vector and u is the unit vector
                 vector = vectors[i]
                 unit_vector = line_equations[line_idx]
                 projection = np.dot(vector, unit_vector) * unit_vector
-                
-                # Compute magnitude of projection
                 projected_magnitudes[i] = np.sqrt(np.sum(projection**2))
 
         rings = list(range(0, 7))
         rings = [ComputeEdges.num_markers_in_ring(x) for x in rings]
-        
-        # First sort by projected magnitudes to get rough ring ordering
-        magnitude_sorted_indices = np.argsort(projected_magnitudes)
-        
-        # Process each ring separately
-        new_indices = []
+
+        remaining_indices = np.array([i for i in range(len(points)) if i != center_idx], dtype=int)
+        radial_sorted_indices = remaining_indices[np.argsort(magnitudes[remaining_indices])]
+
+        new_indices = [center_idx]
         start_idx = 0
-        for ring_size in rings:
-            # Get indices for current ring
-            ring_indices = magnitude_sorted_indices[start_idx:start_idx + ring_size]
-            
-            if ring_size > 1:  # Only sort by angle if more than one point in ring
-                # Sort ring points by angle
-                ring_angles = angles[ring_indices]
-                angle_sorted_indices = np.argsort(ring_angles)
-                ring_indices = ring_indices[angle_sorted_indices]
-            
+        for ring_size in rings[1:]:
+            ring_indices = radial_sorted_indices[start_idx:start_idx + ring_size]
+            ring_angles = angles[ring_indices]
+            angle_sorted_indices = np.argsort(ring_angles)
+            ring_indices = ring_indices[angle_sorted_indices]
             new_indices.extend(ring_indices)
             start_idx += ring_size
-        
-        new_indices = np.array(new_indices)
-        # Create a mapping from old indices to new indices
-        index_mapping = {old_idx: new_idx for new_idx, old_idx in enumerate(new_indices)}
 
-        # Reorder points array according to the index mapping
+        new_indices = np.array(new_indices)
+        index_mapping = {old_idx: new_idx for new_idx, old_idx in enumerate(new_indices)}
         points = points[new_indices]
 
         ordered_indices = np.arange(127, dtype=int)
-
         ix_thresh_4_neighbours = 91
+        ixs_3_neighbours = np.sort(
+            np.array([index_mapping[int(ix)] for ix in line_point_ixs], dtype=int)
+        )
 
-        ixs_3_neighbours = np.array([
-            94, 100, 106, 112, 118, 124
-        ], dtype=int)
-
-        # Initialize with 6 neighbors for all points
         neighbour_counts = 6 * np.ones(shape=ordered_indices.shape, dtype=int)
-        
-        # Set 4 neighbors for points with index >= ix_thresh_4_neighbours
         neighbour_counts[ordered_indices >= ix_thresh_4_neighbours] = 4
-        
-        # Set 3 neighbors for specific points using vectorized operation
         mask = np.isin(ordered_indices, ixs_3_neighbours)
         neighbour_counts[mask] = 3
 
-        # Find k nearest neighbors for each point
-        k = 6  # maximum number of neighbors
-        knn = KNeighborsClassifier(n_neighbors=k+1, metric='euclidean')  # k+1 because point itself is included
-        knn.fit(points, np.zeros(len(points)))  # dummy labels
+        k = 6
+        knn = KNeighborsClassifier(n_neighbors=k+1, metric='euclidean')
+        knn.fit(points, np.zeros(len(points)))
         distances, neighbors = knn.kneighbors(points)
-        
-        # Remove self-connections (first column)
+
         distances = distances[:, 1:]
         neighbors = neighbors[:, 1:]
-        
-        # Create edges list with sorting by distance for each node
+
         edges = []
         for i in range(len(points)):
-            # Get number of neighbors for this node
             n_neighbors = neighbour_counts[i]
-            
-            # Sort neighbors by distance
+
             node_distances = distances[i, :n_neighbors]
             node_neighbors = neighbors[i, :n_neighbors]
-            
-            # Sort indices by distance
+
             sort_idx = np.argsort(node_distances)
             node_neighbors = node_neighbors[sort_idx]
-            
-            # Add edges in both directions
+
             for neighbor in node_neighbors:
                 edges.append([i, neighbor])
-        
-        # Convert to numpy array
+
         adjacency_matrix = np.array(edges, dtype=int)
 
         ring_ixs_all = np.zeros(shape=(127,), dtype=int)
@@ -185,21 +189,15 @@ class ComputeEdges:
             for j in range(ring_size):
                 ring_ixs_all[ix] = i
                 ix += 1
-        
-        # Compute angles relative to points[0]
-        vectors = points - points[0]  # Get vectors from points[0] to each point
-        angles = np.zeros((len(points), 2))  # Will store (cos(θ), sin(θ))
-        
-        # Skip points[0] as it should remain (0,0)
+
+        vectors = points - points[0]
+        angles = np.zeros((len(points), 2))
         norms = np.linalg.norm(vectors[1:], axis=1)
         normalized_vectors = vectors[1:] / norms[:, np.newaxis]
-        
-        # cos(θ) is x/r, sin(θ) is y/r after normalization
-        angles[1:] = normalized_vectors  # Already normalized so x=cos(θ), y=sin(θ)
+        angles[1:] = normalized_vectors
 
         norms_all = np.linalg.norm(vectors, axis=1)
 
-        # Save adjacency matrix and points to npz file
         np.savez(
             SYSTEM_PARAMS.files.base_graph_connectivity,
             adjacency_matrix=adjacency_matrix,
@@ -209,34 +207,22 @@ class ComputeEdges:
             dist_from_centre=norms_all,
         )
 
-        # Load the default state image
         img = cv2.imread(SYSTEM_PARAMS.files.vitactip_photo_default_state)
         if img is None:
             raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.vitactip_photo_default_state}")
 
-        # Draw each point with its new index
         for i, (x, y) in enumerate(points):
-            # Convert to integer coordinates
             x, y = int(x), int(y)
-            
-            # Draw a circle at the point
-            cv2.circle(img, (x, y), radius=3, color=(0, 0, 255), thickness=-1)  # Red filled circle
-            cv2.putText(img, str(i), (x + 5, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 
-                        fontScale=0.5, color=(0, 255, 0), thickness=1)  # Green text
+            cv2.circle(img, (x, y), radius=3, color=(0, 0, 255), thickness=-1)
+            cv2.putText(img, str(i), (x + 5, y + 5), cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.5, color=(0, 255, 0), thickness=1)
 
-        # Draw edges between connected nodes
         for edge in adjacency_matrix:
             start_idx, end_idx = edge
             start_point = tuple(map(int, points[start_idx]))
             end_point = tuple(map(int, points[end_idx]))
-            cv2.line(img, start_point, end_point, color=(255, 255, 0), thickness=1)  # Yellow lines
+            cv2.line(img, start_point, end_point, color=(255, 255, 0), thickness=1)
 
-        # Display the image
-        cv2.imshow('Marker Positions', img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
-        # Save the image
         cv2.imwrite(SYSTEM_PARAMS.files.voronoi_image, img)
 
     @staticmethod
@@ -372,9 +358,9 @@ class ComputeEdges:
 
 
 def main():
-    # ComputeEdges.compute_base_graph_connectivity()
+    ComputeEdges.compute_base_graph_connectivity()
     # ComputeEdges.validate_graph_connectivity_algorithm()
-    ComputeEdges.visualise_flat_sensor()
+    # ComputeEdges.visualise_flat_sensor()
 
 
 if __name__ == '__main__':
