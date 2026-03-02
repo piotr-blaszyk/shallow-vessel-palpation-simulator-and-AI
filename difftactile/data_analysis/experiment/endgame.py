@@ -706,8 +706,17 @@ class Endgame:
 
 def main():
     e = Endgame()
-    e.visualise_line_points()
-    # e.add_dense_line_data()
+    e.interpolate_metadata_and_trim_videos()
+    e.apply_dilation(16)
+    e.visualise_videos()
+    e.extract_markers()
+    e.reorder_interpolate_markers()
+    # e.annotate()
+    # e.annotations_to_line_points()
+    # e.visualise_line_points()
+    e.merge_npz_to_sim_format()
+    e.merge_npz_sim_format_poses()
+    e.add_dense_line_data()
     # e.validate_line_dense_to_sparse(
     #     cx=e.cx,
     #     cy=e.cy,
