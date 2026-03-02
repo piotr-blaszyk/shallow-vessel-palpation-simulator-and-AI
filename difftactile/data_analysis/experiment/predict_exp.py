@@ -43,12 +43,18 @@ class PredictExp:
             data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
             normalise_pos=False,
             apply_augmentations=False,
+            name='silicone',
         )
-        with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
+        with open(SYSTEM_PARAMS.files.test_loader_gnn_iros, 'rb') as f:
             test_data = pickle.load(f)
-        self.stats = test_data['dataset_stats'][1.0]
+        if 'iros' in test_data:
+            self.stats = test_data['dataset_stats']
+        else:
+            all_stats = test_data['dataset_stats']
+            target_difficulty = 1.0
+            self.dataset.set_difficulty_level(target_difficulty)
+            self.stats = all_stats[target_difficulty]
         self.dataset.set_stats(self.stats)
-        self.dataset.set_difficulty_level(1.0)
 
         self.init_model()
         self.init_camera_params()
@@ -123,7 +129,7 @@ class PredictExp:
         self.map_2d_3d = points_E
 
     def init_model(self):
-        model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn
+        model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros
         model = GNN()
         model.load_state_dict(torch.load(model_path))
         model.eval()
