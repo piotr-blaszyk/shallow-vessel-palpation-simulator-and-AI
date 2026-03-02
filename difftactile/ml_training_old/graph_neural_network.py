@@ -199,7 +199,7 @@ def main():
     model = GNNClassifier()
     trainer = pl.Trainer(
         max_epochs=100,
-        accelerator='cuda' if torch.cuda.is_available() else 'cpu',
+        accelerator='cuda' if torch.cuda.is_available() else 'cuda:0',
         devices=1,
         enable_progress_bar=True,
         deterministic=True

@@ -100,7 +100,7 @@ def main():
     
     # Initialize trainer and test
     trainer = pl.Trainer(
-        accelerator='cuda' if torch.cuda.is_available() else 'cpu',
+        accelerator='cuda' if torch.cuda.is_available() else 'cuda:0',
         devices=1,
         enable_progress_bar=True,
         deterministic=True

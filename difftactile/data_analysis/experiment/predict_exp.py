@@ -24,8 +24,7 @@ class PredictExp:
     def __init__(self):
         self.fisheye_model = FisheyeModelNoTaichi()
         self.synthetic_image_generator = SyntheticImageGenerator()
-        if False:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.x_min = -0.425
         self.x_max = -0.245
@@ -57,8 +56,7 @@ class PredictExp:
             self.stats = all_stats[target_difficulty]
         self.dataset.set_stats(self.stats)
 
-        if False:
-            self.init_model()
+        self.init_model()
         self.init_camera_params()
         self.compute_mapping_2d_3d()
 
@@ -135,10 +133,8 @@ class PredictExp:
         model = GNN()
         model.load_state_dict(torch.load(model_path))
         model.eval()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(device)
+        model = model.to(self.device)
         self.model = model
-        self.device = device
     
     def init_camera_params(self):
         self.camera_w_big = 1920
@@ -649,9 +645,9 @@ class PredictExp:
     def go(self):
         # self.predict_all_clips()
         # self.write_probs_to_npz()
-        # self.load_probs_from_npz()
-        # self.generate_mask_image()
-        # self.downsample_ground_truth_image_to_prediction_shape()
+        self.load_probs_from_npz()
+        self.generate_mask_image()
+        self.downsample_ground_truth_image_to_prediction_shape()
         self.evaluate_downscaled()
 
 

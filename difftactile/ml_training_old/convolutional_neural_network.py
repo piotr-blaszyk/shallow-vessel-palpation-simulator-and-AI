@@ -222,7 +222,7 @@ def main():
     model = CNNClassifier()
     trainer = pl.Trainer(
         max_epochs=50,
-        accelerator='cuda' if torch.cuda.is_available() else 'cpu',
+        accelerator='cuda' if torch.cuda.is_available() else 'cuda:0',
         devices=1,
         enable_progress_bar=True,
         deterministic=True
