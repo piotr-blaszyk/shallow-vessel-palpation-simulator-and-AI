@@ -37,7 +37,7 @@ class IrosPreprocessData:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
 
-        self.decimation_step = 30
+        self.decimation_step = 15
         self.expected_w = 1920
         self.expected_h = 1080
         self.coarse_w = 240
@@ -349,6 +349,51 @@ class IrosPreprocessData:
             markers = data["markers"].astype(np.float32)
         return markers
 
+    @staticmethod
+    def _write_marker_labels_video(
+        video_in_path: Path,
+        markers_xy: np.ndarray,
+        marker_labels: np.ndarray,
+        video_out_path: Path,
+    ) -> None:
+        cap = cv2.VideoCapture(str(video_in_path))
+        if not cap.isOpened():
+            raise RuntimeError(f"Cannot open video for label visualization: {video_in_path}")
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        writer = cv2.VideoWriter(
+            str(video_out_path),
+            cv2.VideoWriter_fourcc(*"XVID"),
+            fps if fps > 0 else 1.0,
+            (w, h),
+        )
+
+        n_frames = markers_xy.shape[0]
+        for t in range(n_frames):
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            for marker_idx in range(markers_xy.shape[1]):
+                x, y = markers_xy[t, marker_idx]
+                if not np.isfinite(x) or not np.isfinite(y):
+                    continue
+                xi = int(round(float(x)))
+                yi = int(round(float(y)))
+                if xi < 0 or yi < 0 or xi >= w or yi >= h:
+                    continue
+
+                color = (0, 0, 255) if int(marker_labels[t, marker_idx]) == 1 else (0, 255, 0)
+                cv2.circle(frame, (xi, yi), 4, color, -1)
+
+            writer.write(frame)
+
+        cap.release()
+        writer.release()
+
     def process_all_trials(self):
         if not self.input_dir.exists():
             raise FileNotFoundError(
@@ -404,6 +449,13 @@ class IrosPreprocessData:
             np.savez(
                 trial_out_dir / "marker_labels.npz",
                 marker_labels=labels,
+            )
+
+            self._write_marker_labels_video(
+                video_in_path=decimated_video,
+                markers_xy=markers_xy,
+                marker_labels=labels,
+                video_out_path=trial_out_dir / "marker_labels.avi",
             )
 
 
