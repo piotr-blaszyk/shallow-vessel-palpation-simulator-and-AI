@@ -689,42 +689,27 @@ def main():
         name=tensor_board_experiment_dir,
         version=f"run_{timestamp}",
     )
-    full_dataset = MyDataset(
-        scheme="single_dataset",
-        sim_exp="sim",
-        data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
-        apply_augmentations=True,
+    meat_dataset = MyDataset(
+        scheme="iros",
+        sim_exp='apple',
+        data_dir='banana',
+        apply_augmentations='cherry',
     )
-    train_dataset, val_dataset, test_dataset = full_dataset.create_splits(
-        train_size=0.7, val_size=0.15, test_size=0.15
-    )
-    exp_dataset_endgame = MyDataset(
+    train_dataset, val_dataset, test_dataset = meat_dataset.create_splits()
+    silicone_dataset = MyDataset(
         scheme="single_dataset",
         sim_exp="exp",
         data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
         apply_augmentations=False,
     )
-    all_stats = {}
-    target_difficulty = 1.0
-    for i in range(11):
-        if i / 10 != target_difficulty:
-            continue
-        difficulty = i / 10
-        train_dataset.set_difficulty_level(difficulty)
-        stats = compute_stats(train_dataset, BATCH_SIZE)
-        all_stats[difficulty] = stats
-        alpha_neg = stats["alpha_neg"]
-        alpha_pos = stats["alpha_pos"]
-        print(f"difficulty: {difficulty}; pos:neg = {alpha_neg:.2f}:{alpha_pos:.2f}")
-    target_difficulty = float(target_difficulty)
-    train_dataset.set_difficulty_level(target_difficulty)
-    val_dataset.set_difficulty_level(target_difficulty)
-    test_dataset.set_difficulty_level(target_difficulty)
-    exp_dataset_endgame.set_difficulty_level(target_difficulty)
-    train_dataset.set_stats(all_stats[target_difficulty])
-    val_dataset.set_stats(all_stats[target_difficulty])
-    test_dataset.set_stats(all_stats[target_difficulty])
-    exp_dataset_endgame.set_stats(all_stats[target_difficulty])
+    stats = compute_stats(train_dataset, BATCH_SIZE)
+    alpha_neg = stats["alpha_neg"]
+    alpha_pos = stats["alpha_pos"]
+    print(f"pos:neg = {alpha_neg:.2f}:{alpha_pos:.2f}")
+    train_dataset.set_stats(stats)
+    val_dataset.set_stats(stats)
+    test_dataset.set_stats(stats)
+    silicone_dataset.set_stats(stats)
     data_module = MyDataModule(
         train_dataset=train_dataset,
         val_dataset=val_dataset,
@@ -737,17 +722,18 @@ def main():
     test_data = {
         "dataset": test_dataset,
         "num_workers": NUM_WORKERS,
-        "dataset_stats": all_stats,
+        "dataset_stats": stats,
+        "iros": True,
     }
-    with open(SYSTEM_PARAMS.files.test_loader_gnn, "wb") as f:
+    with open(SYSTEM_PARAMS.files.test_loader_gnn_iros, "wb") as f:
         pickle.dump(test_data, f)
     model = GNN()
-    model.set_stats(all_stats[target_difficulty])
+    model.set_stats(stats)
     checkpoint_cb = ModelCheckpoint(
         monitor="val_iou/1",
         mode="max",
         save_top_k=1,
-        filename="best-model",
+        filename="best-model-iros",
     )
     early_stopping = EarlyStopping(
         monitor="val_iou/1",
@@ -767,8 +753,8 @@ def main():
         ],
         reload_dataloaders_every_n_epochs=1,
     )
-    exp_test_loader_endgame = DataLoader(
-        exp_dataset_endgame,
+    silicone_loader = DataLoader(
+        silicone_dataset,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=False,
@@ -778,17 +764,15 @@ def main():
     start = time.perf_counter()
     trainer.fit(model, datamodule=data_module)
 
-    print("\nTesting on simulation data:")
-    trainer.test(model, datamodule=data_module)
-    print("\nTesting on experimental data (end game):")
-    trainer.test(model, dataloaders=exp_test_loader_endgame)
+    print("\nTesting on silicone dataset:")
+    trainer.test(model, dataloaders=silicone_loader)
     end = time.perf_counter()
     duration = end - start
     print(
         f"\nTraining and testing completed in {duration:.2f} seconds ({duration / 60:.2f} minutes)"
     )
-    os.makedirs("saved_models", exist_ok=True)
-    torch.save(model.state_dict(), SYSTEM_PARAMS.files.final_segmentation_model_gnn)
+    os.makedirs("saved_models_iros", exist_ok=True)
+    torch.save(model.state_dict(), SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros)
 
 
 def compute_stats(dataset, batch_size):
@@ -850,30 +834,33 @@ def compute_mean_std(dataset, ixs, key):
 
 def evaluate_and_plot_roc():
     model = GNN()
-    model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn))
+    model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros))
     model.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
-    with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
+    with open(SYSTEM_PARAMS.files.test_loader_gnn_iros, 'rb') as f:
         test_data = pickle.load(f)
-    all_stats = test_data['dataset_stats']
-
-    full_dataset = MyDataset(
+    
+    silicone_dataset = MyDataset(
         scheme="single_dataset",
         sim_exp="exp",
         data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
         apply_augmentations=False,
     )
-    train_dataset, _, _ = full_dataset.create_splits(
+    train_dataset, _, _ = silicone_dataset.create_splits(
         train_size=1.0,
         val_size=0.0,
         test_size=0.0
     )
-    target_difficulty = 1.0
-    stats = all_stats[target_difficulty]
+    if 'iros' in test_data:
+        stats = test_data['dataset_stats']
+    else:
+        all_stats = test_data['dataset_stats']
+        target_difficulty = 1.0
+        train_dataset.set_difficulty_level(target_difficulty)
+        stats = all_stats[target_difficulty]
     train_dataset.set_stats(stats)
-    train_dataset.set_difficulty_level(target_difficulty)
     train_dataset.eval()
     data_loader = DataLoader(
         train_dataset,
