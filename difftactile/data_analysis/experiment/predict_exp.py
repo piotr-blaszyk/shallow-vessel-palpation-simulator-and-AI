@@ -644,9 +644,9 @@ class PredictExp:
     def go(self):
         # self.predict_all_clips()
         # self.write_probs_to_npz()
-        self.load_probs_from_npz()
-        self.generate_mask_image()
-        self.downsample_ground_truth_image_to_prediction_shape()
+        # self.load_probs_from_npz()
+        # self.generate_mask_image()
+        # self.downsample_ground_truth_image_to_prediction_shape()
         self.evaluate_downscaled()
 
 
