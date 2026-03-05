@@ -2,6 +2,7 @@ import os
 import glob
 import numpy as np
 import cv2
+import pickle
 from scipy.interpolate import interp1d
 import tqdm
 import time
@@ -371,6 +372,29 @@ class Endgame:
                 annotation_points=annotation_points,
             )
 
+    def count_annotation_dots(self):
+        ann_dir = os.path.join(self.root, f"{self.dir}_annotations")
+        pkl_files = sorted(glob.glob(os.path.join(ann_dir, "*.pkl")))
+        if not pkl_files:
+            print(f"No .pkl files found in {ann_dir}")
+            return
+
+        total_dots = 0
+        for pkl_path in pkl_files:
+            with open(pkl_path, "rb") as f:
+                ann = pickle.load(f)
+
+            file_dots = 0
+            for frame_pts in ann:
+                if frame_pts is None:
+                    continue
+                file_dots += len(frame_pts)
+
+            total_dots += file_dots
+            print(f"{os.path.basename(pkl_path)}: {file_dots} annotation dots")
+
+        print(f"Total annotation dots across all .pkl files: {total_dots}")
+
     def visualise_line_points(self):
         cx = self.cx
         cy = self.cy
@@ -715,22 +739,24 @@ class Endgame:
 
 def main():
     e = Endgame()
-    e.interpolate_metadata_and_trim_videos()
-    e.apply_dilation(16)
-    e.visualise_videos()
-    e.extract_markers()
-    e.reorder_interpolate_markers()
+    # e.interpolate_metadata_and_trim_videos()
+    # e.apply_dilation(16)
+    # e.visualise_videos()
+    # e.extract_markers()
+    # e.reorder_interpolate_markers()
     # e.annotate()
-    e.annotations_to_line_points()
-    e.visualise_line_points()
-    e.merge_npz_to_sim_format()
-    e.merge_npz_sim_format_poses()
-    e.add_dense_line_data()
-    e.validate_line_dense_to_sparse(
-        cx=e.cx,
-        cy=e.cy,
-        r=e.r,
-    )
+    # e.annotations_to_line_points()
+    # e.visualise_line_points()
+    # e.merge_npz_to_sim_format()
+    # e.merge_npz_sim_format_poses()
+    # e.add_dense_line_data()
+    # e.validate_line_dense_to_sparse(
+    #     cx=e.cx,
+    #     cy=e.cy,
+    #     r=e.r,
+    # )
+
+    e.count_annotation_dots()
 
 
 if __name__ == "__main__":
