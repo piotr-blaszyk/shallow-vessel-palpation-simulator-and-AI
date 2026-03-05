@@ -304,7 +304,7 @@ class ComputeEdges:
     @staticmethod
     def validate_graph_connectivity_algorithm():
         dataset = MyDataset(mode='dummy', scheme='new')
-        with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
+        with open(SYSTEM_PARAMS.files.test_loader_gnn_icra, 'rb') as f:
             test_data = pickle.load(f)
         stats = test_data['dataset_stats'][1.0]
         dataset.set_stats(stats)

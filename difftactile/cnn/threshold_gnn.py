@@ -5,7 +5,7 @@ def choose_optimal_threshold():
     BATCH_SIZE = 512
     NUM_WORKERS = 16
     VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * 8
-    with open(SYSTEM_PARAMS.files.test_loader_gnn, "rb") as f:
+    with open(SYSTEM_PARAMS.files.test_loader_gnn_icra, "rb") as f:
         test_data = pickle.load(f)
     test_dataset = test_data["dataset"]
     test_dataset.set_difficulty_level(1.0)

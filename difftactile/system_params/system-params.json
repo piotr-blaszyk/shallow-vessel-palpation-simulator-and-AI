@@ -190,18 +190,29 @@
         "latent_dim": 64,
         "output_dim": 1,
         "clip_len": 7,
-        "learning_rate": 1.000e-04,
         "batch_size": 4,
         "num_train_batches": -1,
         "num_val_batches": -1,
         "num_epochs": 30,
         "num_workers": 0,
+        "learning_rate": 1.000e-04,
         "tversky_weight": 0.000e+00,
         "focal_weight": 1.000e+00,
         "connectivity_weight": 0.000e+00,
         "num_entity_types": 6,
         "num_classes": 2,
-        "skip_dim": 32
+        "skip_dim": 32,
+        
+        "skip_dim_icra": 128,
+        "latent_dim_icra": 256,
+        "small_input_dim_icra": 248,
+        "entity_type_embedding_dim_icra": 8,
+        "batch_size_icra": 16,
+        "num_train_batches_icra": 152,
+        "num_val_batches_icra": 32,
+        "num_epochs_icra": 1,
+        "num_workers_icra": 16
+
     },
     "cnn": {
         "input_width_height": 192
@@ -351,7 +362,7 @@
         "training_data_segmentation_mask_folder": "difftactile/output/training_data/segmentation_mask",
         "dataset_data_point": "trajectory_{:04d}.npz",
         "test_loader": "difftactile/output/test_loader.pickle",
-        "test_loader_gnn": "difftactile/output/test_loader_gnn.pickle",
+        "test_loader_gnn_icra": "difftactile/output/test_loader_gnn_icra.pickle",
         "test_loader_gnn_iros": "difftactile/output/test_loader_gnn_iros.pickle",
         "threshold_optimization": "difftactile/output/threshold_optimization.png",
         "exp_video_npz": "difftactile/output/exp_video.npz",

@@ -133,10 +133,10 @@ class GNN(pl.LightningModule):
         spatial_edge_dim = 5
         temporal_edge_dim = 5+2
         global_temporal_edge_dim = 2
-        entity_type_embedding_dim = SYSTEM_PARAMS.gnn.entity_type_embedding_dim
-        small_input_dim = SYSTEM_PARAMS.gnn.small_input_dim
-        latent_dim = SYSTEM_PARAMS.gnn.latent_dim
-        self.skip_dim = SYSTEM_PARAMS.gnn.skip_dim
+        entity_type_embedding_dim = SYSTEM_PARAMS.gnn.entity_type_embedding_dim_icra
+        small_input_dim = SYSTEM_PARAMS.gnn.small_input_dim_icra
+        latent_dim = SYSTEM_PARAMS.gnn.latent_dim_icra
+        self.skip_dim = SYSTEM_PARAMS.gnn.skip_dim_icra
         cat_out_dim = self.skip_dim * 4
         input_dim = latent_dim
         output_dim = SYSTEM_PARAMS.gnn.output_dim
@@ -740,7 +740,7 @@ def main():
         "num_workers": NUM_WORKERS,
         "dataset_stats": all_stats,
     }
-    with open(SYSTEM_PARAMS.files.test_loader_gnn, "wb") as f:
+    with open(SYSTEM_PARAMS.files.test_loader_gnn_icra, "wb") as f:
         pickle.dump(test_data, f)
     model = GNN()
     model.set_stats(all_stats[target_difficulty])
@@ -852,12 +852,12 @@ def compute_mean_std(dataset, ixs, key):
 def evaluate_and_plot_roc():
     if True:
         model = GNN()
-        model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn))
+        model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn_icra))
         model.eval()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
 
-        with open(SYSTEM_PARAMS.files.test_loader_gnn, 'rb') as f:
+        with open(SYSTEM_PARAMS.files.test_loader_gnn_icra, 'rb') as f:
             test_data = pickle.load(f)
         all_stats = test_data['dataset_stats']
 
@@ -866,16 +866,21 @@ def evaluate_and_plot_roc():
             sim_exp="exp",
             data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
             apply_augmentations=False,
+            name='silicone',
         )
         train_dataset, _, _ = full_dataset.create_splits(
             train_size=1.0,
             val_size=0.0,
             test_size=0.0
         )
-        target_difficulty = 1.0
-        stats = all_stats[target_difficulty]
+        if 'iros' in test_data:
+            stats = test_data['dataset_stats']
+        else:
+            all_stats = test_data['dataset_stats']
+            target_difficulty = 0.0
+            train_dataset.set_difficulty_level(target_difficulty)
+            stats = all_stats[target_difficulty]
         train_dataset.set_stats(stats)
-        train_dataset.set_difficulty_level(target_difficulty)
         train_dataset.eval()
         data_loader = DataLoader(
             train_dataset,
@@ -910,7 +915,7 @@ def evaluate_and_plot_roc():
         auc = roc_auc_score(all_labels, all_probs)
         fpr, tpr, _ = roc_curve(all_labels, all_probs)
 
-        thresholds = np.linspace(0.0, 1.0, 20)
+        thresholds = np.linspace(0.4, 0.6, 5)
         tpr_list, fpr_list = [], []
         for thr in thresholds:
             preds = (all_probs >= thr).astype(int)
@@ -948,7 +953,9 @@ def evaluate_and_plot_roc():
     for spine in plt.gca().spines.values():
         spine.set_linewidth(3.0)
     plt.tight_layout()
-    plt.savefig('difftactile/output/roc_curve.pdf', format="pdf", dpi=300)
+    plt.savefig('difftactile/output/roc_curve_icra.pdf', format="pdf", dpi=300)
     plt.show()
+
+    print(f'auc: {auc}')
 
     return auc

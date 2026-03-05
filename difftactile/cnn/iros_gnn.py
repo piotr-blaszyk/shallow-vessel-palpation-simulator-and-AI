@@ -672,6 +672,7 @@ class MyDataModule(pl.LightningDataModule):
 
 
 def main():
+    return
     BATCH_SIZE = SYSTEM_PARAMS.gnn.batch_size
     NUM_EPOCHS = SYSTEM_PARAMS.gnn.num_epochs
     NUM_WORKERS = SYSTEM_PARAMS.gnn.num_workers
@@ -945,7 +946,7 @@ def evaluate_and_plot_roc():
     for spine in plt.gca().spines.values():
         spine.set_linewidth(3.0)
     plt.tight_layout()
-    plt.savefig('difftactile/output/roc_curve.pdf', format="pdf", dpi=300)
+    plt.savefig('difftactile/output/roc_curve_iros.pdf', format="pdf", dpi=300)
     plt.show()
 
     print(f'auc: {auc}')

@@ -19,7 +19,7 @@ class Visualisation:
             self.test_loader = SYSTEM_PARAMS.files.test_loader
         elif SYSTEM_PARAMS.meta.cnn_gnn == 1:
             self.model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn
-            self.test_loader = SYSTEM_PARAMS.files.test_loader_gnn
+            self.test_loader = SYSTEM_PARAMS.files.test_loader_gnn_icra
 
     @staticmethod
     def calculate_iou(ground_truth, prediction):
