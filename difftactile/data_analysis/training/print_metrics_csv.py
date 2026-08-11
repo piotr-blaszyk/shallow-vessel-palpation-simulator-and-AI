@@ -1,7 +1,26 @@
+import glob
+import os
+import sys
+
 import pandas as pd
 
-csv_path = "/home/psb120/Documents/diff-tactile-fork/logs/my_experiment/run_20260302_155427/metrics.csv"
+from difftactile.main.paths import repo_path
 
+# Training writes one timestamped run directory per invocation under
+# logs/my_experiment/. Default to the most recent run so this works on any
+# machine; pass an explicit metrics.csv path to inspect an older run.
+if len(sys.argv) > 1:
+    csv_path = sys.argv[1]
+else:
+    candidates = sorted(glob.glob(repo_path("logs/my_experiment/run_*/metrics.csv")))
+    if not candidates:
+        raise FileNotFoundError(
+            "No logs/my_experiment/run_*/metrics.csv found. Train a model first, "
+            "or pass a metrics.csv path as the first argument."
+        )
+    csv_path = candidates[-1]
+
+print(f"Reading metrics from: {os.path.relpath(csv_path, repo_path())}")
 df = pd.read_csv(csv_path)
 
 columns = ["epoch", "val/loss", "val_iou/0", "val_iou/1"]

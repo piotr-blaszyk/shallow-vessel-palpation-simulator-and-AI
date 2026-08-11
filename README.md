@@ -14,6 +14,19 @@ This is a masters project. It is a fork of
 manipulation tasks have been removed and the differentiable Taichi FEM core repurposed for
 subsurface sensing. Upstream's original README is preserved at the `upstream-difftactile` tag.
 
+### Project repositories
+
+This work spans two repositories, submitted together to an **ECCV 2026 workshop** as
+*"Sim-to-Real Subsurface Feature Localisation with a Soft Optical Tactile Sensor"*:
+
+| Repository | Role |
+|---|---|
+| **[diff-tactile-fork](https://github.com/psb120/diff-tactile-fork)** (this one) | **Main repository.** Simulation, dataset generation, GNN training and evaluation — everything needed to reproduce the published results. |
+| [dobot-tcp-ip](https://github.com/psb120/dobot-tcp-ip) | Robot control. Drives the DOBOT Magician E6 arm that collected the real tactile recordings for both phantoms. Needed only to *gather new* data, not to reproduce results. |
+
+Data and trained model weights are published on Zenodo — see
+[Quickstart](#quickstart-docker) below.
+
 ```
    Taichi FEM simulation            Real sensor
    sensor + phantom + vein          video of pressing
@@ -30,7 +43,80 @@ subsurface sensing. Upstream's original README is preserved at the `upstream-dif
 
 ---
 
+## Quickstart (Docker)
+
+**Docker is the only officially supported way to run this repository.** The image pins the
+whole stack (CUDA 12.6, Taichi, PyTorch 2.8 + PyTorch Geometric) on a single Python
+interpreter, and passes the host X display through so the Taichi GGUI simulator windows work.
+
+**Requirements:** Ubuntu 20.04/22.04/24.04/26.04, an NVIDIA GPU (≥10 GB VRAM),
+the NVIDIA driver, Docker, and the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+
+```bash
+# 1. Clone
+git clone https://github.com/psb120/diff-tactile-fork.git
+cd diff-tactile-fork
+
+# 2. Fetch the data bundle from Zenodo (~186 MB) and unpack it into place
+#    (datasets + trained checkpoints; see data/MANIFEST.md for what is inside)
+wget https://zenodo.org/records/<RECORD_ID>/files/difftactile-data.tar.gz
+./data/restore_data.sh difftactile-data.tar.gz
+
+# 3. Build the image (~10-30 min, downloads several GB) and start the container
+./docker/docker-build.sh
+./docker/docker-run.sh
+
+# 4. Verify GPU, dependencies and data are all in place
+docker exec -it difftactile ./docker/run_pipeline.sh check
+```
+
+### Reproduce the published results
+
+The three transfer scenarios are selected **by name** — no source editing required:
+
+```bash
+# Evaluate the sim-trained GNN on the real SILICONE phantom -> ROC curve
+docker exec -it difftactile ./docker/run_pipeline.sh sim-to-silicone
+
+# Cross-domain: test the silicone-trained checkpoint on real MEAT (no retraining)
+docker exec -it difftactile ./docker/run_pipeline.sh silicone-to-meat
+
+# Train on real MEAT trials, test on silicone
+docker exec -it difftactile ./docker/run_pipeline.sh sim-to-meat
+
+# ...or all three in sequence
+docker exec -it difftactile ./docker/run_pipeline.sh all-scenarios
+```
+
+Outputs land in `difftactile/output/` (e.g. `roc_curve_iros.pdf`) and `logs/`.
+
+### Regenerate the simulated dataset (optional)
+
+The simulated training set ships in the Zenodo bundle, so **this is not required** to
+reproduce the results. Run it only if you want to extend the project:
+
+```bash
+# ~1 minute: a single loop (8 trials), to check the simulator works
+docker exec -it difftactile ./docker/run_pipeline.sh sim-short
+
+# ~1 hour: the full 800-trial dataset used in the paper
+docker exec -it difftactile ./docker/run_pipeline.sh sim-full
+```
+
+Open an interactive shell with `./docker/docker-connect.sh`. GUI windows (Taichi GGUI,
+the cv2 annotation tool, matplotlib) appear on your desktop automatically; set
+`DIFFTACTILE_HEADLESS=1` to suppress them when running over SSH.
+
+Everything below documents the pipeline in detail, including how to run it outside Docker.
+
+---
+
 ## Branches
+
+> **All three scenarios now live on a single branch** and are selected by name (see
+> [Quickstart](#quickstart-docker)). The per-experiment branches below are retained as a
+> historical record of how the work developed.
 
 Development happened on parallel branches, one per experiment. `main` tracks the latest state.
 

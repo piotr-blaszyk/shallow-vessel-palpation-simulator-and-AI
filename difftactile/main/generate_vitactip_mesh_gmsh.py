@@ -8,6 +8,7 @@ import pickle
 
 from difftactile.main.common import *
 from difftactile.main.constants import *
+from difftactile.main.paths import repo_path
 
 
 class MeshGenerator:
@@ -118,7 +119,10 @@ class MeshGenerator:
         gmsh.write(SYSTEM_PARAMS.files.gmsh_debug_msh)
         self.get_difftactile_variables()
         gmsh.model.occ.synchronize()
-        gmsh.fltk.run()
+        # The FLTK viewer blocks until the window is closed; skip it when there is
+        # no display (container / SSH / CI). Mesh files are already written above.
+        if os.environ.get('DIFFTACTILE_HEADLESS', '0') != '1' and os.environ.get('DISPLAY'):
+            gmsh.fltk.run()
         gmsh.finalize()
 
     def execute_refine_mesh(self):
@@ -227,7 +231,7 @@ class MeshGenerator:
             "is_fixed_mask": is_fixed_mask,
         }
         print(f"node_coordinates.shape[0]: {node_coordinates.shape[0]}")
-        os.makedirs("output", exist_ok=True)
+        os.makedirs(repo_path("difftactile/output"), exist_ok=True)
         with open(SYSTEM_PARAMS.files.gmsh_mesh_vitactip_pkl, "wb") as f:
             pickle.dump(mesh_data, f)
 

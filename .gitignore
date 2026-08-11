@@ -23,3 +23,8 @@ tac_vgnn/
 *.zip
 *.out
 logs/
+.vscode/
+difftactile/output/
+saved_models_iros/
+saved_models_icra/
+difftactile-data.tar.gz

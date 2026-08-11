@@ -202,7 +202,6 @@
         "num_entity_types": 6,
         "num_classes": 2,
         "skip_dim": 32,
-        
         "skip_dim_icra": 128,
         "latent_dim_icra": 256,
         "small_input_dim_icra": 248,
@@ -212,7 +211,6 @@
         "num_val_batches_icra": 32,
         "num_epochs_icra": 1,
         "num_workers_icra": 16
-
     },
     "cnn": {
         "input_width_height": 192
@@ -308,7 +306,7 @@
         "system_params_computed": "difftactile/system_params/system-params-computed.json",
         "vitactip_interp_idx_flat": "difftactile/output/vitactip.interp_idx_flat.pkl",
         "phantom": "difftactile/meshes/vascular-phantom-fragment.stl",
-        "root_dir": "/home/psb120/Documents/DiffTactile/",
+        "root_dir": ".",
         "initial_vertex_positions_undeformed": "difftactile/output/initial_vertex_positions_undeformed.pkl",
         "domain_adaptation_results": "difftactile/output/domain_adaptation_results.json",
         "is_fixed_layer_npz": "difftactile/output/is_fixed_layer.npz",

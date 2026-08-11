@@ -1,9 +1,11 @@
 import glob
+import os
 
 import cv2
 import numpy as np
 
 from difftactile.main.constants import *
+from difftactile.main.paths import repo_path
 
 # Checkerboard dimensions (inner corners)
 CHECKERBOARD = (4-1, 5-1)  # Adjust to your board
@@ -16,8 +18,19 @@ objp[0, :, :2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2)
 objpoints = []  # 3D points
 imgpoints = []  # 2D points
 
-# Load calibration images
-images = glob.glob('/home/psb120/camera-calibration-2/*.jpg')
+# Load calibration images. These are checkerboard photos taken with the sensor
+# camera; they are not committed to the repository. Point CALIBRATION_IMAGE_DIR
+# at your own capture folder, or drop the .jpgs into the default location below.
+CALIBRATION_IMAGE_DIR = os.environ.get(
+    "CALIBRATION_IMAGE_DIR",
+    repo_path("difftactile/manual_or_experimental_data/camera_calibration"),
+)
+images = glob.glob(os.path.join(CALIBRATION_IMAGE_DIR, "*.jpg"))
+if not images:
+    raise FileNotFoundError(
+        f"No calibration .jpg images found in {CALIBRATION_IMAGE_DIR}. "
+        "Set CALIBRATION_IMAGE_DIR to the folder holding your checkerboard photos."
+    )
 
 for fname in images:
     img = cv2.imread(fname)

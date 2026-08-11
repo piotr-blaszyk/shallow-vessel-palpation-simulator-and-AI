@@ -1,6 +1,7 @@
 from sympy import false
 
 from difftactile.main.constants import *
+from difftactile.main.paths import data_path, repo_path
 
 if SYSTEM_PARAMS.meta.cnn_gnn == 0:
     import cv2
@@ -18,7 +19,11 @@ from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 
 
-IROS_CLEAN_DATA_DIR = "/home/psb120/Documents/diff-tactile-fork/difftactile/manual_or_experimental_data/iros_training_data/clean/"
+# Real meat-phantom trials, produced by the endgame/iros preprocessing chain.
+# Distributed via the Zenodo data bundle (see restore_data.sh), not committed.
+IROS_CLEAN_DATA_DIR = data_path(
+    "difftactile/manual_or_experimental_data/iros_training_data/clean/"
+)
 IROS_TRAIN_TRIALS = [
     "20260228-230937",
     "20260228-232013",
@@ -662,18 +667,34 @@ class MyDataset(torch.utils.data.Dataset):
         print(f"split len: {[len(x) for x in res]}")
         return res
 
-    def create_splits_iros(self, *args, **kwargs):
+    def create_splits_iros(self, all_to_test=False, *args, **kwargs):
+        """Split the real meat trials into train / val / test datasets.
+
+        Two published behaviours:
+
+        * `all_to_test=False` (default) — trials are split by ID into the train
+          and validation sets listed above, for the `sim-to-meat` scenario that
+          trains on meat.
+        * `all_to_test=True` — every trial goes to the **test** split and train /
+          val are left empty. This is the cross-domain `silicone-to-meat`
+          evaluation, where a silicone-trained checkpoint is tested on meat
+          without any retraining, so no trial may be held out for fitting.
+        """
         train_trial_set = set(IROS_TRAIN_TRIALS)
         validation_trial_set = set(IROS_VALIDATION_TRIALS)
         train_data = []
         val_data = []
-        for data_point in self.iros_data:
-            trial_folder_path, dilation, video_frame_indices = data_point
-            trial_id = os.path.basename(trial_folder_path)
-            if trial_id in train_trial_set:
-                train_data.append((trial_folder_path, dilation, video_frame_indices))
-            elif trial_id in validation_trial_set:
-                val_data.append((trial_folder_path, dilation, video_frame_indices))
+        test_data = []
+        if all_to_test:
+            test_data = list(self.iros_data)
+        else:
+            for data_point in self.iros_data:
+                trial_folder_path, dilation, video_frame_indices = data_point
+                trial_id = os.path.basename(trial_folder_path)
+                if trial_id in train_trial_set:
+                    train_data.append((trial_folder_path, dilation, video_frame_indices))
+                elif trial_id in validation_trial_set:
+                    val_data.append((trial_folder_path, dilation, video_frame_indices))
         train_dataset = MyDataset(
             scheme=self.scheme,
             sim_exp=self.sim_exp,
@@ -695,7 +716,7 @@ class MyDataset(torch.utils.data.Dataset):
             sim_exp=self.sim_exp,
             data_dir=self.data_dir,
             mode="test",
-            iros_data=[],
+            iros_data=test_data,
             apply_augmentations=self.apply_augmentations,
         )
         res = (train_dataset, val_dataset, test_dataset)

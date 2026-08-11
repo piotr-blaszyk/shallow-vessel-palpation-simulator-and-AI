@@ -1,9 +1,11 @@
 from PIL import Image
 import numpy as np
 
+from difftactile.main.paths import repo_path
 
-INPUT_IMAGE = "/home/psb120/Documents/diff-tactile-fork/difftactile/output/confusion_overlay_vein_map.png"
-OUTPUT_IMAGE = "/home/psb120/Documents/diff-tactile-fork/difftactile/output/confusion_overlay_vein_map_pretty.png"
+
+INPUT_IMAGE = repo_path("difftactile/output/confusion_overlay_vein_map.png")
+OUTPUT_IMAGE = repo_path("difftactile/output/confusion_overlay_vein_map_pretty.png")
 
 
 def main() -> None:

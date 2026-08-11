@@ -29,6 +29,39 @@ from difftactile.sensor_model.vitactip import ViTacTip
 
 RUN_ON_LAB_MACHINE = True
 
+# -----------------------------------------------------------------------------
+# Run-time overrides (environment variables).
+#
+# The published configuration lives in system-params.json and is the default for
+# all of these; the env vars only exist so the same code can be run as a quick
+# smoke test, or on a GPU with less memory, without editing tracked files.
+#
+#   DIFFTACTILE_NUM_LOOPS   number of outer training-data collection loops.
+#                           Each loop runs 2 substeps x 4 trajectories = 8 trials.
+#                           Default: contact.num_training_trajectories (100 -> 800
+#                           trials, ~1 hour). Set to 1 for a ~1 minute smoke test.
+#   DIFFTACTILE_HEADLESS    "1" to skip creating Taichi GGUI windows, so the
+#                           simulator can run over SSH / in CI / in a container
+#                           with no X server. Data collection is unaffected.
+#   TI_DEVICE_MEMORY_GB     GPU memory budget handed to Taichi. Default 9, which
+#                           suits a 10 GB card (e.g. RTX 3080).
+# -----------------------------------------------------------------------------
+
+
+def _env_int(name, default):
+    """Read a positive integer env var, falling back to `default` if unset/invalid."""
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"WARNING: {name}={raw!r} is not an integer; using {default}")
+        return default
+
+
+HEADLESS = os.environ.get("DIFFTACTILE_HEADLESS", "0") == "1"
+
 
 @ti.data_oriented
 class Contact:
@@ -2190,6 +2223,14 @@ class Contact:
         self.tactile_window.show()
 
     def visualisation_set_up_gui(self):
+        # In headless mode no X server is available, so skip window creation
+        # entirely. visualisation_update_gui() returns early for the same reason;
+        # training-data collection does not depend on rendering.
+        if HEADLESS:
+            print("DIFFTACTILE_HEADLESS=1: skipping Taichi GGUI window creation")
+            self.window = None
+            self.tactile_window = None
+            return
         self.window = ti.ui.Window("high-level camera", (
             int(SYSTEM_PARAMS.visualisation.window_3d_width),
             int(SYSTEM_PARAMS.visualisation.window_3d_height)
@@ -2230,6 +2271,8 @@ class Contact:
         return (1 - t) * start + t * end
     
     def visualisation_update_gui(self, ts):
+        if HEADLESS:
+            return
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
         self.scene.point_light(pos=(0.5, 1.5, 1.5), color=(1, 1, 1))
@@ -2521,7 +2564,18 @@ class Contact:
         # self.clear_temp_images()
         # self.clear_npz()
         file_num = 0
-        for i in range(SYSTEM_PARAMS.contact.num_training_trajectories):
+        # Number of outer loops; each contributes 2 substeps x 4 trajectories.
+        # DIFFTACTILE_NUM_LOOPS=1 gives an 8-trial smoke test instead of the full run.
+        num_loops = _env_int(
+            "DIFFTACTILE_NUM_LOOPS", SYSTEM_PARAMS.contact.num_training_trajectories
+        )
+        if num_loops != SYSTEM_PARAMS.contact.num_training_trajectories:
+            print(
+                f"DIFFTACTILE_NUM_LOOPS={num_loops} (full run would be "
+                f"{SYSTEM_PARAMS.contact.num_training_trajectories}); "
+                f"expecting {num_loops * 8} trials"
+            )
+        for i in range(num_loops):
             if self.use_bo:
                 if i < 4:
                     self.bo.my_suggest_random()
@@ -2529,7 +2583,7 @@ class Contact:
                     self.bo.my_suggest_optimise()
                 self.set_contact_params_from_bo()
             for j in range(2):
-                print(f"training trajectory: {i}/{SYSTEM_PARAMS.contact.num_training_trajectories - 1}; substep: {j}/5")
+                print(f"training trajectory: {i}/{num_loops - 1}; substep: {j}/5")
                 self.generate_trajectories()
                 if False and j < 1:
                     self.collision_ixs = [0, 2]
@@ -2592,7 +2646,7 @@ class Contact:
                     self.prev_loss[None] = 0.0
                     self.trajectory_loss[None] = 0.0 
                     print(
-                        f"training trajectory: {i}/{SYSTEM_PARAMS.contact.num_training_trajectories - 1}; substep: {j}/5 done"
+                        f"training trajectory: {i}/{num_loops - 1}; substep: {j}/5 done"
                     )
                 if self.use_bo:
                     print(f'domain adaptation losses: {self.da_losses}')

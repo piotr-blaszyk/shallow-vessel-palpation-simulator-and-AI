@@ -34,18 +34,53 @@ Pipeline in one line:
 
 ## How to run things
 
-Always run **from the repository root** as a module:
+**Docker is the officially supported path** (`docker/` — see the README quickstart):
+
+```bash
+./docker/docker-build.sh && ./docker/docker-run.sh
+docker exec -it difftactile ./docker/run_pipeline.sh check
+docker exec -it difftactile ./docker/run_pipeline.sh sim-to-silicone
+```
+
+Directly, as a module:
 
 ```bash
 python -m difftactile.scripts.script_main
 ```
 
-This matters: `difftactile/main/constants.py` loads
-`ConstantsFromJson("difftactile/system_params/system-params.json")` with a **relative** path,
-so anything launched from another working directory fails immediately.
+Paths are resolved against the **repository root** by `difftactile/main/paths.py`
+(`repo_path()` / `data_path()`), derived from that file's own location and overridable with
+`DIFFTACTILE_ROOT`. Scripts therefore run from any working directory — the old
+"must cd to the repo root first" constraint is gone.
 
 The simulation pipeline order is fixed by `difftactile/scripts/run_all.sh`:
-`script_apply_scaling` → `script_pre_main` → `script_main`.
+`script_apply_scaling` → `script_pre_main` → `script_main`. The simulator additionally needs
+the Gmsh meshes (`script_generate_vitactip_mesh_gmsh`, `script_generate_vein_mesh_gmsh`) and
+the sensor-geometry artifacts shipped in the Zenodo bundle.
+
+### The three scenarios (single branch)
+
+Selected **by name**, not by editing source:
+
+```bash
+python -m difftactile.scripts.script_iros_gnn sim-to-silicone   # evaluate on silicone + ROC
+python -m difftactile.scripts.script_iros_gnn sim-to-meat       # train on meat, test on silicone
+python -m difftactile.scripts.script_iros_gnn silicone-to-meat  # cross-domain, no retraining
+```
+
+`run_scenario()` in `cnn/iros_gnn.py` dispatches these. Note `GNN(arch=...)`: `"iros"` is the
+small model (`latent_dim` 64), `"icra"` the large one (`latent_dim` 256) read from the
+`*_icra` config keys — the ICRA checkpoint only loads into the latter.
+
+### Environment overrides
+
+| Variable | Effect |
+|---|---|
+| `DIFFTACTILE_ROOT` | Repository root used for all path resolution. |
+| `DIFFTACTILE_DATA_ROOT` | Keep the large data bundle outside the repo. |
+| `DIFFTACTILE_NUM_LOOPS` | Simulator loop count. Each loop = 2 substeps × 4 trajectories = 8 trials. Default 100 (800 trials, ~1 h); `1` gives a ~2 min smoke test. |
+| `DIFFTACTILE_HEADLESS=1` | Skip Taichi GGUI / Gmsh FLTK windows and blocking `plt.show()`. Required for SSH/CI/container runs with no display. |
+| `DIFFTACTILE_SCENARIO` | Scenario name, if not passed as an argument. |
 
 ## Configuration model — read this before changing behaviour
 
@@ -90,11 +125,17 @@ check whether it is already known:
   styling template, not a result. Real ROC is `iros_gnn.evaluate_and_plot_roc()`.
 - `cnn/iros_gnn.py:570` — hardcoded `device='cuda:0'` with no CPU fallback, so constructing `GNN()`
   requires a GPU even for evaluation.
-- `generate_*_mesh_gmsh.py` — `os.makedirs("output")` creates `./output`, not `./difftactile/output`.
 
-Interactivity is pervasive and intentional: Taichi GGUI windows (opened unconditionally in
-`main.main()`), Gmsh FLTK windows, the cv2 annotation GUI, the tkinter marker-labelling GUI, and
-`plt.show()`. None of this runs headless without patching.
+**Fixed since** (do not re-report these as bugs):
+- `generate_*_mesh_gmsh.py` — `os.makedirs("output")` now uses `repo_path("difftactile/output")`,
+  and the blocking `gmsh.fltk.run()` viewer is skipped when headless.
+- `iros_gnn.main()` no longer starts with a bare `return`; scenario selection replaced it.
+- `evaluate_and_plot_roc()` no longer hardcodes its output path, and `plt.show()` is guarded.
+
+Interactivity is otherwise pervasive and intentional: the cv2 annotation GUI and the tkinter
+marker-labelling GUI still block by design. The **simulator and all three GNN scenarios now run
+headless** under `DIFFTACTILE_HEADLESS=1`; the Docker image also passes X through, so GUI windows
+work when a display is available.
 
 ## Data availability — the main gotcha
 
@@ -108,18 +149,28 @@ The paths below do not exist in a fresh clone:
 - `difftactile/manual_or_experimental_data/endgame/20250901-131547_dense` — silicone dataset
 
 So most ML entrypoints **cannot run in a fresh clone** — they will raise `FileNotFoundError`.
-Do not "fix" such a failure by inventing data. The simulation half (`script_pre_main`,
-`script_main`, mesh generation) *does* run from a clean clone because it generates its own inputs.
+Do not "fix" such a failure by inventing data. Restore the published bundle instead:
 
-A few **absolute paths hardcoded to the original machine** remain and must be edited by anyone
-else running the code:
-- `difftactile/cnn/dataset.py:21` `IROS_CLEAN_DATA_DIR = "/home/psb120/Documents/diff-tactile-fork/..."`
-- `difftactile/system_params/system-params.json:311` `root_dir`
-- `difftactile/data_analysis/testing/prettify_confusion_image.py:5-6`
-- `difftactile/data_analysis/training/print_metrics_csv.py:3`
-- `difftactile/data_analysis/experiment/calibrate_camera.py:20`
+```bash
+./data/restore_data.sh difftactile-data.tar.gz   # ~190 MB from Zenodo
+./data/restore_data.sh --verify                  # check what is present
+```
+
+`data/MANIFEST.md` documents what the bundle contains and — more usefully — what is
+deliberately excluded (raw videos, intermediate preprocessing stages, training logs), which
+is what takes it from 4.5 GB to ~190 MB. `data/make_data_bundle.sh` rebuilds it (author-side).
+`data/ZENODO_UPLOAD.md` covers publishing it from the command line.
+
+The **hardcoded absolute paths are gone** — everything now resolves through
+`difftactile/main/paths.py`. Note that the author's own checkout wires some data paths up as
+**symlinks** into an external directory; those resolve on the host but *not* inside the
+container, which is why `restore_data.sh` replaces them with real files.
 
 ## Branches
+
+**All three scenarios now live on one branch** and are selected by name (see above). The
+per-experiment branches below are a historical record; changes should target the unified
+branch rather than reviving them.
 
 `main` tracks the latest work (identical to `iros`). Three parallel branches matter:
 

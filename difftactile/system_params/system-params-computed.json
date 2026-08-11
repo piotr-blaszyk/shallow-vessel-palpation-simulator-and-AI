@@ -44,7 +44,7 @@
   "phantom_volume": 0.0012000000000000001,
   "object_scale": 0.2,
   "phantom_min_max_particle_spacing": 0.005,
-  "vitactip_mean_particle_spacing": 0.002323061373755325,
+  "vitactip_mean_particle_spacing": 0.0023230613737553244,
   "contact_surface_area": 0.0011341149479459152,
   "rigid_static": {
     "num_particles_cube_1d": -1

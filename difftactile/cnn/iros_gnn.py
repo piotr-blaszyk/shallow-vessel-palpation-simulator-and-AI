@@ -1,3 +1,6 @@
+import os
+import pickle
+import sys
 import time
 
 import numpy as np
@@ -17,6 +20,19 @@ import matplotlib.pyplot as plt
 
 from difftactile.cnn.common import *
 from difftactile.cnn.dataset import *
+from difftactile.main.paths import repo_path
+
+
+def _show_plots():
+    """True when an interactive matplotlib window can and should be opened.
+
+    Every figure is always written to disk first; this only controls the extra
+    blocking `plt.show()` call, which would hang a container or an SSH session
+    that has no X display.
+    """
+    if os.environ.get("DIFFTACTILE_HEADLESS", "0") == "1":
+        return False
+    return bool(os.environ.get("DISPLAY"))
 
 
 class CurriculumCallback(pl.Callback):
@@ -117,8 +133,31 @@ class MyBlock(nn.Module):
 
 
 class GNN(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, arch="iros"):
+        """Graph neural network for subsurface feature segmentation.
+
+        Two architectures are published, and a checkpoint only loads into the one
+        it was trained with:
+
+          arch="iros"  small model  (latent_dim 64,  skip_dim 32)  -> final_segmentation_model_gnn_iros.pt
+          arch="icra"  large model  (latent_dim 256, skip_dim 128) -> final_segmentation_model_gnn_icra.pt
+
+        The large variant's sizes live under the `*_icra` keys of the `gnn`
+        section in system-params.json, so both are described by one config file
+        (previously the two lived on separate git branches).
+        """
         super().__init__()
+        self.arch = arch
+        self.save_hyperparameters()
+
+        def gnn_param(name):
+            """Read `name_icra` for the large architecture, else `name`."""
+            if arch == "icra":
+                icra_name = f"{name}_icra"
+                if hasattr(SYSTEM_PARAMS.gnn, icra_name):
+                    return getattr(SYSTEM_PARAMS.gnn, icra_name)
+            return getattr(SYSTEM_PARAMS.gnn, name)
+
         self.num_regular_nodes = SYSTEM_PARAMS.vitactip.num_markers
         self.num_classes = SYSTEM_PARAMS.gnn.num_classes
         self.stages_str = [
@@ -133,10 +172,10 @@ class GNN(pl.LightningModule):
         spatial_edge_dim = 5
         temporal_edge_dim = 5+2
         global_temporal_edge_dim = 2
-        entity_type_embedding_dim = SYSTEM_PARAMS.gnn.entity_type_embedding_dim
-        small_input_dim = SYSTEM_PARAMS.gnn.small_input_dim
-        latent_dim = SYSTEM_PARAMS.gnn.latent_dim
-        self.skip_dim = SYSTEM_PARAMS.gnn.skip_dim
+        entity_type_embedding_dim = gnn_param("entity_type_embedding_dim")
+        small_input_dim = gnn_param("small_input_dim")
+        latent_dim = gnn_param("latent_dim")
+        self.skip_dim = gnn_param("skip_dim")
         cat_out_dim = self.skip_dim * 4
         input_dim = latent_dim
         output_dim = SYSTEM_PARAMS.gnn.output_dim
@@ -672,7 +711,13 @@ class MyDataModule(pl.LightningDataModule):
 
 
 def main():
-    return
+    """Train the GNN on the real meat trials and test on the silicone phantom.
+
+    This is the `sim-to-meat` / cross-domain training entrypoint. The bare
+    `return` that used to sit here (disabling training on the `iros` branch) has
+    been replaced by the explicit scenario dispatcher in `run_scenario()`, so the
+    behaviour is now selected by name rather than by editing the source.
+    """
     BATCH_SIZE = SYSTEM_PARAMS.gnn.batch_size
     NUM_EPOCHS = SYSTEM_PARAMS.gnn.num_epochs
     NUM_WORKERS = SYSTEM_PARAMS.gnn.num_workers
@@ -946,9 +991,125 @@ def evaluate_and_plot_roc():
     for spine in plt.gca().spines.values():
         spine.set_linewidth(3.0)
     plt.tight_layout()
-    plt.savefig('difftactile/output/roc_curve_iros.pdf', format="pdf", dpi=300)
-    plt.show()
+    roc_path = repo_path("difftactile/output/roc_curve_iros.pdf")
+    os.makedirs(os.path.dirname(roc_path), exist_ok=True)
+    plt.savefig(roc_path, format="pdf", dpi=300)
+    print(f"ROC curve written to: {roc_path}")
+    # Only pop up a window when there is a display to pop it up on; with
+    # DIFFTACTILE_HEADLESS=1 (or no DISPLAY) the PDF above is the output.
+    if _show_plots():
+        plt.show()
+    plt.close()
 
     print(f'auc: {auc}')
 
     return auc
+
+
+# =============================================================================
+# Scenario dispatcher
+#
+# The three published transfer scenarios used to live on separate git branches,
+# selected by editing source (commenting call lists, toggling `if False:`
+# blocks, and a bare `return` at the top of main()). They are unified here and
+# chosen by name instead, so a single branch reproduces all three:
+#
+#   sim-to-silicone   Evaluate the simulation-trained GNN on the real SILICONE
+#                     vascular phantom, and plot the ROC curve.
+#                     (was: `iros` branch, evaluate_and_plot_roc())
+#
+#   sim-to-meat       Train on the real MEAT trials and test on silicone,
+#                     writing a new checkpoint.
+#                     (was: `iros` branch main(), minus the disabling `return`)
+#
+#   silicone-to-meat  Cross-domain: load the SILICONE-trained (ICRA) checkpoint
+#                     and test it, without retraining, on the MEAT trials.
+#                     (was: `sim-to-meat-test` branch main(), the `if False:`
+#                     variant that loads final_segmentation_model_gnn_icra)
+#
+# Usage:
+#   python -m difftactile.scripts.script_iros_gnn <scenario>
+# =============================================================================
+
+SCENARIOS = ("sim-to-silicone", "sim-to-meat", "silicone-to-meat")
+
+
+def silicone_to_meat():
+    """Test the silicone-trained (ICRA) checkpoint on the real meat trials.
+
+    No training happens: the checkpoint is loaded as-is and evaluated, which is
+    what makes this the cross-domain generalisation result.
+    """
+    # The ICRA checkpoint is the LARGE architecture, so both the model and the
+    # batch size come from the `*_icra` config keys.
+    BATCH_SIZE = getattr(SYSTEM_PARAMS.gnn, "batch_size_icra", SYSTEM_PARAMS.gnn.batch_size)
+    NUM_WORKERS = getattr(SYSTEM_PARAMS.gnn, "num_workers_icra", SYSTEM_PARAMS.gnn.num_workers)
+
+    # The meat trials are indexed by dataset.py's "iros" scheme; the sim_exp /
+    # data_dir / apply_augmentations arguments are unused for that scheme.
+    meat_dataset = MyDataset(
+        scheme="iros",
+        sim_exp="apple",
+        data_dir="banana",
+        apply_augmentations="cherry",
+        name="meat",
+    )
+    # Pure transfer: every trial is evaluated, none held back for fitting.
+    _, _, test_dataset = meat_dataset.create_splits(all_to_test=True)
+
+    model = GNN(arch="icra")
+    ckpt = repo_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_icra)
+    print(f"loading silicone-trained checkpoint: {ckpt}")
+    model.load_state_dict(torch.load(ckpt))
+
+    # Normalisation statistics must match those the checkpoint was trained with,
+    # so they are taken from the saved test-loader pickle rather than recomputed.
+    with open(repo_path(SYSTEM_PARAMS.files.test_loader_gnn_icra), "rb") as f:
+        test_data = pickle.load(f)
+    if "iros" in test_data:
+        stats = test_data["dataset_stats"]
+    else:
+        stats = test_data["dataset_stats"][0.0]
+    model.set_stats(stats)
+    test_dataset.set_stats(stats)
+
+    meat_loader = DataLoader(
+        test_dataset,
+        batch_size=BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+        pin_memory=False,
+        persistent_workers=False,
+        shuffle=False,
+    )
+    trainer = pl.Trainer(accelerator="auto", logger=False, enable_checkpointing=False)
+    print("\nTesting silicone-trained model on the meat dataset:")
+    start = time.perf_counter()
+    trainer.test(model, dataloaders=meat_loader)
+    print(f"\nDone in {time.perf_counter() - start:.2f} s")
+
+
+def run_scenario(scenario=None):
+    """Entrypoint used by scripts/script_iros_gnn.py.
+
+    `scenario` falls back to the first CLI argument, then to the
+    DIFFTACTILE_SCENARIO environment variable, then to sim-to-silicone (the
+    cheapest scenario: evaluation only, no training).
+    """
+    if scenario is None:
+        scenario = sys.argv[1] if len(sys.argv) > 1 else None
+    if scenario is None:
+        scenario = os.environ.get("DIFFTACTILE_SCENARIO", "sim-to-silicone")
+
+    if scenario not in SCENARIOS:
+        raise SystemExit(
+            f"Unknown scenario {scenario!r}.\n"
+            f"Choose one of: {', '.join(SCENARIOS)}\n"
+            f"Usage: python -m difftactile.scripts.script_iros_gnn <scenario>"
+        )
+
+    print(f"=== scenario: {scenario} ===")
+    if scenario == "sim-to-silicone":
+        return evaluate_and_plot_roc()
+    if scenario == "sim-to-meat":
+        return main()
+    return silicone_to_meat()
