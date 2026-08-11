@@ -6,6 +6,10 @@ sequence an external reader would follow.
 
 **Date:** 2026-08-11 · **Host:** Ubuntu 24.04, NVIDIA RTX 3080 (10 GB), Docker 29.6.2
 
+Run twice: once on the initial Docker/unification work, and again on a second
+clean clone after an adversarial code review produced fixes (checkpoint
+protection, cwd-independent paths). The numbers below are from the second run.
+
 ## Procedure
 
 ```bash
@@ -32,6 +36,8 @@ docker exec difftactile ./docker/run_pipeline.sh sim-short
 | **`silicone-to-meat`** | OK. 199 meat data points, **IoU 0.809 (bg) / 0.197 (vein)**. |
 | **`sim-to-meat`** | OK. 30 epochs, tested on silicone, checkpoint saved. ~51 s. |
 | `sim-short` | OK. Full 3-stage sim pipeline; 8 trials in 163 s. |
+| `all-scenarios` | OK. All three run in sequence, and the published checkpoint is **byte-identical** afterwards (training writes `*_retrained`). |
+| Run from another cwd | OK. Every scenario and the simulator run with `-w /tmp`. |
 
 ### Reproducibility against the original checkout
 
