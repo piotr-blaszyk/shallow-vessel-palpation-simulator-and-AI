@@ -32,9 +32,7 @@ No importers, no entrypoint wrapper, and superseded by a named replacement.
 | `difftactile/data_analysis/experiment/og_experiment_frames_poses_data.py` | Operates on the "og" experiment superseded by the endgame chain. |
 | `difftactile/data_analysis/experiment/press_vein.py` | Early single-press probe, superseded by the endgame chain. |
 | `difftactile/data_analysis/experiment/process_video.py` | Standalone video pass; `marker_tracker.py` / `endgame.py` do this now. |
-| `difftactile/data_analysis/sim/3d_to_2d.py` | Ad-hoc projection check; the real projection is `fisheye_model_*`. |
 | `difftactile/data_analysis/sim/rigid_mpm.py` | Experiment with a rigid-MPM object model that is not in the paper. |
-| `difftactile/data_analysis/sim/sandbox.py` | Scratch file (name says so). |
 | `difftactile/data_analysis/sim/merge_datasets.py` | Dataset-merging utility for a multi-dataset scheme not used in the published runs. |
 | `difftactile/data_analysis/sim/domain_adaptation_line_chart.py` | Chart for the domain-adaptation side experiment, not a paper figure. |
 | `difftactile/data_analysis/sim/gnn_input_visualisation.py` | Debug visualisation of GNN inputs. |
@@ -50,7 +48,7 @@ No importers, no entrypoint wrapper, and superseded by a named replacement.
 | File / folder | Why |
 |---|---|
 | `difftactile/ml_training_old/` (4 files) | Name says "old"; predates the current `cnn/` GNN work. **Verified un-importable:** three of the four do `from exploratory_data_analysis import *`, and that module does not exist anywhere in the repository — so they cannot even be imported, let alone run. |
-| `difftactile/sandbox/` (4 files) | Scratch area: `prompt.py`, `sandbox2.py`, `test_camera.py`, `test_npz_loading.py`. |
+| `difftactile/sandbox/` (WHOLE FOLDER) | Scratch area: the 4 `.py` above plus notes `.md`, a `.tex` and a small image. Last commits were "generate diagrams for the report". |
 | `difftactile/cnn/train.py` + `scripts/script_train.py` | Legacy U-Net CNN path; CLAUDE.md records it as broken (outdated `MyDataset` signature, needs `monai`, which is not in `requirements/`). |
 | `difftactile/cnn/lit_module_unet_cnn.py` | The U-Net Lightning module for the same legacy CNN path. |
 | `difftactile/data_analysis/sim/benchmark_dataset.py` + `script_benchmark_dataset.py` | Broken: references a JSON key `dataset_root_reordered` that does not exist. |
@@ -59,7 +57,7 @@ No importers, no entrypoint wrapper, and superseded by a named replacement.
 | `difftactile/main/cfl_and_contact_params_estimation.py` + its script | Deliberately commented out of `run_all.sh`; writes scalars where `main.py` expects 3-element lists. |
 | `difftactile/data_analysis/experiment/ml_exploratory_data_analysis.py` | Exploratory analysis, not part of the published pipeline. |
 | `difftactile/data_analysis/experiment/calibrate_camera_rotation.py` | Calibration validation; a branch of the same name suggests it was exploratory. |
-| `min_values.py`, `test_iou.py`, `sitecustomize.py` (root) | Root-level scratch/util files. `sitecustomize.py` is **empty** (0 bytes) but is auto-imported by Python if on the path — worth deleting for that reason alone. |
+| `min_values.py`, `test_iou.py` (root) | Root-level scratch/util files. (`sitecustomize.py` is listed in Category A.) |
 | `profile.out` (root, 117 KB) | cProfile output from a past profiling run. |
 | `vitactip_cadquery.stl` (root, 101 KB) | Loose STL at the repo root; the meshes used by the sim live in `difftactile/meshes/`. |
 
@@ -69,7 +67,6 @@ No importers, no entrypoint wrapper, and superseded by a named replacement.
 |---|---:|---|
 | `docs/box.gif`, `docs/pbd.gif`, `docs/repose.gif`, `docs/surface.gif` | **12 MB** | Upstream DiffTactile demo animations for the `box_open` / `object_repose` / `surface_follow` manipulation tasks — all of which were **deleted** from this fork. Referenced nowhere in the README or code. Largest easy win in the repository. |
 | `difftactile/meshes/cylinder.stl`, `suturing-phantom.stl`, `thin-long-indenter.stl`, `vascular-phantom.stl`, `vascular-phantom-fragment-long.stl`, `vascular-phantom-fragment-shallow.stl` | ~30 KB | Only `vascular-phantom-fragment.stl` is referenced (by `files.phantom` in the config). The rest are alternative geometries from earlier experiments. |
-| `difftactile/manual_or_experimental_data/downward-press-vascular-phantom/` (44 JPGs) | 7.7 MB | Fisheye-calibration image set (`files.fisheye_model_image_dir`). **Keep if** you want `script_fisheye_model` to be runnable; it is not needed for the three published scenarios. Listed here as a size trade-off, not a certain deletion. |
 | `difftactile/manual_or_experimental_data/mpv-shot0001.jpg`, `my_shape.png` | 280 KB | Loose screenshots, unreferenced. |
 | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/` (5 images) | 1.3 MB | Inputs to the domain-adaptation side experiment (`script_domain_adaptation`), not a paper result. |
 | `.vscode/` | small | Personal IDE config with machine-specific interpreter paths. **Already untracked** as part of this work. |
