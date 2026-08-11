@@ -21,8 +21,8 @@ This work spans two repositories, submitted together to an **ECCV 2026 workshop*
 
 | Repository | Role |
 |---|---|
-| **[diff-tactile-fork](https://github.com/psb120/diff-tactile-fork)** (this one) | **Main repository.** Simulation, dataset generation, GNN training and evaluation — everything needed to reproduce the published results. |
-| [dobot-tcp-ip](https://github.com/psb120/dobot-tcp-ip) | Robot control. Drives the DOBOT Magician E6 arm that collected the real tactile recordings for both phantoms. Needed only to *gather new* data, not to reproduce results. |
+| **[diff-tactile-fork](https://github.com/piotr-blaszyk/diff-tactile-fork)** (this one) | **Main repository.** Simulation, dataset generation, GNN training and evaluation — everything needed to reproduce the published results. |
+| [dobot-tcp-ip](https://github.com/piotr-blaszyk/dobot-tcp-ip) | Robot control. Drives the DOBOT Magician E6 arm that collected the real tactile recordings for both phantoms. Needed only to *gather new* data, not to reproduce results. |
 
 Data and trained model weights are published on Zenodo — see
 [Quickstart](#quickstart-docker) below.
@@ -55,7 +55,7 @@ the NVIDIA driver, Docker, and the
 
 ```bash
 # 1. Clone
-git clone https://github.com/psb120/diff-tactile-fork.git
+git clone https://github.com/piotr-blaszyk/diff-tactile-fork.git
 cd diff-tactile-fork
 
 # 2. Fetch the data bundle from Zenodo (~186 MB) and unpack it into place
