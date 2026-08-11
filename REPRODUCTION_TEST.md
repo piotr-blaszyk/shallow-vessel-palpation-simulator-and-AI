@@ -76,7 +76,14 @@ revisiting.** Flagging rather than silently changing the reported result.
 
 ## Notes for anyone repeating this
 
-- **Simulated data shape.** In each 8-trial batch, the two `trajectory_type=0`
+- **Regenerating the published dataset needs `DIFFTACTILE_TRAJECTORIES=3`.**
+  All 500 trajectories in the shipped dataset are type 3 ("slide (vein)"), each
+  316-317 frames. Git history shows it was collected when the collection loop
+  read `range(3, 4)`; commit `0e7280a` later widened it to `range(0, 4)`. So a
+  default run today produces a *different* mix — all four types, of which only
+  type 3 matches. The loop is now driven by `DIFFTACTILE_TRAJECTORIES`, defaulting
+  to all four (current committed behaviour) with `3` reproducing the published set.
+- **Simulated data shape.** With all four types enabled, the `trajectory_type=0`
   files contain empty arrays. This is correct, not a failure: that trajectory is
   a short press that terminates in ~36 timesteps, below the `ts > 80` threshold at
   which recording begins. Types 1/2/3 yield ~73/17/317 frames, and the 317 matches

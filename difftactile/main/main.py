@@ -63,6 +63,32 @@ def _env_int(name, default):
 HEADLESS = os.environ.get("DIFFTACTILE_HEADLESS", "0") == "1"
 
 
+def _trajectory_indices():
+    """Which trajectory types training-data collection should execute.
+
+    The four types are: 0 press (no vein), 1 slide (vein), 2 twist-y (no vein),
+    3 twist-z (no vein) — see `Contact.trajectory_names`.
+
+    DIFFTACTILE_TRAJECTORIES accepts a comma-separated list, e.g. "3" to
+    reproduce the published dataset (which is entirely type 3) or "0,1,2,3".
+    Defaults to all four, matching the current committed behaviour.
+    """
+    raw = os.environ.get("DIFFTACTILE_TRAJECTORIES")
+    if not raw:
+        return range(0, 4)
+    try:
+        ixs = [int(x) for x in raw.split(",") if x.strip() != ""]
+    except ValueError:
+        print(f"WARNING: DIFFTACTILE_TRAJECTORIES={raw!r} is not a list of ints; using 0-3")
+        return range(0, 4)
+    bad = [i for i in ixs if not 0 <= i < 4]
+    if bad:
+        print(f"WARNING: trajectory indices {bad} out of range 0-3; using 0-3")
+        return range(0, 4)
+    print(f"DIFFTACTILE_TRAJECTORIES={raw}: executing trajectory types {ixs}")
+    return ixs
+
+
 @ti.data_oriented
 class Contact:
     def __init__(self):
@@ -2590,7 +2616,17 @@ class Contact:
                 else:
                     self.collision_ixs = [0]
                 self.randomise_contact_params()
-                for traj_ix in range(0, 4):
+                # Which of the four trajectory types to execute. The PUBLISHED
+                # dataset (pickle_20250901_220921*) is entirely type 3,
+                # "slide (vein)" — it was collected when this loop read
+                # `range(3, 4)`; a later commit (0e7280a) widened it to all four,
+                # which is why a default run now also produces types 0/1/2.
+                # Type 0 ("press (no vein)") terminates in ~36 timesteps, below
+                # the `ts > 80` threshold at which recording starts, so it yields
+                # empty arrays by design.
+                # Set DIFFTACTILE_TRAJECTORIES=3 to reproduce the published
+                # dataset; the default keeps the current all-four behaviour.
+                for traj_ix in _trajectory_indices():
                     self.trajectory_ix[None] = traj_ix
                     trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
                     # print(f'executing trajectory: {trajectory_name}')

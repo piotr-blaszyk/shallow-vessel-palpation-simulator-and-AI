@@ -107,9 +107,21 @@ reproduce the results. Run it only if you want to extend the project:
 # ~2-3 minutes: a single loop (8 trials), to check the simulator works
 docker exec -it difftactile ./docker/run_pipeline.sh sim-short
 
-# ~3 hours: the full 800-trial dataset used in the paper
+# ~3 hours: a full 800-trial collection run
 docker exec -it difftactile ./docker/run_pipeline.sh sim-full
 ```
+
+> **To regenerate the *published* dataset specifically, set
+> `DIFFTACTILE_TRAJECTORIES=3`.** All 500 trajectories in the shipped dataset are
+> type 3 ("slide (vein)") — it was collected when the collection loop read
+> `range(3, 4)`, which a later commit widened to all four types. A default run
+> therefore also produces types 0/1/2, and type 0 yields empty arrays by design
+> (it ends in ~36 timesteps, below the `ts > 80` recording threshold).
+>
+> ```bash
+> docker exec -it -e DIFFTACTILE_TRAJECTORIES=3 difftactile \
+>     ./docker/run_pipeline.sh sim-full
+> ```
 
 Open an interactive shell with `./docker/docker-connect.sh`. GUI windows (Taichi GGUI,
 the cv2 annotation tool, matplotlib) appear on your desktop automatically — the image ships

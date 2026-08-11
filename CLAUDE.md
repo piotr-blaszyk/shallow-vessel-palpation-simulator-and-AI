@@ -80,6 +80,7 @@ small model (`latent_dim` 64), `"icra"` the large one (`latent_dim` 256) read fr
 | `DIFFTACTILE_DATA_ROOT` | Keep the large data bundle outside the repo. |
 | `DIFFTACTILE_NUM_LOOPS` | Simulator loop count. Each loop = 2 substeps × 4 trajectories = 8 trials. Default 100 (800 trials, ~3 h at ~14 s/trial on an RTX 3080); `1` gives a ~3 min smoke test. |
 | `DIFFTACTILE_HEADLESS=1` | Skip Taichi GGUI / Gmsh FLTK windows and blocking `plt.show()`. Required for SSH/CI/container runs with no display. |
+| `DIFFTACTILE_TRAJECTORIES` | Comma-separated trajectory types to collect (0 press, 1 slide-vein, 2 twist-y, 3 twist-z). Default all four. **The published dataset is entirely type 3** — use `3` to reproduce it. |
 | `DIFFTACTILE_SCENARIO` | Scenario name, if not passed as an argument. |
 
 ## Configuration model — read this before changing behaviour
