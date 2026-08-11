@@ -776,7 +776,9 @@ def main():
         "dataset_stats": stats,
         "iros": True,
     }
-    with open(SYSTEM_PARAMS.files.test_loader_gnn_iros, "wb") as f:
+    test_loader_path = repo_path(SYSTEM_PARAMS.files.test_loader_gnn_iros)
+    os.makedirs(os.path.dirname(test_loader_path), exist_ok=True)
+    with open(test_loader_path, "wb") as f:
         pickle.dump(test_data, f)
     model = GNN()
     model.set_stats(stats)
@@ -826,8 +828,10 @@ def main():
     print(
         f"\nTraining and testing completed in {duration:.2f} seconds ({duration / 60:.2f} minutes)"
     )
-    os.makedirs("saved_models_iros", exist_ok=True)
-    torch.save(best_model.state_dict(), SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros)
+    model_path = repo_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros)
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    torch.save(best_model.state_dict(), model_path)
+    print(f"checkpoint written to: {model_path}")
 
 
 def compute_stats(dataset, batch_size):
@@ -890,12 +894,14 @@ def compute_mean_std(dataset, ixs, key):
 def evaluate_and_plot_roc():
     if True:
         model = GNN()
-        model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros))
+        model.load_state_dict(
+            torch.load(repo_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros))
+        )
         model.eval()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
 
-        with open(SYSTEM_PARAMS.files.test_loader_gnn_iros, 'rb') as f:
+        with open(repo_path(SYSTEM_PARAMS.files.test_loader_gnn_iros), 'rb') as f:
             test_data = pickle.load(f)
         all_stats = test_data['dataset_stats']
 
