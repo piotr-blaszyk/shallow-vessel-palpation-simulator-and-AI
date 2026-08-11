@@ -219,9 +219,11 @@ To change a parameter, prefer editing the JSON.
 
 ## Reproducibility — read before running
 
-**The datasets and trained model weights are not in this repository.** They are large binary
-artifacts excluded by `.gitignore` (`*.npz`, `*.pkl`, `*.pt`, `*.mkv`, `output/`,
-`saved_models*/`, `logs/`). A fresh clone therefore does **not** contain:
+**The datasets and trained model weights are not in this repository** — they are large binary
+artifacts excluded by `.gitignore`. **They are published on Zenodo instead**; see
+[the fix](#the-fix-restore-the-published-data-bundle) immediately below the table.
+
+A fresh clone does **not** contain:
 
 | Missing | Expected at | Needed by | Regenerable? |
 |---|---|---|---|
@@ -235,36 +237,37 @@ artifacts excluded by `.gitignore` (`*.npz`, `*.pkl`, `*.pt`, `*.mkv`, `output/`
 | Fisheye calibration | `difftactile/output/fisheye_params.npz` | undistortion | yes, with your own checkerboard images |
 | Marker-tracker trajectories | `difftactile/output/marker_tracker/domain-adaptation-vascular-markers/traj_{0..3}_out.pkl` | **`script_main` construction** | from raw video via marker tracking |
 
-**What this means in practice:** most entrypoints raise `FileNotFoundError` on a fresh clone.
-In particular, `script_main` needs marker-tracker output (`traj_{0..3}_out.pkl`, read at
-`difftactile/main/main.py:253` during construction) that is itself produced from experimental
-video, so **even the simulation cannot be run end-to-end from a clean clone** without either
-that data or the marker-tracking stage. The parts that *do* work unaided are mesh generation
-(`script_generate_*_mesh_gmsh`), `script_apply_scaling`, and `script_pre_main`.
+### The fix: restore the published data bundle
 
-`difftactile/output/` is gitignored and **is not created automatically** — create it first:
+Everything in that table is supplied by the Zenodo archive, so none of it has to be
+regenerated:
 
 ```bash
-mkdir -p difftactile/output/{training_data,mesh_snapshots,saved_models} \
-         difftactile/output/marker_tracker/domain-adaptation-vascular-markers
+./data/restore_data.sh difftactile-data.tar.gz   # ~190 MB
+./data/restore_data.sh --verify                  # list what is present / missing
 ```
 
-(The two `os.makedirs("output", exist_ok=True)` calls in the gmsh scripts create `./output`,
-not `./difftactile/output`, so they do not help.)
+[`data/MANIFEST.md`](data/MANIFEST.md) documents exactly what the bundle contains and what is
+deliberately excluded (raw videos, intermediate preprocessing stages, training logs) — the
+exclusions are what take it from 4.5 GB down to ~190 MB without affecting any published result.
 
-A few **absolute paths point at the original development machine** and must be edited before the
-corresponding scripts will run elsewhere:
+Without the bundle, most entrypoints raise `FileNotFoundError`. In particular `script_main`
+reads marker-tracker output (`traj_{0..3}_out.pkl`) during construction, so **even the
+simulation cannot start from a bare clone**. The parts that work unaided are mesh generation
+(`script_generate_*_mesh_gmsh`), `script_apply_scaling` and `script_pre_main`.
 
-- `difftactile/cnn/dataset.py:21` — `IROS_CLEAN_DATA_DIR`
-- `difftactile/system_params/system-params.json:311` — `files.root_dir`
-- `difftactile/data_analysis/experiment/calibrate_camera.py:20`
-- `difftactile/data_analysis/testing/prettify_confusion_image.py:5-6`
-- `difftactile/data_analysis/training/print_metrics_csv.py:3`
+Paths are resolved against the repository root by `difftactile/main/paths.py` (override with
+`DIFFTACTILE_ROOT`), so scripts run from any working directory and no absolute paths need
+editing. Output directories are created on demand.
 
-Results are additionally **not bit-wise reproducible**: `NP_RNG = np.random.default_rng()` at
-`difftactile/main/constants.py:8` is unseeded and drives trajectory randomisation and contact
-parameter randomisation, so two runs of `script_main` produce different datasets. Dependency
-versions are unpinned. Seed `NP_RNG` if you need repeatable runs.
+**Verified:** a clone into an empty directory, plus the bundle, reproduces all three scenarios
+in Docker — see [REPRODUCTION_TEST.md](REPRODUCTION_TEST.md) for the transcript and numbers.
+
+Results are **not bit-wise reproducible for the simulation**: `NP_RNG = np.random.default_rng()`
+in `difftactile/main/constants.py` is unseeded and drives trajectory and contact-parameter
+randomisation, so two runs of `script_main` produce different datasets. Seed `NP_RNG` if you
+need repeatable runs. The *evaluation* scenarios are deterministic (AUC agrees to ~15
+significant figures across machines).
 
 ---
 
@@ -372,28 +375,29 @@ python -m difftactile.scripts.script_pre_process_sim_data   # Hungarian-reorder 
 
 ### 4. Training and evaluating the GNN
 
+The scenario is chosen **by name** — no source editing:
+
 ```bash
-python -m difftactile.scripts.script_iros_gnn   # IROS model (meat / latest)
-python -m difftactile.scripts.script_gnn        # ICRA model (silicone)
+python -m difftactile.scripts.script_iros_gnn sim-to-silicone   # evaluate on silicone + ROC
+python -m difftactile.scripts.script_iros_gnn silicone-to-meat  # cross-domain, no retraining
+python -m difftactile.scripts.script_iros_gnn sim-to-meat       # train on meat, test on silicone
 ```
 
-Whether these **train** or **evaluate** is decided by which call is uncommented in the script:
+| Scenario | What it does | Trains? |
+|---|---|---|
+| `sim-to-silicone` | Loads the IROS checkpoint, evaluates on the real silicone phantom, writes the ROC curve. | no |
+| `silicone-to-meat` | Loads the **silicone-trained (ICRA)** checkpoint and tests it on the real meat trials, with every trial in the test split. | no |
+| `sim-to-meat` | Trains on the real meat trials and tests the best checkpoint on silicone. | yes |
 
-```python
-# difftactile/scripts/script_iros_gnn.py
-if __name__ == '__main__':
-    main()                     # train
-    # evaluate_and_plot_roc()  # evaluate + ROC curve
-```
+Two architectures exist, and a checkpoint only loads into the one it was trained with —
+`GNN(arch="iros")` is the small model (`latent_dim` 64) and `GNN(arch="icra")` the large one
+(`latent_dim` 256), whose sizes come from the `*_icra` keys of the `gnn` config block. The
+dispatcher picks the right one per scenario.
 
-On `iros` this is set to evaluate; on `sim-to-meat-test`, to train.
+The legacy `python -m difftactile.scripts.script_gnn` entrypoint (ICRA model) still exists.
 
-> ⚠️ **On the `iros` branch, `main()` in `difftactile/cnn/iros_gnn.py:675` begins with a bare
-> `return`, so training is a no-op.** Delete that line *and* switch the wrapper to `main()` to
-> train. The `sim-to-meat-test` branch is already set up for training.
->
 > ⚠️ **A CUDA GPU is required to even construct the model**, not just to train quickly:
-> `difftactile/cnn/iros_gnn.py:570` allocates accumulators with a hardcoded `device='cuda:0'`
+> `difftactile/cnn/iros_gnn.py` allocates accumulators with a hardcoded `device='cuda:0'`
 > and no CPU fallback, so evaluation fails on a CPU-only machine too.
 
 Hyperparameters come from the `gnn` block of `system-params.json`. Outputs:
@@ -406,10 +410,11 @@ Hyperparameters come from the `gnn` block of `system-params.json`. Outputs:
 | Pickled test set + normalisation stats | `difftactile/output/test_loader_gnn_iros.pickle` |
 | ROC curve | `difftactile/output/roc_curve_iros.pdf` |
 
-`evaluate_and_plot_roc()` needs **both** the `.pt` weights and the `.pickle` (it recovers the
+`sim-to-silicone` needs **both** the `.pt` weights and the `.pickle` (it recovers the
 normalisation statistics from the latter), plus the silicone dataset at
-`SYSTEM_PARAMS.files.exp_data_endgame`. It ends with `plt.show()`, so set `MPLBACKEND=Agg` when
-running headless.
+`SYSTEM_PARAMS.files.exp_data_endgame` — all three ship in the Zenodo bundle. The ROC PDF is
+always written to disk; the interactive window is skipped automatically when there is no
+display, or with `DIFFTACTILE_HEADLESS=1`.
 
 ### 5. Visualisation and results
 
