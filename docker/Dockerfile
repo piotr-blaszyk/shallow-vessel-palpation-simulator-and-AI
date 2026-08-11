@@ -142,3 +142,28 @@ RUN printf '%s\n' \
         >> /root/.bashrc
 
 CMD ["bash"]
+
+# -----------------------------------------------------------------------------
+# 7. Vulkan — required by Taichi GGUI.
+#    Taichi's GGUI backend is Vulkan-only ("RuntimeError: Vulkan must be
+#    available for GGUI"); OpenGL alone is not enough, so the loader and headers
+#    are needed even though the CUDA base image already provides GL.
+#    The NVIDIA container runtime injects the driver's Vulkan ICD when
+#    NVIDIA_DRIVER_CAPABILITIES includes `graphics` (we set `all`), but the ICD
+#    file it writes references the driver library by name, so a JSON manifest
+#    pointing at it is written here as a fallback for runtimes that do not.
+#    Headless runs (DIFFTACTILE_HEADLESS=1) never touch this path.
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libvulkan1 vulkan-tools libxrandr2 \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /usr/share/vulkan/icd.d \
+    && printf '%s\n' \
+        '{' \
+        '    "file_format_version": "1.0.0",' \
+        '    "ICD": {' \
+        '        "library_path": "libGLX_nvidia.so.0",' \
+        '        "api_version": "1.3.0"' \
+        '    }' \
+        '}' \
+        > /usr/share/vulkan/icd.d/nvidia_icd.json

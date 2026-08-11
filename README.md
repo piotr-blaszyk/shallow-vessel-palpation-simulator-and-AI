@@ -105,8 +105,14 @@ docker exec -it difftactile ./docker/run_pipeline.sh sim-full
 ```
 
 Open an interactive shell with `./docker/docker-connect.sh`. GUI windows (Taichi GGUI,
-the cv2 annotation tool, matplotlib) appear on your desktop automatically; set
-`DIFFTACTILE_HEADLESS=1` to suppress them when running over SSH.
+the cv2 annotation tool, matplotlib) appear on your desktop automatically — the image ships
+Vulkan, which GGUI requires — and `DIFFTACTILE_HEADLESS=1` suppresses them when running over
+SSH or in CI.
+
+> With the GUI enabled, Taichi may segfault **during interpreter shutdown**, after the
+> simulation has already printed `all done` and written its data. This is a teardown-only
+> issue in Taichi's GGUI destructor; the output is complete and unaffected. Use
+> `DIFFTACTILE_HEADLESS=1` for a clean exit code in scripted runs.
 
 Everything below documents the pipeline in detail, including how to run it outside Docker.
 
