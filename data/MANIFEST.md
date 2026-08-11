@@ -11,7 +11,7 @@ they are recordings of physical experiments or because regenerating them takes
 impractically long.
 
 The single exception is the **simulated training dataset**. It *is* generable
-(`script_main`), but doing so takes about three hours of GPU time, and a user who
+(`script_main`), but doing so takes about 2 h 45 m of GPU time, and a user who
 only wants to verify the published results should not have to pay that cost. It
 is therefore treated as non-generable and shipped.
 
@@ -19,7 +19,7 @@ is therefore treated as non-generable and shipped.
 
 | Path (after restore) | Size | Why it cannot be regenerated |
 |---|---:|---|
-| `difftactile/output/training_data/pickle_20250901_220921_reordered_dense/` | ~245 MB | 500 simulated trajectories. Generable via `script_main` but takes ~3 h GPU; shipped for convenience. |
+| `difftactile/output/training_data/pickle_20250901_220921_reordered_dense/` | ~245 MB | 500 simulated trajectories. Generable via `script_main` but takes ~2 h 45 m GPU; shipped for convenience. |
 | `difftactile/manual_or_experimental_data/endgame/20250901-131547_dense/` | ~684 KB | Real **silicone** phantom trials, fully preprocessed. Physical recording. |
 | `difftactile/manual_or_experimental_data/iros_training_data/clean/` | ~900 KB | Real **meat** phantom trials, fully preprocessed (23 trials × 2 `.npz`). Physical recording. |
 | `saved_models_icra/final_segmentation_model_gnn_icra.pt` | ~4.2 MB | Trained silicone GNN checkpoint. |

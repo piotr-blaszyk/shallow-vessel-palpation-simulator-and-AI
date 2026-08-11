@@ -107,7 +107,7 @@ reproduce the results. Run it only if you want to extend the project:
 # ~2-3 minutes: a single loop (8 trials), to check the simulator works
 docker exec -it difftactile ./docker/run_pipeline.sh sim-short
 
-# ~3 hours: a full 800-trial collection run
+# ~2 h 45 m: a full 800-trial collection run
 docker exec -it difftactile ./docker/run_pipeline.sh sim-full
 ```
 

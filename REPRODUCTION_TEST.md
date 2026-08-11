@@ -38,6 +38,8 @@ docker exec difftactile ./docker/run_pipeline.sh sim-short
 | `sim-short` | OK. Full 3-stage sim pipeline; 8 trials in 163 s. |
 | `all-scenarios` | OK. All three run in sequence, and the published checkpoint is **byte-identical** afterwards (training writes `*_retrained`). |
 | Run from another cwd | OK. Every scenario and the simulator run with `-w /tmp`. |
+| **`sim-full` (overnight)** | OK. 100 loops / **800 trials in 9905 s (2 h 45 m)**, exit 0, no errors, 0 corrupt files. Exactly 200 of each trajectory type; type 3 gives 316-317 frames, matching the published dataset. 132 MB. |
+| **`DIFFTACTILE_TRAJECTORIES=3`** | OK. Produces only type-3 trials at 317 frames — the published dataset's format, now regenerable. |
 
 ### Reproducibility against the original checkout
 
@@ -83,6 +85,8 @@ revisiting.** Flagging rather than silently changing the reported result.
   default run today produces a *different* mix — all four types, of which only
   type 3 matches. The loop is now driven by `DIFFTACTILE_TRAJECTORIES`, defaulting
   to all four (current committed behaviour) with `3` reproducing the published set.
+  **Verified end-to-end:** a run with `DIFFTACTILE_TRAJECTORIES=3` yields only
+  type-3 trials at 317 frames, matching the published format.
 - **Simulated data shape.** With all four types enabled, the `trajectory_type=0`
   files contain empty arrays. This is correct, not a failure: that trajectory is
   a short press that terminates in ~36 timesteps, below the `ts > 80` threshold at

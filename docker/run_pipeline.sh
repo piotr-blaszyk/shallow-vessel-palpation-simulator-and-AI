@@ -12,7 +12,7 @@
 # Stages:
 #   check              Verify GPU, Taichi, torch and the restored data bundle.
 #   sim-short          Simulator data collection, 1 loop (8 trials, ~3 min).
-#   sim-full           Simulator data collection, full run (800 trials, ~3 h).
+#   sim-full           Simulator data collection, full run (800 trials, ~2h45m measured).
 #   sim-to-silicone    Evaluate the sim-trained GNN on the real silicone phantom
 #                      and write the ROC curve.
 #   sim-to-meat        Train on the real meat trials, test on silicone.
