@@ -91,6 +91,13 @@ docker exec -it difftactile ./docker/run_pipeline.sh all-scenarios
 
 Outputs land in `difftactile/output/` (e.g. `roc_curve_iros.pdf`) and `logs/`.
 
+`sim-to-meat` trains a new model, so it writes `*_retrained` artifacts
+(`final_segmentation_model_gnn_iros_retrained.pt`,
+`test_loader_gnn_iros_retrained.pickle`) rather than overwriting the published
+checkpoint that `sim-to-silicone` evaluates — otherwise running the scenarios in
+sequence would silently change the reported AUC. Pass
+`DIFFTACTILE_OVERWRITE_PUBLISHED=1` if you deliberately want to replace them.
+
 ### Regenerate the simulated dataset (optional)
 
 The simulated training set ships in the Zenodo bundle, so **this is not required** to

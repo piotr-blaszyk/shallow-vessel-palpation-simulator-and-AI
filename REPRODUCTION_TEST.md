@@ -44,6 +44,30 @@ Agreement to ~15 significant figures on AUC. The evaluation scenarios are
 deterministic; `sim-to-meat` trains from a random initialisation and so varies
 between runs by design.
 
+## ⚠️ One deliberate behaviour change — please review
+
+`silicone-to-meat` unifies what used to live on the `sim-to-meat-test` branch,
+but it is **not a byte-faithful port**, and the difference matters.
+
+On that branch, `test_dataset.set_stats(stats)` sat inside a dead `if False:`
+block. `set_stats()` is what clears `MyDataset.warmup`, and `normalise()` is
+gated on `if not self.warmup` — so the ICRA checkpoint was being evaluated on
+**unnormalised inputs**, despite having been trained on normalised ones. The
+unified code calls `set_stats()`, applying the statistics the checkpoint expects.
+
+Measured effect on the cross-domain result:
+
+| | vein IoU | background IoU |
+|---|---|---|
+| Old path (unnormalised, `if False:`) | **0.034** | 0.888 |
+| Unified code (normalised) | **0.198** | 0.809 |
+
+The old path understated the cross-domain vein IoU roughly **six-fold**. The
+normalised number is the defensible one — evaluating a model on a different
+input distribution than it was trained on is a bug, not a design choice — but
+**if 0.034 (or anything derived from it) appears in the paper, that figure needs
+revisiting.** Flagging rather than silently changing the reported result.
+
 ## Notes for anyone repeating this
 
 - **Simulated data shape.** In each 8-trial batch, the two `trajectory_type=0`

@@ -1,4 +1,5 @@
 import json
+from difftactile.main.paths import repo_path
 
 
 class ScientificNotationEncoder(json.JSONEncoder):
@@ -42,15 +43,15 @@ def go(
 
 def main():
     go(
-        source="difftactile/system_params/system-params-distances.json",
-        target_raw="difftactile/system_params/system-params.json",
-        target_computed="difftactile/system_params/system-params.json",
+        source=repo_path("difftactile/system_params/system-params-distances.json"),
+        target_raw=repo_path("difftactile/system_params/system-params.json"),
+        target_computed=repo_path("difftactile/system_params/system-params.json"),
         scaling_string='distance_scaling_factor'
     )
     go(
-        source="difftactile/system_params/system-params-youngs-modulus.json",
-        target_raw="difftactile/system_params/system-params.json",
-        target_computed="difftactile/system_params/system-params.json",
+        source=repo_path("difftactile/system_params/system-params-youngs-modulus.json"),
+        target_raw=repo_path("difftactile/system_params/system-params.json"),
+        target_computed=repo_path("difftactile/system_params/system-params.json"),
         scaling_string='youngs_modulus_scaling_factor'
     )
 

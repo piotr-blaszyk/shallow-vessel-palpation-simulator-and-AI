@@ -56,10 +56,12 @@ if [ -z "${RUN_DISPLAY}" ]; then
 fi
 echo "Using DISPLAY=${RUN_DISPLAY} for GUI windows."
 
-# Let the container's root user talk to the host X server. Harmless when there
-# is no X server (headless): CPU/GPU compute still works, only GUIs need this.
+# Let the container talk to the host X server. The container runs as the
+# invoking user (not root), so grant local access broadly rather than to root
+# specifically. Harmless when there is no X server (headless): CPU/GPU compute
+# still works, only GUIs need this.
 if command -v xhost >/dev/null 2>&1; then
-    xhost +local:root >/dev/null 2>&1 || true
+    xhost +local: >/dev/null 2>&1 || true
 fi
 
 XAUTH_ARGS=()
@@ -77,8 +79,13 @@ fi
 
 # --- Optional external data bundle -------------------------------------------
 # By default the Zenodo bundle is restored into the repo itself (restore_data.sh),
-# so no extra mount is needed. Set DIFFTACTILE_DATA_ROOT to keep the multi-GB
-# bundle on another disk; difftactile/main/paths.py:data_path() honours it.
+# so no extra mount is needed and this is left unset.
+# NOTE: DIFFTACTILE_DATA_ROOT currently redirects only the real meat trials
+# (dataset.py:IROS_CLEAN_DATA_DIR, the sole data_path() caller). Everything else
+# — the simulated dataset, the silicone dataset, both checkpoints — resolves
+# under the repository root, so this is not yet a general "bundle lives
+# elsewhere" switch. Restore into the repo unless you specifically need that one
+# directory moved.
 DATA_ARGS=()
 if [ -n "${DIFFTACTILE_DATA_ROOT:-}" ]; then
     if [ ! -d "${DIFFTACTILE_DATA_ROOT}" ]; then

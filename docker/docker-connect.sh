@@ -13,5 +13,7 @@ if [ -z "$(docker ps -q -f "name=^/${CONTAINER_NAME}$")" ]; then
     exit 1
 fi
 
-# -l gives a login shell so /root/.bashrc (DIFFTACTILE_ROOT, PYTHONPATH, cd) applies.
+# -l gives a login shell. Note the container runs as your (non-root) UID with
+# HOME=/tmp, so the image's /root/.bashrc is NOT read; DIFFTACTILE_ROOT and
+# PYTHONPATH arrive via the image's ENV and the cwd via WORKDIR instead.
 exec docker exec -it "${CONTAINER_NAME}" bash -l

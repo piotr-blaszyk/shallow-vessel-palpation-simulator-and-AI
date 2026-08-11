@@ -2,6 +2,10 @@
 
 **Status: FOR REVIEW — nothing has been deleted.**
 
+*Updated after a second, independent pass; several entries below were verified
+by reading the files rather than inferred from the import graph. Two items that
+first looked dead turned out to be live and are now called out explicitly.*
+
 Produced by building an AST-level import graph over all 106 tracked `.py` files
 and cross-referencing every `script_*.py` wrapper, `run_all.sh`, the README and
 CLAUDE.md. Analysis is at **file and folder level only**: files that are merely
@@ -36,12 +40,16 @@ No importers, no entrypoint wrapper, and superseded by a named replacement.
 | `difftactile/data_analysis/sim/gnn_input_visualisation.py` | Debug visualisation of GNN inputs. |
 | `difftactile/data_analysis/sim/vitactip_photo_default_state_draw_circle.py` | One-off image annotation helper. |
 | `difftactile/test/np_random_singleton.py` | Not imported; not a pytest test (no `test_` functions collected). |
+| `difftactile/data_analysis/sim/3d_to_2d.py` | **Verified: the entire file is the single statement `pass`** (6 bytes). |
+| `difftactile/sandbox/prompt.py` | **Verified: 0 bytes.** |
+| `sitecustomize.py` (root) | **Verified: 0 bytes — and actively harmful to keep.** Python auto-imports any module named `sitecustomize` found on the path at interpreter start-up. |
+| `difftactile/data_analysis/sim/sandbox.py` | Scratch on a hardcoded 3-element array; the file ends with `foo = 7`. |
 
 ## Category B — probably dead / legacy (lower confidence)
 
 | File / folder | Why |
 |---|---|
-| `difftactile/ml_training_old/` (4 files) | Name says "old"; predates the current `cnn/` GNN work. Contains `convolutional_neural_network.py`, `fully_connected_neural_network.py`, `graph_neural_network.py`, `test_ml_model_on_real_data.py`. |
+| `difftactile/ml_training_old/` (4 files) | Name says "old"; predates the current `cnn/` GNN work. **Verified un-importable:** three of the four do `from exploratory_data_analysis import *`, and that module does not exist anywhere in the repository — so they cannot even be imported, let alone run. |
 | `difftactile/sandbox/` (4 files) | Scratch area: `prompt.py`, `sandbox2.py`, `test_camera.py`, `test_npz_loading.py`. |
 | `difftactile/cnn/train.py` + `scripts/script_train.py` | Legacy U-Net CNN path; CLAUDE.md records it as broken (outdated `MyDataset` signature, needs `monai`, which is not in `requirements/`). |
 | `difftactile/cnn/lit_module_unet_cnn.py` | The U-Net Lightning module for the same legacy CNN path. |
@@ -65,6 +73,16 @@ No importers, no entrypoint wrapper, and superseded by a named replacement.
 | `difftactile/manual_or_experimental_data/mpv-shot0001.jpg`, `my_shape.png` | 280 KB | Loose screenshots, unreferenced. |
 | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/` (5 images) | 1.3 MB | Inputs to the domain-adaptation side experiment (`script_domain_adaptation`), not a paper result. |
 | `.vscode/` | small | Personal IDE config with machine-specific interpreter paths. **Already untracked** as part of this work. |
+
+## Corrections found while verifying — these are NOT dead
+
+| File | Why it must stay |
+|---|---|
+| `difftactile/data_analysis/experiment/annotate.py` | Looked dead (no importer, no wrapper) but is the **sole producer** of `phantom_ground_truth_segmentation_mask`, which `predict_exp.py:72` reads. This was a genuine reachability bug: no `script_*` wrapper existed, so the documented `python -m difftactile.scripts.*` route could not run it. **Fixed** — `script_annotate.py` added, and its blocking `plt.show()` guarded so it works headless. |
+| `difftactile/manual_or_experimental_data/downward-press-vascular-phantom/` (7.7 MB) | Initially a size-reduction candidate. It is `files.fisheye_model_image_dir` — the input `script_fisheye_model` uses to regenerate `init-marker-positions.npz`, a prerequisite for every dataset/train/eval run. **Keep.** |
+| `difftactile/data_analysis/experiment/hungarian_exp.py` | The **module** is live (imported by `predict_exp.py`); only its `script_hungarian_exp.py` wrapper is broken. Delete the wrapper, not the module. |
+| `difftactile/main/cfl_and_contact_params_estimation.py` | Diagnostics-only, but `main.py` imports it — removing it requires editing that import first. |
+| `system-params-units.json`, `system-params-literature-values.json` | No code reads them, but they are the provenance for the material parameters. **Keep** — precisely what a reproducer wants. |
 
 ## Category D — keep (actively used)
 

@@ -2668,7 +2668,9 @@ def main():
             offline_cache=False,
             log_level=ti.ERROR,
             arch=ti.cuda,
-            device_memory_GB=9,
+            # Honour TI_DEVICE_MEMORY_GB so a smaller card can be accommodated;
+            # an explicit kwarg would otherwise override the env var silently.
+            device_memory_GB=float(os.environ.get("TI_DEVICE_MEMORY_GB", 9)),
         )
     else:
         ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)

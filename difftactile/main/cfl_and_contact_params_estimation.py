@@ -3,6 +3,7 @@ import json
 import numpy as np
 
 from difftactile.main.constants import *
+from difftactile.main.paths import repo_path
 
 
 def calculate_wave_speed(density, E, nu):
@@ -115,7 +116,7 @@ def calculate_contact_parameters():
         print("System is critically damped - fastest response without oscillations")
 
     # Load the current system parameters
-    system_params_file = "difftactile/system_params/system-params.json"
+    system_params_file = repo_path("difftactile/system_params/system-params.json")
     with open(system_params_file, 'r') as f:
         system_params = json.load(f)
 

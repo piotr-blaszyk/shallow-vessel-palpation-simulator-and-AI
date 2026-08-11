@@ -1,4 +1,5 @@
 import json
+import os
 
 import cv2
 import numpy as np
@@ -33,7 +34,11 @@ def main():
     plt.imshow(mask, cmap="gray")
     plt.axis("off")
     plt.tight_layout()
-    plt.show()
+    # The mask (the actual product of this script) is written above; the preview
+    # window is optional, and blocks forever without a display.
+    if os.environ.get("DIFFTACTILE_HEADLESS", "0") != "1" and os.environ.get("DISPLAY"):
+        plt.show()
+    plt.close()
 
 
 if __name__ == "__main__":

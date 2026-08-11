@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 usage() {
-    sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
     exit "${1:-0}"
 }
 
@@ -85,7 +85,11 @@ if [ ! -e "${SRC}" ]; then
 fi
 
 STAGE=""
-cleanup() { [ -n "${STAGE}" ] && rm -rf "${STAGE}"; }
+# `return 0` matters: a trap's exit status becomes the script's, and the
+# `[ -n "${STAGE}" ]` test is false (status 1) whenever we restored from an
+# already-unpacked directory rather than a tarball. Without it, a successful
+# directory restore exits 1 and breaks any caller using `&&` or `set -e`.
+cleanup() { [ -n "${STAGE}" ] && rm -rf "${STAGE}"; return 0; }
 trap cleanup EXIT
 
 if [ -f "${SRC}" ]; then

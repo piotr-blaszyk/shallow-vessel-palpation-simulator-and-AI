@@ -23,6 +23,20 @@ from difftactile.cnn.dataset import *
 from difftactile.main.paths import repo_path
 
 
+def _retrained_path(rel):
+    """Path for an artifact produced by a *new* training run.
+
+    Training would otherwise overwrite the published checkpoint and test-loader
+    pickle that the evaluation scenarios read, so by default a `_retrained`
+    suffix is inserted before the extension. Set
+    DIFFTACTILE_OVERWRITE_PUBLISHED=1 to write over the published files instead.
+    """
+    if os.environ.get("DIFFTACTILE_OVERWRITE_PUBLISHED", "0") == "1":
+        return repo_path(rel)
+    base, ext = os.path.splitext(rel)
+    return repo_path(f"{base}_retrained{ext}")
+
+
 def _show_plots():
     """True when an interactive matplotlib window can and should be opened.
 
@@ -776,10 +790,16 @@ def main():
         "dataset_stats": stats,
         "iros": True,
     }
-    test_loader_path = repo_path(SYSTEM_PARAMS.files.test_loader_gnn_iros)
+    # Write to *_retrained paths, NOT over the published artifacts.
+    # evaluate_and_plot_roc() (the sim-to-silicone scenario) reads the bundle's
+    # checkpoint and test-loader pickle; overwriting them here would silently
+    # change the reported AUC on the next evaluation run, with no way back short
+    # of re-restoring the Zenodo bundle.
+    test_loader_path = _retrained_path(SYSTEM_PARAMS.files.test_loader_gnn_iros)
     os.makedirs(os.path.dirname(test_loader_path), exist_ok=True)
     with open(test_loader_path, "wb") as f:
         pickle.dump(test_data, f)
+    print(f"test loader written to: {test_loader_path}")
     model = GNN()
     model.set_stats(stats)
     checkpoint_cb = ModelCheckpoint(
@@ -828,10 +848,14 @@ def main():
     print(
         f"\nTraining and testing completed in {duration:.2f} seconds ({duration / 60:.2f} minutes)"
     )
-    model_path = repo_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros)
+    model_path = _retrained_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros)
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     torch.save(best_model.state_dict(), model_path)
     print(f"checkpoint written to: {model_path}")
+    print(
+        "  (the published checkpoint is left untouched; set "
+        "DIFFTACTILE_OVERWRITE_PUBLISHED=1 to overwrite it instead)"
+    )
 
 
 def compute_stats(dataset, batch_size):
@@ -1066,7 +1090,9 @@ def silicone_to_meat():
     model = GNN(arch="icra")
     ckpt = repo_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_icra)
     print(f"loading silicone-trained checkpoint: {ckpt}")
-    model.load_state_dict(torch.load(ckpt))
+    model.load_state_dict(
+        torch.load(ckpt, map_location="cuda" if torch.cuda.is_available() else "cpu")
+    )
 
     # Normalisation statistics must match those the checkpoint was trained with,
     # so they are taken from the saved test-loader pickle rather than recomputed.
@@ -1077,6 +1103,15 @@ def silicone_to_meat():
     else:
         stats = test_data["dataset_stats"][0.0]
     model.set_stats(stats)
+    # NOTE — deliberate behaviour change from the old `sim-to-meat-test` branch,
+    # and NOT a cosmetic one.
+    # There, this call sat inside a dead `if False:` block, so the dataset's
+    # `warmup` flag stayed True and MyDataset.normalise() was a no-op: the
+    # checkpoint was evaluated on UNNORMALISED inputs despite having been
+    # trained on normalised ones. Applying the ICRA statistics the checkpoint
+    # expects raises the vein IoU from 0.034 to 0.198 (background 0.888 ->
+    # 0.809) — measured, see REPRODUCTION_TEST.md. The old path understated the
+    # cross-domain result roughly six-fold.
     test_dataset.set_stats(stats)
 
     meat_loader = DataLoader(

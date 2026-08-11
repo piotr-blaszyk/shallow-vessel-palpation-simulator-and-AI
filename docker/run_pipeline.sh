@@ -17,7 +17,9 @@
 #                      and write the ROC curve.
 #   sim-to-meat        Train on the real meat trials, test on silicone.
 #   silicone-to-meat   Test the silicone-trained checkpoint on meat (no training).
-#   all-scenarios      Run the three scenarios above in order.
+#   all-scenarios      Run the three scenarios above in order. Training writes
+#                      *_retrained artifacts, so the published checkpoint used by
+#                      sim-to-silicone is never overwritten.
 #
 # Environment:
 #   DIFFTACTILE_HEADLESS=1   Skip GUI windows (default inside this script for the
@@ -34,7 +36,7 @@ if [ -z "${DISPLAY:-}" ]; then
     export DIFFTACTILE_HEADLESS="${DIFFTACTILE_HEADLESS:-1}"
 fi
 
-usage() { sed -n '2,28p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; }
+usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; }
 
 banner() {
     echo

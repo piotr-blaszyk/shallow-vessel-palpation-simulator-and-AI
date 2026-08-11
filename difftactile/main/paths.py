@@ -45,11 +45,14 @@ def repo_path(*parts: str) -> str:
 def data_path(*parts: str) -> str:
     """Resolve a path inside the external data bundle.
 
-    Large artifacts (the simulated dataset, real-sensor trials, trained
-    checkpoints) are distributed separately via Zenodo rather than committed.
+    Large artifacts are distributed separately via Zenodo rather than committed.
     `restore_data.sh` unpacks them into the repository, so by default this is
-    just the repository root; `DIFFTACTILE_DATA_ROOT` allows keeping the bundle
-    on another disk and pointing at it instead.
+    just the repository root.
+
+    NOTE: only `dataset.py:IROS_CLEAN_DATA_DIR` currently routes through here,
+    so `DIFFTACTILE_DATA_ROOT` redirects the real meat trials alone — the rest
+    of the config resolves under REPO_ROOT via repo_path(). Route additional
+    paths through data_path() before advertising it more broadly.
     """
     root = os.environ.get("DIFFTACTILE_DATA_ROOT")
     if root:
