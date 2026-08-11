@@ -78,7 +78,7 @@ small model (`latent_dim` 64), `"icra"` the large one (`latent_dim` 256) read fr
 |---|---|
 | `DIFFTACTILE_ROOT` | Repository root used for all path resolution. |
 | `DIFFTACTILE_DATA_ROOT` | Keep the large data bundle outside the repo. |
-| `DIFFTACTILE_NUM_LOOPS` | Simulator loop count. Each loop = 2 substeps × 4 trajectories = 8 trials. Default 100 (800 trials, ~1 h); `1` gives a ~2 min smoke test. |
+| `DIFFTACTILE_NUM_LOOPS` | Simulator loop count. Each loop = 2 substeps × 4 trajectories = 8 trials. Default 100 (800 trials, ~3 h at ~14 s/trial on an RTX 3080); `1` gives a ~3 min smoke test. |
 | `DIFFTACTILE_HEADLESS=1` | Skip Taichi GGUI / Gmsh FLTK windows and blocking `plt.show()`. Required for SSH/CI/container runs with no display. |
 | `DIFFTACTILE_SCENARIO` | Scenario name, if not passed as an argument. |
 

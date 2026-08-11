@@ -58,7 +58,7 @@ the NVIDIA driver, Docker, and the
 git clone https://github.com/piotr-blaszyk/diff-tactile-fork.git
 cd diff-tactile-fork
 
-# 2. Fetch the data bundle from Zenodo (~186 MB) and unpack it into place
+# 2. Fetch the data bundle from Zenodo (~190 MB) and unpack it into place
 #    (datasets + trained checkpoints; see data/MANIFEST.md for what is inside)
 wget https://zenodo.org/records/<RECORD_ID>/files/difftactile-data.tar.gz
 ./data/restore_data.sh difftactile-data.tar.gz
@@ -97,10 +97,10 @@ The simulated training set ships in the Zenodo bundle, so **this is not required
 reproduce the results. Run it only if you want to extend the project:
 
 ```bash
-# ~1 minute: a single loop (8 trials), to check the simulator works
+# ~2-3 minutes: a single loop (8 trials), to check the simulator works
 docker exec -it difftactile ./docker/run_pipeline.sh sim-short
 
-# ~1 hour: the full 800-trial dataset used in the paper
+# ~3 hours: the full 800-trial dataset used in the paper
 docker exec -it difftactile ./docker/run_pipeline.sh sim-full
 ```
 
@@ -128,10 +128,10 @@ Development happened on parallel branches, one per experiment. `main` tracks the
 
 | Branch | What it is | How it differs |
 |---|---|---|
-| **`main`** | Latest work. | Identical to `iros`. |
-| **`iros`** | The IROS submission state. Sim-to-real onto a **silicone vascular phantom**. | The reference implementation. Small GNN (`latent_dim` 64, `skip_dim` 32, 30 epochs, batch 4). `script_iros_gnn.py` is set to **evaluate** (`evaluate_and_plot_roc()`), and `iros_gnn.main()` returns immediately — training is intentionally disabled. |
-| **`sim-to-silicone`** | The silicone-phantom experiment as submitted. | **Currently identical to `iros`** — same commit, zero diff. Kept as a named pointer to the silicone experiment. |
-| **`sim-to-meat-test`** | Transfers the trained model to **real meat**, with plastic straws standing in for vessels beneath layers of steak. | 4 commits ahead of `iros`. Much larger GNN (`latent_dim` 256, `small_input_dim` 248, `skip_dim` 128, batch 16, 1 epoch, lr 1e-3). `dataset.py::create_splits_iros` sends *all* trials to the **test** split (pure transfer, no retraining on meat). `endgame.main()` re-enables the full data-cleaning pipeline. `script_iros_gnn.py` calls `main()` to train. |
+| **`main`** | Latest work. | Identical to `iros`; carries the unified, scenario-selectable code. |
+| **`iros`** | The IROS submission state. Sim-to-real onto a **silicone vascular phantom**. | The reference implementation, now unified: all three scenarios run from here. Small GNN (`latent_dim` 64, `skip_dim` 32, 30 epochs, batch 4) by default; the large ICRA model is selected automatically for `silicone-to-meat`. |
+| **`sim-to-silicone`** | The silicone-phantom experiment as submitted. | Identical to `iros`. Kept as a named pointer to the silicone experiment. |
+| **`sim-to-meat-test`** | *Historical.* Transfers the trained model to **real meat**, with plastic straws standing in for vessels beneath layers of steak. Superseded by the `silicone-to-meat` scenario on the unified branch. | Diverged from `iros`. Much larger GNN (`latent_dim` 256, `small_input_dim` 248, `skip_dim` 128, batch 16, 1 epoch, lr 1e-3). `dataset.py::create_splits_iros` sends *all* trials to the **test** split (pure transfer, no retraining on meat). `endgame.main()` re-enables the full data-cleaning pipeline. `script_iros_gnn.py` calls `main()` to train. |
 
 The meat trials are catalogued in
 [`difftactile/manual_or_experimental_data/iros_experiment_spec.md`](difftactile/manual_or_experimental_data/iros_experiment_spec.md)
@@ -150,8 +150,9 @@ The meat trials are catalogued in
   switched to CPU (see [Running without a GPU](#running-without-a-gpu)), but the **GNN cannot** —
   `difftactile/cnn/iros_gnn.py:570` allocates on a hardcoded `cuda:0` with no fallback, so even
   loading a checkpoint to plot a ROC curve fails on a CPU-only machine.
-- **A display.** Taichi GGUI, Gmsh, the annotation GUIs and `plt.show()` are all used
-  unconditionally; nothing here runs headless without patching.
+- **A display is optional.** Taichi GGUI, Gmsh and `plt.show()` are used when one is
+  available; `DIFFTACTILE_HEADLESS=1` skips all of them, so the simulator and all three GNN
+  scenarios run over SSH or in CI. The cv2/tkinter annotation tools still require a display.
 - Linux (developed on Ubuntu 24.04).
 
 ### Install
