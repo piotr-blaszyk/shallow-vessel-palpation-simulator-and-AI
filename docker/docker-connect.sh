@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Open an interactive shell inside the running diff-tactile-fork container.
+# Open an interactive shell inside the running shallow-vessel-palpation-simulator-and-AI container.
 # Start it first with ./docker/docker-run.sh
 #
 set -euo pipefail

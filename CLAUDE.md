@@ -153,7 +153,7 @@ So most ML entrypoints **cannot run in a fresh clone** — they will raise `File
 Do not "fix" such a failure by inventing data. Restore the published bundle instead:
 
 ```bash
-./data/restore_data.sh difftactile-data.tar.gz   # ~190 MB from Zenodo
+./data/restore_data.sh shallow-vessel-palpation-data.tar.gz   # ~190 MB from Zenodo
 ./data/restore_data.sh --verify                  # check what is present
 ```
 

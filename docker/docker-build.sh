@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build the diff-tactile-fork container image.
+# Build the shallow-vessel-palpation-simulator-and-AI container image.
 #
 # Everything (Taichi simulator + PyTorch/PyG GNN stack + analysis tools) lives in
 # a single image on top of nvidia/cuda:12.6.3-devel-ubuntu22.04, using ONE system

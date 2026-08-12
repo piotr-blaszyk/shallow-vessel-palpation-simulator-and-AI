@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Start (or attach to) the long-lived diff-tactile-fork container.
+# Start (or attach to) the long-lived shallow-vessel-palpation-simulator-and-AI container.
 #
 # Workflow:
 #   1) ./docker/docker-build.sh      # build the image once
@@ -11,7 +11,7 @@
 # with --rm, so `docker stop difftactile` removes it and the next run creates a
 # fresh one from the current image (i.e. stop + run picks up a rebuild).
 #
-# The repository is bind-mounted at /workspace/diff-tactile-fork, so edits on the
+# The repository is bind-mounted at /workspace/shallow-vessel-palpation-simulator-and-AI, so edits on the
 # host apply immediately inside the container with no rebuild.
 #
 set -euo pipefail
@@ -97,7 +97,7 @@ if [ -n "${DIFFTACTILE_DATA_ROOT:-}" ]; then
     echo "Mounting external data bundle: ${ABS_DATA} -> /workspace/data"
 fi
 
-echo "Live-mounting repository: ${REPO_DIR} -> /workspace/diff-tactile-fork"
+echo "Live-mounting repository: ${REPO_DIR} -> /workspace/shallow-vessel-palpation-simulator-and-AI"
 echo "Starting container '${CONTAINER_NAME}' from image '${IMAGE_NAME}'..."
 
 # Run as the invoking user so files written into the bind-mounted repository
@@ -128,7 +128,7 @@ docker run -d --rm \
     "${XAUTH_ARGS[@]}" \
     "${DRI_ARGS[@]}" \
     "${DATA_ARGS[@]}" \
-    -v "${REPO_DIR}:/workspace/diff-tactile-fork:rw" \
+    -v "${REPO_DIR}:/workspace/shallow-vessel-palpation-simulator-and-AI:rw" \
     "${IMAGE_NAME}" \
     sleep infinity >/dev/null
 

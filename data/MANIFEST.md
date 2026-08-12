@@ -52,7 +52,7 @@ affecting the reproducibility of any published result.
 From the repository root:
 
 ```bash
-./data/restore_data.sh path/to/difftactile-data.tar.gz
+./data/restore_data.sh path/to/shallow-vessel-palpation-data.tar.gz
 ```
 
 The script unpacks into the correct locations and verifies each expected path

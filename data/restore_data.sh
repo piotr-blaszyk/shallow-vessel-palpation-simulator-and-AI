@@ -6,8 +6,8 @@
 # verification pass. Run it once after cloning and downloading the archive.
 #
 # Usage:
-#   ./data/restore_data.sh difftactile-data.tar.gz     # from a downloaded tarball
-#   ./data/restore_data.sh /path/to/difftactile-data   # from an unpacked directory
+#   ./data/restore_data.sh shallow-vessel-palpation-data.tar.gz     # from a downloaded tarball
+#   ./data/restore_data.sh /path/to/shallow-vessel-palpation-data   # from an unpacked directory
 #   ./data/restore_data.sh --verify                    # only check what is present
 #
 set -euo pipefail
@@ -96,8 +96,9 @@ if [ -f "${SRC}" ]; then
     echo "Unpacking ${SRC} ..."
     STAGE="$(mktemp -d)"
     tar -xzf "${SRC}" -C "${STAGE}"
-    # The archive contains a single top-level difftactile-data/ directory.
-    BUNDLE="${STAGE}/difftactile-data"
+    # The archive contains a single top-level shallow-vessel-palpation-data/ directory
+    # (older bundles used difftactile-data/; the find fallback below covers those).
+    BUNDLE="${STAGE}/shallow-vessel-palpation-data"
     [ -d "${BUNDLE}" ] || BUNDLE="$(find "${STAGE}" -maxdepth 1 -mindepth 1 -type d | head -1)"
 elif [ -d "${SRC}" ]; then
     BUNDLE="${SRC}"

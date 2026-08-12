@@ -11,15 +11,17 @@
 #
 #   SOURCE_DIR   Repository-shaped tree holding the full data (defaults to the
 #                original submission-state archive on the author's machine).
-#   OUTPUT_TAR   Destination .tar.gz (default: ./difftactile-data.tar.gz)
+#   OUTPUT_TAR   Destination .tar.gz (default: ./shallow-vessel-palpation-data.tar.gz)
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# NOTE: this is a frozen on-disk snapshot of the IROS submission state; it keeps
+# the repository's pre-rename directory name on purpose. Do not "fix" it.
 SOURCE_DIR="${1:-/home/psb120/Documents/phd/data/masters/diff-tactile-fork-IROS-submission-state/diff-tactile-fork}"
-OUTPUT_TAR="${2:-${REPO_DIR}/difftactile-data.tar.gz}"
+OUTPUT_TAR="${2:-${REPO_DIR}/shallow-vessel-palpation-data.tar.gz}"
 
 if [ ! -d "${SOURCE_DIR}" ]; then
     echo "ERROR: source tree not found: ${SOURCE_DIR}" >&2
@@ -28,7 +30,7 @@ fi
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "${STAGE}"' EXIT
-BUNDLE="${STAGE}/difftactile-data"
+BUNDLE="${STAGE}/shallow-vessel-palpation-data"
 mkdir -p "${BUNDLE}"
 
 echo "Source: ${SOURCE_DIR}"
@@ -119,7 +121,7 @@ cp "${SCRIPT_DIR}/restore_data.sh" "${BUNDLE}/restore_data.sh" 2>/dev/null || tr
 echo
 echo "Bundle contents: $(du -sh "${BUNDLE}" | cut -f1)"
 echo "Compressing to ${OUTPUT_TAR} ..."
-tar -czf "${OUTPUT_TAR}" -C "${STAGE}" difftactile-data
+tar -czf "${OUTPUT_TAR}" -C "${STAGE}" shallow-vessel-palpation-data
 
 echo
 echo "Done: ${OUTPUT_TAR}  ($(du -sh "${OUTPUT_TAR}" | cut -f1))"

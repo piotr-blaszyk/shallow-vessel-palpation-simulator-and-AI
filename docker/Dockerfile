@@ -1,5 +1,5 @@
 # =============================================================================
-# diff-tactile-fork — single-container environment
+# shallow-vessel-palpation-simulator-and-AI — single-container environment
 #
 #   Taichi FEM simulation of a ViTacTip optical tactile sensor
 #   + a PyTorch-Geometric GNN for subsurface feature localisation.
@@ -119,8 +119,8 @@ RUN python -m pip install --no-cache-dir \
 #    PYTHONPATH makes the bind-mounted source importable without `pip install`,
 #    so host edits take effect with no rebuild.
 # -----------------------------------------------------------------------------
-ENV DIFFTACTILE_ROOT=/workspace/diff-tactile-fork
-ENV PYTHONPATH=/workspace/diff-tactile-fork
+ENV DIFFTACTILE_ROOT=/workspace/shallow-vessel-palpation-simulator-and-AI
+ENV PYTHONPATH=/workspace/shallow-vessel-palpation-simulator-and-AI
 ENV PYTHONUNBUFFERED=1
 # Taichi picks its GPU memory budget from here; the host GPU this targets is a
 # 10 GB RTX 3080, and 9 GB leaves headroom for the display server.
@@ -132,12 +132,12 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 # boundary, and disabling it avoids intermittent BadAccess crashes.
 ENV QT_X11_NO_MITSHM=1
 
-WORKDIR /workspace/diff-tactile-fork
+WORKDIR /workspace/shallow-vessel-palpation-simulator-and-AI
 
 RUN printf '%s\n' \
-        'export DIFFTACTILE_ROOT=/workspace/diff-tactile-fork' \
-        'export PYTHONPATH=/workspace/diff-tactile-fork' \
-        'cd /workspace/diff-tactile-fork 2>/dev/null || true' \
+        'export DIFFTACTILE_ROOT=/workspace/shallow-vessel-palpation-simulator-and-AI' \
+        'export PYTHONPATH=/workspace/shallow-vessel-palpation-simulator-and-AI' \
+        'cd /workspace/shallow-vessel-palpation-simulator-and-AI 2>/dev/null || true' \
         "PS1='[difftactile \W] '" \
         >> /root/.bashrc
 

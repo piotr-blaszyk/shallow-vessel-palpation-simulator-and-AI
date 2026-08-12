@@ -13,9 +13,9 @@ protection, cwd-independent paths). The numbers below are from the second run.
 ## Procedure
 
 ```bash
-git clone --branch iros <repo> diff-tactile-fork && cd diff-tactile-fork
+git clone --branch iros <repo> shallow-vessel-palpation-simulator-and-AI && cd shallow-vessel-palpation-simulator-and-AI
 ./data/restore_data.sh --verify                       # expect: 23 paths MISSING
-./data/restore_data.sh difftactile-data.tar.gz        # ~190 MB bundle
+./data/restore_data.sh shallow-vessel-palpation-data.tar.gz        # ~190 MB bundle
 ./docker/docker-build.sh && ./docker/docker-run.sh
 docker exec difftactile ./docker/run_pipeline.sh check
 docker exec difftactile ./docker/run_pipeline.sh sim-to-silicone

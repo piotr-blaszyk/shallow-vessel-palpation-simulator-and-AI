@@ -68,7 +68,7 @@ PY
     ./data/restore_data.sh --verify || {
         echo
         echo "Data missing. Download the Zenodo bundle and run:"
-        echo "  ./data/restore_data.sh difftactile-data.tar.gz"
+        echo "  ./data/restore_data.sh shallow-vessel-palpation-data.tar.gz"
         return 1
     }
 }

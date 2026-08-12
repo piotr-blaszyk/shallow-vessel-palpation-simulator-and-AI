@@ -21,8 +21,8 @@ This work spans two repositories, submitted together to an **ECCV 2026 workshop*
 
 | Repository | Role |
 |---|---|
-| **[diff-tactile-fork](https://github.com/piotr-blaszyk/diff-tactile-fork)** (this one) | **Main repository.** Simulation, dataset generation, GNN training and evaluation — everything needed to reproduce the published results. |
-| [dobot-tcp-ip](https://github.com/piotr-blaszyk/dobot-tcp-ip) | Robot control. Drives the DOBOT Magician E6 arm that collected the real tactile recordings for both phantoms. Needed only to *gather new* data, not to reproduce results. |
+| **[shallow-vessel-palpation-simulator-and-AI](https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI)** (this one) | **Main repository.** Simulation, dataset generation, GNN training and evaluation — everything needed to reproduce the published results. |
+| [shallow-vessel-palpation-robot-control](https://github.com/piotr-blaszyk/shallow-vessel-palpation-robot-control) | Robot control. Drives the DOBOT Magician E6 arm that collected the real tactile recordings for both phantoms. Needed only to *gather new* data, not to reproduce results. |
 
 Data and trained model weights are published on Zenodo — see
 [Quickstart](#quickstart-docker) below.
@@ -55,13 +55,13 @@ the NVIDIA driver, Docker, and the
 
 ```bash
 # 1. Clone
-git clone https://github.com/piotr-blaszyk/diff-tactile-fork.git
-cd diff-tactile-fork
+git clone https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI.git
+cd shallow-vessel-palpation-simulator-and-AI
 
 # 2. Fetch the data bundle from Zenodo (~190 MB) and unpack it into place
 #    (datasets + trained checkpoints; see data/MANIFEST.md for what is inside)
-wget https://zenodo.org/records/<RECORD_ID>/files/difftactile-data.tar.gz
-./data/restore_data.sh difftactile-data.tar.gz
+wget https://zenodo.org/records/<RECORD_ID>/files/shallow-vessel-palpation-data.tar.gz
+./data/restore_data.sh shallow-vessel-palpation-data.tar.gz
 
 # 3. Build the image (~10-30 min, downloads several GB) and start the container
 ./docker/docker-build.sh
@@ -177,8 +177,8 @@ The meat trials are catalogued in
 ### Install
 
 ```bash
-git clone https://github.com/piotr-blaszyk/diff-tactile-fork.git
-cd diff-tactile-fork
+git clone https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI.git
+cd shallow-vessel-palpation-simulator-and-AI
 
 conda create -n difftactile python=3.10
 conda activate difftactile
@@ -269,7 +269,7 @@ Everything in that table is supplied by the Zenodo archive, so none of it has to
 regenerated:
 
 ```bash
-./data/restore_data.sh difftactile-data.tar.gz   # ~190 MB
+./data/restore_data.sh shallow-vessel-palpation-data.tar.gz   # ~190 MB
 ./data/restore_data.sh --verify                  # list what is present / missing
 ```
 

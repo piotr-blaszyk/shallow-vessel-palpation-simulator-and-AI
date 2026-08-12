@@ -44,14 +44,14 @@ web uploader:
 curl --progress-bar \
      --retry 5 --retry-delay 5 --retry-connrefused \
      -H "Authorization: Bearer $ZENODO_TOKEN" \
-     --upload-file difftactile-data.tar.gz \
-     "$BUCKET_URL/difftactile-data.tar.gz" | jq '{key, size, checksum}'
+     --upload-file shallow-vessel-palpation-data.tar.gz \
+     "$BUCKET_URL/shallow-vessel-palpation-data.tar.gz" | jq '{key, size, checksum}'
 ```
 
 Verify the reported `checksum` (an MD5) against the local file:
 
 ```bash
-md5sum difftactile-data.tar.gz
+md5sum shallow-vessel-palpation-data.tar.gz
 ```
 
 ## 4. Attach metadata
@@ -65,7 +65,7 @@ curl -s -H "Authorization: Bearer $ZENODO_TOKEN" \
   "metadata": {
     "title": "Data for: Sim-to-Real Subsurface Feature Localisation with an Optical Tactile Sensor",
     "upload_type": "dataset",
-    "description": "Simulated training dataset, preprocessed real silicone- and meat-phantom tactile trials, and trained GNN checkpoints accompanying the diff-tactile-fork and dobot-tcp-ip repositories. See MANIFEST.md inside the archive for a full description of contents.",
+    "description": "Simulated training dataset, preprocessed real silicone- and meat-phantom tactile trials, and trained GNN checkpoints accompanying the shallow-vessel-palpation-simulator-and-AI and shallow-vessel-palpation-robot-control repositories. See MANIFEST.md inside the archive for a full description of contents.",
     "creators": [
       {"name": "Blaszyk, Piotr"}
     ],
@@ -99,7 +99,7 @@ are disposable, so a mistake costs nothing.
 One archive is simpler to cite and to download. Split into two only if you also
 want to publish the **raw** experimental recordings (~1.6 GB of `.avi`), which
 are excluded from the default bundle — in that case ship
-`difftactile-data.tar.gz` (the ~186 MB reproduction bundle) and
+`shallow-vessel-palpation-data.tar.gz` (the ~186 MB reproduction bundle) and
 `difftactile-raw-recordings.tar.gz` separately, so users who only want to verify
 results are not forced to download the raw videos.
 
