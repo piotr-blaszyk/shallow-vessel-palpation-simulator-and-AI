@@ -15,9 +15,11 @@
 #
 # Options:
 #   --cached   Reuse the per-marker probabilities in difftactile/output/exp_probs.npz
-#              instead of running the model again. Fast, but only works once a
-#              previous run has produced that cache - it is NOT in the published
-#              data bundle, so the first run must do inference.
+#              instead of running the model again. Only works once a previous run
+#              has produced that cache, so the first run must do inference.
+#              That cache is deliberately not in the data bundle: it is pure model
+#              output, and recomputing it from the shipped dataset and checkpoint
+#              takes under a second. Running without --cached is the normal path.
 #
 # SILICONE ONLY. The workspace bounds, the sensor-to-phantom offset and the
 # marker reshapes are all specific to the silicone phantom rig, so there is no
