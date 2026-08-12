@@ -17,11 +17,12 @@ from tqdm import tqdm
 from torch_geometric.nn import global_add_pool
 from sklearn.metrics import roc_auc_score, roc_curve
 import matplotlib
+from difftactile.main.display import is_headless, show_plots
 # Pick a non-interactive backend BEFORE pyplot is imported when there is no
-# display. _show_plots() already guards the blocking plt.show(), but that is too
+# display. show_plots() already guards the blocking plt.show(), but that is too
 # late for plt.figure(), which instantiates a Tk window as soon as it is called
 # and would otherwise raise TclError on a headless/SSH/container run.
-if os.environ.get("DIFFTACTILE_HEADLESS", "0") == "1" or not os.environ.get("DISPLAY"):
+if is_headless():
     matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -58,16 +59,10 @@ def _retrained_path(rel):
     return repo_path(f"{base}{suffix}{ext}")
 
 
-def _show_plots():
-    """True when an interactive matplotlib window can and should be opened.
-
-    Every figure is always written to disk first; this only controls the extra
-    blocking `plt.show()` call, which would hang a container or an SSH session
-    that has no X display.
-    """
-    if os.environ.get("DIFFTACTILE_HEADLESS", "0") == "1":
-        return False
-    return bool(os.environ.get("DISPLAY"))
+# Kept as a thin alias so existing call sites read unchanged; the policy itself
+# now lives in difftactile/main/display.py, which defaults to *not* blocking
+# unless DIFFTACTILE_INTERACTIVE=1 is set.
+_show_plots = show_plots
 
 
 class CurriculumCallback(pl.Callback):
@@ -1067,8 +1062,8 @@ def evaluate_and_plot_roc():
     os.makedirs(os.path.dirname(roc_path), exist_ok=True)
     plt.savefig(roc_path, format="pdf", dpi=300)
     print(f"ROC curve written to: {roc_path}")
-    # Only pop up a window when there is a display to pop it up on; with
-    # DIFFTACTILE_HEADLESS=1 (or no DISPLAY) the PDF above is the output.
+    # The PDF above is the output. A blocking window is opened only when the
+    # user asks for one with DIFFTACTILE_INTERACTIVE=1.
     if _show_plots():
         plt.show()
     plt.close()

@@ -2,6 +2,12 @@ import math
 import pickle
 
 import cv2
+import matplotlib
+from difftactile.main.display import finish_plot, is_headless
+# Select the non-interactive backend before pyplot is imported, so plt.figure()
+# does not try to open a Tk window on a display-less machine.
+if is_headless():
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -574,15 +580,16 @@ class PredictExp:
                     bbox=dict(facecolor='black', alpha=0.7))
         
         plt.tight_layout()
-        plt.savefig(
+        # Saved PDF is the output; the window only opens under
+        # DIFFTACTILE_INTERACTIVE=1.
+        finish_plot(
+            plt,
             SYSTEM_PARAMS.files.exp_overlay_downscaled,
             format="pdf",
             dpi=300,
             bbox_inches="tight",
             pad_inches=0
         )
-        plt.show()
-        plt.close()
 
     def evaluate_upscaled(self):
         ground_truth_path = self.ground_truth_img_path
@@ -638,9 +645,7 @@ class PredictExp:
         ]
         plt.figlegend(handles=legend_elements, loc='center right')
         plt.tight_layout()
-        plt.savefig(SYSTEM_PARAMS.files.exp_overlay_upscaled)
-        plt.show()
-        plt.close()
+        finish_plot(plt, SYSTEM_PARAMS.files.exp_overlay_upscaled)
 
     def go(self):
         # self.predict_all_clips()

@@ -6,6 +6,9 @@ import cv2
 import numpy as np
 
 from difftactile.main.constants import *
+from difftactile.main.display import (
+    destroy_windows, imshow, iteration_limit, wait_key,
+)
 
 
 class FisheyeModelNoTaichi:
@@ -245,7 +248,14 @@ class FisheyeModelNoTaichi:
         print(f"Found {len(image_files)} images")
         print("Controls: 'j' - previous image, 'l' - next image, 'q' - quit")
         current_index = 0
-        while True:
+        # Interactively this browses images until 'q'. Non-interactively there
+        # is no key press to end it, so walk a bounded number of images and
+        # return (override with DIFFTACTILE_MAX_FRAMES). `shown` is incremented
+        # before the body so the `continue` on an unreadable image still counts.
+        limit = iteration_limit("DIFFTACTILE_MAX_FRAMES", len(image_files))
+        shown = 0
+        while limit is None or shown < limit:
+            shown += 1
             img_path = image_files[current_index]
             img = cv2.imread(img_path)
             if img is None:
@@ -286,15 +296,17 @@ class FisheyeModelNoTaichi:
                 (255, 255, 255),
                 2,
             )
-            cv2.imshow("Interactive Marker Detection", vis_img)
-            key = cv2.waitKey(0) & 0xFF
+            imshow(cv2, "Interactive Marker Detection", vis_img)
+            key = wait_key(cv2, 0) & 0xFF
             if key == ord("q"):
                 break
             elif key == ord("j"):
                 current_index = (current_index - 1) % len(image_files)
-            elif key == ord("l"):
+            else:
+                # 'l' advances interactively; with no key press this is also how
+                # the bounded non-interactive loop makes progress.
                 current_index = (current_index + 1) % len(image_files)
-        cv2.destroyAllWindows()
+        destroy_windows(cv2)
 
     @staticmethod
     def extract_experimental_markers_and_save_to_file():

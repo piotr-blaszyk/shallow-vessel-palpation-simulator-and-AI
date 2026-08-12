@@ -1,3 +1,4 @@
+import os
 import pickle
 
 import numpy as np
@@ -8,7 +9,9 @@ from scipy.spatial.distance import pdist
 from scipy.spatial import Delaunay
 
 from difftactile.main.constants import *
+from difftactile.main.display import is_interactive, show_plotter
 from difftactile.sensor_model.fisheye_model_no_taichi import *
+from difftactile.main.paths import repo_path
 
 
 class VisualiseMesh:
@@ -253,7 +256,7 @@ class VisualiseMesh:
         p.add_text("Extracted surface", font_size=10)
         p.add_mesh(surface, color="lightblue", smooth_shading=True)
 
-        p.show()
+        show_plotter(p, repo_path("difftactile/output/mesh_raw_and_surface.png"))
 
     def visualise_tetrahedra_pyvista(self):
         cells = np.column_stack([np.full(len(self.tetrahedra), 4), self.tetrahedra])
@@ -272,7 +275,7 @@ class VisualiseMesh:
         )
         plotter.add_axes()
         plotter.camera_position = 'iso'
-        plotter.show()
+        show_plotter(plotter, repo_path("difftactile/output/mesh_tetrahedra.png"))
     
     def visualise_tetrahedra_pyvista_for_video(self):
         num_tets = self.tetrahedra.shape[0]
@@ -281,12 +284,19 @@ class VisualiseMesh:
         surface = grid.extract_surface()
         plotter = pv.Plotter()
         plotter.add_mesh(surface, color="lightblue", show_edges=True)
-        plotter.show()
+        show_plotter(plotter, repo_path("difftactile/output/mesh_surface.png"))
     
     def visualise_tetrahedra_vedo(self):
         mesh = vedo.TetMesh([self.points, self.tetrahedra])
         surface = mesh.tomesh()
-        vedo.show(surface)
+        # vedo.show() blocks on its own window; only open one when asked to.
+        if is_interactive():
+            vedo.show(surface)
+        else:
+            out = repo_path("difftactile/output/mesh_vedo.png")
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            vedo.show(surface, offscreen=True).screenshot(out).close()
+            print(f"3-D view written to: {out}")
 
     def visualize_sequence_from_tetrahedra_pyvista(self):
         dilation = 1
@@ -323,7 +333,9 @@ class VisualiseMesh:
             update_scene()
         plotter.add_key_event("j", keypress_j)
         plotter.add_key_event("k", keypress_k)
-        plotter.show()
+        # The j/k frame stepping needs a user; non-interactively this just
+        # captures the first frame rather than waiting for keys nobody presses.
+        show_plotter(plotter, repo_path("difftactile/output/mesh_sequence_frame0.png"))
 
 
 def camera_to_world_transform(

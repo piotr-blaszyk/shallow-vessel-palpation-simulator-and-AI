@@ -8,6 +8,12 @@ from pathlib import Path
 import time
 
 import cv2
+import matplotlib
+from difftactile.main.display import finish_plot, is_headless
+# Pick the non-interactive backend before pyplot is imported, so the loss plots
+# below do not try to open a Tk window on a display-less machine.
+if is_headless():
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import taichi as ti
@@ -60,7 +66,7 @@ def _env_int(name, default):
         return default
 
 
-HEADLESS = os.environ.get("DIFFTACTILE_HEADLESS", "0") == "1"
+HEADLESS = is_headless()
 
 # Whether the first of the two substeps in each collection loop enables the
 # sensor<->vein contact pair, so the loop sweeps the same trajectory once WITH a
@@ -2589,8 +2595,9 @@ class Contact:
             plt.xlabel('batch index')
             plt.ylabel('batch loss')
             plt.title('batch loss over time')
-            plt.savefig(SYSTEM_PARAMS.files.losses.format(names[i]))
-            plt.show()
+            # Written to disk unconditionally; the window is opt-in via
+            # DIFFTACTILE_INTERACTIVE=1 so a batch run never stops here.
+            finish_plot(plt, SYSTEM_PARAMS.files.losses.format(names[i]))
         # self.save_final_params()
         print("all done")
 

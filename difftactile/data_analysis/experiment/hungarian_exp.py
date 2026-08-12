@@ -4,6 +4,9 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 
 from difftactile.main.constants import *
+from difftactile.main.display import (
+    destroy_windows, imshow, iteration_limit, wait_key,
+)
 
 
 class HungarianExp:
@@ -66,7 +69,14 @@ class HungarianExp:
         current_frame = 0
         num_frames = all_points.shape[0]
 
-        while True:
+        # Interactively this browses frames until 'q'. Non-interactively nobody
+        # can press 'q', so play a bounded number of frames and return
+        # (override with DIFFTACTILE_MAX_FRAMES).
+        limit = iteration_limit("DIFFTACTILE_MAX_FRAMES", num_frames)
+        shown = 0
+
+        while limit is None or shown < limit:
+            shown += 1
             # Create black canvas
             canvas = np.zeros((canvas_size, canvas_size, 3), dtype=np.uint8)
 
@@ -94,19 +104,20 @@ class HungarianExp:
                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
             # Show the image
-            cv2.imshow('Graph Visualization', canvas)
+            imshow(cv2, 'Graph Visualization', canvas)
 
             # Handle key events
-            key = cv2.waitKey(1) & 0xFF
+            key = wait_key(cv2, 1) & 0xFF
             if key == ord('q'):
                 break
             elif key == ord('j'):  # Previous frame
                 current_frame = (current_frame - 1) % num_frames
-            elif key == ord('k'):  # Next frame
+            else:
+                # 'k' advances interactively; without a key press this also
+                # drives the bounded non-interactive loop forward.
                 current_frame = (current_frame + 1) % num_frames
 
-        cv2.destroyAllWindows()
-        cv2.waitKey(1)
+        destroy_windows(cv2)
 
     @staticmethod
     def track_markers_with_interpolation(points, points_mask, base_points, adjacency_matrix):

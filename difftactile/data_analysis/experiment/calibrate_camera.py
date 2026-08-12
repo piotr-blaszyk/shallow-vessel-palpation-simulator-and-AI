@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 
 from difftactile.main.constants import *
+from difftactile.main.display import destroy_windows, imshow, wait_key
 from difftactile.main.paths import repo_path
 
 # Checkerboard dimensions (inner corners)
@@ -56,12 +57,12 @@ for fname in images:
 
         # Draw and display the corners
         cv2.drawChessboardCorners(img, CHECKERBOARD, corners_refined, ret)
-        cv2.imshow('img', img)
-        cv2.waitKey(100)
+        imshow(cv2, 'img', img)
+        wait_key(cv2, 100)
     else:
        print(f"Checkerboard not found in {fname}")
 
-cv2.destroyAllWindows()
+destroy_windows(cv2)
 
 # Fisheye calibration (requires ≥10 images)
 assert len(objpoints) >= 10, "Insufficient images for calibration"

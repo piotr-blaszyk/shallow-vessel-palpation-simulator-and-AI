@@ -2,7 +2,12 @@ import json
 import os
 
 import cv2
+import matplotlib
 import numpy as np
+
+from difftactile.main.display import finish_plot, is_headless
+if is_headless():
+    matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
 from difftactile.main.constants import *
@@ -35,10 +40,8 @@ def main():
     plt.axis("off")
     plt.tight_layout()
     # The mask (the actual product of this script) is written above; the preview
-    # window is optional, and blocks forever without a display.
-    if os.environ.get("DIFFTACTILE_HEADLESS", "0") != "1" and os.environ.get("DISPLAY"):
-        plt.show()
-    plt.close()
+    # window is optional and only opens under DIFFTACTILE_INTERACTIVE=1.
+    finish_plot(plt)
 
 
 if __name__ == "__main__":

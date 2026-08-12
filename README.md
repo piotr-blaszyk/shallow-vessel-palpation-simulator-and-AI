@@ -192,9 +192,12 @@ run anything in this README.
   switched to CPU (see [Running without a GPU](#running-without-a-gpu)), but the **GNN cannot** —
   `difftactile/cnn/segmentation_gnn.py:570` allocates on a hardcoded `cuda:0` with no fallback, so even
   loading a checkpoint to plot a ROC curve fails on a CPU-only machine.
-- **A display is optional.** Taichi GGUI, Gmsh and `plt.show()` are used when one is
-  available; `DIFFTACTILE_HEADLESS=1` skips all of them, so the simulator and all three GNN
-  scenarios run over SSH or in CI. The cv2/tkinter annotation tools still require a display.
+- **A display is optional, and nothing ever waits for one.** No script blocks on a GUI
+  window: figures are written to `difftactile/output/` and the run continues, so the
+  simulator, all three GNN scenarios and the preprocessing tools finish unattended over SSH
+  or in CI. Set `DIFFTACTILE_INTERACTIVE=1` to get the blocking windows back (you then close
+  them by hand), or `DIFFTACTILE_HEADLESS=1` to skip creating windows altogether. See
+  [Interactive windows](#interactive-windows).
 - Linux (developed on Ubuntu 24.04).
 
 ### Install
@@ -512,9 +515,9 @@ statistics from the latter), plus the silicone dataset at
 > **0.6786 to 0.7314**. The `--train` path always built A→B correctly; only this evaluate
 > shortcut was wrong.
 
-The ROC PDF is
-always written to disk; matplotlib falls back to a non-interactive backend when there is no
-display, or with `DIFFTACTILE_HEADLESS=1`, so plotting never blocks a container or SSH run.
+The ROC PDF is always written to `difftactile/output/roc_curve_A-to-B.pdf`, and the script
+exits on its own rather than waiting for you to close a plot window — open the PDF to inspect
+the curve. See [Interactive windows](#interactive-windows) if you want the window back.
 
 ### 5. Visualisation and results
 
@@ -523,6 +526,30 @@ python -m difftactile.scripts.script_visualise        # predictions overlaid on 
 python -m difftactile.scripts.script_visualise_mesh   # simulation mesh
 python -m difftactile.scripts.script_predict_exp      # run a trained model on experimental data
 ```
+
+### Interactive windows
+
+**No script waits for user input.** Every figure, mask and 3-D view is written to disk (mostly
+under `difftactile/output/`), and the script then carries on and exits. This is what makes the
+pipeline safe to run unattended — in Docker, over SSH, or in CI — where a window nobody can
+close would hang the run forever. To look at a result, open the saved `.pdf` / `.png`.
+
+Two environment variables change this:
+
+| Variable | Effect |
+|---|---|
+| `DIFFTACTILE_INTERACTIVE=1` | Restore the original blocking behaviour: `plt.show()` waits, frame browsers step on your key presses (`j`/`k`/`q`), the Gmsh FLTK viewer opens, and the tkinter marker-labelling GUI runs. Requires a real display. |
+| `DIFFTACTILE_HEADLESS=1` | Stronger: do not create windows at all. Implied automatically when `DISPLAY` is unset. |
+| `DIFFTACTILE_MAX_FRAMES=N` | How many frames a viewer loop steps through before returning when non-interactive. |
+
+Two tools exist *only* to collect manual input — the cv2 click-annotator in
+`preprocess_silicone_data.py::annotate()` and the tkinter labeller in
+`marker_tracker.py::VideoPlayer.run()`. Without `DIFFTACTILE_INTERACTIVE=1` they print a note
+and return immediately, leaving any annotations already on disk untouched.
+
+The policy lives in `difftactile/main/paths.py`'s neighbour, `difftactile/main/display.py`;
+route new GUI calls through its `wait_key()`, `imshow()`, `finish_plot()` and `prompt()`
+helpers rather than calling OpenCV or pyplot directly.
 
 ### Running without a GPU
 
@@ -616,8 +643,9 @@ interpreting the simulator's output correctly. The remainder are known rough edg
 - **Configuration is partly "edit the source".** Enabling a pipeline stage, switching train vs.
   evaluate, or choosing the Taichi backend all mean editing Python, not passing a flag.
 - **Absolute paths** to the original machine remain in a handful of files (listed above).
-- **Interactive by default.** Gmsh, Taichi GGUI, the annotation and marker-tracking GUIs, and
-  `plt.show()` all assume a display.
+- **Non-interactive by default.** Nothing blocks waiting for a window to be closed; inspect
+  the saved figures in `difftactile/output/` instead. `DIFFTACTILE_INTERACTIVE=1` restores the
+  blocking windows — see [Interactive windows](#interactive-windows).
 - **`script_main` can segfault at exit when the Taichi GGUI window is open** (exit code 139,
   "Segmentation fault (core dumped)"). This happens *after* `main()` has finished and printed
   `all done`, during CUDA/GGUI teardown, so **the collected trajectories are complete and

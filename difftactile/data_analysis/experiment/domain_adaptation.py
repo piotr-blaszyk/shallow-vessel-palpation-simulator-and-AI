@@ -3,6 +3,7 @@ import numpy as np
 
 from difftactile.data_analysis.experiment.adjacency import *
 from difftactile.main.constants import SYSTEM_PARAMS
+from difftactile.main.display import destroy_windows, imshow, wait_key
 from difftactile.sensor_model.fisheye_model_no_taichi import FisheyeModelNoTaichi
 
 
@@ -28,9 +29,11 @@ class DomainAdaptation:
             (255, 0, 0),
             2,
         )
-        cv2.imshow("markers", img_with_markers)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        # Preview only: shown briefly, and blocking on a key press is opt-in
+        # via DIFFTACTILE_INTERACTIVE=1 so the script always terminates.
+        imshow(cv2, "markers", img_with_markers)
+        wait_key(cv2, 0)
+        destroy_windows(cv2)
     
     @staticmethod
     def extract_reorder_save_markers(path_img_in, path_npz_out):

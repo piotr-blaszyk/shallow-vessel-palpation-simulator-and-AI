@@ -9,6 +9,9 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 
 from difftactile.main.constants import *
+from difftactile.main.display import (
+    destroy_windows, imshow, is_interactive, wait_key,
+)
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 
 
@@ -281,9 +284,9 @@ class MarkerTracker:
             for marker_pos in markers_array[0]:
                 x, y = int(marker_pos[0]), int(marker_pos[1])
                 cv2.circle(visualization, (x, y), 5, (0, 0, 255), -1)
-            cv2.imshow('Frame 0 Markers', visualization)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
+            imshow(cv2, 'Frame 0 Markers', visualization)
+            wait_key(cv2, 0)
+            destroy_windows(cv2)
 
     def process_video(self):
         self.extract_frames(SYSTEM_PARAMS.files.traj_in.format(SYSTEM_PARAMS.files.traj_id))
@@ -426,7 +429,21 @@ class VideoPlayer:
             self.show_frame()
 
     def run(self):
-        self.root.mainloop()
+        """Run the tkinter labelling GUI.
+
+        This window exists purely to take manual input (marker labels), so
+        there is nothing useful to do without a user at the keyboard. Rather
+        than block forever in an unattended run, skip the event loop unless
+        DIFFTACTILE_INTERACTIVE=1 was set, and release the video either way.
+        """
+        if is_interactive():
+            self.root.mainloop()
+        else:
+            print(
+                "Skipping the marker-labelling GUI: it only does anything with a "
+                "user at the keyboard. Set DIFFTACTILE_INTERACTIVE=1 to open it."
+            )
+            self.root.destroy()
         self.cap.release()
 
     def save_specific_frames(self, frame_indices):

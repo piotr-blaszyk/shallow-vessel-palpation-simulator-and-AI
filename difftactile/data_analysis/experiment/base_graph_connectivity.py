@@ -7,6 +7,9 @@ from sklearn.neighbors import KNeighborsClassifier
 from difftactile.cnn.dataset import *
 from difftactile.data_analysis.experiment.adjacency import *
 from difftactile.main.constants import *
+from difftactile.main.display import (
+    destroy_windows, imshow, iteration_limit, wait_key,
+)
 from difftactile.sensor_model.fisheye_model_no_taichi import FisheyeModelNoTaichi
 
 
@@ -286,10 +289,11 @@ class ComputeEdges:
             end_point = tuple(map(int, points[end_idx]))
             cv2.line(img, start_point, end_point, color=(255, 255, 0), thickness=1)  # Yellow lines
 
-        # Display the image
-        cv2.imshow('Marker Positions', img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        # Display the image. The PNG written below is the real output, so the
+        # window is never waited on unless DIFFTACTILE_INTERACTIVE=1.
+        imshow(cv2, 'Marker Positions', img)
+        wait_key(cv2, 0)
+        destroy_windows(cv2)
 
         # Save the image
         cv2.imwrite('difftactile/output/flat_sensor_connectivity.png', img)
@@ -317,8 +321,15 @@ class ComputeEdges:
         indices = np.arange(n, dtype=int)
         NP_RNG.shuffle(indices)
         current_ix = 0
-        
-        while True:
+
+        # Interactively this browses frames until 'q'. Non-interactively there
+        # is nobody to press 'q', so it walks a bounded number of frames and
+        # returns on its own (override with DIFFTACTILE_MAX_FRAMES).
+        limit = iteration_limit("DIFFTACTILE_MAX_FRAMES", min(n, 10))
+        shown = 0
+
+        while limit is None or shown < limit:
+            shown += 1
             ix = indices[current_ix]
             points = dataset.get_points(ix)
             
@@ -369,19 +380,20 @@ class ComputeEdges:
             # Display image and index
             cv2.putText(img, f"Index: {ix} ({current_ix}/{n})", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
                        1, (255, 255, 255), 2)
-            cv2.imshow('Graph Connectivity Validation', img)
-            key = cv2.waitKey(0)
-            
+            imshow(cv2, 'Graph Connectivity Validation', img)
+            key = wait_key(cv2, 0)
+
             if key == ord('q'):
                 break
             elif key == ord('j'):
                 # Go back one image
                 current_ix = (current_ix - 1) % n
-            elif key == ord('k'):
-                # Go forward one image
+            else:
+                # Go forward one image. 'k' advances interactively; without a
+                # key press this is also how the bounded loop makes progress.
                 current_ix = (current_ix + 1) % n
-        
-        cv2.destroyAllWindows()
+
+        destroy_windows(cv2)
 
 
 def main():

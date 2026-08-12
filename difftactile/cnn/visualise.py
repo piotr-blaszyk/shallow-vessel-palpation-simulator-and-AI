@@ -2,6 +2,14 @@ import pickle
 import time
 
 import cv2
+import matplotlib
+from difftactile.main.display import (
+    destroy_windows, imshow, is_headless, iteration_limit, prompt, wait_key,
+)
+# Non-interactive backend before pyplot is imported, so plt.figure() does not
+# try to open a Tk window on a display-less machine.
+if is_headless():
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -111,7 +119,14 @@ class Visualisation:
             current_frame = 0
             total_frames = image_seq.shape[0]
 
-            while True:
+            # Interactively this steps through frames until 'q'. Non-interactively
+            # nobody can press a key, so play a bounded number of frames and move
+            # on (override with DIFFTACTILE_MAX_FRAMES).
+            frame_limit = iteration_limit("DIFFTACTILE_MAX_FRAMES", total_frames)
+            shown = 0
+
+            while frame_limit is None or shown < frame_limit:
+                shown += 1
                 # Prepare the current frame
                 current_image = image_seq[current_frame]
                 current_pred = pred_seq[current_frame]
@@ -154,8 +169,8 @@ class Visualisation:
                 cv2.putText(current_pred, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
 
                 # Create display windows
-                cv2.imshow('Input Image', current_image)
-                cv2.imshow('Predicted Image', current_pred)
+                imshow(cv2, 'Input Image', current_image)
+                imshow(cv2, 'Predicted Image', current_pred)
 
                 # Read and display video frame
                 video_cap.set(cv2.CAP_PROP_POS_FRAMES, start_ix + current_frame * dilation)
@@ -179,7 +194,7 @@ class Visualisation:
                                 (0, 0, 0), -1)
                     cv2.putText(video_frame, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
                     
-                    cv2.imshow('Video Frame', video_frame)
+                    imshow(cv2, 'Video Frame', video_frame)
 
                 # Position windows side by side
                 window_width = current_image.shape[1]
@@ -188,19 +203,21 @@ class Visualisation:
                 cv2.moveWindow('Video Frame', (window_width + 25) * 2, 0)
 
                 # Handle keyboard input
-                key = cv2.waitKey(0) & 0xFF
-                
+                key = wait_key(cv2, 0) & 0xFF
+
                 if key == ord('q'):  # Quit visualization
-                    cv2.destroyAllWindows()
+                    destroy_windows(cv2)
                     video_cap.release()
                     return
-                elif key == ord('k'):  # Next frame
-                    current_frame = (current_frame + 1) % total_frames
                 elif key == ord('j'):  # Previous frame
                     current_frame = (current_frame - 1) % total_frames
                 elif key == ord('c'):  # Close current sequence and load next
-                    cv2.destroyAllWindows()
+                    destroy_windows(cv2)
                     break
+                else:
+                    # 'k' advances interactively; with no key press this also
+                    # drives the bounded non-interactive loop forward.
+                    current_frame = (current_frame + 1) % total_frames
             m += dilated_clip_len
         
         # Clean up
@@ -272,7 +289,12 @@ class Visualisation:
             current_frame = 0
             total_frames = image_seq.shape[0]
 
-            while True:
+            # Bounded when non-interactive; see the note on the browser above.
+            frame_limit = iteration_limit("DIFFTACTILE_MAX_FRAMES", total_frames)
+            shown = 0
+
+            while frame_limit is None or shown < frame_limit:
+                shown += 1
                 # Prepare the current frame
                 current_image = image_seq[current_frame]
                 current_label = label_seq[current_frame]
@@ -343,11 +365,11 @@ class Visualisation:
                     cv2.putText(overlay_image, frame_text, (text_x, text_y), font, font_scale, text_color, font_thickness)
 
                 # Create display windows
-                cv2.imshow(f'Input Image {i}', current_image)
+                imshow(cv2, f'Input Image {i}', current_image)
                 right_window_title = 'Ground Truth Label' if mode == 'dataset' else 'Prediction Overlay'
-                cv2.imshow(f'{right_window_title} {i}', current_right)
+                imshow(cv2, f'{right_window_title} {i}', current_right)
                 if mode == 'dataset':
-                    cv2.imshow(f'Overlay {i}', overlay_image)
+                    imshow(cv2, f'Overlay {i}', overlay_image)
 
                 # Get screen dimensions using cv2
                 window_width = current_image.shape[0]
@@ -359,19 +381,21 @@ class Visualisation:
                     cv2.moveWindow(f'Overlay {i}', 2 * window_width + 50, 0)
 
                 # Handle keyboard input
-                key = cv2.waitKey(0) & 0xFF
-                
+                key = wait_key(cv2, 0) & 0xFF
+
                 if key == ord('q'):  # Quit visualization
-                    cv2.destroyAllWindows()
+                    destroy_windows(cv2)
                     return
-                elif key == ord('k'):  # Next frame
-                    current_frame = (current_frame + 1) % total_frames
                 elif key == ord('j'):  # Previous frame
                     current_frame = (current_frame - 1) % total_frames
                 elif key == ord('c'):  # Close current sequence and load next
                     i += 1
-                    cv2.destroyAllWindows()
+                    destroy_windows(cv2)
                     break
+                else:
+                    # 'k' advances interactively; with no key press (the
+                    # non-interactive case) this also steps the bounded loop on.
+                    current_frame = (current_frame + 1) % total_frames
     
     def visualise_gnn(self, mode, data_source):
         """
@@ -767,12 +791,12 @@ class Visualisation:
 
         need_to_wait_3 = True
         for sequence_idx_3 in range(len(meta)):
-            cv2.imshow('Ground Truth', gt[sequence_idx_3])
+            imshow(cv2, 'Ground Truth', gt[sequence_idx_3])
             if mode == 'predictions':
-                cv2.imshow('Hard Prediction', hp[sequence_idx_3])
-                cv2.imshow('Confusion Matrix', co[sequence_idx_3])
-                cv2.imshow('Soft Prediction', sp[sequence_idx_3])
-                cv2.imshow('Metadata', meta[sequence_idx_3])
+                imshow(cv2, 'Hard Prediction', hp[sequence_idx_3])
+                imshow(cv2, 'Confusion Matrix', co[sequence_idx_3])
+                imshow(cv2, 'Soft Prediction', sp[sequence_idx_3])
+                imshow(cv2, 'Metadata', meta[sequence_idx_3])
             
             sep_w = 20
             sep_h = 130
@@ -785,37 +809,42 @@ class Visualisation:
             
             if need_to_wait_3:
                 # first frame delay
-                cv2.waitKey(4000)
+                wait_key(cv2, 4000)
                 need_to_wait_3 = False
-            
-            # delay between frames
+
+            # delay between frames. wait_key() caps these when non-interactive,
+            # so an unattended run does not spend minutes sleeping on playback.
             if sequence_idx_3 % 10 == 9:
                 foo = 2_000
             else:
                 foo = 500
-            if cv2.waitKey(foo) & 0xFF == ord('q'):  # wait 0.5s, press 'q' to quit
+            if wait_key(cv2, foo) & 0xFF == ord('q'):  # wait 0.5s, press 'q' to quit
                 break
 
-        cv2.waitKey(4000)
-        cv2.destroyAllWindows()
+        wait_key(cv2, 4000)
+        destroy_windows(cv2)
         return
 
         sequence_idx_2 = 0
         need_to_wait = True
-        while True:
+        # Bounded when non-interactive: there is no 'q' key press to end it.
+        limit = iteration_limit("DIFFTACTILE_MAX_FRAMES", len(meta))
+        shown = 0
+        while limit is None or shown < limit:
+            shown += 1
             # Show images from pre-computed stacks
             # title_prefix = f'Frame {current_frame}/{num_frames-1} '
             # title_prefix += '(Central Frame) ' if current_frame == central_frame else ''
             
-            cv2.imshow(f'Ground Truth', gt[sequence_idx_2])
+            imshow(cv2, f'Ground Truth', gt[sequence_idx_2])
             if mode == 'predictions':
-                cv2.imshow(f'Hard Prediction', hp[sequence_idx_2])
-                cv2.imshow(f'Confusion Matrix', co[sequence_idx_2])
-                cv2.imshow(f'Soft Prediction', sp[sequence_idx_2])
-                cv2.imshow(f'Metadata', meta[sequence_idx_2])
-                # cv2.imshow(f'Frame Statistics', stats_stack[current_frame])
-            # cv2.imshow(f'Labels Image', labels_stack[current_frame])
-            # cv2.imshow(f'Graph Connectivity', graph_stack[current_frame])
+                imshow(cv2, f'Hard Prediction', hp[sequence_idx_2])
+                imshow(cv2, f'Confusion Matrix', co[sequence_idx_2])
+                imshow(cv2, f'Soft Prediction', sp[sequence_idx_2])
+                imshow(cv2, f'Metadata', meta[sequence_idx_2])
+                # imshow(cv2, f'Frame Statistics', stats_stack[current_frame])
+            # imshow(cv2, f'Labels Image', labels_stack[current_frame])
+            # imshow(cv2, f'Graph Connectivity', graph_stack[current_frame])
 
             # Position windows side by side
             sep_w = 20
@@ -835,28 +864,26 @@ class Visualisation:
                 pass
                 
             if need_to_wait:
-                time.sleep(10)
+                # Only worth pausing for a human who is looking at the window.
+                if is_interactive():
+                    time.sleep(10)
                 need_to_wait = False
 
             # Handle keyboard input
-            key = cv2.waitKey(0) & 0xFF
-            
+            key = wait_key(cv2, 0) & 0xFF
+
             if key == ord('q'):  # Quit visualization
-                cv2.destroyAllWindows()
-                # Force destruction of all windows and clear any pending events
-                for i in range(10):  # Multiple calls to handle race conditions
-                    cv2.waitKey(1)
-                    time.sleep(0.1)
+                destroy_windows(cv2)
                 return
             elif key == ord('x'):
                 sequence_idx_2 -= 1
                 sequence_idx_2 = max(min(sequence_idx_2, len(meta)-1), 0)
-                # cv2.destroyAllWindows()
+                # destroy_windows(cv2)
 
             elif key == ord('c'):  # Close current sequence and load next
                 sequence_idx_2 += 1
                 sequence_idx_2 = max(min(sequence_idx_2, len(meta)-1), 0)
-                # cv2.destroyAllWindows()
+                # destroy_windows(cv2)
                 # break
             # elif key == ord('j'):  # Previous frame
             #     current_frame = max(0, current_frame - 1)
@@ -864,11 +891,12 @@ class Visualisation:
             #     current_frame = min(num_frames - 1, current_frame + 1)
             elif key == ord('d'):
                 foo = 7
-        
-        cv2.destroyAllWindows()
-        for i in range(10):
-            cv2.waitKey(1)
-            time.sleep(0.1)
+            else:
+                # No key press (non-interactive): step forward so the bounded
+                # loop walks the sequence instead of redrawing frame 0.
+                sequence_idx_2 = min(sequence_idx_2 + 1, len(meta) - 1)
+
+        destroy_windows(cv2)
 
     def test_data_loader(self):
         BATCH_SIZE = 16
@@ -958,9 +986,10 @@ class Visualisation:
         # Display the plot
         plt.draw()
         plt.pause(0.1)  # Add a small pause to allow for visualization
-        
-        # Wait for key press to continue
-        key = input("Press Enter to continue to next frame, or 'q' to quit: ")
+
+        # Wait for key press to continue. prompt() returns "" immediately unless
+        # DIFFTACTILE_INTERACTIVE=1, so an unattended run is never stuck here.
+        key = prompt("Press Enter to continue to next frame, or 'q' to quit: ")
         if key.lower() == 'q':
             return True
         

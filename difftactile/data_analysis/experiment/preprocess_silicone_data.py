@@ -11,6 +11,9 @@ from scipy.spatial.distance import pdist, squareform
 
 from difftactile.data_analysis.experiment.predict_exp import *
 from difftactile.main.constants import *
+from difftactile.main.display import (
+    destroy_windows, imshow, is_interactive, iteration_limit, wait_key,
+)
 
 
 class SiliconePreprocessData:
@@ -147,7 +150,13 @@ class SiliconePreprocessData:
             return
         video_idx = 0
         frame_idx = 0
-        while True:
+        # Interactively this browses frames until 'q'. Non-interactively there is
+        # no key press to end it, so step through a bounded number of frames and
+        # return (override with DIFFTACTILE_MAX_FRAMES).
+        limit = iteration_limit("DIFFTACTILE_MAX_FRAMES", 20)
+        shown = 0
+        while limit is None or shown < limit:
+            shown += 1
             avi_path = avi_files[video_idx]
             cap = cv2.VideoCapture(avi_path)
             n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -163,8 +172,8 @@ class SiliconePreprocessData:
             cv2.putText(
                 display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
             )
-            cv2.imshow("Video Viewer", display)
-            key = cv2.waitKey(0) & 0xFF
+            imshow(cv2, "Video Viewer", display)
+            key = wait_key(cv2, 0) & 0xFF
             if key == ord("q"):
                 break
             elif key == ord("m"):
@@ -173,14 +182,13 @@ class SiliconePreprocessData:
             elif key == ord("n"):
                 video_idx = (video_idx - 1) % len(avi_files)
                 frame_idx = 0
-            elif key == ord("k"):
-                frame_idx += 1
             elif key == ord("j"):
                 frame_idx -= 1
-        cv2.destroyAllWindows()
-        for i in range(10):
-            cv2.waitKey(1)
-            time.sleep(0.1)
+            else:
+                # 'k' advances interactively; with no key press this also steps
+                # the bounded non-interactive loop forward.
+                frame_idx += 1
+        destroy_windows(cv2)
 
     def extract_markers(self):
         input_dir = os.path.join(self.root, f"{self.dir}_dilated")
@@ -228,6 +236,20 @@ class SiliconePreprocessData:
                 shutil.copy(npz_path, dst_path)
 
     def annotate(self):
+        """Hand-annotate up to four points per frame by clicking on them.
+
+        This is a manual-input tool: every annotation comes from a mouse click,
+        so there is nothing for it to do unattended. Without
+        DIFFTACTILE_INTERACTIVE=1 it returns immediately, leaving any existing
+        `.pkl` annotations on disk untouched for the later stages to consume.
+        """
+        if not is_interactive():
+            print(
+                "Skipping annotate(): it only produces annotations from mouse "
+                "clicks. Set DIFFTACTILE_INTERACTIVE=1 to open the annotator. "
+                "Existing annotations on disk are left as they are."
+            )
+            return
         input_dir = os.path.join(self.root, f"{self.dir}_dilated")
         output_dir = os.path.join(self.root, f"{self.dir}_annotations")
         os.makedirs(output_dir, exist_ok=True)
@@ -283,7 +305,7 @@ class SiliconePreprocessData:
             cv2.putText(
                 display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
             )
-            cv2.imshow("Annotator", display)
+            imshow(cv2, "Annotator", display)
             key = cv2.waitKey(20) & 0xFF
             if key == ord("q"):
                 for avi_path in avi_files:
@@ -312,7 +334,7 @@ class SiliconePreprocessData:
                     with open(pkl_path, "wb") as f:
                         pickle.dump(annotations[avi_path], f)
                 print("Annotations saved.")
-        cv2.destroyAllWindows()
+        destroy_windows(cv2)
         for _ in range(10):
             cv2.waitKey(1)
             time.sleep(0.1)
@@ -415,7 +437,11 @@ class SiliconePreprocessData:
         colors = [(0, 0, 255), (0, 255, 0), (255, 0, 0), (255, 0, 255)]
         video_idx = 0
         frame_idx = 0
-        while True:
+        # Bounded when non-interactive; see the note in visualise_videos().
+        limit = iteration_limit("DIFFTACTILE_MAX_FRAMES", 20)
+        shown = 0
+        while limit is None or shown < limit:
+            shown += 1
             key_base = common_keys[video_idx]
             avi_path = avi_map[key_base]
             npz_path = npz_map[key_base]
@@ -447,8 +473,8 @@ class SiliconePreprocessData:
             cv2.putText(
                 display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
             )
-            cv2.imshow("Line Points Viewer", display)
-            key = cv2.waitKey(0) & 0xFF
+            imshow(cv2, "Line Points Viewer", display)
+            key = wait_key(cv2, 0) & 0xFF
             if key == ord("q"):
                 break
             elif key == ord("m"):
@@ -457,14 +483,12 @@ class SiliconePreprocessData:
             elif key == ord("n"):
                 video_idx = (video_idx - 1) % len(common_keys)
                 frame_idx = 0
-            elif key == ord("k"):
-                frame_idx += 1
             elif key == ord("j"):
                 frame_idx -= 1
-        cv2.destroyAllWindows()
-        for i in range(10):
-            cv2.waitKey(1)
-            time.sleep(0.1)
+            else:
+                # 'k' advances interactively and drives the bounded loop here.
+                frame_idx += 1
+        destroy_windows(cv2)
 
     def merge_npz_to_sim_format(self):
         annotations_dir = os.path.join(self.root, f"{self.dir}_annotations_line_points")

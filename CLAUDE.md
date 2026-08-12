@@ -103,7 +103,9 @@ Re-running the *same* configuration still overwrites in place.
 | `DIFFTACTILE_ROOT` | Repository root used for all path resolution. |
 | `DIFFTACTILE_DATA_ROOT` | Keep the large data bundle outside the repo. |
 | `DIFFTACTILE_NUM_LOOPS` | Simulator loop count. Each loop = 2 substeps × 4 trajectories = 8 trials. Default 100 (800 trials, measured 2 h 45 m on an RTX 3080); `1` gives a ~3 min smoke test. |
-| `DIFFTACTILE_HEADLESS=1` | Skip Taichi GGUI / Gmsh FLTK windows and blocking `plt.show()`. Required for SSH/CI/container runs with no display. |
+| `DIFFTACTILE_HEADLESS=1` | Skip creating Taichi GGUI / Gmsh FLTK / cv2 windows entirely. Implied when `DISPLAY` is unset. |
+| `DIFFTACTILE_INTERACTIVE=1` | Opt back in to **blocking** GUI windows (`plt.show()`, `cv2.waitKey(0)`, Gmsh FLTK, the tkinter labeller). Off by default: no script waits on user input, so unattended runs always terminate. See `difftactile/main/display.py`. |
+| `DIFFTACTILE_MAX_FRAMES` | Frames a non-interactive viewer loop steps through before returning (per-loop defaults apply otherwise). |
 | `DIFFTACTILE_TRAJECTORIES` | Comma-separated trajectory types to collect (0 press, 1 slide-vein, 2 twist-y, 3 twist-z). Default all four. **The published dataset is entirely type 3** — use `3` to reproduce it. |
 | `DIFFTACTILE_VEIN_PAIR=1` | Enable the sensor↔vein contact pair on the first of each loop's two substeps, so a trajectory runs once **with** a subsurface vein and once **without**. The vein half is hard-disabled in the committed default (`if False and j < 1` in `main()`), so every substep otherwise runs vein-free. |
 | `DIFFTACTILE_SCENARIO` | Configuration name (`A-to-B`, `C-to-B`, `A-to-C`, or a legacy alias), if not passed as an argument. |
@@ -188,10 +190,41 @@ expects 3-element lists and so breaks the next `script_main`.
   guarded `plt.show()`, but `plt.figure()` had already tried to open a Tk window. `segmentation_gnn.py`
   now selects the `Agg` backend before importing pyplot when there is no display.
 
-Interactivity is otherwise pervasive and intentional: the cv2 annotation GUI and the tkinter
-marker-labelling GUI still block by design. The **simulator and all three GNN scenarios now run
-headless** under `DIFFTACTILE_HEADLESS=1`; the Docker image also passes X through, so GUI windows
-work when a display is available.
+### Nothing blocks on user input
+
+**No script waits for a window to be closed.** `difftactile/main/display.py` is the single
+policy for this; every blocking call in the project routes through it:
+
+| Helper | Replaces |
+|---|---|
+| `wait_key(cv2, delay)` | `cv2.waitKey(...)` — a `0` ("wait forever") becomes a 1 ms poll, and long delays are capped at 30 ms |
+| `imshow(cv2, ...)` / `destroy_windows(cv2)` | `cv2.imshow` / `cv2.destroyAllWindows` |
+| `finish_plot(plt, path, **kw)` | `savefig` + `show` + `close` |
+| `show_plots()` | the guard around a blocking `plt.show()` |
+| `show_plotter(plotter, png)` | PyVista `plotter.show()` — renders a screenshot off-screen instead |
+| `prompt(msg)` | `input()` — returns `""` rather than reading stdin |
+| `iteration_limit(var, default)` | bounds a `while True:` frame browser that used to exit only on `q` |
+
+Consequences worth knowing when editing:
+
+- Figures are **always** written to disk; the window was only ever a convenience. Add new
+  plots with `finish_plot()`, not a bare `plt.show()`.
+- Viewer loops (`visualise.py`, `preprocess_silicone_data.py`, `fisheye_model_no_taichi.py`,
+  `hungarian_exp.py`, `base_graph_connectivity.py`) advance on the "no key pressed" branch, so
+  the old `elif key == ord('k')` next-frame case is now the `else`. Keep that shape — an
+  unconditional `else` before an `elif` is a syntax error, and dropping it makes the loop
+  redraw frame 0 forever.
+- The two **manual-input** tools — `preprocess_silicone_data.py::annotate()` (mouse clicks)
+  and `marker_tracker.py::VideoPlayer.run()` (tkinter) — return immediately with a printed
+  note unless `DIFFTACTILE_INTERACTIVE=1`, since they produce nothing without a user. Existing
+  annotations on disk are left untouched.
+- `cv2` GUI calls are wrapped so an `opencv-python-headless` build (no GTK) warns once and
+  continues rather than raising `cv2.error`.
+- `DIFFTACTILE_INTERACTIVE=1` restores every blocking window, and `main.py`'s `HEADLESS`
+  constant is now `display.is_headless()`, so it also covers an unset `DISPLAY`.
+
+The Docker image passes X through, so the interactive opt-in works there when a display is
+actually reachable.
 
 ## Data availability — the main gotcha
 

@@ -13,10 +13,18 @@ from torch_geometric.nn import GINEConv
 from tqdm import tqdm
 from torch_geometric.nn import global_add_pool
 from sklearn.metrics import roc_auc_score, roc_curve
+import matplotlib
+from difftactile.main.display import finish_plot, is_headless
+# Choose the non-interactive backend before pyplot is imported: plt.figure()
+# tries to open a Tk window as soon as it is called, which raises TclError with
+# no display.
+if is_headless():
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from difftactile.cnn.common import *
 from difftactile.cnn.dataset import *
+from difftactile.main.paths import repo_path
 
 
 class CurriculumCallback(pl.Callback):
@@ -953,8 +961,11 @@ def evaluate_and_plot_roc():
     for spine in plt.gca().spines.values():
         spine.set_linewidth(3.0)
     plt.tight_layout()
-    plt.savefig('difftactile/output/roc_curve_sim.pdf', format="pdf", dpi=300)
-    plt.show()
+    # The PDF is the deliverable; a window only opens under
+    # DIFFTACTILE_INTERACTIVE=1, so an unattended run never stalls here.
+    roc_path = repo_path("difftactile/output/roc_curve_sim.pdf")
+    finish_plot(plt, roc_path, format="pdf", dpi=300)
+    print(f"ROC curve written to: {roc_path}")
 
     print(f'auc: {auc}')
 

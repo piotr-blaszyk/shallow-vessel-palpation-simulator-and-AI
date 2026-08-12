@@ -8,6 +8,7 @@ import pickle
 
 from difftactile.main.common import *
 from difftactile.main.constants import *
+from difftactile.main.display import is_interactive
 from difftactile.main.paths import repo_path
 
 
@@ -55,9 +56,9 @@ class MeshGenerator:
         gmsh.model.mesh.generate(3)
         self.get_difftactile_variables()
         gmsh.model.occ.synchronize()
-        # The FLTK viewer blocks until the window is closed; skip it when there is
-        # no display (container / SSH / CI). Mesh files are already written above.
-        if os.environ.get('DIFFTACTILE_HEADLESS', '0') != '1' and os.environ.get('DISPLAY'):
+        # The FLTK viewer blocks until the window is closed, so it is opt-in via
+        # DIFFTACTILE_INTERACTIVE=1. The mesh files are already written above.
+        if is_interactive():
             gmsh.fltk.run()
         gmsh.finalize()
     
