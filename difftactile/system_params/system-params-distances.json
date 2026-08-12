@@ -4,51 +4,51 @@
         "keypoint_search_z_threshold": 0.001
     },
     "phantom": {
-        "mpm_grid_cube_size": 0.002,
-        "keypoint_search_xy_threshold": 0.040,
-        "particle_spacing": 0.001
+        "mpm_grid_cube_size": 0.001,
+        "keypoint_search_xy_threshold": 0.04,
+        "particle_spacing": 0.0005
     },
     "rigid_static": {
-        "particle_spacing": 0.001
+        "particle_spacing": 0.0005
     },
     "contact": {
-        "pid_max_speed_translation": 0.100,
+        "pid_max_speed_translation": 0.1,
         "pid_position_tolerance": 0.001,
-        "tangential_velocity_detection_threshold": 1e-6
+        "tangential_velocity_detection_threshold": 1e-06
     },
     "trajectory": {
-        "press_depth_0": 0.010,
+        "press_depth_0": 0.01,
         "press_depth_1": 0.008,
         "press_depth_2": 0.006,
         "press_depth_3": 0.008,
-        "slide_distance": 0.050,
-        "slide_distance_long": 0.100,
+        "slide_distance": 0.05,
+        "slide_distance_long": 0.1,
         "press_depth_offset_0": 0.001,
         "press_depth_offset_1": 0.002,
         "press_depth_slide": 0.003
     },
     "geometry": {
         "gap": 0.001,
-        "high_dist": 1.000,
+        "high_dist": 1.0,
         "phantom_z_length": 0.006,
-        "phantom_x_length": 0.040,
-        "phantom_y_length": 0.040,
+        "phantom_x_length": 0.04,
+        "phantom_y_length": 0.04,
         "distance_from_camera_lens_to_outer_shell_surface": 0.019,
-        "sensor_xy_radius": 0.020,
+        "sensor_xy_radius": 0.02,
         "vein": {
             "depth_beneath_surface": 0.003,
             "r": 0.002,
-            "h": 1.000
+            "h": 1.0
         },
         "grid_vein": {
-            "vy": 0.020,
-            "vz": 0.010,
+            "vy": 0.02,
+            "vz": 0.01,
             "r0": 0.002
         },
         "clock_arms_z_min_offset": 0.004,
         "clock_arms_z_max_offset": 0.006,
-        "min_vein_separation": 0.010,
-        "mpm_pad_single": 0.010
+        "min_vein_separation": 0.01,
+        "mpm_pad_single": 0.01
     },
     "visualisation": {
         "camera_offset": 1.0

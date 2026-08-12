@@ -28,3 +28,7 @@ difftactile/output/
 saved_models_iros/
 saved_models_icra/
 shallow-vessel-palpation-data.tar.gz
+
+# Per-run output of the particle-spacing study (screenshots and logs). The
+# scripts and the write-up are tracked; the captures they produce are not.
+difftactile/manual_or_experimental_data/particle_spacing_study/iteration_*/
