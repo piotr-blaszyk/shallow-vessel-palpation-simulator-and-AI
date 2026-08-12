@@ -53,9 +53,8 @@ interpreter, and passes the host X display through so the Taichi GGUI simulator 
 the NVIDIA driver, Docker, and the
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
-> **Use the `main` branch** — it is the only supported one, and a plain `git clone` already
-> puts you there. The other branches are frozen historical snapshots; see
-> [Branches](#branches).
+> **Use the `main` branch** — it is the only branch, and a plain `git clone` already puts you
+> there. See [Branches and tags](#branches-and-tags).
 
 ```bash
 # 1. Clone (defaults to main - the only supported branch)
@@ -145,33 +144,49 @@ Everything below documents the pipeline in detail, including how to run it outsi
 
 ---
 
-## Branches
+## Branches and tags
 
-> ### 👉 Use `main`. Ignore every other branch.
+> ### 👉 `main` is the only branch.
 >
-> **`main` is the only supported branch.** It is the only one that is maintained, the only one
-> the documentation describes, and the only one the Docker image and Zenodo bundle are tested
-> against. All three of the paper's models train and evaluate from it, selected by name (see
-> [Quickstart](#quickstart-docker)) — there is never a reason to switch branches.
->
-> Everything below is a **historical record** of how the work developed. Those branches are
-> frozen: they are not maintained, they do not receive fixes, and several are known to be
-> broken in ways `main` has since repaired. Do not base new work on them, and do not merge
-> them into `main`.
+> **`main` is the only supported branch, and the only branch this repository publishes.** It is
+> the only one that is maintained, the only one the documentation describes, and the only one
+> the Docker image and Zenodo bundle are tested against. All three of the paper's models train
+> and evaluate from it, selected by name (see [Quickstart](#quickstart-docker)) — there is never
+> a reason to switch branches.
 
-Development originally happened on parallel branches, one per experiment. That structure is
-retained only so the exact code behind a given published result stays recoverable.
-
-| Branch | Status | What it is |
-|---|---|---|
-| **`main`** | ✅ **Supported — use this.** | The unified code: all three (train → test) configurations, each in both `--train` and `--eval` mode. Everything in this README refers to `main`. |
-| `iros` | ⚠️ Frozen snapshot. | The IROS submission state, sim-to-real onto a **silicone vascular phantom**. Currently the same commit as `main`, kept as a named pointer to the submission. |
-| `sim-to-silicone` | ⚠️ Frozen snapshot. | The silicone-phantom experiment as submitted. Identical to `iros`. |
-| `sim-to-meat-test` | ❌ **Obsolete — do not use or merge.** | *Historical.* Transfers the model to **real meat**, plastic straws standing in for vessels beneath layers of steak. Superseded by the `A-to-C` configuration on `main`. It now **predates** `main`: no path, Docker or data-bundle infrastructure, and its sim-training entrypoint is disabled by a bare `return`. Merging it would delete that infrastructure, and `main` already carries its useful content — including a normalisation fix that raises the reported cross-domain vein IoU from 0.034 to 0.198. |
+Development originally happened on parallel branches, one per experiment. Those branches have
+been removed from this repository: their useful content is all merged into `main`, and several
+were broken in ways `main` has since repaired. The full development history is retained
+privately by the author, so the exact code behind a given published result stays recoverable on
+request.
 
 The meat trials are catalogued in
 [`difftactile/manual_or_experimental_data/iros_experiment_spec.md`](difftactile/manual_or_experimental_data/iros_experiment_spec.md)
 (straw depth vs. number of 5 mm steaks above it).
+
+### The `upstream-difftactile` tag
+
+One tag is published alongside `main`:
+
+| Tag | Commit | What it is |
+|---|---|---|
+| `upstream-difftactile` | `c9b348e` | The pristine [DiffTactile](https://difftactile.github.io/) state this project forked from, before any masters-project work. Upstream's original README is preserved here. |
+
+It marks the fork point, so you can separate inherited upstream code from the contribution of
+this project:
+
+```bash
+# What this project changed relative to upstream DiffTactile
+git diff upstream-difftactile..main --stat
+
+# Browse the upstream code as it was at the fork
+git checkout upstream-difftactile
+```
+
+Note that `main` does not descend linearly from this tag — the history was rewritten during
+development — so `git diff` is meaningful but `git log upstream-difftactile..main` is not.
+The tag is a reference point only; it is not a branch and there is no need to check it out to
+run anything in this README.
 
 ---
 
@@ -276,7 +291,7 @@ A fresh clone does **not** contain:
 | Detected initial marker positions | `difftactile/output/init-marker-positions.npz` | marker tracking, base graph | yes — `script_fisheye_model` |
 | Trained GNN weights + test-loader pickle | `saved_models_iros/final_segmentation_model_gnn_iros.pt`, `difftactile/output/test_loader_gnn_iros.pickle` | evaluation / ROC (needs **both**) | only by retraining |
 | Silicone dataset | `difftactile/manual_or_experimental_data/endgame/20250901-131547_dense` | silicone training/eval | from raw video via `script_endgame` |
-| Meat experiment trials | `difftactile/manual_or_experimental_data/iros_training_data/clean/` | `sim-to-meat-test` | from raw video via `script_iros_preprocess_data` |
+| Meat experiment trials | `difftactile/manual_or_experimental_data/iros_training_data/clean/` | the meat scenarios (`A-to-C`, `C-to-B`) | from raw video via `script_iros_preprocess_data` |
 | Raw experiment videos + robot poses | `.../iros_training_data/raw/<id>.{avi,npz}`, `endgame/…` | all preprocessing | no — must be supplied |
 | Fisheye calibration | `difftactile/output/fisheye_params.npz` | undistortion | yes, with your own checkerboard images |
 | Marker-tracker trajectories | `difftactile/output/marker_tracker/domain-adaptation-vascular-markers/traj_{0..3}_out.pkl` | **`script_main` construction** | from raw video via marker tracking |
@@ -398,9 +413,9 @@ from `iros_experiment_spec.md`. Produces, per trial, `clean/<trial_id>/marker_po
 **Silicone (`script_endgame`)** — a chain of directory-to-directory stages: interpolate/trim →
 dilate → extract markers → reorder → annotate (a manual cv2 click GUI) → line points → merge into
 the simulation `.npz` format → add dense labels, ending at the `_dense` directory that
-`exp_data_endgame` points to. Each stage is a method call in `endgame.main()`; on `iros` most are
-commented out, on `sim-to-meat-test` the full chain is enabled. **Uncomment the stages you need,
-in order.**
+`exp_data_endgame` points to. Each stage is a method call in `endgame.main()`. As shipped, the
+whole chain is commented out and only `count_annotation_dots()` runs, because the published
+`_dense` output is already in the data bundle. **Uncomment the stages you need, in order.**
 
 ### 3. Preparing datasets
 
