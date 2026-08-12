@@ -97,13 +97,39 @@ class PreMain:
         self.min_ixs = np.array(min_ixs, dtype=int)
         self.max_ixs = np.array(max_ixs, dtype=int)
 
+    # Width of the zero-velocity boundary band, in GRID NODES. It has to be a
+    # node count (not a distance) because it exists to give the MPM interpolation
+    # stencil room at the domain border, and that requirement is measured in
+    # cells. Its *physical* extent is therefore n_v0_single * d, which shrinks
+    # when the grid is refined -- see _origin_offset() for why that matters.
+    N_V0_SINGLE = 3 + 1
+
+    # Grid spacing the phantom's world placement was originally authored against.
+    # min_coords (and hence the phantom origin, the sensor start pose and the
+    # whole trajectory) used to be derived purely from node indices times d, so
+    # halving d silently translated the phantom away from the sensor. Anchoring
+    # to this reference spacing keeps the scene geometry fixed under refinement.
+    REFERENCE_GRID_SPACING = 0.010
+
+    def _origin_offset(self):
+        """Distance to add to min_coords so the phantom stays put as d changes.
+
+        The boundary band spans N_V0_SINGLE nodes, i.e. N_V0_SINGLE * d metres,
+        which halves every time the grid is refined. Padding it back out to the
+        extent it had at REFERENCE_GRID_SPACING keeps the phantom's world origin
+        -- and therefore its position relative to the sensor -- invariant.
+        """
+        return self.N_V0_SINGLE * (self.REFERENCE_GRID_SPACING - self.d)
+
     def get_num_mpm_grid_nodes_single_dim(self, i):
         l = self.p_dims[i]
         n_phantom = l / self.d
         n_phantom = int(np.ceil(n_phantom))
-        n_pad_single = self.pad_single / self.d
+        # Absorb the shrinking boundary band into the padding so the grid still
+        # physically covers the phantom plus the same margin as before.
+        n_pad_single = (self.pad_single + self._origin_offset()) / self.d
         n_pad_single = int(np.ceil(n_pad_single))
-        n_v0_single = 3+1
+        n_v0_single = self.N_V0_SINGLE
         if i == 0 or i == 1:
             arr = np.array([
                 n_v0_single,
@@ -129,10 +155,13 @@ class PreMain:
             return n, arr, min_ix, max_ix
     
     def min_coords_single_dim(self, i):
+        # x/y already carry the compensation through n_pad_single; z has no
+        # padding ahead of the phantom, so it is offset explicitly here. Both
+        # branches then yield the same world origin at any grid resolution.
         if i == 0 or i == 1:
             return (sum(self.layouts[i][:2])+0.5)*self.d
         else:
-            return (sum(self.layouts[i][:1])+0.5)*self.d
+            return (sum(self.layouts[i][:1])+0.5)*self.d + self._origin_offset()
 
     def get_min_coords(self):
         res = []
