@@ -222,7 +222,7 @@
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,
         "camera_offset": 5.000e+00,
-        "particle_size_normal": 9.000e-04,
+        "particle_size_normal": 4.500e-04,
         "particle_size_keypoint": 9.000e-03,
         "tactile_readout_width": 9.600e+02,
         "tactile_readout_height": 5.400e+02,
