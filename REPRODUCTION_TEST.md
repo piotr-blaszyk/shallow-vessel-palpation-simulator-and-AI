@@ -12,6 +12,12 @@ protection, cwd-independent paths). The numbers below are from the second run.
 
 ## Procedure
 
+> This is the transcript of the run as it happened, kept verbatim. It cloned
+> `iros` because that was the submission branch at the time. **Use `main`
+> today** — it is the only supported branch, and `git clone <repo>` already
+> lands there. The scenario names below are likewise the pre-paper ones, still
+> accepted as aliases.
+
 ```bash
 git clone --branch iros <repo> shallow-vessel-palpation-simulator-and-AI && cd shallow-vessel-palpation-simulator-and-AI
 ./data/restore_data.sh --verify                       # expect: 23 paths MISSING

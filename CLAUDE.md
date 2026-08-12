@@ -191,31 +191,41 @@ container, which is why `restore_data.sh` replaces them with real files.
 
 ## Branches
 
-**All three paper models can be trained and evaluated from `main`**, selected by name (see
-above) — no branch switching is needed to train a different model. The per-experiment branches
-below are a historical record; changes should target `main` rather than reviving them.
+### `main` is the only supported branch — work there
 
-**Do not merge `sim-to-meat-test` into `main`.** It predates `main` (it has no `paths.py`, no
-Docker setup, no data-bundle scripts) so the merge deletes that infrastructure, and `main`
-already carries its useful content — including a normalisation fix that raises the reported
-cross-domain vein IoU from 0.034 to 0.198.
+**Only `main` is used by end users and only `main` is maintained.** Unless the user explicitly
+names another branch:
 
-`main` tracks the latest work (identical to `iros`). Three parallel branches matter:
+- **Make every change on `main`.** Do not create per-experiment branches, and do not revive,
+  update or "fix" the historical ones — they are frozen snapshots.
+- **Only `main`'s documentation is kept current.** Do not sync READMEs across branches.
+- **Do not merge any historical branch into `main`.** They all predate it.
+
+All three paper models train and evaluate from `main` (see above), so there is never a reason
+to switch branches to reach a different model.
+
+**Do not merge `sim-to-meat-test` into `main`** in particular. It predates `main` (no
+`paths.py`, no Docker setup, no data-bundle scripts), so the merge deletes that infrastructure,
+and `main` already carries its useful content — including a normalisation fix that raises the
+reported cross-domain vein IoU from 0.034 to 0.198.
+
+The historical branches, for reference only:
 
 - **`iros`** — IROS submission state. Sim-to-real onto a **silicone** vascular phantom. GNN
-  config is the small model (`latent_dim` 64, 30 epochs).
-- **`sim-to-silicone`** — currently **the same commit as `iros`** (zero diff); the silicone
-  experiment as submitted.
-- **`sim-to-meat-test`** — 4 commits ahead of `iros`. Transfers the model to **real meat** with
-  plastic straws as pseudo-vessels. Differs in: a much larger GNN (`latent_dim` 256,
-  `small_input_dim` 248, `skip_dim` 128, 1 epoch, batch 16), `dataset.py::create_splits_iros`
-  routes all trials to the **test** split, `endgame.main()` re-enables the full cleaning
-  pipeline, and `script_iros_gnn.py` calls `main()` instead of `evaluate_and_plot_roc()`.
+  config is the small model (`latent_dim` 64, 30 epochs). Currently the same commit as `main`.
+- **`sim-to-silicone`** — the same commit as `iros`; the silicone experiment as submitted.
+- **`sim-to-meat-test`** — obsolete. Transfers the model to **real meat** with plastic straws
+  as pseudo-vessels. Differs in: a much larger GNN (`latent_dim` 256, `small_input_dim` 248,
+  `skip_dim` 128, 1 epoch, batch 16), `dataset.py::create_splits_iros` routes all trials to the
+  **test** split, `endgame.main()` re-enables the full cleaning pipeline, and
+  `script_iros_gnn.py` calls `main()` instead of `evaluate_and_plot_roc()`. Superseded by the
+  `A-to-C` configuration.
 
 Tag `upstream-difftactile` preserves the pristine upstream DiffTactile state that `main`
 formerly pointed at.
 
-When editing, keep the four branches' READMEs consistent unless the change is branch-specific.
+Only `main`'s README is maintained. The historical branches keep whatever README they were
+frozen with — do not update them to match.
 
 ## Environment
 

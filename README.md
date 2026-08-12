@@ -53,8 +53,12 @@ interpreter, and passes the host X display through so the Taichi GGUI simulator 
 the NVIDIA driver, Docker, and the
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
+> **Use the `main` branch** — it is the only supported one, and a plain `git clone` already
+> puts you there. The other branches are frozen historical snapshots; see
+> [Branches](#branches).
+
 ```bash
-# 1. Clone
+# 1. Clone (defaults to main - the only supported branch)
 git clone https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI.git
 cd shallow-vessel-palpation-simulator-and-AI
 
@@ -143,19 +147,27 @@ Everything below documents the pipeline in detail, including how to run it outsi
 
 ## Branches
 
-> **All three of the paper's models can be trained and evaluated from `main`**, selected by
-> name (see [Quickstart](#quickstart-docker)) — there is no need to switch branches to train a
-> different model. The per-experiment branches below are retained as a historical record of
-> how the work developed.
+> ### 👉 Use `main`. Ignore every other branch.
+>
+> **`main` is the only supported branch.** It is the only one that is maintained, the only one
+> the documentation describes, and the only one the Docker image and Zenodo bundle are tested
+> against. All three of the paper's models train and evaluate from it, selected by name (see
+> [Quickstart](#quickstart-docker)) — there is never a reason to switch branches.
+>
+> Everything below is a **historical record** of how the work developed. Those branches are
+> frozen: they are not maintained, they do not receive fixes, and several are known to be
+> broken in ways `main` has since repaired. Do not base new work on them, and do not merge
+> them into `main`.
 
-Development happened on parallel branches, one per experiment. `main` tracks the latest state.
+Development originally happened on parallel branches, one per experiment. That structure is
+retained only so the exact code behind a given published result stays recoverable.
 
-| Branch | What it is | How it differs |
+| Branch | Status | What it is |
 |---|---|---|
-| **`main`** | Latest work, and the only branch you need. | Carries the unified code: all three (train → test) configurations, each in both `--train` and `--eval` mode. |
-| **`iros`** | The IROS submission state. Sim-to-real onto a **silicone vascular phantom**. | The reference implementation. Small GNN (`latent_dim` 64, `skip_dim` 32, 30 epochs, batch 4) by default; the large ICRA model is selected automatically for the sim-trained configurations. |
-| **`sim-to-silicone`** | The silicone-phantom experiment as submitted. | Identical to `iros`. Kept as a named pointer to the silicone experiment. |
-| **`sim-to-meat-test`** | *Historical.* Transfers the trained model to **real meat**, with plastic straws standing in for vessels beneath layers of steak. Superseded by the `A-to-C` configuration on `main`. | Diverged from, and now predates, `main` — it has none of the path, Docker or data-bundle infrastructure, and its sim-training entrypoint is disabled by a bare `return`. Much larger GNN (`latent_dim` 256, `small_input_dim` 248, `skip_dim` 128, batch 16, 1 epoch, lr 1e-3). `dataset.py::create_splits_iros` sends *all* trials to the **test** split (pure transfer, no retraining on meat). **Do not merge it into `main`** — `main` already carries its useful content, including a normalisation fix that raises the reported cross-domain vein IoU from 0.034 to 0.198. |
+| **`main`** | ✅ **Supported — use this.** | The unified code: all three (train → test) configurations, each in both `--train` and `--eval` mode. Everything in this README refers to `main`. |
+| `iros` | ⚠️ Frozen snapshot. | The IROS submission state, sim-to-real onto a **silicone vascular phantom**. Currently the same commit as `main`, kept as a named pointer to the submission. |
+| `sim-to-silicone` | ⚠️ Frozen snapshot. | The silicone-phantom experiment as submitted. Identical to `iros`. |
+| `sim-to-meat-test` | ❌ **Obsolete — do not use or merge.** | *Historical.* Transfers the model to **real meat**, plastic straws standing in for vessels beneath layers of steak. Superseded by the `A-to-C` configuration on `main`. It now **predates** `main`: no path, Docker or data-bundle infrastructure, and its sim-training entrypoint is disabled by a bare `return`. Merging it would delete that infrastructure, and `main` already carries its useful content — including a normalisation fix that raises the reported cross-domain vein IoU from 0.034 to 0.198. |
 
 The meat trials are catalogued in
 [`difftactile/manual_or_experimental_data/iros_experiment_spec.md`](difftactile/manual_or_experimental_data/iros_experiment_spec.md)
@@ -182,6 +194,7 @@ The meat trials are catalogued in
 ### Install
 
 ```bash
+# Defaults to main - the only supported branch (see Branches).
 git clone https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI.git
 cd shallow-vessel-palpation-simulator-and-AI
 
