@@ -57,7 +57,7 @@ the NVIDIA driver, Docker, and the
 > there. See [Branches and tags](#branches-and-tags).
 
 ```bash
-# 1. Clone (defaults to main - the only supported branch)
+# 1. Clone (main is the only branch)
 git clone https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI.git
 cd shallow-vessel-palpation-simulator-and-AI
 
@@ -77,8 +77,7 @@ docker exec -it difftactile ./docker/run_pipeline.sh check
 ### Reproduce the published results
 
 The paper's three models — one per (train → test) configuration over the simulated (**A**),
-silicone (**B**) and meat (**C**) datasets — are selected **by name**, with no source editing
-and no branch switching:
+silicone (**B**) and meat (**C**) datasets — are selected **by name**, with no source editing:
 
 ```bash
 # Evaluate the sim-trained GNN on the real SILICONE phantom -> ROC curve
@@ -148,21 +147,9 @@ Everything below documents the pipeline in detail, including how to run it outsi
 
 > ### 👉 `main` is the only branch.
 >
-> **`main` is the only supported branch, and the only branch this repository publishes.** It is
-> the only one that is maintained, the only one the documentation describes, and the only one
-> the Docker image and Zenodo bundle are tested against. All three of the paper's models train
-> and evaluate from it, selected by name (see [Quickstart](#quickstart-docker)) — there is never
-> a reason to switch branches.
-
-Development originally happened on parallel branches, one per experiment. Those branches have
-been removed from this repository: their useful content is all merged into `main`, and several
-were broken in ways `main` has since repaired. The full development history is retained
-privately by the author, so the exact code behind a given published result stays recoverable on
-request.
-
-The meat trials are catalogued in
-[`difftactile/manual_or_experimental_data/iros_experiment_spec.md`](difftactile/manual_or_experimental_data/iros_experiment_spec.md)
-(straw depth vs. number of 5 mm steaks above it).
+> Everything is on `main`: it is the only branch, the only one the documentation describes, and
+> the only one the Docker image and Zenodo bundle are tested against. All three of the paper's
+> models train and evaluate from it, selected by name (see [Quickstart](#quickstart-docker)).
 
 ### The `upstream-difftactile` tag
 
@@ -209,7 +196,7 @@ run anything in this README.
 ### Install
 
 ```bash
-# Defaults to main - the only supported branch (see Branches).
+# main is the only branch.
 git clone https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI.git
 cd shallow-vessel-palpation-simulator-and-AI
 
@@ -407,7 +394,10 @@ python -m difftactile.scripts.script_domain_adaptation       # sim-vs-real marke
 **Meat (`script_iros_preprocess_data`)** — decimates raw 1920×1080 AVIs by 15×, interpolates
 robot poses onto frames, detects and Hungarian-reorders markers, then projects the straw geometry
 through the fisheye camera model to derive a binary label per marker. Trial geometry is parsed
-from `iros_experiment_spec.md`. Produces, per trial, `clean/<trial_id>/marker_positions.npz`
+from
+[`iros_experiment_spec.md`](difftactile/manual_or_experimental_data/iros_experiment_spec.md),
+which catalogues the meat trials (straw depth vs. number of 5 mm steaks above it). Produces,
+per trial, `clean/<trial_id>/marker_positions.npz`
 `(T, 127, 2)` and `marker_labels.npz` `(T, 127)`, plus an overlay video for eyeballing labels.
 
 **Silicone (`script_endgame`)** — a chain of directory-to-directory stages: interpolate/trim →
@@ -444,7 +434,7 @@ The paper uses three datasets:
 
 and reports three separately trained models, one per (train → test) configuration. Each is
 selected **by name**, and each can be either trained from scratch or evaluated from the
-published checkpoint — no source editing and **no branch switching**:
+published checkpoint — with **no source editing**:
 
 ```bash
 # Train each of the three models from scratch
