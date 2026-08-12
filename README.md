@@ -763,13 +763,11 @@ interpreting the simulator's output correctly. The remainder are known rough edg
 - **Non-interactive by default.** Nothing blocks waiting for a window to be closed; inspect
   the saved figures in `difftactile/output/` instead. `DIFFTACTILE_INTERACTIVE=1` restores the
   blocking windows — see [Interactive windows](#interactive-windows).
-- **The annotation viewers favour display correctness over latency.** On compositing display
-  servers (Wayland/Xwayland), windows are assembled from a pool of buffers and a single
-  present can transiently expose a stale one, so the frame browsers behind
-  `docker/annotate_data.sh` present each frame twice per redraw. Stepping through frames is
-  therefore slightly less fluid than a native video player, but the behaviour is exact: every
-  keypress advances exactly one frame, and the displayed image always matches the frame index
-  in the overlay.
+- **The annotation viewers feel laggy, but they are correct.** The frame browsers behind
+  `docker/annotate_data.sh` draw each frame twice, because on Wayland/Xwayland a single draw
+  can briefly show the previous frame instead. Stepping through frames is therefore less
+  smooth than a normal video player, but what you see is always right: one keypress moves one
+  frame, and the image on screen always matches the frame number in the overlay.
 - **`script_main` can segfault at exit when the Taichi GGUI window is open** (exit code 139,
   "Segmentation fault (core dumped)"). This happens *after* `main()` has finished and printed
   `all done`, during CUDA/GGUI teardown, so **the collected trajectories are complete and
