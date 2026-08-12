@@ -62,6 +62,14 @@ def _env_int(name, default):
 
 HEADLESS = os.environ.get("DIFFTACTILE_HEADLESS", "0") == "1"
 
+# Whether the first of the two substeps in each collection loop enables the
+# sensor<->vein contact pair, so the loop sweeps the same trajectory once WITH a
+# subsurface vein and once WITHOUT it. That pairing is the point of the training
+# set (the GNN has to tell the two apart), but the vein half was hard-disabled
+# (`if False and j < 1`), leaving every substep running without a vein. Defaults
+# to 0 to preserve that committed behaviour; set to 1 to collect the pair.
+COLLECT_VEIN_PAIR = os.environ.get("DIFFTACTILE_VEIN_PAIR", "0") == "1"
+
 
 def _trajectory_indices():
     """Which trajectory types training-data collection should execute.
@@ -2611,10 +2619,14 @@ class Contact:
             for j in range(2):
                 print(f"training trajectory: {i}/{num_loops - 1}; substep: {j}/5")
                 self.generate_trajectories()
-                if False and j < 1:
+                if COLLECT_VEIN_PAIR and j < 1:
                     self.collision_ixs = [0, 2]
                 else:
                     self.collision_ixs = [0]
+                print(
+                    f"  substep {j}: collision_ixs={self.collision_ixs} "
+                    f"({'WITH vein' if 2 in self.collision_ixs else 'no vein'})"
+                )
                 self.randomise_contact_params()
                 # Which of the four trajectory types to execute. The PUBLISHED
                 # dataset (pickle_20250901_220921*) is entirely type 3,
