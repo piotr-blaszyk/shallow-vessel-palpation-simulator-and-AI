@@ -29,7 +29,7 @@ STUDY_DIR="${REPO_ROOT}/difftactile/manual_or_experimental_data/particle_spacing
 # Path of the study dir as seen from inside the container (repo is bind-mounted).
 C_REPO=/workspace/shallow-vessel-palpation-simulator-and-AI
 C_STUDY="${C_REPO}/difftactile/manual_or_experimental_data/particle_spacing_study"
-CONTAINER="${DIFFTACTILE_CONTAINER:-difftactile}"
+CONTAINER="${VESSEL_PALPATION_CONTAINER:-vessel-palpation}"
 TIMEOUT="${TIMEOUT:-60}"
 SHOT_INTERVAL=5
 XDISP=":95"

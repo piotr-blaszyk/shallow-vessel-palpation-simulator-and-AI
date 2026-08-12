@@ -5,7 +5,7 @@
 #
 set -euo pipefail
 
-CONTAINER_NAME="${DIFFTACTILE_CONTAINER:-difftactile}"
+CONTAINER_NAME="${VESSEL_PALPATION_CONTAINER:-vessel-palpation}"
 
 if [ -z "$(docker ps -q -f "name=^/${CONTAINER_NAME}$")" ]; then
     echo "Container '${CONTAINER_NAME}' is not running."

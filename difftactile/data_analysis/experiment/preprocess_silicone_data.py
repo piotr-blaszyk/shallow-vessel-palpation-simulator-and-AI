@@ -1,3 +1,4 @@
+import copy
 import os
 import glob
 import numpy as np
@@ -242,6 +243,24 @@ class SiliconePreprocessData:
         so there is nothing for it to do unattended. Without
         DIFFTACTILE_INTERACTIVE=1 it returns immediately, leaving any existing
         `.pkl` annotations on disk untouched for the later stages to consume.
+
+        Opening the tool on already-annotated videos redraws what is on disk, so
+        the same window reviews existing annotations and creates new ones.
+
+        Two safeguards, because it is easy to modify a published annotation set
+        by accident while only meaning to look at it:
+
+        * **Editing is off until you press `g`.** Clicks are ignored while the
+          guard is on, which is the default. The setting is per session, not per
+          frame or per video, so it stays as you left it while browsing.
+        * **`z` undoes the last point added in THIS session**, across videos.
+          Points loaded from disk are never on the undo stack, so pressing `z`
+          more times than you made annotations cannot eat into previous work.
+
+        Nothing reaches disk until `p` (save) or `q` (save and quit). `x` quits
+        **without** saving, discarding everything changed since the last save
+        (confirmed by a second `x`, so a mistyped key cannot throw work away).
+        Killing the process has the same effect as `x`.
         """
         if not is_interactive():
             print(
@@ -271,69 +290,231 @@ class SiliconePreprocessData:
                 cap.release()
                 annotations[avi_path] = [[] for _ in range(n_frames)]
         video_idx = 0
-        frame_idx = 0
+        # Frame index lives in a dict so the render/key callbacks below can
+        # mutate it without `nonlocal` gymnastics; `dirty` is set by the mouse
+        # callback to request a repaint after a click.
+        state = {"frame": 0, "dirty": False}
+
+        # Editing guard, toggled with `g` and held for the whole session. Off by
+        # default so that merely opening the tool to look at existing
+        # annotations cannot modify them with a stray click.
+        edit_enabled = [False]
+
+        # Points added during THIS session, most recent last, as
+        # (avi_path, frame_idx). `z` pops from here, so undo can walk back across
+        # videos and frames in the order the points were actually placed, and
+        # stops dead once the session's own additions are exhausted - annotations
+        # loaded from disk are never pushed here and so can never be undone.
+        session_additions = []
+
+        # Snapshot of what is on disk, so `x` can report whether there is
+        # anything to discard. Updated on every save, because after `p` the
+        # on-disk state IS the current state and only later edits are unsaved.
+        saved_state = copy.deepcopy(annotations)
+
+        def save_all():
+            """Write every video's annotations and re-baseline `saved_state`."""
+            for path in avi_files:
+                base = os.path.splitext(os.path.basename(path))[0]
+                pkl_path = os.path.join(output_dir, f"{base}.pkl")
+                with open(pkl_path, "wb") as f:
+                    pickle.dump(annotations[path], f)
+            saved_state.clear()
+            saved_state.update(copy.deepcopy(annotations))
+
+        def unsaved_changes():
+            """True when the in-memory annotations differ from what was saved."""
+            return annotations != saved_state
 
         def mouse_callback(event, x, y, flags, param):
             if event == cv2.EVENT_LBUTTONDOWN:
+                if not edit_enabled[0]:
+                    print(
+                        "Editing is locked - press 'g' to enable adding points "
+                        "(the setting lasts for the whole session)."
+                    )
+                    return
                 avi_path = avi_files[video_idx]
+                frame_idx = state["frame"]
                 frame_annots = annotations[avi_path][frame_idx]
                 if len(frame_annots) < 4:
                     annotations[avi_path][frame_idx].append([x, y])
-                    print(f"Added point {len(frame_annots)}/{4}")
+                    session_additions.append((avi_path, frame_idx))
+                    # Ask the browser loop to repaint so the new dot appears
+                    # without needing a keypress.
+                    state["dirty"] = True
+                    print(f"Added point {len(frame_annots) + 1}/{4}")
                 else:
                     print("Maximum 4 points allowed.")
 
         cv2.namedWindow("Annotator")
         cv2.setMouseCallback("Annotator", mouse_callback)
-        while True:
+
+        # Decoded frames per video, cached: the loop used to re-open the .avi and
+        # seek on every keypress, which is the bulk of the per-step cost.
+        frame_cache = {}
+
+        def video_frames(path):
+            if path not in frame_cache:
+                cap = cv2.VideoCapture(path)
+                frames = []
+                while True:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    frames.append(frame)
+                cap.release()
+                frame_cache[path] = frames
+            return frame_cache[path]
+
+        def render():
+            """Frame with annotations and status lines, or None to end."""
             avi_path = avi_files[video_idx]
-            cap = cv2.VideoCapture(avi_path)
-            n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            frame_idx = max(0, min(frame_idx, n_frames - 1))
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            ret, frame = cap.read()
-            cap.release()
-            if not ret:
-                print(f"Failed to read frame {frame_idx} from {avi_path}")
-                break
-            display = frame.copy()
-            frame_annots = annotations[avi_path][frame_idx]
+            frames = video_frames(avi_path)
+            if not frames:
+                print(f"Failed to read frames from {avi_path}")
+                return None
+            n_frames = len(frames)
+            state["frame"] = max(0, min(state["frame"], n_frames - 1))
+            display = frames[state["frame"]].copy()
+            frame_annots = annotations[avi_path][state["frame"]]
             for idx, pt in enumerate(frame_annots):
                 color = colors[idx % len(colors)]
                 cv2.circle(display, (int(pt[0]), int(pt[1])), 30, color, -1)
-            text = f"Video {video_idx + 1}/{len(avi_files)} | Frame {frame_idx + 1}/{n_frames} | Annotations {len(frame_annots)}/4"
+            text = (
+                f"Video {video_idx + 1}/{len(avi_files)} | "
+                f"Frame {state['frame'] + 1}/{n_frames} | "
+                f"Annotations {len(frame_annots)}/4"
+            )
             cv2.putText(
                 display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
             )
-            imshow(cv2, "Annotator", display)
-            key = cv2.waitKey(20) & 0xFF
+            # Second line: whether a click will do anything, and how much of this
+            # session's work `z` can still take back. Red when locked, green when
+            # editing, so the state is obvious at a glance.
+            if edit_enabled[0]:
+                status = f"EDIT ON (g to lock) | undo available: {len(session_additions)}"
+                status_colour = (0, 255, 0)
+            else:
+                status = "EDIT LOCKED - press g to enable clicking"
+                status_colour = (0, 0, 255)
+            cv2.putText(
+                display, status, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.0,
+                status_colour, 2
+            )
+            # Third line: whether anything would be lost by quitting with `x`.
+            dirty = unsaved_changes()
+            exit_hint = (
+                "UNSAVED changes | p save, q save+quit, x quit WITHOUT saving"
+                if dirty
+                else "no unsaved changes | q or x to quit"
+            )
+            cv2.putText(
+                display, exit_hint, (20, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
+                (0, 200, 255) if dirty else (200, 200, 200), 2
+            )
+            return display
+
+        def on_key(key):
+            """Map a keypress to a state change; see the docstring for bindings."""
+            nonlocal video_idx
+            avi_path = avi_files[video_idx]
+            n_frames = len(video_frames(avi_path))
             if key == ord("q"):
-                for avi_path in avi_files:
-                    base = os.path.splitext(os.path.basename(avi_path))[0]
-                    pkl_path = os.path.join(output_dir, f"{base}.pkl")
-                    with open(pkl_path, "wb") as f:
-                        pickle.dump(annotations[avi_path], f)
-                break
-            elif key == ord("m"):
+                save_all()
+                return "quit"
+            if key == ord("x"):
+                # Quit WITHOUT saving. Nothing has reached disk unless `p` was
+                # pressed, so this drops the in-memory state - which is why the
+                # prompt talks about changes since the last save, not launch.
+                if not unsaved_changes():
+                    print("No unsaved changes; exiting.")
+                    return "quit"
+                print(
+                    f"Discard {len(session_additions)} unsaved point(s) added this "
+                    "session and any frame clears, and quit? Press x again to "
+                    "confirm, or any other key to stay."
+                )
+                # Confirm on a second press, so a mistyped key cannot throw away
+                # work the same way an accidental `q` used to save it.
+                if (wait_key(cv2, 3000) & 0xFF) == ord("x"):
+                    print("Exited without saving. Files on disk are unchanged.")
+                    return "quit"
+                print("Cancelled; still editing.")
+                return None
+            if key == ord("m"):
                 video_idx = (video_idx + 1) % len(avi_files)
-                frame_idx = 0
-            elif key == ord("n"):
+                state["frame"] = 0
+                return "redraw"
+            if key == ord("n"):
                 video_idx = (video_idx - 1) % len(avi_files)
-                frame_idx = 0
-            elif key == ord("k"):
-                frame_idx += 1
-            elif key == ord("j"):
-                frame_idx -= 1
-            elif key == ord("d"):
-                annotations[avi_path][frame_idx] = []
-                print("Deleted annotations for this frame.")
-            elif key == ord("p"):
-                for avi_path in avi_files:
-                    base = os.path.splitext(os.path.basename(avi_path))[0]
-                    pkl_path = os.path.join(output_dir, f"{base}.pkl")
-                    with open(pkl_path, "wb") as f:
-                        pickle.dump(annotations[avi_path], f)
+                state["frame"] = 0
+                return "redraw"
+            if key == ord("k"):
+                new_frame = min(state["frame"] + 1, n_frames - 1)
+                if new_frame == state["frame"]:
+                    return None
+                state["frame"] = new_frame
+                return "redraw"
+            if key == ord("j"):
+                new_frame = max(state["frame"] - 1, 0)
+                if new_frame == state["frame"]:
+                    return None
+                state["frame"] = new_frame
+                return "redraw"
+            if key == ord("g"):
+                edit_enabled[0] = not edit_enabled[0]
+                print(
+                    "Editing ENABLED - clicks now add points."
+                    if edit_enabled[0]
+                    else "Editing LOCKED - clicks are ignored."
+                )
+                return "redraw"
+            if key == ord("z"):
+                if not session_additions:
+                    print(
+                        "Nothing to undo: no points were added in this session. "
+                        "(Annotations loaded from disk are never undone.)"
+                    )
+                    return None
+                undo_path, undo_frame = session_additions.pop()
+                frame_points = annotations[undo_path][undo_frame]
+                if frame_points:
+                    frame_points.pop()
+                # Jump to wherever that point was, so the undo is visible rather
+                # than silently happening on an off-screen frame.
+                video_idx = avi_files.index(undo_path)
+                state["frame"] = undo_frame
+                print(
+                    f"Undid one point ({len(session_additions)} left from this session)."
+                )
+                return "redraw"
+            if key == ord("d"):
+                # Clearing a frame drops points this session added there too, so
+                # they must leave the undo stack - otherwise a later `z` would
+                # pop a point that no longer exists and remove someone else's.
+                removed = len(annotations[avi_path][state["frame"]])
+                annotations[avi_path][state["frame"]] = []
+                session_additions[:] = [
+                    entry for entry in session_additions
+                    if entry != (avi_path, state["frame"])
+                ]
+                print(f"Deleted {removed} annotation(s) for this frame.")
+                return "redraw"
+            if key == ord("p"):
+                save_all()
                 print("Annotations saved.")
+                return "redraw"
+            return None
+
+        def needs_repaint():
+            """True when a mouse click changed the annotations since last draw."""
+            if state["dirty"]:
+                state["dirty"] = False
+                return True
+            return False
+
+        run_frame_browser(cv2, "Annotator", render, on_key, needs_repaint)
         destroy_windows(cv2)
         for _ in range(10):
             cv2.waitKey(1)
@@ -781,6 +962,18 @@ def main():
     # )
 
     e.count_annotation_dots()
+
+
+def annotate():
+    """Open the silicone click-annotator (create AND review annotations).
+
+    Exposed as its own entrypoint because `main()` above is a commented-out menu
+    of the full preprocessing pipeline; this reaches the one stage that is a
+    manual tool without editing source. `annotate()` loads any existing `.pkl`
+    for each video and redraws it, so the same window both reviews the shipped
+    annotations and adds to them.
+    """
+    SiliconePreprocessData().annotate()
 
 
 if __name__ == "__main__":

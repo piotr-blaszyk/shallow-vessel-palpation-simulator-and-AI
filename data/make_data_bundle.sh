@@ -79,9 +79,15 @@ copy_tree "difftactile/output/training_data/pickle_20250901_220921_reordered_den
 echo "[2/4] Real experimental data"
 # Silicone: only the final _dense stage is consumed by the GNN.
 copy_tree "difftactile/manual_or_experimental_data/silicone_training_data/20250901-131547_dense"
-# Meat: training reads only the two .npz per trial; the marker_labels.avi
-# overlays (81 MB) are visualisation and are deliberately excluded.
+# Meat: training reads only the two .npz per trial. `frames.mp4` is the 26-frame
+# decimated recording per trial (~2.3 MB, ~52 MB total), included so the
+# annotation viewer can draw the labels over the real camera images; its frames
+# correspond 1:1 with marker_labels.npz. Built by
+# `script_make_meat_clean_videos` from meat_training_data/raw/, which is NOT
+# shipped (1.6 GB). The old marker_labels.avi overlays (81 MB) stay excluded -
+# frames.mp4 plus the labels reproduces them at a fraction of the size.
 copy_tree "difftactile/manual_or_experimental_data/meat_training_data/clean" -name '*.npz'
+copy_tree "difftactile/manual_or_experimental_data/meat_training_data/clean" -name 'frames.mp4'
 
 echo "[3/4] Trained checkpoints"
 copy_file "saved_models_sim/final_segmentation_model_gnn_sim.pt"

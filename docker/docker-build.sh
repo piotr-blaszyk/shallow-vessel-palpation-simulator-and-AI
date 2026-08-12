@@ -13,7 +13,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE_NAME="${DIFFTACTILE_IMAGE:-difftactile:cuda12.6}"
+IMAGE_NAME="${VESSEL_PALPATION_IMAGE:-vessel-palpation:cuda12.6}"
 
 echo "=============================================================="
 echo " Building image: ${IMAGE_NAME}"

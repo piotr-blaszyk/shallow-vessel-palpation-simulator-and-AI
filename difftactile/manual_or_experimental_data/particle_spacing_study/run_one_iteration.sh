@@ -19,7 +19,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 C_REPO=/workspace/shallow-vessel-palpation-simulator-and-AI
 REL_OUT="difftactile/manual_or_experimental_data/particle_spacing_study/iteration_${FACTOR}"
 OUT="${REPO_ROOT}/${REL_OUT}"
-CONTAINER="${DIFFTACTILE_CONTAINER:-difftactile}"
+CONTAINER="${VESSEL_PALPATION_CONTAINER:-vessel-palpation}"
 
 mkdir -p "${OUT}"
 rm -f "${OUT}"/shot_*.png

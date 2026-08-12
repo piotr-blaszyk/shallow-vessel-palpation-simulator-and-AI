@@ -1,10 +1,13 @@
+import os
 import pickle
+import sys
 import time
 
 import cv2
 import matplotlib
 from difftactile.main.display import (
-    destroy_windows, imshow, is_headless, iteration_limit, prompt, wait_key,
+    destroy_windows, imshow, is_headless, iteration_limit, move_window, prompt,
+    wait_key,
 )
 # Non-interactive backend before pyplot is imported, so plt.figure() does not
 # try to open a Tk window on a display-less machine.
@@ -18,16 +21,155 @@ from tqdm import tqdm
 
 from difftactile.cnn.dataset import *
 from difftactile.cnn.gnn import *
+from difftactile.main.paths import repo_path
+
+
+def _segmentation_gnn(arch):
+    """Build the arch-aware GNN from `cnn/segmentation_gnn.py`.
+
+    Imported inside the function rather than at module scope on purpose.
+    `cnn/gnn.py` and `cnn/segmentation_gnn.py` each define a class called `GNN`,
+    and several modules reach this file through `from ... import *` chains
+    (predict_exp.py among them), which resolve `GNN` to whichever name this
+    module happens to export. A module-level import here would silently rebind
+    their `GNN` to the other class and break checkpoint loading, so the
+    arch-aware class is kept out of this module's namespace entirely.
+    """
+    from difftactile.cnn.segmentation_gnn import GNN as SegmentationGNN
+    return SegmentationGNN(arch=arch)
+
+
+def has_flat_stats_dict(all_stats):
+    """True when a stats mapping is a single flat stats dict.
+
+    Meat-scheme loaders store statistics flat; simulation loaders key them by
+    curriculum difficulty. Detected by looking for a float difficulty key, since
+    what is unpickled here is the `dataset_stats` value rather than the whole
+    test-loader dict that `has_flat_stats()` inspects.
+    """
+    return not any(isinstance(k, float) for k in all_stats)
+
+
+# The six canonical scenarios the prediction viewer can be pointed at:
+# each of the three (train -> test) configurations, loaded either from the
+# published checkpoint or from one retrained locally with `--train`.
+#
+#   arch          : architecture the checkpoint was trained with
+#   ckpt_key      : SYSTEM_PARAMS.files key of the published checkpoint
+#   stats_key     : test-loader pickle holding the normalisation statistics
+#   test_dataset  : which dataset the predictions are shown on
+VIEWER_SCENARIOS = {
+    "A-to-B": {
+        "description": "train on simulation (A), view predictions on silicone (B)",
+        "arch": "large",
+        "ckpt_key": "final_segmentation_model_gnn_sim",
+        "stats_key": "test_loader_gnn_sim",
+        "test_dataset": "silicone",
+    },
+    "C-to-B": {
+        "description": "train on meat (C), view predictions on silicone (B)",
+        "arch": "compact",
+        "ckpt_key": "final_segmentation_model_gnn_meat",
+        "stats_key": "test_loader_gnn_meat",
+        "test_dataset": "silicone",
+    },
+    "A-to-C": {
+        "description": "train on simulation (A), view predictions on meat (C)",
+        "arch": "large",
+        "ckpt_key": "final_segmentation_model_gnn_sim",
+        "stats_key": "test_loader_gnn_sim",
+        "test_dataset": "meat",
+    },
+}
+
+
+def _retrained_variant(rel, config):
+    """Path of the `*_retrained_<config>` artifact matching a published one.
+
+    Mirrors `segmentation_gnn._retrained_path()`, which is where a `--train` run
+    writes so that the published checkpoints survive.
+    """
+    base, ext = os.path.splitext(rel)
+    return f"{base}_retrained_{config}{ext}"
 
 
 class Visualisation:
-    def __init__(self):
-        if SYSTEM_PARAMS.meta.cnn_gnn == 0:
-            self.model_path = SYSTEM_PARAMS.files.final_segmentation_model
-            self.test_loader = SYSTEM_PARAMS.files.test_loader
-        elif SYSTEM_PARAMS.meta.cnn_gnn == 1:
-            self.model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn
-            self.test_loader = SYSTEM_PARAMS.files.test_loader_gnn_sim
+    def __init__(self, scenario=None, weights="pretrained"):
+        """Interactive viewer for per-frame predictions.
+
+        With `scenario=None` the historical behaviour is kept: the checkpoint and
+        test-loader come from `meta.cnn_gnn` and the dataset from the hardcoded
+        `if True:` block in visualise_gnn().
+
+        Passing one of VIEWER_SCENARIOS selects the model weights AND the test
+        dataset together, so all six canonical scenarios are reachable by name
+        instead of by editing source. `weights` is "pretrained" (the published
+        checkpoint) or "retrained" (what a local `--train` run wrote).
+        """
+        self.scenario = scenario
+        self.weights = weights
+        self.scenario_cfg = None
+
+        if scenario is None:
+            if SYSTEM_PARAMS.meta.cnn_gnn == 0:
+                self.model_path = SYSTEM_PARAMS.files.final_segmentation_model
+                self.test_loader = SYSTEM_PARAMS.files.test_loader
+            elif SYSTEM_PARAMS.meta.cnn_gnn == 1:
+                self.model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn
+                self.test_loader = SYSTEM_PARAMS.files.test_loader_gnn_sim
+            return
+
+        if scenario not in VIEWER_SCENARIOS:
+            raise ValueError(
+                f"unknown scenario {scenario!r}; expected one of {list(VIEWER_SCENARIOS)}"
+            )
+        cfg = VIEWER_SCENARIOS[scenario]
+        self.scenario_cfg = cfg
+        ckpt_rel = getattr(SYSTEM_PARAMS.files, cfg["ckpt_key"])
+        stats_rel = getattr(SYSTEM_PARAMS.files, cfg["stats_key"])
+        if weights == "retrained":
+            ckpt_rel = _retrained_variant(ckpt_rel, scenario)
+            stats_rel = _retrained_variant(stats_rel, scenario)
+        self.model_path = repo_path(ckpt_rel)
+        self.test_loader = repo_path(stats_rel)
+        print(f"=== {scenario} [{weights}]: {cfg['description']} ===")
+        print(f"checkpoint:  {self.model_path}")
+        print(f"stats:       {self.test_loader}")
+
+    def _build_scenario_dataset(self, all_stats):
+        """Dataset for the selected scenario, normalised as the checkpoint expects."""
+        cfg = self.scenario_cfg
+        if has_flat_stats_dict(all_stats):
+            stats, difficulty = all_stats, None
+        else:
+            difficulty = 1.0 if 1.0 in all_stats else next(iter(all_stats))
+            stats = all_stats[difficulty]
+
+        if cfg["test_dataset"] == "silicone":
+            full_dataset = MyDataset(
+                scheme="single_dataset",
+                sim_exp="exp",
+                data_dir=SYSTEM_PARAMS.files.exp_data_silicone,
+                apply_augmentations=False,
+                name="silicone",
+            )
+            _, _, test_dataset = full_dataset.create_splits(
+                train_size=0.0, val_size=0.0, test_size=1.0
+            )
+            if difficulty is not None:
+                test_dataset.set_difficulty_level(difficulty)
+        else:
+            full_dataset = MyDataset(
+                scheme="meat",
+                sim_exp="apple",
+                data_dir="banana",
+                apply_augmentations="cherry",
+                name="meat",
+            )
+            _, _, test_dataset = full_dataset.create_splits(all_to_test=True)
+        test_dataset.set_stats(stats)
+        test_dataset.eval()
+        return test_dataset
 
     @staticmethod
     def calculate_iou(ground_truth, prediction):
@@ -422,11 +564,15 @@ class Visualisation:
         adjacency_matrix = base_graph_data['adjacency_matrix']
 
         if mode == 'predictions':
-            # Initialize model
-            model = GNN()
-            model.load_state_dict(torch.load(self.model_path))
-            model.eval()
+            # Initialize model. A named scenario dictates the architecture, since
+            # a checkpoint only loads into the one it was trained with.
+            if self.scenario_cfg is not None:
+                model = _segmentation_gnn(self.scenario_cfg["arch"])
+            else:
+                model = GNN()
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model.load_state_dict(torch.load(self.model_path, map_location=device))
+            model.eval()
             model = model.to(device)
 
         # Load test data
@@ -444,7 +590,18 @@ class Visualisation:
                 num_workers=NUM_WORKERS
             )
         elif data_source == 'fresh_dataset':  # dataset mode
-            if True:
+            # A named scenario selects the dataset (and its normalisation) to
+            # match the checkpoint; otherwise fall through to the historical
+            # hardcoded if True/if False toggle below.
+            if self.scenario_cfg is not None:
+                test_dataset = self._build_scenario_dataset(all_stats)
+                data_loader = DataLoader(
+                    test_dataset,
+                    batch_size=BATCH_SIZE,
+                    shuffle=False,
+                    num_workers=NUM_WORKERS,
+                )
+            elif True:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="exp",
@@ -458,19 +615,24 @@ class Visualisation:
                     data_dir=SYSTEM_PARAMS.files.sim_data,
                     apply_augmentations=True,
                 )
-            _, _, test_dataset = full_dataset.create_splits(
-                train_size=0.0,
-                val_size=0.0,
-                test_size=1.0
-            )
-            target_difficulty = 1.0
-            stats = all_stats[target_difficulty]
-            test_dataset.set_stats(stats)
-            test_dataset.set_difficulty_level(target_difficulty)
-            test_dataset.eval()
-            data_loader = DataLoader(
-                test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
-            )
+            # Legacy path only: the scenario branch above has already built and
+            # normalised its dataset, and would be overwritten by this block
+            # (which also assumes a difficulty-keyed stats dict that the meat
+            # loader does not have).
+            if self.scenario_cfg is None:
+                _, _, test_dataset = full_dataset.create_splits(
+                    train_size=0.0,
+                    val_size=0.0,
+                    test_size=1.0
+                )
+                target_difficulty = 1.0
+                stats = all_stats[target_difficulty]
+                test_dataset.set_stats(stats)
+                test_dataset.set_difficulty_level(target_difficulty)
+                test_dataset.eval()
+                data_loader = DataLoader(
+                    test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
+                )
         elif data_source == 'exp_npz':
             exp_test_dataset_grid_search = MyDataset(
                 mode='exp',
@@ -800,12 +962,12 @@ class Visualisation:
             
             sep_w = 20
             sep_h = 130
-            cv2.moveWindow('Ground Truth', 0, 0)
+            move_window(cv2, 'Ground Truth', 0, 0)
             if mode == 'predictions':
-                cv2.moveWindow('Hard Prediction', w + sep_w, 0)
-                cv2.moveWindow('Confusion Matrix', 0, h + sep_h)
-                cv2.moveWindow('Soft Prediction', w + sep_w, h + sep_h)
-                cv2.moveWindow('Metadata', 2 * (w + sep_w), 0)
+                move_window(cv2, 'Hard Prediction', w + sep_w, 0)
+                move_window(cv2, 'Confusion Matrix', 0, h + sep_h)
+                move_window(cv2, 'Soft Prediction', w + sep_w, h + sep_h)
+                move_window(cv2, 'Metadata', 2 * (w + sep_w), 0)
             
             if need_to_wait_3:
                 # first frame delay
@@ -998,9 +1160,32 @@ class Visualisation:
 
 
 def main():
-    v = Visualisation()
+    """Open the interactive per-frame prediction viewer.
+
+    With no arguments the historical behaviour is kept. Pass one of the three
+    configurations to select the checkpoint and the test dataset together:
+
+        python -m difftactile.scripts.script_visualise A-to-B
+        python -m difftactile.scripts.script_visualise A-to-C --retrained
+
+    The configuration may also come from DIFFTACTILE_SCENARIO and the weight
+    source from DIFFTACTILE_WEIGHTS (pretrained | retrained).
+    """
+    argv = sys.argv[1:]
+    flags = [a for a in argv if a.startswith("--")]
+    positional = [a for a in argv if not a.startswith("--")]
+
+    scenario = positional[0] if positional else os.environ.get("DIFFTACTILE_SCENARIO")
+    if "--retrained" in flags:
+        weights = "retrained"
+    elif "--pretrained" in flags:
+        weights = "pretrained"
+    else:
+        weights = os.environ.get("DIFFTACTILE_WEIGHTS", "pretrained")
+
+    v = Visualisation(scenario=scenario, weights=weights)
     v.visualise_gnn(
-        mode='predictions', 
+        mode='predictions',
         data_source='fresh_dataset'
     )
 

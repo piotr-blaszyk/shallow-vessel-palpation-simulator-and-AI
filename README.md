@@ -74,7 +74,7 @@ wget https://zenodo.org/records/21900934/files/shallow-vessel-palpation-data.tar
 ./docker/docker-run.sh
 
 # 4. Verify GPU, dependencies and data are all in place
-docker exec -it difftactile ./docker/run_pipeline.sh check
+docker exec -it vessel-palpation ./docker/run_pipeline.sh check
 ```
 
 ### Reproduce the published results
@@ -84,16 +84,16 @@ silicone (**B**) and meat (**C**) datasets — are selected **by name**, with no
 
 ```bash
 # Evaluate the sim-trained GNN on the real SILICONE phantom -> ROC curve
-docker exec -it difftactile ./docker/run_pipeline.sh A-to-B
+docker exec -it vessel-palpation ./docker/run_pipeline.sh A-to-B
 
 # Cross-domain: test the sim-trained checkpoint on real MEAT (no retraining)
-docker exec -it difftactile ./docker/run_pipeline.sh A-to-C
+docker exec -it vessel-palpation ./docker/run_pipeline.sh A-to-C
 
 # Train on real MEAT trials, test on silicone
-docker exec -it difftactile ./docker/run_pipeline.sh C-to-B
+docker exec -it vessel-palpation ./docker/run_pipeline.sh C-to-B
 
 # ...or all three in sequence
-docker exec -it difftactile ./docker/run_pipeline.sh all-scenarios
+docker exec -it vessel-palpation ./docker/run_pipeline.sh all-scenarios
 ```
 
 Each configuration also takes `--train` (reproduce the model from scratch) or `--eval` (load
@@ -108,6 +108,75 @@ configurations in sequence would silently change the reported AUC. The `<config>
 keeps A→B and A→C apart, since they share the same underlying `*_sim` artifact names. Pass
 `DIFFTACTILE_OVERWRITE_PUBLISHED=1` if you deliberately want to replace them.
 
+### AUROC for all six scenarios
+
+The three configurations above, each scored from either the published checkpoint or one you
+trained yourself, give six scenarios. `script_auroc_all_scenarios` measures all of them in one
+pass — per **marker node across video frames**, not from a reprojected phantom map:
+
+```bash
+# score every scenario whose checkpoint is present -> AUROC_RESULTS.md
+docker exec -it vessel-palpation python -m difftactile.scripts.script_auroc_all_scenarios
+
+# published checkpoints only (no training needed)
+docker exec -it vessel-palpation python -m difftactile.scripts.script_auroc_all_scenarios --pretrained
+```
+
+ROC curves are written one per scenario to `difftactile/output/roc_curves/`
+(`roc_curve_A-to-B_pretrained.pdf` and so on), and the AUROC table to `AUROC_RESULTS.md`.
+The `retrained` rows need a `--train` run of the matching configuration first.
+
+### Inspect predictions frame by frame
+
+An interactive viewer that steps through the test-set frames and shows the confusion overlay
+(green TP, yellow TN, red FP, blue FN) alongside the ground truth and soft predictions. The
+configuration selects **both** the model weights and the test dataset, so all six scenarios are
+reachable by name:
+
+```bash
+docker exec -it vessel-palpation ./docker/view_predictions.sh A-to-B              # published checkpoint
+docker exec -it vessel-palpation ./docker/view_predictions.sh A-to-C --retrained  # locally trained
+```
+
+Needs a display (the container forwards the host X session). Press `q` to quit.
+
+### Bird's-eye vessel localisation map
+
+Projects the per-marker predictions through the sensor pose onto the phantom surface at
+1 mm/pixel and renders the top view against the ground truth:
+
+```bash
+docker exec -it vessel-palpation ./docker/vessel_map.sh
+```
+
+Writes `confusion_overlay_vein_map.png`, `segmentation_mask_predicted_aggregated.png` and
+`exp_overlay_downscaled.pdf` to `difftactile/output/`. **Silicone only** — the workspace bounds
+and sensor offsets are specific to that rig. Add `--cached` to reuse the probabilities from a
+previous run instead of re-running inference.
+
+### Annotate or review the real-world datasets
+
+Manual annotation and annotation review for the two real datasets. In each, one tool does both
+jobs: it loads the annotations already on disk, redraws them, and lets you step through frames.
+
+```bash
+docker exec -it vessel-palpation ./docker/annotate_data.sh --silicone   # click annotator
+docker exec -it vessel-palpation ./docker/annotate_data.sh --meat       # marker-label review
+```
+
+Both need a display and set `DIFFTACTILE_INTERACTIVE=1` for you. Keys are printed on start-up
+(`m`/`n` video or trial, `k`/`j` frame, `q` quit; silicone additionally: left click to add a
+point, `d` to clear the frame, `p` to save).
+
+The meat viewer draws the labels over the **real camera frames**: the bundle ships
+`clean/<trial>/frames.mp4`, the 26 decimated frames per trial that preprocessing kept, aligned
+1:1 with `marker_labels.npz`. Each trial is decoded and composited once on first visit, so
+frame stepping is instant afterwards.
+
+> `--silicone` still needs the dilated videos and annotation pickles, which are **not** in the
+> bundle (they are intermediate preprocessing stages — see [`data/MANIFEST.md`](data/MANIFEST.md)).
+> Pass `--source DIR` to point at a tree that has them.
+
 ### Regenerate the simulated dataset (optional)
 
 The simulated training set ships in the Zenodo bundle, so **this is not required** to
@@ -115,10 +184,10 @@ reproduce the results. Run it only if you want to extend the project:
 
 ```bash
 # ~2-3 minutes: a single loop (8 trials), to check the simulator works
-docker exec -it difftactile ./docker/run_pipeline.sh sim-short
+docker exec -it vessel-palpation ./docker/run_pipeline.sh sim-short
 
 # ~2 h 45 m: a full 800-trial collection run
-docker exec -it difftactile ./docker/run_pipeline.sh sim-full
+docker exec -it vessel-palpation ./docker/run_pipeline.sh sim-full
 ```
 
 > **To regenerate the *published* dataset specifically, set
@@ -129,7 +198,7 @@ docker exec -it difftactile ./docker/run_pipeline.sh sim-full
 > (it ends in ~36 timesteps, below the `ts > 80` recording threshold).
 >
 > ```bash
-> docker exec -it -e DIFFTACTILE_TRAJECTORIES=3 difftactile \
+> docker exec -it -e DIFFTACTILE_TRAJECTORIES=3 vessel-palpation \
 >     ./docker/run_pipeline.sh sim-full
 > ```
 
@@ -400,14 +469,32 @@ python -m difftactile.scripts.script_marker_tracker          # marker tracking +
 python -m difftactile.scripts.script_domain_adaptation       # sim-vs-real marker comparison
 ```
 
-**Meat (`script_preprocess_meat_data`)** — decimates raw 1920×1080 AVIs by 15×, interpolates
-robot poses onto frames, detects and Hungarian-reorders markers, then projects the straw geometry
-through the fisheye camera model to derive a binary label per marker. Trial geometry is parsed
-from
+**Meat (`script_preprocess_meat_data`)** — interpolates robot poses onto frames, detects and
+Hungarian-reorders markers, then projects the straw geometry through the fisheye camera model to
+derive a binary label per marker. Trial geometry is parsed from
 [`meat_experiment_spec.md`](difftactile/manual_or_experimental_data/meat_experiment_spec.md),
 which catalogues the meat trials (straw depth vs. number of 5 mm steaks above it). Produces,
-per trial, `clean/<trial_id>/marker_positions.npz`
-`(T, 127, 2)` and `marker_labels.npz` `(T, 127)`, plus an overlay video for eyeballing labels.
+per trial, `clean/<trial_id>/marker_positions.npz` `(T, 127, 2)` and `marker_labels.npz`
+`(T, 127)`.
+
+**It runs from the data bundle.** Each trial ships as `clean/<trial_id>/frames.mp4` (the 26
+decimated frames) plus `frames_poses.npz` (their robot poses), so preprocessing starts from
+those rather than needing the 1.6 GB raw archive. If `meat_training_data/raw/` is present, any
+trial without a shipped video falls back to it — decimating full-rate 1920×1080 AVIs by 15×, as
+before. Force the raw path with `DIFFTACTILE_MEAT_FROM_RAW=1`.
+
+> Because `frames.mp4` is H.264, re-running preprocessing **regenerates** the dataset rather
+> than reproducing it bit-for-bit: marker positions shift by a median 0.03 px (p99 0.47 px)
+> against ~55 px marker spacing, and 16 of ~76000 labels differ (0.02%). The `*.npz` files in
+> the bundle stay the authoritative artifacts. The pre-rendered `marker_labels.avi` overlays are
+> no longer written by default — the annotation viewer composites the same view live from
+> `frames.mp4` and the labels; set `DIFFTACTILE_MEAT_WRITE_OVERLAY=1` if you want the files.
+
+Rebuild the shipped videos from the raw archive (author-side) with:
+
+```bash
+python -m difftactile.scripts.script_make_meat_clean_videos
+```
 
 **Silicone (`script_preprocess_silicone_data`)** — a chain of directory-to-directory stages: interpolate/trim →
 dilate → extract markers → reorder → annotate (a manual cv2 click GUI) → line points → merge into
@@ -415,6 +502,20 @@ the simulation `.npz` format → add dense labels, ending at the `_dense` direct
 `exp_data_silicone` points to. Each stage is a method call in `preprocess_silicone_data.main()`. As shipped, the
 whole chain is commented out and only `count_annotation_dots()` runs, because the published
 `_dense` output is already in the data bundle. **Uncomment the stages you need, in order.**
+
+**Annotation and annotation review.** The one stage of each pipeline that is a manual tool has
+its own entrypoint, so it can be reached without editing the commented menu above:
+
+```bash
+DIFFTACTILE_INTERACTIVE=1 python -m difftactile.scripts.script_annotate_silicone         # click annotator
+DIFFTACTILE_INTERACTIVE=1 python -m difftactile.scripts.script_browse_meat_annotations   # label review
+```
+
+Both load whatever annotations already exist and redraw them, so the same window reviews the
+shipped annotations and creates new ones. `docker/annotate_data.sh --silicone|--meat` wraps them
+and handles staging the silicone videos, which the bundle excludes. Note the meat labels are
+derived analytically from robot kinematics and straw geometry rather than clicked, so the meat
+tool is review-only.
 
 ### 3. Preparing datasets
 
@@ -526,6 +627,22 @@ python -m difftactile.scripts.script_visualise        # predictions overlaid on 
 python -m difftactile.scripts.script_visualise_mesh   # simulation mesh
 python -m difftactile.scripts.script_predict_exp      # run a trained model on experimental data
 ```
+
+`script_visualise` accepts a configuration name (`A-to-B`, `C-to-B`, `A-to-C`) plus
+`--pretrained` / `--retrained` to pick the weights and test set together; `docker/view_predictions.sh`
+is the wrapper around it. `script_predict_exp` builds the bird's-eye vessel map, wrapped by
+`docker/vessel_map.sh`.
+
+**Domain-adaptation overlay figures.** The sim-vs-real marker alignment images for the four
+canonical interactions (press, twist-z, twist-x, slide) are drawn by
+`Contact.generate_validation_img()` in [`difftactile/main/main.py`](difftactile/main/main.py),
+called from `compute_da_loss()` in the same file — the simulator writes them inline while it
+computes the alignment MAE, rather than in a separate plotting stage. They land in
+`difftactile/output/da_overlay_{press,twist_z,twist_x,slide}.png` and are produced during a
+collection run with `meta.load_params_from_bo == 1`. The real marker positions they are compared
+against come from `extract_reorder_save_markers()` in
+[`difftactile/data_analysis/experiment/domain_adaptation.py`](difftactile/data_analysis/experiment/domain_adaptation.py)
+(`script_domain_adaptation`).
 
 ### Interactive windows
 
@@ -646,6 +763,13 @@ interpreting the simulator's output correctly. The remainder are known rough edg
 - **Non-interactive by default.** Nothing blocks waiting for a window to be closed; inspect
   the saved figures in `difftactile/output/` instead. `DIFFTACTILE_INTERACTIVE=1` restores the
   blocking windows — see [Interactive windows](#interactive-windows).
+- **The annotation viewers favour display correctness over latency.** On compositing display
+  servers (Wayland/Xwayland), windows are assembled from a pool of buffers and a single
+  present can transiently expose a stale one, so the frame browsers behind
+  `docker/annotate_data.sh` present each frame twice per redraw. Stepping through frames is
+  therefore slightly less fluid than a native video player, but the behaviour is exact: every
+  keypress advances exactly one frame, and the displayed image always matches the frame index
+  in the overlay.
 - **`script_main` can segfault at exit when the Taichi GGUI window is open** (exit code 139,
   "Segmentation fault (core dumped)"). This happens *after* `main()` has finished and printed
   `all done`, during CUDA/GGUI teardown, so **the collected trajectories are complete and
@@ -654,7 +778,7 @@ interpreting the simulator's output correctly. The remainder are known rough edg
   when `DISPLAY` is unset. Run with `DIFFTACTILE_HEADLESS=1` to avoid it:
 
   ```bash
-  docker exec -e DIFFTACTILE_HEADLESS=1 difftactile ./docker/run_pipeline.sh sim-short
+  docker exec -e DIFFTACTILE_HEADLESS=1 vessel-palpation ./docker/run_pipeline.sh sim-short
   ```
 
   Headless is also markedly faster (~108 s vs ~149 s for `sim-short`), so prefer it unless you

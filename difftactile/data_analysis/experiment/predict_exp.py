@@ -1,4 +1,5 @@
 import math
+import os
 import pickle
 
 import cv2
@@ -135,9 +136,19 @@ class PredictExp:
         self.map_2d_3d = points_E
 
     def init_model(self):
+        """Load the checkpoint used to predict vessel locations for the map.
+
+        Uses the arch-aware GNN from `cnn/segmentation_gnn.py` rather than the
+        one exported by `cnn/gnn.py`: the latter reads the `*_large` config keys
+        unconditionally and so always builds the large model, which cannot load
+        the compact meat checkpoint (shape mismatch on every layer). The
+        architecture is therefore selected explicitly to match the checkpoint.
+        """
+        from difftactile.cnn.segmentation_gnn import GNN as SegmentationGNN
+
         model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn_meat
-        model = GNN()
-        model.load_state_dict(torch.load(model_path))
+        model = SegmentationGNN(arch="compact")
+        model.load_state_dict(torch.load(model_path, map_location=self.device))
         model.eval()
         model = model.to(self.device)
         self.model = model
@@ -647,10 +658,19 @@ class PredictExp:
         plt.tight_layout()
         finish_plot(plt, SYSTEM_PARAMS.files.exp_overlay_upscaled)
 
-    def go(self):
-        # self.predict_all_clips()
-        # self.write_probs_to_npz()
-        self.load_probs_from_npz()
+    def go(self, rerun_inference=False):
+        """Build the bird's-eye vessel map and its confusion overlay.
+
+        By default the per-marker probabilities are replayed from the cached
+        `exp_probs.npz` rather than recomputed, which is what makes this cheap to
+        re-render. Pass `rerun_inference=True` (or DIFFTACTILE_RERUN_INFERENCE=1)
+        to run the model over the clips again and refresh that cache.
+        """
+        if rerun_inference or os.environ.get("DIFFTACTILE_RERUN_INFERENCE") == "1":
+            self.predict_all_clips()
+            self.write_probs_to_npz()
+        else:
+            self.load_probs_from_npz()
         self.generate_mask_image()
         self.downsample_ground_truth_image_to_prediction_shape()
         self.evaluate_downscaled()

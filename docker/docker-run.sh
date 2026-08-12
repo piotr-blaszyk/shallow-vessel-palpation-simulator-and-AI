@@ -8,7 +8,7 @@
 #   3) ./docker/docker-connect.sh    # interactive shell inside it
 #
 # Safe to run repeatedly: it never starts a duplicate. The container is created
-# with --rm, so `docker stop difftactile` removes it and the next run creates a
+# with --rm, so `docker stop vessel-palpation` removes it and the next run creates a
 # fresh one from the current image (i.e. stop + run picks up a rebuild).
 #
 # The repository is bind-mounted at /workspace/shallow-vessel-palpation-simulator-and-AI, so edits on the
@@ -16,8 +16,8 @@
 #
 set -euo pipefail
 
-IMAGE_NAME="${DIFFTACTILE_IMAGE:-difftactile:cuda12.6}"
-CONTAINER_NAME="${DIFFTACTILE_CONTAINER:-difftactile}"
+IMAGE_NAME="${VESSEL_PALPATION_IMAGE:-vessel-palpation:cuda12.6}"
+CONTAINER_NAME="${VESSEL_PALPATION_CONTAINER:-vessel-palpation}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
@@ -110,8 +110,13 @@ for grp in video render; do
     gid="$(getent group "${grp}" | cut -d: -f3)"
     [ -n "${gid}" ] && USER_ARGS+=(--group-add "${gid}")
 done
-# HOME must be writable for matplotlib/Taichi caches; point it at /tmp since the
-# container user has no /etc/passwd entry of its own.
+# Give the container user a name: mount the host's account databases read-only
+# so the invoking UID/GID (and the video/render groups added above) resolve.
+# Without this every shell greets you with "groups: cannot find name for group
+# ID ..." and an "I have no name!" prompt.
+USER_ARGS+=(-v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro)
+# HOME must be writable for matplotlib/Taichi caches; point it at /tmp, since
+# the home directory named in the host passwd entry does not exist in the image.
 USER_ARGS+=(-e HOME=/tmp -e MPLCONFIGDIR=/tmp/matplotlib -e XDG_CACHE_HOME=/tmp/.cache)
 
 # --gpus all + NVIDIA_DRIVER_CAPABILITIES=all (set in the image) gives both CUDA

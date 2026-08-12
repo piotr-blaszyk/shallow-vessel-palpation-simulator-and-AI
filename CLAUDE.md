@@ -38,8 +38,8 @@ Pipeline in one line:
 
 ```bash
 ./docker/docker-build.sh && ./docker/docker-run.sh
-docker exec -it difftactile ./docker/run_pipeline.sh check
-docker exec -it difftactile ./docker/run_pipeline.sh A-to-B
+docker exec -it vessel-palpation ./docker/run_pipeline.sh check
+docker exec -it vessel-palpation ./docker/run_pipeline.sh A-to-B
 ```
 
 **Claude Code: test through the Docker container.** It is the only environment with the full
@@ -181,8 +181,8 @@ expects 3-element lists and so breaks the next `script_main`.
   soft `nofile` limit is 1024, and torch's `file_descriptor` sharing strategy passes one fd per
   shared tensor, so 16 DataLoader workers exhaust it. `docker-run.sh` now passes
   `--ulimit nofile=65535:524288`. **A container started before that change keeps the old
-  limit** — `docker stop difftactile && ./docker/docker-run.sh` to pick it up. Check with
-  `docker exec difftactile bash -lc 'ulimit -Sn'` (expect 65535, not 1024).
+  limit** — `docker stop vessel-palpation && ./docker/docker-run.sh` to pick it up. Check with
+  `docker exec vessel-palpation bash -lc 'ulimit -Sn'` (expect 65535, not 1024).
 - Training on the **simulated** dataset was disabled by a bare `return` at the top of
   `cnn/gnn.py::main()` on *every* branch, so the sim-trained models (A→B, A→C) could not be
   reproduced. `segmentation_gnn.train_on_sim()` now implements this, dispatched by `--train`.

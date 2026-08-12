@@ -167,3 +167,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         '    }' \
         '}' \
         > /usr/share/vulkan/icd.d/nvidia_icd.json
+
+# -----------------------------------------------------------------------------
+# 8. Interactive-shell conveniences: a short prompt + arrow-key history search
+#    and no terminal bell (inputrc).
+#    NOTE: docker-connect.sh shells run as the invoking host user with
+#    HOME=/tmp, so the /root/ copies below are only seen by root shells
+#    (docker exec -u 0). The /etc/ copies are what those non-root shells
+#    actually read: /etc/inputrc is readline's system-wide default, and
+#    /etc/bash.bashrc is sourced by both login and interactive shells (the
+#    PS1 line is appended, so it wins over the file's default prompt).
+# -----------------------------------------------------------------------------
+RUN echo "PS1='[docker \W] '" >> ~/.bashrc
+
+COPY inputrc /root/.inputrc
+
+COPY inputrc /etc/inputrc
+RUN echo "PS1='[docker \W] '" >> /etc/bash.bashrc

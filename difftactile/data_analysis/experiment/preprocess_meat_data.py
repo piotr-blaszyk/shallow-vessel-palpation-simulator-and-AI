@@ -1,3 +1,4 @@
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,6 +10,9 @@ from scipy.interpolate import interp1d
 from tqdm import tqdm
 
 from difftactile.data_analysis.experiment.predict_exp import PredictExp
+from difftactile.main.display import (
+    destroy_windows, imshow, is_interactive, run_frame_browser, wait_key,
+)
 from difftactile.sensor_model.fisheye_model_no_taichi import FisheyeModelNoTaichi
 
 
@@ -394,33 +398,98 @@ class MeatPreprocessData:
         cap.release()
         writer.release()
 
-    def process_all_trials(self):
-        if not self.input_dir.exists():
-            raise FileNotFoundError(
-                f"Input directory not found: {self.input_dir}. "
-                "Place trial .avi/.npz pairs there."
-            )
+    def _bundled_trial_inputs(self, trial_id: str):
+        """The shipped decimated video and poses for a trial, if present.
+
+        The data bundle carries `clean/<trial>/frames.mp4` (the 26 frames that
+        survived decimation) and `frames_poses.npz` (their robot poses), which
+        together are everything the rest of the pipeline needs. Starting from
+        them makes preprocessing reproducible from the published bundle alone,
+        instead of requiring the 1.6 GB raw archive just to redo a decimation
+        whose output is already known.
+
+        Returns (video_path, poses) or None when the trial is not shipped.
+        """
+        trial_dir = self.output_dir / trial_id
+        video = trial_dir / "frames.mp4"
+        poses_npz = trial_dir / "frames_poses.npz"
+        if not video.exists() or not poses_npz.exists():
+            return None
+        with np.load(poses_npz) as d:
+            poses = d["poses"]
+        return video, poses
+
+    def process_all_trials(self, prefer_bundled=True):
+        """Derive marker positions and vessel labels for every meat trial.
+
+        With `prefer_bundled` (the default) a trial is processed from the
+        decimated video shipped in the data bundle when one is available, and
+        only falls back to the raw recording otherwise. Pass False, or set
+        DIFFTACTILE_MEAT_FROM_RAW=1, to always re-decimate from `raw/`.
+
+        NOTE ON EXACTNESS. `frames.mp4` is H.264 (CRF 26), so marker detection
+        sees very slightly different pixels than it did on the lossless raw
+        recording. Measured over all 23 trials, the recomputed marker positions
+        move by a median of 0.03 px and a 99th percentile of 0.47 px against an
+        inter-marker spacing of ~55 px, and 20 of 23 trials come out with
+        bit-identical labels; the other three differ in 1, 3 and 12 labels out of
+        3302 (16 of ~76000 overall, 0.02%). That is well inside the labelling's
+        own accuracy - the paper already notes a visible offset between the
+        kinematics-derived labels and the actual straw - but it does mean this
+        path *regenerates* the dataset rather than reproducing it bit-for-bit.
+        The published `marker_positions.npz` / `marker_labels.npz` in the bundle
+        remain the authoritative artifacts; use DIFFTACTILE_MEAT_FROM_RAW=1 with
+        the raw archive if you need an exact rebuild.
+        """
+        if os.environ.get("DIFFTACTILE_MEAT_FROM_RAW") == "1":
+            prefer_bundled = False
 
         spec_cfg = self._load_spec()
-        pairs = self._get_trial_file_pairs(self.input_dir)
-        if not pairs:
-            raise RuntimeError(f"No .avi/.npz trial pairs found in {self.input_dir}")
 
-        common_trials = sorted(set(spec_cfg.keys()) & set(pairs.keys()))
-        if not common_trials:
-            raise RuntimeError("No overlapping trial IDs between input folder and spec")
+        # Trials reachable without the raw archive.
+        bundled_ids = set()
+        if prefer_bundled and self.output_dir.is_dir():
+            bundled_ids = {
+                t.name for t in self.output_dir.iterdir()
+                if t.is_dir() and self._bundled_trial_inputs(t.name) is not None
+            }
+
+        pairs = {}
+        if self.input_dir.exists():
+            pairs = self._get_trial_file_pairs(self.input_dir)
+
+        available = (set(pairs) | bundled_ids) & set(spec_cfg.keys())
+        if not available:
+            raise FileNotFoundError(
+                "No meat trials to process.\n"
+                f"Looked for raw .avi/.npz pairs in {self.input_dir} and for "
+                f"bundled frames.mp4 + frames_poses.npz under {self.output_dir}.\n"
+                "Restore the data bundle, or place the raw recordings in raw/."
+            )
+        common_trials = sorted(available)
+        if bundled_ids:
+            print(
+                f"{len(bundled_ids & available)} trial(s) from the bundled decimated "
+                f"videos, {len(available - bundled_ids)} from raw recordings."
+            )
 
         i = 0
         for trial_id in tqdm(common_trials, desc="Processing trials"):
             i += 1
             cfg = spec_cfg[trial_id]
-            avi_path, pose_npz_path = pairs[trial_id]
 
-            decimated_video, decimated_poses = self._decimate_video_and_poses(
-                avi_path=avi_path,
-                pose_npz_path=pose_npz_path,
-                trial_id=trial_id,
-            )
+            bundled = self._bundled_trial_inputs(trial_id) if prefer_bundled else None
+            if bundled is not None:
+                # Already decimated when the bundle was built; frames and poses
+                # are aligned by construction.
+                decimated_video, decimated_poses = bundled
+            else:
+                avi_path, pose_npz_path = pairs[trial_id]
+                decimated_video, decimated_poses = self._decimate_video_and_poses(
+                    avi_path=avi_path,
+                    pose_npz_path=pose_npz_path,
+                    trial_id=trial_id,
+                )
 
             markers_xy = self._extract_reordered_markers(
                 decimated_video=decimated_video,
@@ -451,17 +520,186 @@ class MeatPreprocessData:
                 marker_labels=labels,
             )
 
-            self._write_marker_labels_video(
-                video_in_path=decimated_video,
-                markers_xy=markers_xy,
-                marker_labels=labels,
-                video_out_path=trial_out_dir / "marker_labels.avi",
+            # The pre-rendered overlay video is optional: `browse_annotations()`
+            # composites the same thing live from frames.mp4 + the labels, at a
+            # fraction of the size (the .avi overlays were 81 MB across trials).
+            # Set DIFFTACTILE_MEAT_WRITE_OVERLAY=1 to write them anyway.
+            if os.environ.get("DIFFTACTILE_MEAT_WRITE_OVERLAY") == "1":
+                self._write_marker_labels_video(
+                    video_in_path=decimated_video,
+                    markers_xy=markers_xy,
+                    marker_labels=labels,
+                    video_out_path=trial_out_dir / "marker_labels.avi",
+                )
+
+
+    def browse_annotations(self):
+        """Step through the meat trials' marker annotations frame by frame.
+
+        The counterpart to the silicone `annotate()` viewer, and the tool that
+        produces Fig. "annotation-line"(d) of the paper: ground-truth vessel
+        labels (red = vessel present, green = absent) over the marker grid.
+
+        Meat labels are derived analytically from robot kinematics and the straw
+        geometry in `meat_experiment_spec.md` rather than by clicking, so this is
+        a *review* tool - there is nothing to hand-label.
+
+        Labels are drawn over the real camera frames in
+        `clean/<trial>/frames.mp4`, which the bundle ships: 26 frames per trial,
+        exactly the ones preprocessing kept, so frame i of the video is frame i
+        of `marker_labels.npz`. If that video is missing (an older bundle) the
+        markers are drawn on a plain canvas instead, which still shows the label
+        geometry but not the meat underneath.
+
+        This is the view behind Fig. "annotation-line"(d) of the paper.
+
+        Keys: m / n next / previous trial, k / j next / previous frame, q quit.
+        """
+        if not is_interactive():
+            print(
+                "Skipping browse_annotations(): it is a viewer with nothing to "
+                "show unattended. Set DIFFTACTILE_INTERACTIVE=1 to open it."
             )
+            return
+
+        trials = sorted(p for p in self.output_dir.iterdir() if p.is_dir())
+        trials = [
+            t for t in trials
+            if (t / "marker_positions.npz").exists() and (t / "marker_labels.npz").exists()
+        ]
+        if not trials:
+            print(f"No processed meat trials found in {self.output_dir}.")
+            return
+        print(f"{len(trials)} meat trials. Keys: m/n trial, k/j frame, q quit.")
+
+        # The markers are stored in full camera pixel coordinates; everything is
+        # scaled down so a 1920x1080 frame fits on screen.
+        scale = 0.5
+        canvas_w = int(self.expected_w * scale)
+        canvas_h = int(self.expected_h * scale)
+
+        def build_trial(trial_dir):
+            """Render every frame of a trial up front, ready to display.
+
+            A trial is only ~26 frames, so the whole overlaid sequence is
+            composited once and kept in memory (~26 x 960x540x3 = 40 MB). Doing
+            the work per keypress instead would mean an H.264 seek and GOP
+            re-decode, an .npz reload and a resize on every step, which is what
+            made navigation lag by about a second per frame.
+            """
+            with np.load(trial_dir / "marker_positions.npz") as d:
+                markers = d["marker_positions"]
+            with np.load(trial_dir / "marker_labels.npz") as d:
+                labels = d["marker_labels"]
+            n_frames = markers.shape[0]
+
+            # Decode sequentially - no seeking - which is both correct and fast.
+            frames = []
+            video_path = trial_dir / "frames.mp4"
+            if video_path.exists():
+                cap = cv2.VideoCapture(str(video_path))
+                if cap.isOpened():
+                    while True:
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                        frames.append(cv2.resize(frame, (canvas_w, canvas_h)))
+                    cap.release()
+
+            rendered = []
+            for t in range(n_frames):
+                if t < len(frames):
+                    canvas = frames[t].copy()
+                else:
+                    canvas = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
+                frame_markers = markers[t]
+                frame_labels = labels[t]
+                for marker_idx in range(frame_markers.shape[0]):
+                    x, y = frame_markers[marker_idx]
+                    # BGR: red where a vessel is present, green where it is absent.
+                    colour = (0, 0, 255) if frame_labels[marker_idx] == 1 else (0, 255, 0)
+                    centre = (int(x * scale), int(y * scale))
+                    # Dark outline first, so the dots stay readable over the
+                    # bright specular highlights on the meat.
+                    cv2.circle(canvas, centre, 6, (0, 0, 0), -1, cv2.LINE_AA)
+                    cv2.circle(canvas, centre, 4, colour, -1, cv2.LINE_AA)
+
+                text = (
+                    f"[{trial_dir.name}] Frame {t + 1}/{n_frames} | "
+                    f"vessel markers {int(frame_labels.sum())}   "
+                    f"(m/n trial, k/j frame, q quit)"
+                )
+                cv2.putText(canvas, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                            (0, 0, 0), 4, cv2.LINE_AA)
+                cv2.putText(canvas, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                            (255, 255, 255), 2, cv2.LINE_AA)
+                rendered.append(canvas)
+            return rendered, len(frames) > 0
+
+        # Trials are rendered on first visit and kept, so revisiting one is
+        # instant. Rendering all 23 up front would cost ~1 GB of RAM.
+        trial_cache = {}
+
+        def get_trial(trial_dir):
+            if trial_dir not in trial_cache:
+                print(f"rendering {trial_dir.name} ...", flush=True)
+                trial_cache[trial_dir] = build_trial(trial_dir)
+            return trial_cache[trial_dir]
+
+        # Mutable browse state, shared with the callbacks below.
+        state = {"trial": 0, "frame": 0, "warned": False}
+
+        def render():
+            """Current frame, or None to end the loop."""
+            trial_dir = trials[state["trial"]]
+            frames, had_video = get_trial(trial_dir)
+            if not had_video and not state["warned"]:
+                print(
+                    "No clean/<trial>/frames.mp4 found - drawing markers on a "
+                    "plain canvas. Re-restore the data bundle to get the "
+                    "camera frames."
+                )
+                state["warned"] = True
+            if not frames:
+                return None
+            state["frame"] = max(0, min(state["frame"], len(frames) - 1))
+            return frames[state["frame"]]
+
+        def on_key(key):
+            """Map a keypress to a state change; see the docstring for bindings."""
+            n_frames = len(get_trial(trials[state["trial"]])[0])
+            if key == ord("q"):
+                return "quit"
+            if key == ord("m"):
+                state["trial"] = (state["trial"] + 1) % len(trials)
+                state["frame"] = 0
+                return "redraw"
+            if key == ord("n"):
+                state["trial"] = (state["trial"] - 1) % len(trials)
+                state["frame"] = 0
+                return "redraw"
+            if key == ord("k"):
+                new_frame = min(state["frame"] + 1, n_frames - 1)
+            elif key == ord("j"):
+                new_frame = max(state["frame"] - 1, 0)
+            else:
+                return None
+            if new_frame == state["frame"]:
+                return None  # already at the end; nothing to repaint
+            state["frame"] = new_frame
+            return "redraw"
+
+        run_frame_browser(cv2, "Meat annotations", render, on_key)
 
 
 def main():
     processor = MeatPreprocessData()
     processor.process_all_trials()
+
+
+def browse():
+    """Entrypoint for reviewing the meat annotations (see browse_annotations)."""
+    MeatPreprocessData().browse_annotations()
 
 
 if __name__ == "__main__":

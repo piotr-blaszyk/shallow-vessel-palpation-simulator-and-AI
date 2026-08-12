@@ -1,0 +1,373 @@
+"""AUROC evaluation across all six canonical (train -> test) x (weights) scenarios.
+
+The paper reports three transfer configurations:
+
+    A-to-B   train on simulation (A),  test on silicone (B)
+    C-to-B   train on meat (C),        test on silicone (B)
+    A-to-C   train on simulation (A),  test on meat (C)
+
+Each can be scored either from the *published* checkpoint shipped in the Zenodo
+bundle, or from a checkpoint produced locally by a `--train` run (the
+`*_retrained_<config>` artifacts written by `_retrained_path()`), giving six
+scenarios in total.
+
+Only A-to-B previously computed a ROC curve (`segmentation_gnn.evaluate_and_plot_roc`);
+`C-to-B` and `A-to-C` ran `trainer.test()` and reported IoU only. This module
+factors the probability-collection and ROC-plotting steps out so that the same
+measurement is applied uniformly to every scenario, and writes one PDF per
+scenario into a dedicated folder.
+
+Usage:
+    python -m difftactile.scripts.script_auroc_all_scenarios              # all six
+    python -m difftactile.scripts.script_auroc_all_scenarios A-to-B       # one config, both weightings
+    python -m difftactile.scripts.script_auroc_all_scenarios A-to-B --pretrained
+"""
+
+import os
+import pickle
+import sys
+import time
+
+import numpy as np
+import torch
+from torch_geometric.loader import DataLoader
+from sklearn.metrics import roc_auc_score, roc_curve
+
+import matplotlib
+from difftactile.main.display import is_headless, finish_plot
+
+if is_headless():
+    matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from difftactile.cnn.common import *
+from difftactile.cnn.dataset import *
+from difftactile.cnn.segmentation_gnn import GNN
+from difftactile.main.paths import repo_path
+
+
+# Every AUROC plot goes here, one PDF per scenario, named after the scenario.
+ROC_DIR = "difftactile/output/roc_curves"
+
+# The three paper configurations, described by which checkpoint they load and
+# which dataset they are scored on.
+#
+#   arch          : GNN architecture the checkpoint was trained with
+#   ckpt_key      : SYSTEM_PARAMS.files key of the published checkpoint
+#   stats_key     : SYSTEM_PARAMS.files key of the test-loader pickle holding the
+#                   normalisation statistics the checkpoint expects
+#   test_dataset  : which real dataset the model is evaluated on
+CONFIGS = {
+    "A-to-B": {
+        "description": "train on simulation (A), test on silicone (B)",
+        "arch": "large",
+        "ckpt_key": "final_segmentation_model_gnn_sim",
+        "stats_key": "test_loader_gnn_sim",
+        "test_dataset": "silicone",
+    },
+    "C-to-B": {
+        "description": "train on meat (C), test on silicone (B)",
+        "arch": "compact",
+        "ckpt_key": "final_segmentation_model_gnn_meat",
+        "stats_key": "test_loader_gnn_meat",
+        "test_dataset": "silicone",
+    },
+    "A-to-C": {
+        "description": "train on simulation (A), test on meat (C)",
+        "arch": "large",
+        "ckpt_key": "final_segmentation_model_gnn_sim",
+        "stats_key": "test_loader_gnn_sim",
+        "test_dataset": "meat",
+    },
+}
+
+# The two weight sources. "pretrained" is the published Zenodo checkpoint;
+# "retrained" is what a local `--train` run of the same configuration wrote.
+WEIGHTS = ("pretrained", "retrained")
+
+
+def _retrained_variant(rel, config):
+    """Path of the `*_retrained_<config>` artifact matching a published one.
+
+    Mirrors `segmentation_gnn._retrained_path()`, which is what a `--train` run
+    uses to avoid clobbering the published checkpoints.
+    """
+    base, ext = os.path.splitext(rel)
+    return f"{base}_retrained_{config}{ext}"
+
+
+def _resolve_artifacts(config, weights):
+    """Return (checkpoint_path, stats_pickle_path) for a scenario.
+
+    For the retrained weighting both the checkpoint and the test-loader pickle
+    come from the local training run, since a retrained model's normalisation
+    statistics are the ones that run computed - not the published ones.
+    """
+    cfg = CONFIGS[config]
+    ckpt_rel = getattr(SYSTEM_PARAMS.files, cfg["ckpt_key"])
+    stats_rel = getattr(SYSTEM_PARAMS.files, cfg["stats_key"])
+    if weights == "retrained":
+        ckpt_rel = _retrained_variant(ckpt_rel, config)
+        stats_rel = _retrained_variant(stats_rel, config)
+    return repo_path(ckpt_rel), repo_path(stats_rel)
+
+
+def _load_stats(stats_path):
+    """Read the normalisation statistics a checkpoint was trained with.
+
+    Simulation loaders key their stats by curriculum difficulty; meat loaders
+    store a single flat dict. Returns (stats, difficulty_or_None).
+    """
+    with open(stats_path, "rb") as f:
+        test_data = pickle.load(f)
+    if has_flat_stats(test_data):
+        return test_data["dataset_stats"], None
+    all_stats = test_data["dataset_stats"]
+    # train_on_sim() trains at difficulty 1.0 and stores {1.0: stats}; fall back
+    # to whatever single entry exists if a loader was written differently.
+    difficulty = 1.0 if 1.0 in all_stats else next(iter(all_stats))
+    return all_stats[difficulty], difficulty
+
+
+def _build_test_dataset(which, stats, difficulty):
+    """Construct the dataset a configuration is evaluated on.
+
+    `which` is "silicone" (dataset B) or "meat" (dataset C). In both cases every
+    sample is used for evaluation - nothing is held back, since no fitting
+    happens here.
+    """
+    if which == "silicone":
+        full = MyDataset(
+            scheme="single_dataset",
+            sim_exp="exp",
+            data_dir=SYSTEM_PARAMS.files.exp_data_silicone,
+            apply_augmentations=False,
+            name="silicone",
+        )
+        # The whole silicone set is the evaluation set for these transfer
+        # configurations, so it is requested as the "train" split of a 100/0/0
+        # split rather than being subsetted.
+        dataset, _, _ = full.create_splits(train_size=1.0, val_size=0.0, test_size=0.0)
+        if difficulty is not None:
+            dataset.set_difficulty_level(difficulty)
+    elif which == "meat":
+        full = MyDataset(
+            scheme="meat",
+            sim_exp="apple",
+            data_dir="banana",
+            apply_augmentations="cherry",
+            name="meat",
+        )
+        # Pure transfer: every trial goes to the test split.
+        _, _, dataset = full.create_splits(all_to_test=True)
+    else:
+        raise ValueError(f"unknown test dataset {which!r}")
+    dataset.set_stats(stats)
+    dataset.eval()
+    return dataset
+
+
+def _collect_probabilities(model, dataset, device, batch_size, num_workers):
+    """Run the model over the dataset and return (probabilities, labels).
+
+    Only the masked (valid) marker nodes contribute, matching how the published
+    evaluation paths score predictions.
+    """
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=False,
+        persistent_workers=False,
+    )
+    all_probs, all_labels = [], []
+    with torch.no_grad():
+        for batch, labels_images, poses, metadata, frame_ix in loader:
+            batch = batch.to(device)
+            x, x_mask, edge_index, _, edge_attr = model.my_prepare_data(
+                batch, batch.num_graphs
+            )
+            out = model(x, edge_index, edge_attr, batch.batch)
+            out = out.squeeze(-1)[x_mask]
+            mask = batch.mask
+            out = out[mask]
+            all_probs.append(torch.sigmoid(out).cpu())
+            all_labels.append(batch.y[mask].cpu())
+    return torch.cat(all_probs).numpy(), torch.cat(all_labels).numpy()
+
+
+def _plot_roc(fpr, tpr, all_probs, all_labels, auc, title, out_path):
+    """Draw the ROC curve in the same style as the published figures.
+
+    Red markers annotate decision thresholds sampled around 0.5, matching
+    Fig. "ROC curves on the test set" in the paper.
+    """
+    thresholds = np.linspace(0.4, 0.6, 5)
+    tpr_list, fpr_list = [], []
+    for thr in thresholds:
+        preds = (all_probs >= thr).astype(int)
+        tp = np.sum((preds == 1) & (all_labels == 1))
+        fp = np.sum((preds == 1) & (all_labels == 0))
+        tn = np.sum((preds == 0) & (all_labels == 0))
+        fn = np.sum((preds == 0) & (all_labels == 1))
+        tpr_list.append(tp / (tp + fn) if (tp + fn) > 0 else 0.0)
+        fpr_list.append(fp / (fp + tn) if (fp + tn) > 0 else 0.0)
+
+    fontsize = 20
+    plt.figure(figsize=(7, 6))
+    plt.plot(fpr, tpr, label="ROC curve", alpha=0.8, linewidth=6.0)
+    plt.scatter(fpr_list, tpr_list, color="red", s=200, label="thresholds")
+    for thr, x, y in zip(thresholds, fpr_list, tpr_list):
+        plt.text(x, y, f"{thr:.2f}", fontsize=fontsize, ha="left", va="bottom",
+                 fontweight="bold")
+    plt.tick_params(axis="both", which="major", labelsize=fontsize)
+    for label in plt.gca().get_xticklabels() + plt.gca().get_yticklabels():
+        label.set_fontweight("bold")
+    plt.plot([0, 1], [0, 1], "k-", alpha=0.5, linewidth=6.0)
+    plt.xlabel("False Positive Rate", fontsize=fontsize, fontweight="bold")
+    plt.ylabel("True Positive Rate", fontsize=fontsize, fontweight="bold")
+    # The scenario and its AUROC are in the title so a PDF is self-identifying
+    # once separated from its filename.
+    plt.title(f"{title}\nAUROC = {auc:.4f}", fontsize=fontsize - 4, fontweight="bold")
+    plt.grid(True, linestyle="--", alpha=0.3, linewidth=3.0)
+    for spine in plt.gca().spines.values():
+        spine.set_linewidth(3.0)
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    finish_plot(plt, out_path, format="pdf", dpi=300)
+
+
+def evaluate_scenario(config, weights):
+    """Score one (configuration, weight-source) scenario.
+
+    Returns a dict with the AUROC and bookkeeping, or a dict carrying `error`
+    when the scenario cannot run (typically a missing retrained checkpoint).
+    """
+    cfg = CONFIGS[config]
+    label = f"{config} [{weights}]"
+    print(f"\n=== {label}: {cfg['description']} ===")
+
+    ckpt_path, stats_path = _resolve_artifacts(config, weights)
+    for path, what in ((ckpt_path, "checkpoint"), (stats_path, "stats pickle")):
+        if not os.path.exists(path):
+            msg = f"missing {what}: {path}"
+            print(f"SKIPPED - {msg}")
+            return {"config": config, "weights": weights, "error": msg}
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = GNN(arch=cfg["arch"])
+    print(f"loading checkpoint: {ckpt_path}")
+    model.load_state_dict(torch.load(ckpt_path, map_location=device))
+    model.eval()
+    model = model.to(device)
+
+    stats, difficulty = _load_stats(stats_path)
+    model.set_stats(stats)
+    dataset = _build_test_dataset(cfg["test_dataset"], stats, difficulty)
+
+    batch_size = getattr(SYSTEM_PARAMS.gnn, "batch_size_large", SYSTEM_PARAMS.gnn.batch_size)
+    num_workers = getattr(SYSTEM_PARAMS.gnn, "num_workers_large", SYSTEM_PARAMS.gnn.num_workers)
+
+    start = time.perf_counter()
+    all_probs, all_labels = _collect_probabilities(
+        model, dataset, device, batch_size, num_workers
+    )
+    duration = time.perf_counter() - start
+
+    auc = roc_auc_score(all_labels, all_probs)
+    fpr, tpr, _ = roc_curve(all_labels, all_probs)
+
+    out_path = repo_path(f"{ROC_DIR}/roc_curve_{config}_{weights}.pdf")
+    _plot_roc(fpr, tpr, all_probs, all_labels, auc,
+              f"{config} ({weights}): {cfg['description']}", out_path)
+
+    n_pos = int(all_labels.sum())
+    print(f"AUROC = {auc:.4f}   ({len(all_labels)} nodes, {n_pos} positive)")
+    print(f"ROC curve written to: {out_path}")
+    return {
+        "config": config,
+        "weights": weights,
+        "description": cfg["description"],
+        "auroc": float(auc),
+        "checkpoint": ckpt_path,
+        "num_nodes": int(len(all_labels)),
+        "num_positive": n_pos,
+        "positive_fraction": float(n_pos / len(all_labels)),
+        "roc_pdf": out_path,
+        "seconds": duration,
+    }
+
+
+def main(configs=None, weightings=None):
+    """Evaluate the requested scenarios and write a Markdown summary."""
+    configs = configs or list(CONFIGS)
+    weightings = weightings or list(WEIGHTS)
+
+    results = []
+    for config in configs:
+        for weights in weightings:
+            try:
+                results.append(evaluate_scenario(config, weights))
+            except Exception as exc:  # keep going; one scenario must not sink the rest
+                print(f"FAILED {config} [{weights}]: {exc}")
+                results.append({"config": config, "weights": weights, "error": str(exc)})
+
+    md_path = repo_path("AUROC_RESULTS.md")
+    write_markdown(results, md_path)
+    print(f"\nSummary written to: {md_path}")
+    return results
+
+
+def write_markdown(results, md_path):
+    """Render the AUROC table to Markdown."""
+    lines = [
+        "# AUROC across the six canonical scenarios",
+        "",
+        "Per-node vessel-classification AUROC for each (train -> test) configuration,",
+        "scored twice: once from the published Zenodo checkpoint and once from a",
+        "checkpoint retrained locally with `--train`.",
+        "",
+        "Datasets: **A** = simulation, **B** = real silicone phantom, **C** = real meat phantom.",
+        "",
+        f"ROC curves: `{ROC_DIR}/roc_curve_<config>_<weights>.pdf`",
+        "",
+        "| Scenario | Train -> Test | Weights | AUROC | Nodes | Positive |",
+        "|---|---|---|---|---|---|",
+    ]
+    for r in results:
+        name = f"{r['config']} [{r['weights']}]"
+        if "error" in r:
+            lines.append(f"| {name} | - | {r['weights']} | not run | - | - |")
+            continue
+        lines.append(
+            f"| {name} | {r['description']} | {r['weights']} | **{r['auroc']:.4f}** | "
+            f"{r['num_nodes']} | {r['num_positive']} ({r['positive_fraction']:.1%}) |"
+        )
+    errors = [r for r in results if "error" in r]
+    if errors:
+        lines += ["", "## Scenarios not run", ""]
+        for r in errors:
+            lines.append(f"- **{r['config']} [{r['weights']}]** — {r['error']}")
+    lines.append("")
+    os.makedirs(os.path.dirname(md_path) or ".", exist_ok=True)
+    with open(md_path, "w") as f:
+        f.write("\n".join(lines))
+
+
+def run_from_cli():
+    """Entrypoint for scripts/script_auroc_all_scenarios.py."""
+    argv = sys.argv[1:]
+    flags = [a for a in argv if a.startswith("--")]
+    positional = [a for a in argv if not a.startswith("--")]
+    configs = positional or None
+    if configs:
+        for c in configs:
+            if c not in CONFIGS:
+                raise SystemExit(f"Unknown configuration {c!r}; expected one of {list(CONFIGS)}")
+    weightings = None
+    if "--pretrained" in flags:
+        weightings = ["pretrained"]
+    elif "--retrained" in flags:
+        weightings = ["retrained"]
+    return main(configs, weightings)

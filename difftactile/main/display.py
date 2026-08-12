@@ -133,6 +133,17 @@ def imshow(cv2, window_name, image):
     _guard_gui(lambda: cv2.imshow(window_name, image), None)
 
 
+def move_window(cv2, window_name, x, y):
+    """`cv2.moveWindow` that becomes a no-op when no window can be shown.
+
+    Positioning a window that was never created raises "NULL guiReceiver", so
+    tiling calls need the same guard as imshow() rather than being left bare.
+    """
+    if is_headless():
+        return
+    _guard_gui(lambda: cv2.moveWindow(window_name, x, y), None)
+
+
 def destroy_windows(cv2):
     """`cv2.destroyAllWindows` plus the event-pump calls it needs to take effect."""
     if is_headless():
@@ -185,6 +196,103 @@ def prompt(message, default=""):
     except EOFError:
         # stdin closed mid-run (piped input exhausted, detached process).
         return default
+
+
+def run_frame_browser(cv2, window, render, on_key, needs_repaint=None):
+    """Shared event loop for the frame-stepping annotation viewers.
+
+    Both real-world datasets are browsed the same way - step through frames,
+    hop between videos/trials, quit on `q` - but their data models are not
+    interchangeable (the silicone set is up to four hand-clicked points per
+    frame in a pickle; the meat set is a fixed 127-marker label vector per frame
+    in an npz, derived from kinematics and not editable). So the *shell* is
+    shared here and each viewer keeps its own rendering and key handling.
+
+    Centralising it also means the X11 paint-ordering fix lives in exactly one
+    place. `imshow()` only queues an image; it is `waitKey()` that pumps the GUI
+    event loop and actually paints. Blocking in `waitKey(0)` straight after an
+    `imshow()` lets an already-pending keystroke be delivered *before* the paint
+    is serviced, so the window lingers on the previous frame and then snaps to
+    the requested one - visible as one wrong frame followed by the right one.
+    Under X11 forwarding the round trip is slow enough to make that obvious,
+    while on bare metal both updates usually land within one refresh. The loop
+    below pumps once after drawing, and carries over any key that arrives during
+    the pump instead of dropping it.
+
+    Args:
+        cv2: the OpenCV module (passed in so this file needs no cv2 import).
+        window: window name.
+        render: `() -> image | None` for the current state. Returning None ends
+            the loop. Called only when `on_key` reports the state changed.
+        on_key: `(key) -> "redraw" | "quit" | None`. Return "redraw" when the
+            key changed what should be displayed, "quit" to exit.
+        needs_repaint: optional `() -> bool`, for viewers whose state can change
+            without a keypress (a mouse callback adding a point). When given,
+            the loop polls instead of blocking so such changes show up promptly;
+            it consumes the flag itself, so the callback should clear it.
+
+    Returns when the user quits, or immediately when not interactive.
+    """
+    if not is_interactive():
+        return
+
+    needs_redraw = True
+    pending_key = None
+    while True:
+        if needs_redraw:
+            image = render()
+            if image is None:
+                break
+            imshow(cv2, window, image)
+            needs_redraw = False
+            # Present the frame before blocking; keep any key typed meanwhile.
+            pumped = wait_key(cv2, 1) & 0xFF
+            if pumped != 255:
+                pending_key = pumped
+            # Present the same frame a second time. Under rootless Xwayland the
+            # window is composited from a small pool of buffers, and a keypress
+            # can briefly re-present a stale one still holding the frame from
+            # two redraws ago (seen as a flash of the opposite-direction frame).
+            # After a second present every buffer holds the current frame, so a
+            # stale re-present shows the identical image and the flash vanishes.
+            imshow(cv2, window, image)
+            pumped = wait_key(cv2, 1) & 0xFF
+            if pumped != 255:
+                pending_key = pumped
+
+        if pending_key is not None:
+            key, pending_key = pending_key, None
+        elif needs_repaint is None:
+            # Block so an idle viewer does not spin at 100% CPU.
+            key = wait_key(cv2, 0) & 0xFF
+            if key == 255:
+                continue
+        else:
+            # This viewer can change without a keypress (mouse input), so poll
+            # at ~30 Hz rather than blocking. That is responsive to a click while
+            # still leaving the process essentially idle between events.
+            key = wait_key(cv2, 30) & 0xFF
+            if key == 255:
+                if needs_repaint():
+                    needs_redraw = True
+                continue
+
+        outcome = on_key(key)
+        if outcome == "quit":
+            break
+        if outcome == "redraw":
+            needs_redraw = True
+            # Collapse whatever else is already queued into the same redraw, so
+            # a burst of presses costs one frame over the wire and lands exactly
+            # N steps away rather than falling behind the keyboard.
+            while True:
+                extra = wait_key(cv2, 1) & 0xFF
+                if extra == 255:
+                    break
+                outcome = on_key(extra)
+                if outcome == "quit":
+                    return destroy_windows(cv2)
+    destroy_windows(cv2)
 
 
 def iteration_limit(env_var, default):
