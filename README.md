@@ -352,10 +352,10 @@ bash difftactile/scripts/run_all.sh   # zsh shebang; invoke with bash or install
 > `-youngs-modulus` file, not `system-params.json`** — otherwise your edit is silently
 > discarded on the next run.
 >
-> ⚠️ **Do not use `difftactile/scripts/script_all.py`.** It imports all three modules at the top,
-> so `constants.py` loads `system-params.json` *before* `apply_scaling` rewrites it, and the
-> simulation then runs against pre-scaling constants. Use `run_all.sh` (three separate
-> processes) instead.
+> ⚠️ **Run the three stages as separate processes** — that is what `run_all.sh` does. A single
+> process that imports all three modules up front makes `constants.py` load `system-params.json`
+> *before* `apply_scaling` rewrites it, so the simulation runs against pre-scaling constants.
+> (An old `script_all.py` had exactly this bug and has been removed.)
 
 Outputs land in `difftactile/output/`: per-trajectory training data at
 `difftactile/output/training_data/pickle_<timestamp>/trajectory_XXXX.npz`, containing `markers`,
@@ -379,11 +379,11 @@ python -m difftactile.scripts.script_fisheye_model     # detect markers -> init-
 python -m difftactile.scripts.script_bo_gp             # Bayesian optimisation of simulation parameters
 ```
 
-`script_cfl_and_contact_params_estimation` (CFL timestep + Hertzian contact-stiffness estimates)
-is **diagnostics only and currently destructive**: it writes contact parameters back to
-`system-params.json` as scalars, whereas `main.py` expects 3-element lists (one per contact
-pair), so running it breaks the next `script_main`. This is why it is commented out in
-`run_all.sh`.
+`difftactile/main/cfl_and_contact_params_estimation.py` (CFL timestep + Hertzian
+contact-stiffness estimates) is **diagnostics only and destructive if run as an entrypoint**: it
+writes contact parameters back to `system-params.json` as scalars, whereas `main.py` expects
+3-element lists (one per contact pair), so running it breaks the next `script_main`. Its
+`script_*` wrapper has therefore been removed; the module stays because `main.py` imports it.
 
 ### 2. Processing real sensor data
 
@@ -552,14 +552,6 @@ corresponding module. To add one, follow the existing 3-line pattern.
 This is a research snapshot rather than a packaged tool, and it is published as-is. The
 following are known and are *not* worth reporting as bugs:
 
-- **Several entrypoints are disabled or broken as shipped.** `script_all.py` has the import-order
-  bug described above; `script_benchmark_dataset` and `script_hungarian_exp` reference JSON keys
-  (`dataset_root_reordered`, `experiment_straight_markers_npz_reordered`) that do not exist in
-  `system-params.json`; `script_train` (the legacy U-Net CNN baseline) calls `MyDataset` with an
-  outdated signature and needs `monai`, which is not in the requirements;
-  `difftactile/cnn/threshold_gnn.py` is dead code that no longer matches the `GNN` API.
-- **`difftactile/data_analysis/experiment/roc_curve.py` plots a synthetic curve** (`tpr = fpr**0.5`)
-  — it is a figure-styling template. The real ROC is `iros_gnn.evaluate_and_plot_roc()`.
 - **Configuration is partly "edit the source".** Enabling a pipeline stage, switching train vs.
   evaluate, or choosing the Taichi backend all mean editing Python, not passing a flag.
 - **Absolute paths** to the original machine remain in a handful of files (listed above).

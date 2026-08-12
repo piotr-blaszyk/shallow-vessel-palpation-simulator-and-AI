@@ -1,6 +1,26 @@
 # Dead code / dead file analysis
 
-**Status: FOR REVIEW — nothing has been deleted.**
+**Status: ACTIONED — categories A, B and C were deleted on 2026-08-12.**
+
+Removal was at file/folder granularity only; no partial edits were made to files that stay.
+Two entries below were **overruled during verification** and kept, because reading the code
+showed them to be live:
+
+- `difftactile/main/cfl_and_contact_params_estimation.py` — `main.py:21` imports it. Only its
+  `script_*` wrapper was deleted (the wrapper is what corrupts `system-params.json`).
+- `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/` — listed under
+  Category C, but it is `files.da_dir`, and `files.flat_sensor_default_state` names a `.jpg`
+  **inside it**. That image is the sensor's default-state photo, loaded by `main.py:2279` and
+  `vitactip.py:188,592`. Deleting the folder would break the simulator. Same class of mistake
+  as the `downward-press-vascular-phantom` entry already caught below.
+
+`.vscode/` needed no action — it was already untracked and gitignored.
+
+After removal, all 70 remaining tracked `.py` files byte-compile, and the full Docker
+quickstart (`check`, all three paper configurations, and `sim-short`) was re-run end to end
+in a blank-slate clone — see `REPRODUCTION_TEST.md`.
+
+The original review text follows unchanged.
 
 *Updated after a second, independent pass; several entries below were verified
 by reading the files rather than inferred from the import graph. Two items that

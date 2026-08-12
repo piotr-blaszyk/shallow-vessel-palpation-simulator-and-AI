@@ -2,8 +2,8 @@
 Regenerate `difftactile/output/test_loader_gnn_icra.pickle` without retraining.
 
 That pickle is normally a by-product of `difftactile/cnn/gnn.py::main()`, which writes it
-*before* fitting the model (gnn.py:743). Its consumers -- `gnn.evaluate_and_plot_roc()`,
-`cnn/visualise.py` and `cnn/threshold_gnn.py` -- only ever read the `dataset` and
+*before* fitting the model (gnn.py:743). Its consumers -- `gnn.evaluate_and_plot_roc()`
+and `cnn/visualise.py` -- only ever read the `dataset` and
 `dataset_stats` entries, so the file can be rebuilt from the datasets alone. This script
 reproduces exactly the construction gnn.main() performs up to that write, so a checkpoint
 trained earlier stays compatible with the stats used to normalise its inputs.

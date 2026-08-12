@@ -129,19 +129,22 @@ reads them.
 Several entrypoints do not work as shipped. This is a research snapshot; before debugging one,
 check whether it is already known:
 
-- `scripts/script_all.py` — imports all three modules at the top, so `constants.py` reads
-  `system-params.json` *before* `apply_scaling` rewrites it. Use `run_all.sh` instead.
-- `script_cfl_and_contact_params_estimation` — writes scalar contact params where `main.py:635-638`
-  expects 3-element lists, breaking the next `script_main`. Deliberately commented out of `run_all.sh`.
-- `script_benchmark_dataset`, `script_hungarian_exp` — reference JSON keys that do not exist
-  (`dataset_root_reordered`, `experiment_straight_markers_npz_reordered`).
-- `script_train` — legacy U-Net CNN; outdated `MyDataset` signature, and needs `monai` which is
-  not in `requirements/`.
-- `cnn/threshold_gnn.py` — dead code, no longer matches the `GNN` API.
-- `data_analysis/experiment/roc_curve.py` — plots a **synthetic** curve (`tpr = fpr**0.5`); it is a
-  styling template, not a result. Real ROC is `iros_gnn.evaluate_and_plot_roc()`.
 - `cnn/iros_gnn.py:570` — hardcoded `device='cuda:0'` with no CPU fallback, so constructing `GNN()`
   requires a GPU even for evaluation.
+
+**Deleted** (they were broken or superseded; see the dead-code sweep in git history — do not
+recreate them): `scripts/script_all.py` (import-order bug — use `run_all.sh`),
+`script_cfl_and_contact_params_estimation.py`, `script_benchmark_dataset.py` +
+`data_analysis/sim/benchmark_dataset.py`, `script_hungarian_exp.py` (the *wrapper* only —
+`hungarian_exp.py` itself is live, imported by `predict_exp.py`), `script_train.py` +
+`cnn/train.py` + `cnn/lit_module_unet_cnn.py` (legacy U-Net path), `cnn/threshold_gnn.py`,
+`data_analysis/experiment/roc_curve.py` (synthetic curve; the real ROC is
+`iros_gnn.evaluate_and_plot_roc()`), the `sandbox/` and `ml_training_old/` folders, and assorted
+one-off analysis scripts.
+
+Note `main/cfl_and_contact_params_estimation.py` **stays** — `main.py:21` imports it. Only its
+entrypoint wrapper was removed, since running it writes scalar contact params where `main.py`
+expects 3-element lists and so breaks the next `script_main`.
 
 **Fixed since** (do not re-report these as bugs):
 - `generate_*_mesh_gmsh.py` — `os.makedirs("output")` now uses `repo_path("difftactile/output")`,
