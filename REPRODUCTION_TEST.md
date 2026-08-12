@@ -10,6 +10,15 @@ Run twice: once on the initial Docker/unification work, and again on a second
 clean clone after an adversarial code review produced fixes (checkpoint
 protection, cwd-independent paths). The numbers below are from the second run.
 
+> **Superseded on 2026-08-12 — the `A-to-B` AUC below is no longer what that
+> configuration reports.** Every AUC recorded here (0.6785678641614648 and its
+> 1-ULP variants) was produced by `evaluate_and_plot_roc()` while it loaded
+> `final_segmentation_model_gnn_iros.pt` — the small, **meat**-trained model —
+> so those runs measured **C→B**, not A→B. The function now loads the
+> simulation-trained checkpoint it should always have used, and `A-to-B --eval`
+> reports **AUC 0.7314**. The transcript is kept verbatim as a record of what was
+> run at the time; the figures are correct for the code as it then stood.
+
 ## Procedure
 
 > This is the transcript of the run as it happened, kept verbatim. It cloned
@@ -38,7 +47,7 @@ docker exec difftactile ./docker/run_pipeline.sh sim-short
 | Restore bundle | OK. All 23 paths present afterwards. |
 | Docker build | OK, ~8 min (CUDA 12.6 base + torch 2.8.0+cu126 + PyG + Taichi). Image 8.79 GB. |
 | `check` | OK. CUDA available, torch 2.8.0+cu126, Taichi 1.7.4, PyG 2.8.0, config loads, data verified. |
-| **`sim-to-silicone`** | OK. **AUC 0.6785678641614648**, `roc_curve_iros.pdf` written. |
+| **`sim-to-silicone`** | OK. **AUC 0.6785678641614648**, `roc_curve_meat.pdf` written. |
 | **`silicone-to-meat`** | OK. 199 meat data points, **IoU 0.809 (bg) / 0.197 (vein)**. |
 | **`sim-to-meat`** | OK. 30 epochs, tested on silicone, checkpoint saved. ~51 s. |
 | `sim-short` | OK. Full 3-stage sim pipeline; 8 trials in 163 s. |
@@ -84,11 +93,11 @@ Two pre-existing bugs were fixed to make this possible:
 
 1. **Simulation training was disabled on every branch.** `cnn/gnn.py::main()`
    began with a bare `return`, so neither sim-trained model (A→B, A→C) could be
-   reproduced. Reimplemented as `iros_gnn.train_on_sim()`.
+   reproduced. Reimplemented as `segmentation_gnn.train_on_sim()`.
 2. **`evaluate_and_plot_roc()` crashed headless.** `_show_plots()` guarded
    `plt.show()`, but `plt.figure()` had already tried to open a Tk window, so
    `A-to-B --eval` raised `TclError` under `DIFFTACTILE_HEADLESS=1` (confirmed
-   on unmodified `main`). `iros_gnn.py` now selects the `Agg` backend before
+   on unmodified `main`). `segmentation_gnn.py` now selects the `Agg` backend before
    importing pyplot when no display is present.
 
 ### Blank-slate re-run after the dead-code removal (2026-08-12)
@@ -135,7 +144,7 @@ but it is **not a byte-faithful port**, and the difference matters.
 
 On that branch, `test_dataset.set_stats(stats)` sat inside a dead `if False:`
 block. `set_stats()` is what clears `MyDataset.warmup`, and `normalise()` is
-gated on `if not self.warmup` — so the ICRA checkpoint was being evaluated on
+gated on `if not self.warmup` — so the simulation-trained checkpoint was being evaluated on
 **unnormalised inputs**, despite having been trained on normalised ones. The
 unified code calls `set_stats()`, applying the statistics the checkpoint expects.
 

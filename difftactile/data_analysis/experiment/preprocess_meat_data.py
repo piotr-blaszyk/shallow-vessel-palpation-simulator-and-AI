@@ -20,16 +20,16 @@ class TrialConfig:
     straw_diameters_mm: List[float]
 
 
-class IrosPreprocessData:
+class MeatPreprocessData:
     def __init__(self):
         repo_root = Path(__file__).resolve().parents[3]
         base_dir = (
-            repo_root / "difftactile/manual_or_experimental_data/iros_training_data"
+            repo_root / "difftactile/manual_or_experimental_data/meat_training_data"
         )
         self.input_dir = base_dir / "raw"
         self.spec_path = (
             repo_root
-            / "difftactile/manual_or_experimental_data/iros_experiment_spec.md"
+            / "difftactile/manual_or_experimental_data/meat_experiment_spec.md"
         )
         self.output_dir = base_dir / "clean"
         self.tmp_dir = base_dir / "intermediate"
@@ -336,14 +336,14 @@ class IrosPreprocessData:
             video_in=str(decimated_video),
             video_out=str(markers_vis_avi),
             npz_out=str(markers_raw_npz),
-            mode='iros',
+            mode='meat',
         )
         PredictExp.compute_npz_helper2(
             video_in=str(decimated_video),
             video_out=str(markers_reordered_vis_avi),
             npz_in=str(markers_raw_npz),
             npz_out=str(markers_reordered_npz),
-            mode='iros',
+            mode='meat',
         )
         with np.load(markers_reordered_npz) as data:
             markers = data["markers"].astype(np.float32)
@@ -460,7 +460,7 @@ class IrosPreprocessData:
 
 
 def main():
-    processor = IrosPreprocessData()
+    processor = MeatPreprocessData()
     processor.process_all_trials()
 
 

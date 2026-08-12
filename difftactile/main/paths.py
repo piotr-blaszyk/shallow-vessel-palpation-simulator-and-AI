@@ -49,7 +49,7 @@ def data_path(*parts: str) -> str:
     `restore_data.sh` unpacks them into the repository, so by default this is
     just the repository root.
 
-    NOTE: only `dataset.py:IROS_CLEAN_DATA_DIR` currently routes through here,
+    NOTE: only `dataset.py:MEAT_CLEAN_DATA_DIR` currently routes through here,
     so `DIFFTACTILE_DATA_ROOT` redirects the real meat trials alone — the rest
     of the config resolves under REPO_ROOT via repo_path(). Route additional
     paths through data_path() before advertising it more broadly.

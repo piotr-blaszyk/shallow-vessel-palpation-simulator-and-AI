@@ -100,7 +100,7 @@ stage_sim() {
 stage_scenario() {
     local config="$1"; shift
     banner "Configuration: ${config}${*:+ $*}"
-    python -m difftactile.scripts.script_iros_gnn "${config}" "$@"
+    python -m difftactile.scripts.script_segmentation_gnn "${config}" "$@"
 }
 
 case "${1:-}" in

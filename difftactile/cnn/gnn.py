@@ -133,10 +133,10 @@ class GNN(pl.LightningModule):
         spatial_edge_dim = 5
         temporal_edge_dim = 5+2
         global_temporal_edge_dim = 2
-        entity_type_embedding_dim = SYSTEM_PARAMS.gnn.entity_type_embedding_dim_icra
-        small_input_dim = SYSTEM_PARAMS.gnn.small_input_dim_icra
-        latent_dim = SYSTEM_PARAMS.gnn.latent_dim_icra
-        self.skip_dim = SYSTEM_PARAMS.gnn.skip_dim_icra
+        entity_type_embedding_dim = SYSTEM_PARAMS.gnn.entity_type_embedding_dim_large
+        small_input_dim = SYSTEM_PARAMS.gnn.small_input_dim_large
+        latent_dim = SYSTEM_PARAMS.gnn.latent_dim_large
+        self.skip_dim = SYSTEM_PARAMS.gnn.skip_dim_large
         cat_out_dim = self.skip_dim * 4
         input_dim = latent_dim
         output_dim = SYSTEM_PARAMS.gnn.output_dim
@@ -693,16 +693,16 @@ def main():
     full_dataset = MyDataset(
         scheme="single_dataset",
         sim_exp="sim",
-        data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
+        data_dir=SYSTEM_PARAMS.files.sim_data,
         apply_augmentations=True,
     )
     train_dataset, val_dataset, test_dataset = full_dataset.create_splits(
         train_size=0.7, val_size=0.15, test_size=0.15
     )
-    exp_dataset_endgame = MyDataset(
+    exp_dataset_silicone = MyDataset(
         scheme="single_dataset",
         sim_exp="exp",
-        data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+        data_dir=SYSTEM_PARAMS.files.exp_data_silicone,
         apply_augmentations=False,
     )
     all_stats = {}
@@ -721,11 +721,11 @@ def main():
     train_dataset.set_difficulty_level(target_difficulty)
     val_dataset.set_difficulty_level(target_difficulty)
     test_dataset.set_difficulty_level(target_difficulty)
-    exp_dataset_endgame.set_difficulty_level(target_difficulty)
+    exp_dataset_silicone.set_difficulty_level(target_difficulty)
     train_dataset.set_stats(all_stats[target_difficulty])
     val_dataset.set_stats(all_stats[target_difficulty])
     test_dataset.set_stats(all_stats[target_difficulty])
-    exp_dataset_endgame.set_stats(all_stats[target_difficulty])
+    exp_dataset_silicone.set_stats(all_stats[target_difficulty])
     data_module = MyDataModule(
         train_dataset=train_dataset,
         val_dataset=val_dataset,
@@ -740,7 +740,7 @@ def main():
         "num_workers": NUM_WORKERS,
         "dataset_stats": all_stats,
     }
-    with open(SYSTEM_PARAMS.files.test_loader_gnn_icra, "wb") as f:
+    with open(SYSTEM_PARAMS.files.test_loader_gnn_sim, "wb") as f:
         pickle.dump(test_data, f)
     model = GNN()
     model.set_stats(all_stats[target_difficulty])
@@ -768,8 +768,8 @@ def main():
         ],
         reload_dataloaders_every_n_epochs=1,
     )
-    exp_test_loader_endgame = DataLoader(
-        exp_dataset_endgame,
+    exp_test_loader_silicone = DataLoader(
+        exp_dataset_silicone,
         batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS,
         pin_memory=False,
@@ -782,7 +782,7 @@ def main():
     print("\nTesting on simulation data:")
     trainer.test(model, datamodule=data_module)
     print("\nTesting on experimental data (end game):")
-    trainer.test(model, dataloaders=exp_test_loader_endgame)
+    trainer.test(model, dataloaders=exp_test_loader_silicone)
     end = time.perf_counter()
     duration = end - start
     print(
@@ -852,19 +852,19 @@ def compute_mean_std(dataset, ixs, key):
 def evaluate_and_plot_roc():
     if True:
         model = GNN()
-        model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn_icra))
+        model.load_state_dict(torch.load(SYSTEM_PARAMS.files.final_segmentation_model_gnn_sim))
         model.eval()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
 
-        with open(SYSTEM_PARAMS.files.test_loader_gnn_icra, 'rb') as f:
+        with open(SYSTEM_PARAMS.files.test_loader_gnn_sim, 'rb') as f:
             test_data = pickle.load(f)
         all_stats = test_data['dataset_stats']
 
         full_dataset = MyDataset(
             scheme="single_dataset",
             sim_exp="exp",
-            data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+            data_dir=SYSTEM_PARAMS.files.exp_data_silicone,
             apply_augmentations=False,
             name='silicone',
         )
@@ -873,7 +873,7 @@ def evaluate_and_plot_roc():
             val_size=0.0,
             test_size=0.0
         )
-        if 'iros' in test_data:
+        if has_flat_stats(test_data):
             stats = test_data['dataset_stats']
         else:
             all_stats = test_data['dataset_stats']
@@ -953,7 +953,7 @@ def evaluate_and_plot_roc():
     for spine in plt.gca().spines.values():
         spine.set_linewidth(3.0)
     plt.tight_layout()
-    plt.savefig('difftactile/output/roc_curve_icra.pdf', format="pdf", dpi=300)
+    plt.savefig('difftactile/output/roc_curve_sim.pdf', format="pdf", dpi=300)
     plt.show()
 
     print(f'auc: {auc}')

@@ -81,7 +81,7 @@ fi
 # By default the Zenodo bundle is restored into the repo itself (restore_data.sh),
 # so no extra mount is needed and this is left unset.
 # NOTE: DIFFTACTILE_DATA_ROOT currently redirects only the real meat trials
-# (dataset.py:IROS_CLEAN_DATA_DIR, the sole data_path() caller). Everything else
+# (dataset.py:MEAT_CLEAN_DATA_DIR, the sole data_path() caller). Everything else
 # — the simulated dataset, the silicone dataset, both checkpoints — resolves
 # under the repository root, so this is not yet a general "bundle lives
 # elsewhere" switch. Restore into the repo unless you specifically need that one
@@ -118,10 +118,17 @@ USER_ARGS+=(-e HOME=/tmp -e MPLCONFIGDIR=/tmp/matplotlib -e XDG_CACHE_HOME=/tmp/
 # compute (Taichi/torch) and OpenGL (GGUI rendering).
 # --ipc host raises the shared-memory limit, which PyTorch DataLoader workers
 # need; the default 64 MB causes "bus error" crashes with num_workers > 0.
+# --ulimit nofile raises the open-file limit from Docker's default soft 1024.
+# torch's default file_descriptor sharing strategy passes one fd per shared
+# tensor between workers, so the GNN training runs (num_workers_large = 16) blow
+# through 1024 and die with "RuntimeError: received 0 items of ancdata" partway
+# through an epoch. The hard limit is left at the daemon's own value, which is
+# already far higher, so this needs no privileged configuration.
 docker run -d --rm \
     --name "${CONTAINER_NAME}" \
     --gpus all \
     --ipc host \
+    --ulimit nofile=65535:524288 \
     "${USER_ARGS[@]}" \
     -e DISPLAY="${RUN_DISPLAY}" \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \

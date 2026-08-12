@@ -30,6 +30,13 @@ from difftactile.cnn.dataset import *
 from difftactile.main.paths import repo_path
 
 
+# Configuration currently being run, set by run_scenario() and read by
+# _retrained_path() so each configuration's training artifacts get their own
+# filenames. None when a training function is called directly rather than
+# through the dispatcher.
+_ACTIVE_CONFIG = None
+
+
 def _retrained_path(rel):
     """Path for an artifact produced by a *new* training run.
 
@@ -37,11 +44,18 @@ def _retrained_path(rel):
     pickle that the evaluation scenarios read, so by default a `_retrained`
     suffix is inserted before the extension. Set
     DIFFTACTILE_OVERWRITE_PUBLISHED=1 to write over the published files instead.
+
+    The configuration name is included in the suffix because `train_on_sim()`
+    backs both A-to-B and A-to-C and writes to the same `*_sim` artifacts:
+    without it, running the two in sequence would leave the first one's
+    checkpoint silently replaced by the second's. Re-running the *same*
+    configuration still overwrites in place, which is the intended behaviour.
     """
     if os.environ.get("DIFFTACTILE_OVERWRITE_PUBLISHED", "0") == "1":
         return repo_path(rel)
     base, ext = os.path.splitext(rel)
-    return repo_path(f"{base}_retrained{ext}")
+    suffix = f"_retrained_{_ACTIVE_CONFIG}" if _ACTIVE_CONFIG else "_retrained"
+    return repo_path(f"{base}{suffix}{ext}")
 
 
 def _show_plots():
@@ -154,16 +168,16 @@ class MyBlock(nn.Module):
 
 
 class GNN(pl.LightningModule):
-    def __init__(self, arch="iros"):
+    def __init__(self, arch="compact"):
         """Graph neural network for subsurface feature segmentation.
 
         Two architectures are published, and a checkpoint only loads into the one
         it was trained with:
 
-          arch="iros"  small model  (latent_dim 64,  skip_dim 32)  -> final_segmentation_model_gnn_iros.pt
-          arch="icra"  large model  (latent_dim 256, skip_dim 128) -> final_segmentation_model_gnn_icra.pt
+          arch="compact"  small model  (latent_dim 64,  skip_dim 32)  -> final_segmentation_model_gnn_meat.pt
+          arch="large"    large model  (latent_dim 256, skip_dim 128) -> final_segmentation_model_gnn_sim.pt
 
-        The large variant's sizes live under the `*_icra` keys of the `gnn`
+        The large variant's sizes live under the `*_large` keys of the `gnn`
         section in system-params.json, so both are described by one config file
         (previously the two lived on separate git branches).
         """
@@ -172,11 +186,11 @@ class GNN(pl.LightningModule):
         self.save_hyperparameters()
 
         def gnn_param(name):
-            """Read `name_icra` for the large architecture, else `name`."""
-            if arch == "icra":
-                icra_name = f"{name}_icra"
-                if hasattr(SYSTEM_PARAMS.gnn, icra_name):
-                    return getattr(SYSTEM_PARAMS.gnn, icra_name)
+            """Read `name_large` for the large architecture, else `name`."""
+            if arch == "large":
+                large_name = f"{name}_large"
+                if hasattr(SYSTEM_PARAMS.gnn, large_name):
+                    return getattr(SYSTEM_PARAMS.gnn, large_name)
             return getattr(SYSTEM_PARAMS.gnn, name)
 
         self.num_regular_nodes = SYSTEM_PARAMS.vitactip.num_markers
@@ -735,7 +749,7 @@ def main():
     """Train the GNN on the real meat trials and test on the silicone phantom.
 
     This is the `sim-to-meat` / cross-domain training entrypoint. The bare
-    `return` that used to sit here (disabling training on the `iros` branch) has
+    `return` that used to sit here (disabling training on the pre-rename submission branch) has
     been replaced by the explicit scenario dispatcher in `run_scenario()`, so the
     behaviour is now selected by name rather than by editing the source.
     """
@@ -760,7 +774,7 @@ def main():
         version=f"run_{timestamp}",
     )
     meat_dataset = MyDataset(
-        scheme="iros",
+        scheme="meat",
         sim_exp='apple',
         data_dir='banana',
         apply_augmentations='cherry',
@@ -770,7 +784,7 @@ def main():
     silicone_dataset = MyDataset(
         scheme="single_dataset",
         sim_exp="exp",
-        data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+        data_dir=SYSTEM_PARAMS.files.exp_data_silicone,
         apply_augmentations=False,
         name='silicone',
     )
@@ -795,14 +809,17 @@ def main():
         "dataset": test_dataset,
         "num_workers": NUM_WORKERS,
         "dataset_stats": stats,
-        "iros": True,
+        # Marks this loader as coming from the meat scheme, whose `dataset_stats`
+        # is a single stats dict rather than the curriculum's {difficulty: stats}
+        # mapping. Read back via `has_flat_stats()`.
+        MEAT_LOADER_FLAG: True,
     }
     # Write to *_retrained paths, NOT over the published artifacts.
     # evaluate_and_plot_roc() (the sim-to-silicone scenario) reads the bundle's
     # checkpoint and test-loader pickle; overwriting them here would silently
     # change the reported AUC on the next evaluation run, with no way back short
     # of re-restoring the Zenodo bundle.
-    test_loader_path = _retrained_path(SYSTEM_PARAMS.files.test_loader_gnn_iros)
+    test_loader_path = _retrained_path(SYSTEM_PARAMS.files.test_loader_gnn_meat)
     os.makedirs(os.path.dirname(test_loader_path), exist_ok=True)
     with open(test_loader_path, "wb") as f:
         pickle.dump(test_data, f)
@@ -813,7 +830,7 @@ def main():
         monitor="val_iou/1",
         mode="max",
         save_top_k=1,
-        filename="best-model-iros",
+        filename="best-model-meat",
     )
     early_stopping = EarlyStopping(
         monitor="val_iou/1",
@@ -855,7 +872,7 @@ def main():
     print(
         f"\nTraining and testing completed in {duration:.2f} seconds ({duration / 60:.2f} minutes)"
     )
-    model_path = _retrained_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros)
+    model_path = _retrained_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_meat)
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     torch.save(best_model.state_dict(), model_path)
     print(f"checkpoint written to: {model_path}")
@@ -923,23 +940,35 @@ def compute_mean_std(dataset, ixs, key):
     }
 
 def evaluate_and_plot_roc():
+    """Evaluate the SIMULATION-trained checkpoint on silicone (B) and plot the ROC.
+
+    This is the evaluate-only half of A-to-B, so it must load dataset A's
+    checkpoint. It previously loaded `final_segmentation_model_gnn_meat` (the
+    small, MEAT-trained model) with a default-architecture `GNN()`, which made
+    this path compute C-to-B and silently duplicate the C-to-B configuration.
+    The reported AUC was therefore the meat-trained model on silicone, not the
+    sim-to-real result A-to-B is meant to report.
+
+    The checkpoint is the LARGE architecture, and its normalisation statistics
+    come from the matching sim test-loader pickle, exactly as `silicone_to_meat()`
+    (the A-to-C evaluate path) does.
+    """
     if True:
-        model = GNN()
-        model.load_state_dict(
-            torch.load(repo_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros))
-        )
+        model = GNN(arch="large")
+        ckpt = repo_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_sim)
+        print(f"loading simulation-trained checkpoint: {ckpt}")
+        model.load_state_dict(torch.load(ckpt))
         model.eval()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
 
-        with open(repo_path(SYSTEM_PARAMS.files.test_loader_gnn_iros), 'rb') as f:
+        with open(repo_path(SYSTEM_PARAMS.files.test_loader_gnn_sim), 'rb') as f:
             test_data = pickle.load(f)
-        all_stats = test_data['dataset_stats']
 
         full_dataset = MyDataset(
             scheme="single_dataset",
             sim_exp="exp",
-            data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+            data_dir=SYSTEM_PARAMS.files.exp_data_silicone,
             apply_augmentations=False,
             name='silicone',
         )
@@ -948,11 +977,15 @@ def evaluate_and_plot_roc():
             val_size=0.0,
             test_size=0.0
         )
-        if 'iros' in test_data:
+        if has_flat_stats(test_data):
             stats = test_data['dataset_stats']
         else:
+            # The simulated pipeline carries a difficulty curriculum, so its
+            # stats are keyed by difficulty. `train_on_sim()` trains at 1.0 and
+            # stores {1.0: stats}; fall back to the sole entry if a loader was
+            # written at a different setting.
             all_stats = test_data['dataset_stats']
-            target_difficulty = 1.0
+            target_difficulty = 1.0 if 1.0 in all_stats else next(iter(all_stats))
             train_dataset.set_difficulty_level(target_difficulty)
             stats = all_stats[target_difficulty]
         train_dataset.set_stats(stats)
@@ -1028,7 +1061,9 @@ def evaluate_and_plot_roc():
     for spine in plt.gca().spines.values():
         spine.set_linewidth(3.0)
     plt.tight_layout()
-    roc_path = repo_path("difftactile/output/roc_curve_iros.pdf")
+    # Named for the configuration, not the checkpoint: the legacy `script_gnn`
+    # entrypoint in cnn/gnn.py already writes roc_curve_sim.pdf.
+    roc_path = repo_path("difftactile/output/roc_curve_A-to-B.pdf")
     os.makedirs(os.path.dirname(roc_path), exist_ok=True)
     plt.savefig(roc_path, format="pdf", dpi=300)
     print(f"ROC curve written to: {roc_path}")
@@ -1055,22 +1090,22 @@ def evaluate_and_plot_roc():
 # giving three (train -> test) configurations, each with a train and an
 # evaluate mode so that no branch switching is needed to reproduce any of them:
 #
-#   A-to-B   train on sim,  test on silicone   (large "icra" architecture)
-#   C-to-B   train on meat, test on silicone   (small "iros" architecture)
-#   A-to-C   train on sim,  test on meat       (large "icra" architecture)
+#   A-to-B   train on sim,  test on silicone   (large architecture)
+#   C-to-B   train on meat, test on silicone   (small "compact" architecture)
+#   A-to-C   train on sim,  test on meat       (large architecture)
 #
 # These used to live on separate git branches, selected by editing source
 # (commenting call lists, toggling `if False:` blocks, and a bare `return` at
 # the top of main()). They are unified here and chosen by name instead.
 #
 # NOTE on the legacy alias `silicone-to-meat`: despite its name it loads
-# `final_segmentation_model_gnn_icra.pt`, which is the SIMULATION-trained
+# `final_segmentation_model_gnn_sim.pt`, which is the SIMULATION-trained
 # checkpoint (the large architecture also used for A-to-B). The configuration it
 # actually runs is therefore sim -> meat, i.e. A-to-C, which is how the paper
 # describes it. The old name is kept working, but A-to-C is the accurate one.
 #
 # Usage:
-#   python -m difftactile.scripts.script_iros_gnn <config> [--train|--eval]
+#   python -m difftactile.scripts.script_segmentation_gnn <config> [--train|--eval]
 # =============================================================================
 
 # Canonical paper configurations. Each maps to (train_fn, eval_fn).
@@ -1087,7 +1122,7 @@ SCENARIO_ALIASES = {
     "sim-to-meat-eval": "A-to-C",
 }
 
-# Kept so that `from difftactile.cnn.iros_gnn import *` still exposes a list of
+# Kept so that `from difftactile.cnn.segmentation_gnn import *` still exposes a list of
 # every accepted name (the old constant only held the three legacy names).
 SCENARIOS = PAPER_CONFIGS + tuple(SCENARIO_ALIASES)
 
@@ -1100,19 +1135,19 @@ def train_on_sim(test_on="silicone"):
     training data and the normalisation statistics are identical, which is why
     one function covers both.
 
-    Uses the LARGE ("icra") architecture, matching
-    final_segmentation_model_gnn_icra.pt - the published simulation-trained
+    Uses the LARGE ("large") architecture, matching
+    final_segmentation_model_gnn_sim.pt - the published simulation-trained
     checkpoint that the evaluate-only paths load.
 
     Previously this lived in `cnn/gnn.py::main()`, disabled by a bare `return`
     on every branch, so the simulation-trained models could not be reproduced
     without editing source.
     """
-    BATCH_SIZE = getattr(SYSTEM_PARAMS.gnn, "batch_size_icra", SYSTEM_PARAMS.gnn.batch_size)
-    NUM_EPOCHS = getattr(SYSTEM_PARAMS.gnn, "num_epochs_icra", SYSTEM_PARAMS.gnn.num_epochs)
-    NUM_WORKERS = getattr(SYSTEM_PARAMS.gnn, "num_workers_icra", SYSTEM_PARAMS.gnn.num_workers)
-    NUM_TRAIN_BATCHES = getattr(SYSTEM_PARAMS.gnn, "num_train_batches_icra", -1)
-    NUM_VAL_BATCHES = getattr(SYSTEM_PARAMS.gnn, "num_val_batches_icra", -1)
+    BATCH_SIZE = getattr(SYSTEM_PARAMS.gnn, "batch_size_large", SYSTEM_PARAMS.gnn.batch_size)
+    NUM_EPOCHS = getattr(SYSTEM_PARAMS.gnn, "num_epochs_large", SYSTEM_PARAMS.gnn.num_epochs)
+    NUM_WORKERS = getattr(SYSTEM_PARAMS.gnn, "num_workers_large", SYSTEM_PARAMS.gnn.num_workers)
+    NUM_TRAIN_BATCHES = getattr(SYSTEM_PARAMS.gnn, "num_train_batches_large", -1)
+    NUM_VAL_BATCHES = getattr(SYSTEM_PARAMS.gnn, "num_val_batches_large", -1)
     # MyDataModule takes an epoch subset *size* and clamps it with
     # min(len(dataset), size), so a very large number means "use everything".
     # A batch count of -1 is the config's way of saying exactly that.
@@ -1127,7 +1162,7 @@ def train_on_sim(test_on="silicone"):
     sim_dataset = MyDataset(
         scheme="single_dataset",
         sim_exp="sim",
-        data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
+        data_dir=SYSTEM_PARAMS.files.sim_data,
         apply_augmentations=True,
         name="sim",
     )
@@ -1140,14 +1175,14 @@ def train_on_sim(test_on="silicone"):
         real_dataset = MyDataset(
             scheme="single_dataset",
             sim_exp="exp",
-            data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+            data_dir=SYSTEM_PARAMS.files.exp_data_silicone,
             apply_augmentations=False,
             name="silicone",
         )
         real_eval_dataset = real_dataset
     elif test_on == "meat":
         real_dataset = MyDataset(
-            scheme="iros",
+            scheme="meat",
             sim_exp="apple",
             data_dir="banana",
             apply_augmentations="cherry",
@@ -1169,7 +1204,7 @@ def train_on_sim(test_on="silicone"):
     for ds in (train_dataset, val_dataset, test_dataset, real_eval_dataset):
         ds.set_stats(stats)
     # set_difficulty_level only applies to the simulated "single_dataset"
-    # scheme; the meat ("iros") scheme has no curriculum.
+    # scheme; the meat scheme has no curriculum.
     if test_on == "silicone":
         real_eval_dataset.set_difficulty_level(target_difficulty)
 
@@ -1186,7 +1221,7 @@ def train_on_sim(test_on="silicone"):
     # Persist the stats alongside the test split so the evaluate-only paths can
     # normalise exactly as training did. Written to a *_retrained path so the
     # published artifacts survive (see _retrained_path).
-    test_loader_path = _retrained_path(SYSTEM_PARAMS.files.test_loader_gnn_icra)
+    test_loader_path = _retrained_path(SYSTEM_PARAMS.files.test_loader_gnn_sim)
     os.makedirs(os.path.dirname(test_loader_path), exist_ok=True)
     with open(test_loader_path, "wb") as f:
         pickle.dump(
@@ -1199,10 +1234,10 @@ def train_on_sim(test_on="silicone"):
         )
     print(f"test loader written to: {test_loader_path}")
 
-    model = GNN(arch="icra")
+    model = GNN(arch="large")
     model.set_stats(stats)
     checkpoint_cb = ModelCheckpoint(
-        monitor="val_iou/1", mode="max", save_top_k=1, filename="best-model-icra"
+        monitor="val_iou/1", mode="max", save_top_k=1, filename="best-model-sim"
     )
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
@@ -1236,7 +1271,7 @@ def train_on_sim(test_on="silicone"):
     duration = time.perf_counter() - start
     print(f"\nTraining and testing completed in {duration:.2f} s ({duration / 60:.2f} min)")
 
-    model_path = _retrained_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_icra)
+    model_path = _retrained_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_sim)
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     torch.save(best_model.state_dict(), model_path)
     print(f"checkpoint written to: {model_path}")
@@ -1247,20 +1282,20 @@ def train_on_sim(test_on="silicone"):
 
 
 def silicone_to_meat():
-    """Test the silicone-trained (ICRA) checkpoint on the real meat trials.
+    """Test the simulation-trained (large) checkpoint on the real meat trials.
 
     No training happens: the checkpoint is loaded as-is and evaluated, which is
     what makes this the cross-domain generalisation result.
     """
-    # The ICRA checkpoint is the LARGE architecture, so both the model and the
-    # batch size come from the `*_icra` config keys.
-    BATCH_SIZE = getattr(SYSTEM_PARAMS.gnn, "batch_size_icra", SYSTEM_PARAMS.gnn.batch_size)
-    NUM_WORKERS = getattr(SYSTEM_PARAMS.gnn, "num_workers_icra", SYSTEM_PARAMS.gnn.num_workers)
+    # The published checkpoint is the LARGE architecture, so both the model and the
+    # batch size come from the `*_large` config keys.
+    BATCH_SIZE = getattr(SYSTEM_PARAMS.gnn, "batch_size_large", SYSTEM_PARAMS.gnn.batch_size)
+    NUM_WORKERS = getattr(SYSTEM_PARAMS.gnn, "num_workers_large", SYSTEM_PARAMS.gnn.num_workers)
 
-    # The meat trials are indexed by dataset.py's "iros" scheme; the sim_exp /
+    # The meat trials are indexed by dataset.py's "meat" scheme; the sim_exp /
     # data_dir / apply_augmentations arguments are unused for that scheme.
     meat_dataset = MyDataset(
-        scheme="iros",
+        scheme="meat",
         sim_exp="apple",
         data_dir="banana",
         apply_augmentations="cherry",
@@ -1269,18 +1304,18 @@ def silicone_to_meat():
     # Pure transfer: every trial is evaluated, none held back for fitting.
     _, _, test_dataset = meat_dataset.create_splits(all_to_test=True)
 
-    model = GNN(arch="icra")
-    ckpt = repo_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_icra)
-    print(f"loading silicone-trained checkpoint: {ckpt}")
+    model = GNN(arch="large")
+    ckpt = repo_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_sim)
+    print(f"loading simulation-trained checkpoint: {ckpt}")
     model.load_state_dict(
         torch.load(ckpt, map_location="cuda" if torch.cuda.is_available() else "cpu")
     )
 
     # Normalisation statistics must match those the checkpoint was trained with,
     # so they are taken from the saved test-loader pickle rather than recomputed.
-    with open(repo_path(SYSTEM_PARAMS.files.test_loader_gnn_icra), "rb") as f:
+    with open(repo_path(SYSTEM_PARAMS.files.test_loader_gnn_sim), "rb") as f:
         test_data = pickle.load(f)
-    if "iros" in test_data:
+    if has_flat_stats(test_data):
         stats = test_data["dataset_stats"]
     else:
         stats = test_data["dataset_stats"][0.0]
@@ -1290,7 +1325,7 @@ def silicone_to_meat():
     # There, this call sat inside a dead `if False:` block, so the dataset's
     # `warmup` flag stayed True and MyDataset.normalise() was a no-op: the
     # checkpoint was evaluated on UNNORMALISED inputs despite having been
-    # trained on normalised ones. Applying the ICRA statistics the checkpoint
+    # trained on normalised ones. Applying the simulation statistics the checkpoint
     # expects raises the vein IoU from 0.034 to 0.198 (background 0.888 ->
     # 0.809) — measured, see REPRODUCTION_TEST.md. The old path understated the
     # cross-domain result roughly six-fold.
@@ -1305,7 +1340,7 @@ def silicone_to_meat():
         shuffle=False,
     )
     trainer = pl.Trainer(accelerator="auto", logger=False, enable_checkpointing=False)
-    print("\nTesting silicone-trained model on the meat dataset:")
+    print("\nTesting simulation-trained model on the meat dataset:")
     start = time.perf_counter()
     trainer.test(model, dataloaders=meat_loader)
     print(f"\nDone in {time.perf_counter() - start:.2f} s")
@@ -1342,7 +1377,7 @@ CONFIG_ACTIONS = {
 DEFAULT_MODES = {"A-to-B": "eval", "C-to-B": "train", "A-to-C": "eval"}
 
 _USAGE = (
-    "Usage: python -m difftactile.scripts.script_iros_gnn <config> [--train|--eval]\n"
+    "Usage: python -m difftactile.scripts.script_segmentation_gnn <config> [--train|--eval]\n"
     "\n"
     "Configurations (paper notation; A=simulation, B=silicone, C=meat):\n"
     "  A-to-B   train on simulation, test on silicone   [default: --eval]\n"
@@ -1356,7 +1391,7 @@ _USAGE = (
 
 
 def run_scenario(scenario=None, mode=None):
-    """Entrypoint used by scripts/script_iros_gnn.py.
+    """Entrypoint used by scripts/script_segmentation_gnn.py.
 
     Selects one of the three paper configurations (A-to-B, C-to-B, A-to-C) and
     runs it in either training or evaluation mode, so all three models can be
@@ -1404,4 +1439,11 @@ def run_scenario(scenario=None, mode=None):
 
     action = CONFIG_ACTIONS[canonical]
     print(f"=== {canonical} ({action['description']}) | mode: {mode} ===")
-    return action[mode]()
+    # Tag any artifacts this run writes with the configuration name, so the
+    # three configurations do not overwrite each other's retrained checkpoints.
+    global _ACTIVE_CONFIG
+    _ACTIVE_CONFIG = canonical
+    try:
+        return action[mode]()
+    finally:
+        _ACTIVE_CONFIG = None

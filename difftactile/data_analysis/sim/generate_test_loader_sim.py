@@ -1,5 +1,5 @@
 """
-Regenerate `difftactile/output/test_loader_gnn_icra.pickle` without retraining.
+Regenerate `difftactile/output/test_loader_gnn_sim.pickle` without retraining.
 
 That pickle is normally a by-product of `difftactile/cnn/gnn.py::main()`, which writes it
 *before* fitting the model (gnn.py:743). Its consumers -- `gnn.evaluate_and_plot_roc()`
@@ -9,12 +9,12 @@ reproduces exactly the construction gnn.main() performs up to that write, so a c
 trained earlier stays compatible with the stats used to normalise its inputs.
 
 Requires (see README "Reproducibility"):
-  - SYSTEM_PARAMS.files.sim_data_endgame  (simulated `_reordered_dense` trajectories)
-  - SYSTEM_PARAMS.files.exp_data_endgame  (silicone `_dense` dataset)
+  - SYSTEM_PARAMS.files.sim_data  (simulated `_reordered_dense` trajectories)
+  - SYSTEM_PARAMS.files.exp_data_silicone  (silicone `_dense` dataset)
   - difftactile/output/base-graph-connectivity.npz
 
 Run from the repository root:
-    python -m difftactile.scripts.script_generate_test_loader_icra
+    python -m difftactile.scripts.script_generate_test_loader_sim
 """
 
 import os
@@ -43,7 +43,7 @@ def main():
     full_dataset = MyDataset(
         scheme="single_dataset",
         sim_exp="sim",
-        data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
+        data_dir=SYSTEM_PARAMS.files.sim_data,
         apply_augmentations=True,
     )
     train_dataset, val_dataset, test_dataset = full_dataset.create_splits(
@@ -70,7 +70,7 @@ def main():
         "num_workers": num_workers,
         "dataset_stats": all_stats,
     }
-    out_path = SYSTEM_PARAMS.files.test_loader_gnn_icra
+    out_path = SYSTEM_PARAMS.files.test_loader_gnn_sim
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "wb") as f:
         pickle.dump(test_data, f)

@@ -56,8 +56,8 @@ class VisualiseMesh:
         mask = radii < alpha
         return tetrahedra[mask]
     
-    def load_endgame_exp_points(self):
-        path = 'difftactile/manual_or_experimental_data/endgame/20250901-131547_sim_format_poses/metadata_0.0_0.0.npz'
+    def load_silicone_exp_points(self):
+        path = 'difftactile/manual_or_experimental_data/silicone_training_data/20250901-131547_sim_format_poses/metadata_0.0_0.0.npz'
         data = np.load(path)
         points = data['vein_polyline']
         points = points[0]
@@ -344,8 +344,8 @@ def camera_to_world_transform(
     return T
 
 
-def load_endgame_exp_points():
-    path = 'difftactile/manual_or_experimental_data/endgame/20250901-131547_sim_format_poses/metadata_0.0_0.0.npz'
+def load_silicone_exp_points():
+    path = 'difftactile/manual_or_experimental_data/silicone_training_data/20250901-131547_sim_format_poses/metadata_0.0_0.0.npz'
     data = np.load(path)
     points = data['vein_polyline']
     mask = data['vein_polyline_mask']
@@ -420,7 +420,7 @@ def main():
     visualise_mesh = VisualiseMesh()
     visualise_mesh.visualise_tetrahedra_vedo()
 
-    # points_3d = load_endgame_exp_points()
+    # points_3d = load_silicone_exp_points()
     # viz = TemporalPointCloudVisualizer(points_3d)
     # viz.run()
 

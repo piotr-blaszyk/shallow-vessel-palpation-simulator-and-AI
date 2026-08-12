@@ -40,14 +40,14 @@ class PredictExp:
         self.dataset = MyDataset(
             scheme="single_dataset",
             sim_exp="exp",
-            data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+            data_dir=SYSTEM_PARAMS.files.exp_data_silicone,
             normalise_pos=False,
             apply_augmentations=False,
             name='silicone',
         )
-        with open(SYSTEM_PARAMS.files.test_loader_gnn_iros, 'rb') as f:
+        with open(SYSTEM_PARAMS.files.test_loader_gnn_meat, 'rb') as f:
             test_data = pickle.load(f)
-        if 'iros' in test_data:
+        if has_flat_stats(test_data):
             self.stats = test_data['dataset_stats']
         else:
             all_stats = test_data['dataset_stats']
@@ -129,7 +129,7 @@ class PredictExp:
         self.map_2d_3d = points_E
 
     def init_model(self):
-        model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn_iros
+        model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn_meat
         model = GNN()
         model.load_state_dict(torch.load(model_path))
         model.eval()

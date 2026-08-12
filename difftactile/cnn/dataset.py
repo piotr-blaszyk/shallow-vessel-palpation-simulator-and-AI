@@ -19,12 +19,12 @@ from difftactile.main.synthetic_image_generator import *
 from difftactile.sensor_model.fisheye_model_no_taichi import *
 
 
-# Real meat-phantom trials, produced by the endgame/iros preprocessing chain.
+# Real meat-phantom trials, produced by the silicone/meat preprocessing chain.
 # Distributed via the Zenodo data bundle (see restore_data.sh), not committed.
-IROS_CLEAN_DATA_DIR = data_path(
-    "difftactile/manual_or_experimental_data/iros_training_data/clean/"
+MEAT_CLEAN_DATA_DIR = data_path(
+    "difftactile/manual_or_experimental_data/meat_training_data/clean/"
 )
-IROS_TRAIN_TRIALS = [
+MEAT_TRAIN_TRIALS = [
     "20260228-230937",
     "20260228-232013",
     "20260228-232632",
@@ -33,7 +33,7 @@ IROS_TRAIN_TRIALS = [
     "20260228-234824",
     "20260228-235749",
 ]
-IROS_VALIDATION_TRIALS = [
+MEAT_VALIDATION_TRIALS = [
     "20260228-234337",
     "20260301-000849",
     "20260301-001457",
@@ -54,12 +54,12 @@ class MyDataset(torch.utils.data.Dataset):
         data_points_pos=None,
         data_points_neg=None,
         data_points=None,
-        iros_data=None,
+        meat_data=None,
         normalise_pos=True,
         exp_markers_npz=None,
         exp_ground_truth_labels_npz=None,
         exp_dilation=None,
-        dilation_iros=1,
+        dilation_meat=1,
         name=None,
     ):
         # Initialize mutable defaults
@@ -73,8 +73,8 @@ class MyDataset(torch.utils.data.Dataset):
             data_points_neg = []
         if data_points is None:
             data_points = []
-        if iros_data is None:
-            iros_data = []
+        if meat_data is None:
+            meat_data = []
         super().__init__()
         start_time = time.perf_counter()
         self.apply_augmentations = apply_augmentations
@@ -125,9 +125,9 @@ class MyDataset(torch.utils.data.Dataset):
         self.data_points_pos = data_points_pos
         self.data_points_neg = data_points_neg
         self.data_points = data_points
-        self.iros_data = iros_data
+        self.meat_data = meat_data
         self.data_dir = data_dir
-        self.dilation_iros = dilation_iros
+        self.dilation_meat = dilation_meat
         if mode == "root":
             if scheme == "old":
                 self.populate_clips_old_scheme()
@@ -138,8 +138,8 @@ class MyDataset(torch.utils.data.Dataset):
                     self.populate_clips_single_dataset_scheme_train()
                 else:
                     self.populate_clips_single_dataset_scheme_test()
-            elif scheme == "iros":
-                self.populate_clips_iros()
+            elif scheme == "meat":
+                self.populate_clips_meat()
         elif mode == "exp":
             self.compute_data_points_exp()
         elif mode != "dummy":
@@ -149,15 +149,15 @@ class MyDataset(torch.utils.data.Dataset):
                 self.compute_data_points_new_scheme()
             elif scheme == "single_dataset":
                 pass
-            elif scheme == "iros":
+            elif scheme == "meat":
                 pass
         end_time = time.perf_counter()
         if mode == "root":
             print(
                 f"Time taken to initialise dataset: {end_time - start_time:.2f} seconds"
             )
-            if scheme == "iros":
-                print(f"dataset name: [{name}]; num data points: {len(self.iros_data):,}")
+            if scheme == "meat":
+                print(f"dataset name: [{name}]; num data points: {len(self.meat_data):,}")
             else:
                 print(f"dataset name: [{name}]; num data points: {len(self.data_points):,}")
     
@@ -199,14 +199,14 @@ class MyDataset(torch.utils.data.Dataset):
                         (file_path, start_ix, dilation)
                     )
 
-    def populate_clips_iros(self):
-        self.iros_data = []
-        allowed_trial_ids = set(IROS_TRAIN_TRIALS) | set(IROS_VALIDATION_TRIALS)
-        trial_ids = sorted(os.listdir(IROS_CLEAN_DATA_DIR))
+    def populate_clips_meat(self):
+        self.meat_data = []
+        allowed_trial_ids = set(MEAT_TRAIN_TRIALS) | set(MEAT_VALIDATION_TRIALS)
+        trial_ids = sorted(os.listdir(MEAT_CLEAN_DATA_DIR))
         for trial_id in trial_ids:
             if trial_id not in allowed_trial_ids:
                 continue
-            trial_folder_path = os.path.join(IROS_CLEAN_DATA_DIR, trial_id)
+            trial_folder_path = os.path.join(MEAT_CLEAN_DATA_DIR, trial_id)
             if not os.path.isdir(trial_folder_path):
                 continue
             marker_positions_path = os.path.join(trial_folder_path, "marker_positions.npz")
@@ -215,18 +215,18 @@ class MyDataset(torch.utils.data.Dataset):
             with np.load(marker_positions_path) as marker_positions_data:
                 marker_positions = marker_positions_data["marker_positions"]
             total_frames = marker_positions.shape[0]
-            dilated_clip_len = self.clip_len * self.dilation_iros
+            dilated_clip_len = self.clip_len * self.dilation_meat
             if total_frames < dilated_clip_len:
                 continue
             num_possible_starts = total_frames - dilated_clip_len + 1
             for start_ix in range(num_possible_starts):
                 video_frame_indices = list(
-                    range(start_ix, start_ix + dilated_clip_len, self.dilation_iros)
+                    range(start_ix, start_ix + dilated_clip_len, self.dilation_meat)
                 )
-                self.iros_data.append(
-                    (trial_folder_path, self.dilation_iros, video_frame_indices)
+                self.meat_data.append(
+                    (trial_folder_path, self.dilation_meat, video_frame_indices)
                 )
-        self.data_points = self.iros_data
+        self.data_points = self.meat_data
 
     @staticmethod
     def get_folder_files(path):
@@ -425,8 +425,8 @@ class MyDataset(torch.utils.data.Dataset):
         print("clips have now been populated!")
 
     def __len__(self):
-        if self.scheme == "iros":
-            return len(self.iros_data)
+        if self.scheme == "meat":
+            return len(self.meat_data)
         return len(self.data_points)
 
     @staticmethod
@@ -451,8 +451,8 @@ class MyDataset(torch.utils.data.Dataset):
             return self.create_splits_new_scheme(*args, **kwargs)
         elif self.scheme == "single_dataset":
             return self.create_splits_single_dataset_scheme(*args, **kwargs)
-        elif self.scheme == "iros":
-            return self.create_splits_iros(*args, **kwargs)
+        elif self.scheme == "meat":
+            return self.create_splits_meat(*args, **kwargs)
 
     def create_splits_old_scheme(self, train_size, val_size, test_size):
         """Split dataset while ensuring all clips from the same trajectory stay together"""
@@ -667,7 +667,7 @@ class MyDataset(torch.utils.data.Dataset):
         print(f"split len: {[len(x) for x in res]}")
         return res
 
-    def create_splits_iros(self, all_to_test=False, *args, **kwargs):
+    def create_splits_meat(self, all_to_test=False, *args, **kwargs):
         """Split the real meat trials into train / val / test datasets.
 
         Two published behaviours:
@@ -680,15 +680,15 @@ class MyDataset(torch.utils.data.Dataset):
           evaluation, where a silicone-trained checkpoint is tested on meat
           without any retraining, so no trial may be held out for fitting.
         """
-        train_trial_set = set(IROS_TRAIN_TRIALS)
-        validation_trial_set = set(IROS_VALIDATION_TRIALS)
+        train_trial_set = set(MEAT_TRAIN_TRIALS)
+        validation_trial_set = set(MEAT_VALIDATION_TRIALS)
         train_data = []
         val_data = []
         test_data = []
         if all_to_test:
-            test_data = list(self.iros_data)
+            test_data = list(self.meat_data)
         else:
-            for data_point in self.iros_data:
+            for data_point in self.meat_data:
                 trial_folder_path, dilation, video_frame_indices = data_point
                 trial_id = os.path.basename(trial_folder_path)
                 if trial_id in train_trial_set:
@@ -700,7 +700,7 @@ class MyDataset(torch.utils.data.Dataset):
             sim_exp=self.sim_exp,
             data_dir=self.data_dir,
             mode="train",
-            iros_data=train_data,
+            meat_data=train_data,
             apply_augmentations=self.apply_augmentations,
         )
         val_dataset = MyDataset(
@@ -708,7 +708,7 @@ class MyDataset(torch.utils.data.Dataset):
             sim_exp=self.sim_exp,
             data_dir=self.data_dir,
             mode="val",
-            iros_data=val_data,
+            meat_data=val_data,
             apply_augmentations=self.apply_augmentations,
         )
         test_dataset = MyDataset(
@@ -716,7 +716,7 @@ class MyDataset(torch.utils.data.Dataset):
             sim_exp=self.sim_exp,
             data_dir=self.data_dir,
             mode="test",
-            iros_data=test_data,
+            meat_data=test_data,
             apply_augmentations=self.apply_augmentations,
         )
         res = (train_dataset, val_dataset, test_dataset)
@@ -804,8 +804,8 @@ class MyDataset(torch.utils.data.Dataset):
             return np.array([-1.0, -1.0])
 
     def __getitem__(self, idx):
-        if self.scheme == "iros":
-            res = self.getitem_iros(idx)
+        if self.scheme == "meat":
+            res = self.getitem_meat(idx)
             return res
         if self.mode == "exp":
             frame_ix = self.data_points[idx]
@@ -934,8 +934,8 @@ class MyDataset(torch.utils.data.Dataset):
         frame_ix = torch.tensor(frame_ix)
         return pyg, veins, poses, metadata, frame_ix
 
-    def getitem_iros(self, idx):
-        trial_folder_path, dilation, video_frame_indices = self.iros_data[idx]
+    def getitem_meat(self, idx):
+        trial_folder_path, dilation, video_frame_indices = self.meat_data[idx]
         marker_positions_path = os.path.join(trial_folder_path, "marker_positions.npz")
         marker_labels_path = os.path.join(trial_folder_path, "marker_labels.npz")
         with np.load(marker_positions_path) as marker_positions_data:

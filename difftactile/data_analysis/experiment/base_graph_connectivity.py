@@ -34,12 +34,12 @@ class ComputeEdges:
     @staticmethod
     def compute_base_graph_connectivity():
         img = cv2.imread(
-            SYSTEM_PARAMS.files.iros_sensor_default_state,
+            SYSTEM_PARAMS.files.sensor_default_state,
             cv2.IMREAD_GRAYSCALE,
         )
         if img is None:
             raise FileNotFoundError(
-                f"Could not load image from {SYSTEM_PARAMS.files.iros_sensor_default_state}"
+                f"Could not load image from {SYSTEM_PARAMS.files.sensor_default_state}"
             )
         marker_data = np.load(SYSTEM_PARAMS.files.init_marker_positions_npz)
         points = marker_data["points"]
@@ -79,9 +79,9 @@ class ComputeEdges:
         center_idx = int(key_marker_indices[0])
         line_point_ixs = key_marker_indices[1:]
 
-        key_marker_img = cv2.imread(SYSTEM_PARAMS.files.iros_sensor_default_state)
+        key_marker_img = cv2.imread(SYSTEM_PARAMS.files.sensor_default_state)
         if key_marker_img is None:
-            raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.iros_sensor_default_state}")
+            raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.sensor_default_state}")
         for i, marker_idx in enumerate(key_marker_indices):
             x, y = map(int, points[int(marker_idx)])
             cv2.circle(key_marker_img, (x, y), radius=6, color=(0, 0, 255), thickness=-1)
@@ -225,9 +225,9 @@ class ComputeEdges:
             dist_from_centre=norms_all,
         )
 
-        img = cv2.imread(SYSTEM_PARAMS.files.iros_sensor_default_state)
+        img = cv2.imread(SYSTEM_PARAMS.files.sensor_default_state)
         if img is None:
-            raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.iros_sensor_default_state}")
+            raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.sensor_default_state}")
 
         for i, (x, y) in enumerate(points):
             x, y = int(x), int(y)
@@ -248,7 +248,7 @@ class ComputeEdges:
         conn = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         _, mango, _ = Adjacency.get_graph_connectivity_helper(conn, peas)
         np.savez(
-            SYSTEM_PARAMS.files.iros_marker_locations_ordered,
+            SYSTEM_PARAMS.files.marker_locations_ordered,
             points=mango,
         )
 
@@ -262,7 +262,7 @@ class ComputeEdges:
         if img is None:
             raise FileNotFoundError(f"Could not load image from {SYSTEM_PARAMS.files.flat_sensor_default_state}")
 
-        path = SYSTEM_PARAMS.files.iros_marker_locations_ordered
+        path = SYSTEM_PARAMS.files.marker_locations_ordered
         data = np.load(path)
         points = data['points']
 
@@ -304,7 +304,7 @@ class ComputeEdges:
     @staticmethod
     def validate_graph_connectivity_algorithm():
         dataset = MyDataset(mode='dummy', scheme='new')
-        with open(SYSTEM_PARAMS.files.test_loader_gnn_icra, 'rb') as f:
+        with open(SYSTEM_PARAMS.files.test_loader_gnn_sim, 'rb') as f:
             test_data = pickle.load(f)
         stats = test_data['dataset_stats'][1.0]
         dataset.set_stats(stats)

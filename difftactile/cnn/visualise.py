@@ -19,7 +19,7 @@ class Visualisation:
             self.test_loader = SYSTEM_PARAMS.files.test_loader
         elif SYSTEM_PARAMS.meta.cnn_gnn == 1:
             self.model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn
-            self.test_loader = SYSTEM_PARAMS.files.test_loader_gnn_icra
+            self.test_loader = SYSTEM_PARAMS.files.test_loader_gnn_sim
 
     @staticmethod
     def calculate_iou(ground_truth, prediction):
@@ -424,14 +424,14 @@ class Visualisation:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="exp",
-                    data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+                    data_dir=SYSTEM_PARAMS.files.exp_data_silicone,
                     apply_augmentations=False,
                 )
             if False:
                 full_dataset = MyDataset(
                     scheme="single_dataset",
                     sim_exp="sim",
-                    data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
+                    data_dir=SYSTEM_PARAMS.files.sim_data,
                     apply_augmentations=True,
                 )
             _, _, test_dataset = full_dataset.create_splits(

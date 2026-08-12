@@ -17,7 +17,7 @@ class HungarianExp:
         points_mask = data['markers_mask']
         base_graph_data = np.load(SYSTEM_PARAMS.files.base_graph_connectivity)
         # base_points = base_graph_data['points']
-        data_flat = np.load(SYSTEM_PARAMS.files.iros_marker_locations_ordered)
+        data_flat = np.load(SYSTEM_PARAMS.files.marker_locations_ordered)
         base_points = data_flat['points']
         adjacency_matrix = base_graph_data['adjacency_matrix']
 

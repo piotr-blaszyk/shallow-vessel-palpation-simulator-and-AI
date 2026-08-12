@@ -13,9 +13,9 @@ from difftactile.data_analysis.experiment.predict_exp import *
 from difftactile.main.constants import *
 
 
-class Endgame:
+class SiliconePreprocessData:
     def __init__(self):
-        self.root = "difftactile/manual_or_experimental_data/endgame"
+        self.root = "difftactile/manual_or_experimental_data/silicone_training_data"
         self.dir = "20250901-131547"
         self.input_dir = os.path.join(self.root, self.dir)
         self.output_dir = os.path.join(self.root, f"{self.dir}_interpolated_trimmed")
@@ -719,7 +719,7 @@ class Endgame:
             vein_regression = data["vein_regression"]
 
             # Reconstruct polyline + mask from dense fields
-            vein_polyline, vein_polyline_mask = Endgame.line_dense_to_sparse(
+            vein_polyline, vein_polyline_mask = SiliconePreprocessData.line_dense_to_sparse(
                 vein_classification, vein_regression, cx, cy, r, num_points
             )
 
@@ -738,7 +738,7 @@ class Endgame:
 
 
 def main():
-    e = Endgame()
+    e = SiliconePreprocessData()
     # e.interpolate_metadata_and_trim_videos()
     # e.apply_dilation(16)
     # e.visualise_videos()

@@ -103,7 +103,7 @@ class FisheyeModelNoTaichi:
         scale_y = source_height / SYSTEM_PARAMS.fisheye_model.target_image_height
         params = cv2.SimpleBlobDetector_Params()
 
-        if mode == "iros-first-run":
+        if mode == "meat-first-run":
             params.minThreshold = 0
             params.maxThreshold = 150
             params.thresholdStep = 5
@@ -123,7 +123,7 @@ class FisheyeModelNoTaichi:
             params.filterByColor = True
             params.blobColor = 0
             params.minRepeatability = 4
-        elif mode == "iros":
+        elif mode == "meat":
             params.minThreshold = 0
             params.maxThreshold = 200
             params.thresholdStep = 5
@@ -372,17 +372,17 @@ class FisheyeModelNoTaichi:
     @staticmethod
     def save_init_marker_positions():
         img = cv2.imread(
-            SYSTEM_PARAMS.files.iros_sensor_default_state, cv2.IMREAD_GRAYSCALE
+            SYSTEM_PARAMS.files.sensor_default_state, cv2.IMREAD_GRAYSCALE
         )
         if img is None:
             raise FileNotFoundError(
                 "Could not find or open "
-                + SYSTEM_PARAMS.files.iros_sensor_default_state
+                + SYSTEM_PARAMS.files.sensor_default_state
             )
-        # mode = 'iros'
-        mode = 'iros-first-run'
+        # mode = 'meat'
+        mode = 'meat-first-run'
         marker_positions, circle_center, circle_radius = FisheyeModelNoTaichi.get_marker_image(img, mode=mode)
-        if mode == 'iros-first-run':
+        if mode == 'meat-first-run':
             extra_markers = np.array([[872, 300], [1364, 577], [718, 592]], dtype=np.float32)
             marker_positions = np.asarray(marker_positions, dtype=np.float32).reshape(-1, 2)
             marker_positions = np.vstack([marker_positions, extra_markers])
