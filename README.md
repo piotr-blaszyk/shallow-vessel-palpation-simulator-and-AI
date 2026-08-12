@@ -547,10 +547,53 @@ corresponding module. To add one, follow the existing 3-line pattern.
 
 ---
 
-## Known issues
+## Limitations and known issues
 
-This is a research snapshot rather than a packaged tool, and it is published as-is. The
-following are known and are *not* worth reporting as bugs:
+This is a research snapshot rather than a packaged tool, and it is published as-is. The first
+two entries below are deliberate modelling decisions, and understanding them is essential to
+interpreting the simulator's output correctly. The remainder are known rough edges and are
+*not* worth reporting as bugs:
+
+- **Contact compliance is deliberately asymmetric across the three contact pairs.** The
+  sensor↔phantom pair is tuned to transfer very little deformation to either body, so the bulk
+  of the phantom surface registers only weakly on the sensor membrane. Visible sensor
+  deformation is instead driven almost entirely by the sensor↔vein pair. The simulator is
+  therefore best understood as a *targeted model of the subsurface feature's mechanical
+  signature* rather than a general-purpose soft-body contact solver: the quantity it is built
+  to reproduce is the marker displacement field induced by a stiff inclusion beneath a
+  compliant surface, not the absolute contact mechanics of the surface itself.
+
+  This is a strong simplification of the underlying physics, and it is adopted because it
+  reproduces the target signal well. The resulting marker deformations match those measured on
+  the real ViTacTip across all four domain-adaptation trajectories (press, press-and-slide,
+  press-and-twist-x, press-and-twist-z) and throughout training-set collection — which is the
+  property the downstream GNN actually consumes. Since the network is trained purely in
+  simulation and evaluated on real sensor video, the fidelity that matters is fidelity of the
+  marker field, and the sim-to-real transfer results reported for the A→B and A→C
+  configurations bear this out. Treat absolute contact forces and phantom-surface deformation
+  magnitudes as uncalibrated; treat the marker displacements as the validated output.
+
+- **The MPM phantom is kinematically fixed.** Every phantom material point is pinned rather
+  than advected: in `Phantom.g2p()` (`difftactile/object_model/phantom.py`) each particle whose
+  `is_fixed` flag is set has its velocity and affine velocity field zeroed and its position
+  copied unchanged to the next substep. Despite the name, `phantom.fix_bottom_points` does not
+  restrict this to the bottom layer — `is_fixed` is assigned `np.ones_like(...)`, so the flag
+  is set for *all* particles and the phantom acts as a rigid, immovable body. (The commented-out
+  `z_coords <= z_threshold` line and the now-unused `phantom.fixed_points_z_ratio` parameter
+  are remnants of the earlier bottom-only scheme.) Note this pins the **particles**; the
+  background Eulerian grid is rebuilt each substep as usual.
+
+  This is intentional. Allowing the phantom to deform freely produced two failure modes that
+  are avoided entirely by pinning it:
+
+  1. **Collapse of the MPM body**, encountered when the grid node spacing was set too large —
+     the deformation field is band-limited by the cell size, so an under-resolved grid cannot
+     sustain the phantom's shape.
+  2. **High-frequency jitter**, in which the phantom vibrated persistently and small clusters
+     of particles were ejected far from the body.
+
+  Because the informative signal is the sensor's response to the subsurface feature, freezing
+  the phantom removes both instabilities without affecting the quantity being learned.
 
 - **Configuration is partly "edit the source".** Enabling a pipeline stage, switching train vs.
   evaluate, or choosing the Taichi backend all mean editing Python, not passing a flag.
