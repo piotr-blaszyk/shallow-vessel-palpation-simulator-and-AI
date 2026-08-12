@@ -159,17 +159,62 @@ class Visualisation:
             if difficulty is not None:
                 test_dataset.set_difficulty_level(difficulty)
         else:
+            # Sequential (non-overlapping) clips so that stepping through the
+            # viewer walks each trial once from start to finish. The default
+            # sliding window starts a clip at every frame, which drops the viewer
+            # into the middle of a vein sweep.
             full_dataset = MyDataset(
                 scheme="meat",
                 sim_exp="apple",
                 data_dir="banana",
-                apply_augmentations="cherry",
+                apply_augmentations=False,
+                meat_sequential_clips=True,
                 name="meat",
             )
             _, _, test_dataset = full_dataset.create_splits(all_to_test=True)
         test_dataset.set_stats(stats)
         test_dataset.eval()
         return test_dataset
+
+    def clip_labels(self, sequence_idx, num_clips):
+        """The three metadata lines overlaid on the current clip.
+
+        For the meat dataset (C) the clip's identity is read from the dataset
+        itself: which trial it came from and which clip within that trial. The
+        previous code derived all three lines from `sequence_idx` alone, using a
+        "5 trajectories x 2 directions x 10 frames" layout that only ever
+        described the simulated dataset. On dataset C - 10 trials cut into a
+        variable number of clips each - that produced counts like "trajectory
+        9/5", and the direction and frame lines were meaningless.
+
+        The sim layout keeps its original arithmetic.
+        """
+        dataset = getattr(self, "viewer_dataset", None)
+        meat_clips = getattr(dataset, "meat_data", None)
+        if meat_clips and sequence_idx < len(meat_clips):
+            trial_folder_path, _, video_frame_indices = meat_clips[sequence_idx]
+            trial_id = os.path.basename(trial_folder_path)
+            # Clips are ordered, so the trial's position and its clip count come
+            # from grouping the clip list by trial folder.
+            trial_ids = [os.path.basename(c[0]) for c in meat_clips]
+            unique_trials = sorted(set(trial_ids))
+            trial_no = unique_trials.index(trial_id) + 1
+            clips_this_trial = [i for i, t in enumerate(trial_ids) if t == trial_id]
+            clip_no = clips_this_trial.index(sequence_idx) + 1
+            first, last = video_frame_indices[0], video_frame_indices[-1] + 1
+            return (
+                f"trial: {trial_no}/{len(unique_trials)} ({trial_id})",
+                f"clip: {clip_no}/{len(clips_this_trial)}  frames [{first}, {last})",
+                f"clip {sequence_idx + 1}/{num_clips} overall",
+            )
+        traj_ix = sequence_idx // 20
+        direction = 'right' if (sequence_idx % 20) // 10 == 0 else 'left'
+        small_frame_ix = sequence_idx % 10
+        return (
+            f"trajectory: {traj_ix+1}/5",
+            f"direction: {direction}",
+            f"frame number: {small_frame_ix+1}/10",
+        )
 
     @staticmethod
     def calculate_iou(ground_truth, prediction):
@@ -595,6 +640,8 @@ class Visualisation:
             # hardcoded if True/if False toggle below.
             if self.scenario_cfg is not None:
                 test_dataset = self._build_scenario_dataset(all_stats)
+                # Kept so clip_labels() can name the trial each clip came from.
+                self.viewer_dataset = test_dataset
                 data_loader = DataLoader(
                     test_dataset,
                     batch_size=BATCH_SIZE,
@@ -914,13 +961,7 @@ class Visualisation:
 
             meta_cur = metadata_stack[current_frame]
 
-            traj_ix = sequence_idx // 20
-            direction = 'right' if (sequence_idx % 20) // 10 == 0 else 'left'
-            small_frame_ix = sequence_idx % 10
-
-            text1 = f"trajectory: {traj_ix+1}/5"
-            text2 = f"direction: {direction}"
-            text3 = f"frame number: {small_frame_ix+1}/10"
+            text1, text2, text3 = self.clip_labels(sequence_idx, len(data_list))
             org1 = (10, 50)
             org2 = (10, 100)
             org3 = (10, 150)

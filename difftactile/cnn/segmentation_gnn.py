@@ -769,11 +769,14 @@ def main():
         name="my_experiment",
         version=f"run_{timestamp}",
     )
+    # C-to-B trains on meat, so the random-rotation augmentation stays ON here.
+    # getitem_meat() additionally gates on mode == "train", so the val and test
+    # splits created below are unaugmented even though they inherit this flag.
     meat_dataset = MyDataset(
         scheme="meat",
         sim_exp='apple',
         data_dir='banana',
-        apply_augmentations='cherry',
+        apply_augmentations=True,
         name='meat',
     )
     train_dataset, val_dataset, test_dataset = meat_dataset.create_splits()
@@ -1142,7 +1145,7 @@ def train_on_sim(test_on="silicone"):
             scheme="meat",
             sim_exp="apple",
             data_dir="banana",
-            apply_augmentations="cherry",
+            apply_augmentations=False,
             name="meat",
         )
         # Pure transfer: nothing is held back for fitting.
@@ -1249,13 +1252,14 @@ def silicone_to_meat():
     BATCH_SIZE = getattr(SYSTEM_PARAMS.gnn, "batch_size_large", SYSTEM_PARAMS.gnn.batch_size)
     NUM_WORKERS = getattr(SYSTEM_PARAMS.gnn, "num_workers_large", SYSTEM_PARAMS.gnn.num_workers)
 
-    # The meat trials are indexed by dataset.py's "meat" scheme; the sim_exp /
-    # data_dir / apply_augmentations arguments are unused for that scheme.
+    # The meat trials are indexed by dataset.py's "meat" scheme; the sim_exp and
+    # data_dir arguments are unused for that scheme. apply_augmentations is NOT
+    # unused: this is evaluation, so the random rotation must stay off.
     meat_dataset = MyDataset(
         scheme="meat",
         sim_exp="apple",
         data_dir="banana",
-        apply_augmentations="cherry",
+        apply_augmentations=False,
         name="meat",
     )
     # Pure transfer: every trial is evaluated, none held back for fitting.

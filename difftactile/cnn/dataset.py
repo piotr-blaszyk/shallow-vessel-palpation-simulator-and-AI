@@ -60,6 +60,7 @@ class MyDataset(torch.utils.data.Dataset):
         exp_ground_truth_labels_npz=None,
         exp_dilation=None,
         dilation_meat=1,
+        meat_sequential_clips=False,
         name=None,
     ):
         # Initialize mutable defaults
@@ -128,6 +129,8 @@ class MyDataset(torch.utils.data.Dataset):
         self.meat_data = meat_data
         self.data_dir = data_dir
         self.dilation_meat = dilation_meat
+        # Must be set before populate_clips_meat() below, which reads it.
+        self.meat_sequential_clips = meat_sequential_clips
         if mode == "root":
             if scheme == "old":
                 self.populate_clips_old_scheme()
@@ -219,7 +222,7 @@ class MyDataset(torch.utils.data.Dataset):
             if total_frames < dilated_clip_len:
                 continue
             num_possible_starts = total_frames - dilated_clip_len + 1
-            for start_ix in range(num_possible_starts):
+            for start_ix in self.meat_clip_starts(total_frames, dilated_clip_len):
                 video_frame_indices = list(
                     range(start_ix, start_ix + dilated_clip_len, self.dilation_meat)
                 )
@@ -227,6 +230,34 @@ class MyDataset(torch.utils.data.Dataset):
                     (trial_folder_path, self.dilation_meat, video_frame_indices)
                 )
         self.data_points = self.meat_data
+
+    def meat_clip_starts(self, total_frames, dilated_clip_len):
+        """Start frames of the clips cut from one meat trial.
+
+        Two tilings:
+
+        * sliding (default) - a clip at *every* start frame. The overlap is what
+          gives training its many samples per trial.
+        * sequential (`meat_sequential_clips=True`) - non-overlapping clips laid
+          end to end, so playing them back walks the trial once from start to
+          finish. This is what the prediction viewer wants: the sliding window
+          drops you into the middle of a vein sweep, which looks like the vein
+          has already passed the sensor centre.
+
+        The sequential tiling keeps every clip exactly `dilated_clip_len` long,
+        because the graph builders (time one-hot, temporal edges, centre-frame
+        mask) are all sized to `clip_len` and a short tail clip would not form a
+        graph the model can consume. The final clip is therefore back-aligned to
+        the trial's end and overlaps its predecessor rather than being truncated:
+        a 26-frame trial at clip_len 16 yields [0, 16) and [10, 26).
+        """
+        if not self.meat_sequential_clips:
+            return list(range(total_frames - dilated_clip_len + 1))
+        last_start = total_frames - dilated_clip_len
+        starts = list(range(0, last_start + 1, dilated_clip_len))
+        if starts[-1] != last_start:
+            starts.append(last_start)
+        return starts
 
     @staticmethod
     def get_folder_files(path):
@@ -702,6 +733,7 @@ class MyDataset(torch.utils.data.Dataset):
             mode="train",
             meat_data=train_data,
             apply_augmentations=self.apply_augmentations,
+            meat_sequential_clips=self.meat_sequential_clips,
         )
         val_dataset = MyDataset(
             scheme=self.scheme,
@@ -710,6 +742,7 @@ class MyDataset(torch.utils.data.Dataset):
             mode="val",
             meat_data=val_data,
             apply_augmentations=self.apply_augmentations,
+            meat_sequential_clips=self.meat_sequential_clips,
         )
         test_dataset = MyDataset(
             scheme=self.scheme,
@@ -718,6 +751,7 @@ class MyDataset(torch.utils.data.Dataset):
             mode="test",
             meat_data=test_data,
             apply_augmentations=self.apply_augmentations,
+            meat_sequential_clips=self.meat_sequential_clips,
         )
         res = (train_dataset, val_dataset, test_dataset)
         print(f"split len: {[len(x) for x in res]}")
@@ -946,9 +980,20 @@ class MyDataset(torch.utils.data.Dataset):
         points = marker_positions[video_frame_indices]
         y_clip = marker_labels[video_frame_indices]
 
-        discrete_angles = [0, 60, 120, 180, 240, 300]
-        rotation_angle_deg = NP_RNG.choice(discrete_angles)
-        points = self.augmentation_rotation(points, rotation_angle_deg)
+        # Random rotation is a TRAINING augmentation only. Historically this path
+        # rotated unconditionally, so evaluation and the prediction viewer saw the
+        # meat markers at a random one of six orientations on every fetch, which
+        # both misaligned predictions against the ground truth and made them
+        # flicker between frames.
+        #
+        # The mode check matters as well as the flag: create_splits_meat() hands
+        # the same apply_augmentations to all three splits, and eval() only sets
+        # visualisation_mode, so without it C-to-B's training run would also
+        # augment its own val/test splits.
+        if self.apply_augmentations and self.mode == "train":
+            discrete_angles = [0, 60, 120, 180, 240, 300]
+            rotation_angle_deg = NP_RNG.choice(discrete_angles)
+            points = self.augmentation_rotation(points, rotation_angle_deg)
 
         pos = self.get_pos(points)
         mask = self.get_mask()

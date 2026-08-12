@@ -156,7 +156,7 @@ def _build_test_dataset(which, stats, difficulty):
             scheme="meat",
             sim_exp="apple",
             data_dir="banana",
-            apply_augmentations="cherry",
+            apply_augmentations=False,
             name="meat",
         )
         # Pure transfer: every trial goes to the test split.
