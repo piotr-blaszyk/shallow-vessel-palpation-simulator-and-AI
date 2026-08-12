@@ -143,25 +143,30 @@ class PreMain:
             max_ix = n_v0_single+n_pad_single+n_phantom
             return n, arr, min_ix, max_ix
         else:
+            # z gets a leading band of the same physical thickness as the x/y
+            # compensation. It has to be expressed in NODES here rather than
+            # added to min_coords afterwards: the contact kernels reconstruct a
+            # grid node's world position as (index + 0.5) * d, so min_coords must
+            # stay exactly on a node index or the collision geometry desyncs from
+            # where the phantom really is.
+            n_offset_single = int(np.ceil(self._origin_offset() / self.d))
             arr = np.array([
                 n_v0_single,
+                n_offset_single,
                 n_phantom,
                 n_pad_single,
                 n_v0_single,
             ], dtype=int)
             n = arr.sum()+1
-            min_ix = n_v0_single
-            max_ix = n_v0_single+n_phantom
+            min_ix = n_v0_single+n_offset_single
+            max_ix = n_v0_single+n_offset_single+n_phantom
             return n, arr, min_ix, max_ix
-    
+
     def min_coords_single_dim(self, i):
-        # x/y already carry the compensation through n_pad_single; z has no
-        # padding ahead of the phantom, so it is offset explicitly here. Both
-        # branches then yield the same world origin at any grid resolution.
-        if i == 0 or i == 1:
-            return (sum(self.layouts[i][:2])+0.5)*self.d
-        else:
-            return (sum(self.layouts[i][:1])+0.5)*self.d + self._origin_offset()
+        # Sum the node bands that precede the phantom, so the result always lands
+        # exactly on grid node index min_ix -- i.e. min_coords == (min_ix+0.5)*d.
+        # Every axis now has two leading bands (boundary + pad/offset).
+        return (sum(self.layouts[i][:2])+0.5)*self.d
 
     def get_min_coords(self):
         res = []
@@ -170,6 +175,17 @@ class PreMain:
                 self.min_coords_single_dim(i)
             )
         self.min_coords = np.array(res, dtype=float)
+        # The contact kernels (check_grid_occupy, collision0/1) reconstruct a
+        # grid node's world position as (index+0.5)*d and compare it against the
+        # sensor mesh. If min_coords drifts off the node lattice, the occupancy
+        # bounds min_ixs/max_ixs refer to different places than the phantom
+        # actually occupies and contact is detected in the wrong location --
+        # which looks exactly like the sensor ghosting through the phantom.
+        expected = (self.min_ixs + 0.5) * self.d
+        assert np.allclose(self.min_coords, expected), (
+            f"min_coords {self.min_coords} is off the grid lattice "
+            f"(expected {expected}); contact geometry would desync"
+        )
 
     def compute_mpm_grid_node_vein_mask(
         self,
