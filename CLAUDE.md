@@ -131,6 +131,11 @@ check whether it is already known:
 
 - `cnn/iros_gnn.py:570` — hardcoded `device='cuda:0'` with no CPU fallback, so constructing `GNN()`
   requires a GPU even for evaluation.
+- `script_main` segfaults at interpreter exit (code 139) when a Taichi GGUI window is open —
+  i.e. whenever `DISPLAY` is set, since `run_pipeline.sh` only forces headless when it is unset.
+  The crash is in CUDA/GGUI teardown *after* `main()` prints `all done`, so the collected
+  trajectories are complete and valid. Verified identical on the commit before the dead-code
+  sweep, so it is long-standing and unrelated. Use `DIFFTACTILE_HEADLESS=1` (also ~35% faster).
 
 **Deleted** (they were broken or superseded; see the dead-code sweep in git history — do not
 recreate them): `scripts/script_all.py` (import-order bug — use `run_all.sh`),

@@ -557,6 +557,19 @@ following are known and are *not* worth reporting as bugs:
 - **Absolute paths** to the original machine remain in a handful of files (listed above).
 - **Interactive by default.** Gmsh, Taichi GGUI, the annotation and marker-tracking GUIs, and
   `plt.show()` all assume a display.
+- **`script_main` can segfault at exit when the Taichi GGUI window is open** (exit code 139,
+  "Segmentation fault (core dumped)"). This happens *after* `main()` has finished and printed
+  `all done`, during CUDA/GGUI teardown, so **the collected trajectories are complete and
+  valid** — the crash cannot corrupt them. It only occurs when a display is available:
+  `docker-run.sh` passes `DISPLAY` through, and `run_pipeline.sh` forces headless mode only
+  when `DISPLAY` is unset. Run with `DIFFTACTILE_HEADLESS=1` to avoid it:
+
+  ```bash
+  docker exec -e DIFFTACTILE_HEADLESS=1 difftactile ./docker/run_pipeline.sh sim-short
+  ```
+
+  Headless is also markedly faster (~108 s vs ~149 s for `sim-short`), so prefer it unless you
+  actually want to watch the simulation.
 
 ---
 

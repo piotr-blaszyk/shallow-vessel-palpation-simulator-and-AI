@@ -91,6 +91,43 @@ Two pre-existing bugs were fixed to make this possible:
    on unmodified `main`). `iros_gnn.py` now selects the `Agg` backend before
    importing pyplot when no display is present.
 
+### Blank-slate re-run after the dead-code removal (2026-08-12)
+
+Repeated the whole quickstart in a fresh clone of `main` at `5ecb7e5`, which deletes
+DEAD_CODE_ANALYSIS categories A–C, to confirm nothing live was removed. Bundle restored
+from a local copy rather than Zenodo (`restore_data.sh` accepts any path).
+
+| Stage | Outcome |
+|---|---|
+| Fresh clone | OK. 23 paths reported MISSING; working tree 15 MB (was ~27 MB — the `docs/` GIFs). |
+| Restore bundle | OK. All 23 present. |
+| Docker build | OK. |
+| `check` | OK. CUDA, torch 2.8.0+cu126, Taichi 1.7.4, PyG 2.8.0.post1, config loads, data verified. |
+| **`A-to-B`** | OK. **AUC 0.6785678641614648** — bit-identical to the runs above. |
+| **`A-to-C`** | OK. **IoU 0.8083 (bg) / 0.1968 (vein)** — matches 0.809 / 0.197. |
+| **`C-to-B`** | OK. Trains, tests on silicone, writes `*_retrained`; published checkpoint untouched. |
+| `sim-short` | OK. 8 trials, frame counts 0/73/17/317 per trajectory type, 0 corrupt. |
+| Syntax | OK. All 70 remaining tracked `.py` files byte-compile. |
+
+#### Pre-existing segfault surfaced by this run
+
+`sim-short` exits **139 (SIGSEGV)** when a display is available. It is *not* caused by the
+dead-code removal — a 2×2 over {commit before removal, after} × {GUI, headless} pins it to
+the GUI alone:
+
+| Commit | GUI | Exit | Runtime |
+|---|---|---|---|
+| `6ef899c` (before removal) | on | **139** | 148.3 s |
+| `6ef899c` (before removal) | off | 0 | 108.8 s |
+| `5ecb7e5` (after removal) | on | **139** | 149.7 s |
+| `5ecb7e5` (after removal) | off | 0 | 107.4 s |
+
+The fault is in CUDA/GGUI teardown *after* `main()` prints `all done`; the 8 trajectory files
+are written and valid in every case, including the crashing ones. `run_pipeline.sh` forces
+headless only when `DISPLAY` is unset, and `docker-run.sh` passes `DISPLAY` through, so the
+containerised `sim-short` hits it by default. Documented in the README's known issues;
+`DIFFTACTILE_HEADLESS=1` avoids it and is ~35% faster.
+
 ## ⚠️ One deliberate behaviour change — please review
 
 `silicone-to-meat` unifies what used to live on the `sim-to-meat-test` branch,
