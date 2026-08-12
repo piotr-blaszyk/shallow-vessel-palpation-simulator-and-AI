@@ -39,7 +39,7 @@ Pipeline in one line:
 ```bash
 ./docker/docker-build.sh && ./docker/docker-run.sh
 docker exec -it difftactile ./docker/run_pipeline.sh check
-docker exec -it difftactile ./docker/run_pipeline.sh sim-to-silicone
+docker exec -it difftactile ./docker/run_pipeline.sh A-to-B
 ```
 
 Directly, as a module:
@@ -58,19 +58,33 @@ The simulation pipeline order is fixed by `difftactile/scripts/run_all.sh`:
 the Gmsh meshes (`script_generate_vitactip_mesh_gmsh`, `script_generate_vein_mesh_gmsh`) and
 the sensor-geometry artifacts shipped in the Zenodo bundle.
 
-### The three scenarios (single branch)
+### The three paper configurations (single branch)
 
-Selected **by name**, not by editing source:
+The paper uses three datasets — **A** simulated, **B** real silicone, **C** real meat — and
+reports three models, one per (train → test) configuration. All are selected **by name**, not
+by editing source, and each runs in either `--train` or `--eval` mode:
 
 ```bash
-python -m difftactile.scripts.script_iros_gnn sim-to-silicone   # evaluate on silicone + ROC
-python -m difftactile.scripts.script_iros_gnn sim-to-meat       # train on meat, test on silicone
-python -m difftactile.scripts.script_iros_gnn silicone-to-meat  # cross-domain, no retraining
+python -m difftactile.scripts.script_iros_gnn A-to-B --train  # train on sim,  test on silicone
+python -m difftactile.scripts.script_iros_gnn C-to-B --train  # train on meat, test on silicone
+python -m difftactile.scripts.script_iros_gnn A-to-C --train  # train on sim,  test on meat
+
+python -m difftactile.scripts.script_iros_gnn A-to-B --eval   # published ckpt + ROC
+python -m difftactile.scripts.script_iros_gnn A-to-C --eval   # cross-domain, no retraining
 ```
 
-`run_scenario()` in `cnn/iros_gnn.py` dispatches these. Note `GNN(arch=...)`: `"iros"` is the
-small model (`latent_dim` 64), `"icra"` the large one (`latent_dim` 256) read from the
-`*_icra` config keys — the ICRA checkpoint only loads into the latter.
+Omitting the mode uses `DEFAULT_MODES` (eval for A-to-B and A-to-C, train for C-to-B).
+`run_scenario()` in `cnn/iros_gnn.py` dispatches on `CONFIG_ACTIONS`; the older names
+(`sim-to-silicone`, `sim-to-meat`, `silicone-to-meat`) are still accepted via
+`SCENARIO_ALIASES`. Beware that `silicone-to-meat` is a **misnomer** — it loads the
+*simulation*-trained ICRA checkpoint, so it is really A→C.
+
+Note `GNN(arch=...)`: `"iros"` is the small model (`latent_dim` 64), `"icra"` the large one
+(`latent_dim` 256) read from the `*_icra` config keys — the ICRA checkpoint only loads into
+the latter. The two sim-trained configurations (A→B, A→C) use `"icra"`, C→B uses `"iros"`.
+
+Training never overwrites the published checkpoints: `_retrained_path()` inserts a
+`_retrained` suffix unless `DIFFTACTILE_OVERWRITE_PUBLISHED=1`.
 
 ### Environment overrides
 
@@ -81,7 +95,9 @@ small model (`latent_dim` 64), `"icra"` the large one (`latent_dim` 256) read fr
 | `DIFFTACTILE_NUM_LOOPS` | Simulator loop count. Each loop = 2 substeps × 4 trajectories = 8 trials. Default 100 (800 trials, measured 2 h 45 m on an RTX 3080); `1` gives a ~3 min smoke test. |
 | `DIFFTACTILE_HEADLESS=1` | Skip Taichi GGUI / Gmsh FLTK windows and blocking `plt.show()`. Required for SSH/CI/container runs with no display. |
 | `DIFFTACTILE_TRAJECTORIES` | Comma-separated trajectory types to collect (0 press, 1 slide-vein, 2 twist-y, 3 twist-z). Default all four. **The published dataset is entirely type 3** — use `3` to reproduce it. |
-| `DIFFTACTILE_SCENARIO` | Scenario name, if not passed as an argument. |
+| `DIFFTACTILE_SCENARIO` | Configuration name (`A-to-B`, `C-to-B`, `A-to-C`, or a legacy alias), if not passed as an argument. |
+| `DIFFTACTILE_MODE` | `train` or `eval`, if not passed as `--train` / `--eval`. |
+| `DIFFTACTILE_OVERWRITE_PUBLISHED` | `1` lets a training run overwrite the published checkpoints instead of writing `*_retrained` copies. |
 
 ## Configuration model — read this before changing behaviour
 
@@ -132,6 +148,12 @@ check whether it is already known:
   and the blocking `gmsh.fltk.run()` viewer is skipped when headless.
 - `iros_gnn.main()` no longer starts with a bare `return`; scenario selection replaced it.
 - `evaluate_and_plot_roc()` no longer hardcodes its output path, and `plt.show()` is guarded.
+- Training on the **simulated** dataset was disabled by a bare `return` at the top of
+  `cnn/gnn.py::main()` on *every* branch, so the sim-trained models (A→B, A→C) could not be
+  reproduced. `iros_gnn.train_on_sim()` now implements this, dispatched by `--train`.
+- `evaluate_and_plot_roc()` raised `TclError` under `DIFFTACTILE_HEADLESS=1`: `_show_plots()`
+  guarded `plt.show()`, but `plt.figure()` had already tried to open a Tk window. `iros_gnn.py`
+  now selects the `Agg` backend before importing pyplot when there is no display.
 
 Interactivity is otherwise pervasive and intentional: the cv2 annotation GUI and the tkinter
 marker-labelling GUI still block by design. The **simulator and all three GNN scenarios now run
@@ -169,9 +191,14 @@ container, which is why `restore_data.sh` replaces them with real files.
 
 ## Branches
 
-**All three scenarios now live on one branch** and are selected by name (see above). The
-per-experiment branches below are a historical record; changes should target the unified
-branch rather than reviving them.
+**All three paper models can be trained and evaluated from `main`**, selected by name (see
+above) — no branch switching is needed to train a different model. The per-experiment branches
+below are a historical record; changes should target `main` rather than reviving them.
+
+**Do not merge `sim-to-meat-test` into `main`.** It predates `main` (it has no `paths.py`, no
+Docker setup, no data-bundle scripts) so the merge deletes that infrastructure, and `main`
+already carries its useful content — including a normalisation fix that raises the reported
+cross-domain vein IoU from 0.034 to 0.198.
 
 `main` tracks the latest work (identical to `iros`). Three parallel branches matter:
 

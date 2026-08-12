@@ -13,13 +13,19 @@
 #   check              Verify GPU, Taichi, torch and the restored data bundle.
 #   sim-short          Simulator data collection, 1 loop (8 trials, ~3 min).
 #   sim-full           Simulator data collection, full run (800 trials, ~2h45m measured).
-#   sim-to-silicone    Evaluate the sim-trained GNN on the real silicone phantom
-#                      and write the ROC curve.
-#   sim-to-meat        Train on the real meat trials, test on silicone.
-#   silicone-to-meat   Test the silicone-trained checkpoint on meat (no training).
-#   all-scenarios      Run the three scenarios above in order. Training writes
-#                      *_retrained artifacts, so the published checkpoint used by
-#                      sim-to-silicone is never overwritten.
+#   A-to-B             Train on simulation, test on silicone (default: evaluate
+#                      the published checkpoint and write the ROC curve).
+#   C-to-B             Train on the real meat trials, test on silicone.
+#   A-to-C             Train on simulation, test on meat (default: evaluate the
+#                      published checkpoint, no retraining).
+#   all-scenarios      Run the three configurations above in order. Training
+#                      writes *_retrained artifacts, so the published
+#                      checkpoints the evaluations read are never overwritten.
+#
+#   Datasets: A = simulated, B = real silicone phantom, C = real meat phantom.
+#   Each configuration accepts a trailing --train or --eval, e.g.
+#       ./docker/run_pipeline.sh A-to-B --train
+#   The older names sim-to-silicone / sim-to-meat / silicone-to-meat still work.
 #
 # Environment:
 #   DIFFTACTILE_HEADLESS=1   Skip GUI windows (default inside this script for the
@@ -36,7 +42,11 @@ if [ -z "${DISPLAY:-}" ]; then
     export DIFFTACTILE_HEADLESS="${DIFFTACTILE_HEADLESS:-1}"
 fi
 
-usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; }
+# Print the header comment block as help. Reads to the first non-comment line
+# rather than a fixed line range, so editing the header cannot truncate it.
+usage() {
+    sed -n '2,/^[^#]/p' "${BASH_SOURCE[0]}" | sed '/^[^#]/d; s/^# \?//'
+}
 
 banner() {
     echo
@@ -84,22 +94,28 @@ stage_sim() {
     python -m difftactile.scripts.script_main
 }
 
+# Runs one (train -> test) configuration. Any extra arguments (--train/--eval)
+# are forwarded verbatim to the Python dispatcher.
 stage_scenario() {
-    banner "Scenario: $1"
-    python -m difftactile.scripts.script_iros_gnn "$1"
+    local config="$1"; shift
+    banner "Configuration: ${config}${*:+ $*}"
+    python -m difftactile.scripts.script_iros_gnn "${config}" "$@"
 }
 
 case "${1:-}" in
     check)             stage_check ;;
     sim-short)         stage_sim 1 ;;
     sim-full)          stage_sim "" ;;
-    sim-to-silicone)   stage_scenario sim-to-silicone ;;
-    sim-to-meat)       stage_scenario sim-to-meat ;;
-    silicone-to-meat)  stage_scenario silicone-to-meat ;;
+    # Paper notation, plus the pre-rename aliases. The Python dispatcher
+    # resolves the aliases itself, so they are simply passed through.
+    A-to-B|C-to-B|A-to-C|sim-to-silicone|sim-to-meat|silicone-to-meat|meat-to-silicone)
+        config="$1"; shift
+        stage_scenario "${config}" "$@"
+        ;;
     all-scenarios)
-        stage_scenario sim-to-silicone
-        stage_scenario silicone-to-meat
-        stage_scenario sim-to-meat
+        stage_scenario A-to-B
+        stage_scenario A-to-C
+        stage_scenario C-to-B
         ;;
     -h|--help|"")      usage ;;
     *)                 echo "Unknown stage: $1" >&2; echo; usage; exit 1 ;;

@@ -16,6 +16,13 @@ from torch_geometric.nn import GINEConv
 from tqdm import tqdm
 from torch_geometric.nn import global_add_pool
 from sklearn.metrics import roc_auc_score, roc_curve
+import matplotlib
+# Pick a non-interactive backend BEFORE pyplot is imported when there is no
+# display. _show_plots() already guards the blocking plt.show(), but that is too
+# late for plt.figure(), which instantiates a Tk window as soon as it is called
+# and would otherwise raise TclError on a headless/SSH/container run.
+if os.environ.get("DIFFTACTILE_HEADLESS", "0") == "1" or not os.environ.get("DISPLAY"):
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from difftactile.cnn.common import *
@@ -1039,29 +1046,204 @@ def evaluate_and_plot_roc():
 # =============================================================================
 # Scenario dispatcher
 #
-# The three published transfer scenarios used to live on separate git branches,
-# selected by editing source (commenting call lists, toggling `if False:`
-# blocks, and a bare `return` at the top of main()). They are unified here and
-# chosen by name instead, so a single branch reproduces all three:
+# The paper trains three distinct models over three datasets:
 #
-#   sim-to-silicone   Evaluate the simulation-trained GNN on the real SILICONE
-#                     vascular phantom, and plot the ROC curve.
-#                     (was: `iros` branch, evaluate_and_plot_roc())
+#   (A) simulated dataset collected in the differentiable-tactile simulator
+#   (B) real silicone phantom, shallow veins             ("easy")
+#   (C) real meat phantom, veins at varying depths       ("difficult")
 #
-#   sim-to-meat       Train on the real MEAT trials and test on silicone,
-#                     writing a new checkpoint.
-#                     (was: `iros` branch main(), minus the disabling `return`)
+# giving three (train -> test) configurations, each with a train and an
+# evaluate mode so that no branch switching is needed to reproduce any of them:
 #
-#   silicone-to-meat  Cross-domain: load the SILICONE-trained (ICRA) checkpoint
-#                     and test it, without retraining, on the MEAT trials.
-#                     (was: `sim-to-meat-test` branch main(), the `if False:`
-#                     variant that loads final_segmentation_model_gnn_icra)
+#   A-to-B   train on sim,  test on silicone   (large "icra" architecture)
+#   C-to-B   train on meat, test on silicone   (small "iros" architecture)
+#   A-to-C   train on sim,  test on meat       (large "icra" architecture)
+#
+# These used to live on separate git branches, selected by editing source
+# (commenting call lists, toggling `if False:` blocks, and a bare `return` at
+# the top of main()). They are unified here and chosen by name instead.
+#
+# NOTE on the legacy alias `silicone-to-meat`: despite its name it loads
+# `final_segmentation_model_gnn_icra.pt`, which is the SIMULATION-trained
+# checkpoint (the large architecture also used for A-to-B). The configuration it
+# actually runs is therefore sim -> meat, i.e. A-to-C, which is how the paper
+# describes it. The old name is kept working, but A-to-C is the accurate one.
 #
 # Usage:
-#   python -m difftactile.scripts.script_iros_gnn <scenario>
+#   python -m difftactile.scripts.script_iros_gnn <config> [--train|--eval]
 # =============================================================================
 
-SCENARIOS = ("sim-to-silicone", "sim-to-meat", "silicone-to-meat")
+# Canonical paper configurations. Each maps to (train_fn, eval_fn).
+PAPER_CONFIGS = ("A-to-B", "C-to-B", "A-to-C")
+
+# Backwards-compatible aliases for the names used before the paper notation was
+# adopted. `silicone-to-meat` is a misnomer - see the NOTE above.
+SCENARIO_ALIASES = {
+    "sim-to-silicone": "A-to-B",
+    "sim-to-meat": "C-to-B",
+    "silicone-to-meat": "A-to-C",
+    # Descriptive spellings, accepted for convenience.
+    "meat-to-silicone": "C-to-B",
+    "sim-to-meat-eval": "A-to-C",
+}
+
+# Kept so that `from difftactile.cnn.iros_gnn import *` still exposes a list of
+# every accepted name (the old constant only held the three legacy names).
+SCENARIOS = PAPER_CONFIGS + tuple(SCENARIO_ALIASES)
+
+
+def train_on_sim(test_on="silicone"):
+    """Train the GNN on the SIMULATED dataset (A), then test it on real data.
+
+    This is the training half of both A-to-B (test_on="silicone") and A-to-C
+    (test_on="meat"). Only the held-out test set differs; the model, the
+    training data and the normalisation statistics are identical, which is why
+    one function covers both.
+
+    Uses the LARGE ("icra") architecture, matching
+    final_segmentation_model_gnn_icra.pt - the published simulation-trained
+    checkpoint that the evaluate-only paths load.
+
+    Previously this lived in `cnn/gnn.py::main()`, disabled by a bare `return`
+    on every branch, so the simulation-trained models could not be reproduced
+    without editing source.
+    """
+    BATCH_SIZE = getattr(SYSTEM_PARAMS.gnn, "batch_size_icra", SYSTEM_PARAMS.gnn.batch_size)
+    NUM_EPOCHS = getattr(SYSTEM_PARAMS.gnn, "num_epochs_icra", SYSTEM_PARAMS.gnn.num_epochs)
+    NUM_WORKERS = getattr(SYSTEM_PARAMS.gnn, "num_workers_icra", SYSTEM_PARAMS.gnn.num_workers)
+    NUM_TRAIN_BATCHES = getattr(SYSTEM_PARAMS.gnn, "num_train_batches_icra", -1)
+    NUM_VAL_BATCHES = getattr(SYSTEM_PARAMS.gnn, "num_val_batches_icra", -1)
+    # MyDataModule takes an epoch subset *size* and clamps it with
+    # min(len(dataset), size), so a very large number means "use everything".
+    # A batch count of -1 is the config's way of saying exactly that.
+    UNLIMITED = sys.maxsize
+    TRAIN_EPOCH_SUBSET_SIZE = BATCH_SIZE * NUM_TRAIN_BATCHES if NUM_TRAIN_BATCHES > 0 else UNLIMITED
+    VAL_EPOCH_SUBSET_SIZE = BATCH_SIZE * NUM_VAL_BATCHES if NUM_VAL_BATCHES > 0 else UNLIMITED
+
+    timestamp = time.strftime('%Y%m%d_%H%M%S')
+    logger = CSVLogger(save_dir="logs", name="my_experiment", version=f"run_{timestamp}")
+
+    # Dataset A - the simulated trajectories.
+    sim_dataset = MyDataset(
+        scheme="single_dataset",
+        sim_exp="sim",
+        data_dir=SYSTEM_PARAMS.files.sim_data_endgame,
+        apply_augmentations=True,
+        name="sim",
+    )
+    train_dataset, val_dataset, test_dataset = sim_dataset.create_splits(
+        train_size=0.7, val_size=0.15, test_size=0.15
+    )
+
+    # The real dataset this configuration is evaluated against.
+    if test_on == "silicone":
+        real_dataset = MyDataset(
+            scheme="single_dataset",
+            sim_exp="exp",
+            data_dir=SYSTEM_PARAMS.files.exp_data_endgame,
+            apply_augmentations=False,
+            name="silicone",
+        )
+        real_eval_dataset = real_dataset
+    elif test_on == "meat":
+        real_dataset = MyDataset(
+            scheme="iros",
+            sim_exp="apple",
+            data_dir="banana",
+            apply_augmentations="cherry",
+            name="meat",
+        )
+        # Pure transfer: nothing is held back for fitting.
+        _, _, real_eval_dataset = real_dataset.create_splits(all_to_test=True)
+    else:
+        raise ValueError(f"test_on must be 'silicone' or 'meat', got {test_on!r}")
+
+    # The simulated pipeline carries a difficulty curriculum; 1.0 is the setting
+    # the published checkpoint was trained at.
+    target_difficulty = 1.0
+    train_dataset.set_difficulty_level(target_difficulty)
+    stats = compute_stats(train_dataset, BATCH_SIZE)
+    print(f"pos:neg = {stats['alpha_neg']:.2f}:{stats['alpha_pos']:.2f}")
+    for ds in (val_dataset, test_dataset):
+        ds.set_difficulty_level(target_difficulty)
+    for ds in (train_dataset, val_dataset, test_dataset, real_eval_dataset):
+        ds.set_stats(stats)
+    # set_difficulty_level only applies to the simulated "single_dataset"
+    # scheme; the meat ("iros") scheme has no curriculum.
+    if test_on == "silicone":
+        real_eval_dataset.set_difficulty_level(target_difficulty)
+
+    data_module = MyDataModule(
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        test_dataset=test_dataset,
+        train_subset_size=TRAIN_EPOCH_SUBSET_SIZE,
+        val_subset_size=VAL_EPOCH_SUBSET_SIZE,
+        batch_size=BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+    )
+
+    # Persist the stats alongside the test split so the evaluate-only paths can
+    # normalise exactly as training did. Written to a *_retrained path so the
+    # published artifacts survive (see _retrained_path).
+    test_loader_path = _retrained_path(SYSTEM_PARAMS.files.test_loader_gnn_icra)
+    os.makedirs(os.path.dirname(test_loader_path), exist_ok=True)
+    with open(test_loader_path, "wb") as f:
+        pickle.dump(
+            {
+                "dataset": test_dataset,
+                "num_workers": NUM_WORKERS,
+                "dataset_stats": {target_difficulty: stats},
+            },
+            f,
+        )
+    print(f"test loader written to: {test_loader_path}")
+
+    model = GNN(arch="icra")
+    model.set_stats(stats)
+    checkpoint_cb = ModelCheckpoint(
+        monitor="val_iou/1", mode="max", save_top_k=1, filename="best-model-icra"
+    )
+    trainer = pl.Trainer(
+        max_epochs=NUM_EPOCHS,
+        accelerator="auto",
+        enable_checkpointing=True,
+        logger=logger,
+        log_every_n_steps=1,
+        callbacks=[checkpoint_cb],
+        reload_dataloaders_every_n_epochs=1,
+    )
+    real_loader = DataLoader(
+        real_eval_dataset,
+        batch_size=BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+        pin_memory=False,
+        persistent_workers=False,
+        shuffle=False,
+    )
+
+    start = time.perf_counter()
+    trainer.fit(model, datamodule=data_module)
+
+    best_model_path = checkpoint_cb.best_model_path
+    if not best_model_path:
+        raise RuntimeError("No best checkpoint was saved; cannot test best model.")
+    best_model = GNN.load_from_checkpoint(best_model_path)
+    print("\nTesting on simulation data:")
+    trainer.test(best_model, datamodule=data_module)
+    print(f"\nTesting on the real {test_on} dataset:")
+    trainer.test(best_model, dataloaders=real_loader)
+    duration = time.perf_counter() - start
+    print(f"\nTraining and testing completed in {duration:.2f} s ({duration / 60:.2f} min)")
+
+    model_path = _retrained_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_icra)
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    torch.save(best_model.state_dict(), model_path)
+    print(f"checkpoint written to: {model_path}")
+    print(
+        "  (the published checkpoint is left untouched; set "
+        "DIFFTACTILE_OVERWRITE_PUBLISHED=1 to overwrite it instead)"
+    )
 
 
 def silicone_to_meat():
@@ -1129,28 +1311,97 @@ def silicone_to_meat():
     print(f"\nDone in {time.perf_counter() - start:.2f} s")
 
 
-def run_scenario(scenario=None):
+# For each paper configuration: what it does in --train and in --eval mode.
+#
+#   train: reproduces the model from scratch and writes a *_retrained checkpoint
+#   eval:  loads the published checkpoint and reports the paper's numbers
+#
+# C-to-B has no separate eval entry because its published training run ends by
+# testing on silicone; `main()` therefore serves as both.
+CONFIG_ACTIONS = {
+    "A-to-B": {
+        "description": "train on simulation (A), test on silicone (B)",
+        "train": lambda: train_on_sim(test_on="silicone"),
+        "eval": lambda: evaluate_and_plot_roc(),
+    },
+    "C-to-B": {
+        "description": "train on meat (C), test on silicone (B)",
+        "train": lambda: main(),
+        "eval": lambda: main(),
+    },
+    "A-to-C": {
+        "description": "train on simulation (A), test on meat (C)",
+        "train": lambda: train_on_sim(test_on="meat"),
+        "eval": lambda: silicone_to_meat(),
+    },
+}
+
+# Which mode each configuration runs when none is given. Evaluation is the
+# cheaper, reproduce-the-published-number path, so it is the default wherever a
+# published checkpoint exists.
+DEFAULT_MODES = {"A-to-B": "eval", "C-to-B": "train", "A-to-C": "eval"}
+
+_USAGE = (
+    "Usage: python -m difftactile.scripts.script_iros_gnn <config> [--train|--eval]\n"
+    "\n"
+    "Configurations (paper notation; A=simulation, B=silicone, C=meat):\n"
+    "  A-to-B   train on simulation, test on silicone   [default: --eval]\n"
+    "  C-to-B   train on meat,       test on silicone   [default: --train]\n"
+    "  A-to-C   train on simulation, test on meat       [default: --eval]\n"
+    "\n"
+    "Modes:\n"
+    "  --train  reproduce the model from scratch (writes a *_retrained checkpoint)\n"
+    "  --eval   load the published checkpoint and report its numbers\n"
+)
+
+
+def run_scenario(scenario=None, mode=None):
     """Entrypoint used by scripts/script_iros_gnn.py.
 
-    `scenario` falls back to the first CLI argument, then to the
-    DIFFTACTILE_SCENARIO environment variable, then to sim-to-silicone (the
-    cheapest scenario: evaluation only, no training).
+    Selects one of the three paper configurations (A-to-B, C-to-B, A-to-C) and
+    runs it in either training or evaluation mode, so all three models can be
+    trained and tested from this one branch.
+
+    `scenario` falls back to the first non-flag CLI argument, then to the
+    DIFFTACTILE_SCENARIO environment variable, then to A-to-B. `mode` falls back
+    to a --train/--eval flag, then to DIFFTACTILE_MODE, then to the
+    configuration's default in DEFAULT_MODES.
     """
-    if scenario is None:
-        scenario = sys.argv[1] if len(sys.argv) > 1 else None
-    if scenario is None:
-        scenario = os.environ.get("DIFFTACTILE_SCENARIO", "sim-to-silicone")
+    argv = sys.argv[1:]
+    flags = [a for a in argv if a.startswith("--")]
+    positional = [a for a in argv if not a.startswith("--")]
 
-    if scenario not in SCENARIOS:
+    if scenario is None:
+        scenario = positional[0] if positional else None
+    if scenario is None:
+        scenario = os.environ.get("DIFFTACTILE_SCENARIO", "A-to-B")
+
+    if mode is None:
+        if "--train" in flags:
+            mode = "train"
+        elif "--eval" in flags:
+            mode = "eval"
+    unknown = [f for f in flags if f not in ("--train", "--eval", "--help", "-h")]
+    if "--help" in flags or "-h" in flags:
+        print(_USAGE)
+        return None
+    if unknown:
+        raise SystemExit(f"Unknown option(s): {', '.join(unknown)}\n\n{_USAGE}")
+
+    # Accept the pre-paper names so existing commands and docs keep working.
+    canonical = SCENARIO_ALIASES.get(scenario, scenario)
+    if canonical not in CONFIG_ACTIONS:
         raise SystemExit(
-            f"Unknown scenario {scenario!r}.\n"
-            f"Choose one of: {', '.join(SCENARIOS)}\n"
-            f"Usage: python -m difftactile.scripts.script_iros_gnn <scenario>"
+            f"Unknown configuration {scenario!r}.\n\n{_USAGE}"
         )
+    if canonical != scenario:
+        print(f"note: {scenario!r} is a legacy alias for {canonical!r}")
 
-    print(f"=== scenario: {scenario} ===")
-    if scenario == "sim-to-silicone":
-        return evaluate_and_plot_roc()
-    if scenario == "sim-to-meat":
-        return main()
-    return silicone_to_meat()
+    if mode is None:
+        mode = os.environ.get("DIFFTACTILE_MODE") or DEFAULT_MODES[canonical]
+    if mode not in ("train", "eval"):
+        raise SystemExit(f"Unknown mode {mode!r}; expected 'train' or 'eval'.\n\n{_USAGE}")
+
+    action = CONFIG_ACTIONS[canonical]
+    print(f"=== {canonical} ({action['description']}) | mode: {mode} ===")
+    return action[mode]()

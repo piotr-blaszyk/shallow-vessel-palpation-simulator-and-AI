@@ -52,6 +52,39 @@ Agreement to ~15 significant figures on AUC. The evaluation scenarios are
 deterministic; `sim-to-meat` trains from a random initialisation and so varies
 between runs by design.
 
+> The scenario names above are the pre-paper ones, kept here as the transcript of
+> that run. They still work as aliases: `sim-to-silicone` → `A-to-B`,
+> `sim-to-meat` → `C-to-B`, `silicone-to-meat` → `A-to-C`.
+
+### All three paper configurations, train and evaluate (2026-08-12)
+
+Added `--train` / `--eval` for each of the paper's three (train → test)
+configurations, so no branch switching is needed to train a different model.
+Verified on the development machine (RTX 3080):
+
+| Check | Outcome |
+|---|---|
+| Dispatcher routing | OK. 15/15 cases: paper names, both modes, defaults, legacy aliases, env vars, and rejection of unknown configs/flags. |
+| `A-to-B --train` | OK. New sim-training path runs end to end, tests on silicone, writes `*_retrained` artifacts. |
+| `A-to-C --train` | OK. Same, evaluating against the meat trials. |
+| `A-to-B --eval` | OK. **AUC 0.6785678641614646** — matches the original checkout exactly. |
+| `A-to-C --eval` | OK. **IoU 0.809 (bg) / 0.198 (vein)** — matches the table above. |
+| Published checkpoints | Untouched by training runs (`_retrained` suffix). |
+
+Training runs above used a deliberately tiny config (1 epoch, 2 batches) purely
+to exercise the code path; they are smoke tests, not published results.
+
+Two pre-existing bugs were fixed to make this possible:
+
+1. **Simulation training was disabled on every branch.** `cnn/gnn.py::main()`
+   began with a bare `return`, so neither sim-trained model (A→B, A→C) could be
+   reproduced. Reimplemented as `iros_gnn.train_on_sim()`.
+2. **`evaluate_and_plot_roc()` crashed headless.** `_show_plots()` guarded
+   `plt.show()`, but `plt.figure()` had already tried to open a Tk window, so
+   `A-to-B --eval` raised `TclError` under `DIFFTACTILE_HEADLESS=1` (confirmed
+   on unmodified `main`). `iros_gnn.py` now selects the `Agg` backend before
+   importing pyplot when no display is present.
+
 ## ⚠️ One deliberate behaviour change — please review
 
 `silicone-to-meat` unifies what used to live on the `sim-to-meat-test` branch,

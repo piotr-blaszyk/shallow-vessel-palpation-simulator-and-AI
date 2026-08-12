@@ -73,29 +73,33 @@ docker exec -it difftactile ./docker/run_pipeline.sh check
 
 ### Reproduce the published results
 
-The three transfer scenarios are selected **by name** — no source editing required:
+The paper's three models — one per (train → test) configuration over the simulated (**A**),
+silicone (**B**) and meat (**C**) datasets — are selected **by name**, with no source editing
+and no branch switching:
 
 ```bash
 # Evaluate the sim-trained GNN on the real SILICONE phantom -> ROC curve
-docker exec -it difftactile ./docker/run_pipeline.sh sim-to-silicone
+docker exec -it difftactile ./docker/run_pipeline.sh A-to-B
 
-# Cross-domain: test the silicone-trained checkpoint on real MEAT (no retraining)
-docker exec -it difftactile ./docker/run_pipeline.sh silicone-to-meat
+# Cross-domain: test the sim-trained checkpoint on real MEAT (no retraining)
+docker exec -it difftactile ./docker/run_pipeline.sh A-to-C
 
 # Train on real MEAT trials, test on silicone
-docker exec -it difftactile ./docker/run_pipeline.sh sim-to-meat
+docker exec -it difftactile ./docker/run_pipeline.sh C-to-B
 
 # ...or all three in sequence
 docker exec -it difftactile ./docker/run_pipeline.sh all-scenarios
 ```
 
-Outputs land in `difftactile/output/` (e.g. `roc_curve_iros.pdf`) and `logs/`.
+Each configuration also takes `--train` (reproduce the model from scratch) or `--eval` (load
+the published checkpoint); see [Training and evaluating the GNN](#4-training-and-evaluating-the-gnn)
+for the full table. Outputs land in `difftactile/output/` (e.g. `roc_curve_iros.pdf`) and `logs/`.
 
-`sim-to-meat` trains a new model, so it writes `*_retrained` artifacts
+Any run that **trains** writes `*_retrained` artifacts
 (`final_segmentation_model_gnn_iros_retrained.pt`,
-`test_loader_gnn_iros_retrained.pickle`) rather than overwriting the published
-checkpoint that `sim-to-silicone` evaluates — otherwise running the scenarios in
-sequence would silently change the reported AUC. Pass
+`test_loader_gnn_iros_retrained.pickle`, and the `_icra` equivalents) rather than overwriting
+the published checkpoints that the evaluation paths read — otherwise running the
+configurations in sequence would silently change the reported AUC. Pass
 `DIFFTACTILE_OVERWRITE_PUBLISHED=1` if you deliberately want to replace them.
 
 ### Regenerate the simulated dataset (optional)
@@ -139,18 +143,19 @@ Everything below documents the pipeline in detail, including how to run it outsi
 
 ## Branches
 
-> **All three scenarios now live on a single branch** and are selected by name (see
-> [Quickstart](#quickstart-docker)). The per-experiment branches below are retained as a
-> historical record of how the work developed.
+> **All three of the paper's models can be trained and evaluated from `main`**, selected by
+> name (see [Quickstart](#quickstart-docker)) — there is no need to switch branches to train a
+> different model. The per-experiment branches below are retained as a historical record of
+> how the work developed.
 
 Development happened on parallel branches, one per experiment. `main` tracks the latest state.
 
 | Branch | What it is | How it differs |
 |---|---|---|
-| **`main`** | Latest work. | Identical to `iros`; carries the unified, scenario-selectable code. |
-| **`iros`** | The IROS submission state. Sim-to-real onto a **silicone vascular phantom**. | The reference implementation, now unified: all three scenarios run from here. Small GNN (`latent_dim` 64, `skip_dim` 32, 30 epochs, batch 4) by default; the large ICRA model is selected automatically for `silicone-to-meat`. |
+| **`main`** | Latest work, and the only branch you need. | Carries the unified code: all three (train → test) configurations, each in both `--train` and `--eval` mode. |
+| **`iros`** | The IROS submission state. Sim-to-real onto a **silicone vascular phantom**. | The reference implementation. Small GNN (`latent_dim` 64, `skip_dim` 32, 30 epochs, batch 4) by default; the large ICRA model is selected automatically for the sim-trained configurations. |
 | **`sim-to-silicone`** | The silicone-phantom experiment as submitted. | Identical to `iros`. Kept as a named pointer to the silicone experiment. |
-| **`sim-to-meat-test`** | *Historical.* Transfers the trained model to **real meat**, with plastic straws standing in for vessels beneath layers of steak. Superseded by the `silicone-to-meat` scenario on the unified branch. | Diverged from `iros`. Much larger GNN (`latent_dim` 256, `small_input_dim` 248, `skip_dim` 128, batch 16, 1 epoch, lr 1e-3). `dataset.py::create_splits_iros` sends *all* trials to the **test** split (pure transfer, no retraining on meat). `endgame.main()` re-enables the full data-cleaning pipeline. `script_iros_gnn.py` calls `main()` to train. |
+| **`sim-to-meat-test`** | *Historical.* Transfers the trained model to **real meat**, with plastic straws standing in for vessels beneath layers of steak. Superseded by the `A-to-C` configuration on `main`. | Diverged from, and now predates, `main` — it has none of the path, Docker or data-bundle infrastructure, and its sim-training entrypoint is disabled by a bare `return`. Much larger GNN (`latent_dim` 256, `small_input_dim` 248, `skip_dim` 128, batch 16, 1 epoch, lr 1e-3). `dataset.py::create_splits_iros` sends *all* trials to the **test** split (pure transfer, no retraining on meat). **Do not merge it into `main`** — `main` already carries its useful content, including a normalisation fix that raises the reported cross-domain vein IoU from 0.034 to 0.198. |
 
 The meat trials are catalogued in
 [`difftactile/manual_or_experimental_data/iros_experiment_spec.md`](difftactile/manual_or_experimental_data/iros_experiment_spec.md)
@@ -401,24 +406,52 @@ python -m difftactile.scripts.script_pre_process_sim_data   # Hungarian-reorder 
 
 ### 4. Training and evaluating the GNN
 
-The scenario is chosen **by name** — no source editing:
+The paper uses three datasets:
+
+| | Dataset |
+|---|---|
+| **A** | Simulated, collected in the differentiable tactile simulator. |
+| **B** | Real **silicone** phantom — shallow veins ("easy"). |
+| **C** | Real **meat** phantom — veins at varying depths ("difficult"). |
+
+and reports three separately trained models, one per (train → test) configuration. Each is
+selected **by name**, and each can be either trained from scratch or evaluated from the
+published checkpoint — no source editing and **no branch switching**:
 
 ```bash
-python -m difftactile.scripts.script_iros_gnn sim-to-silicone   # evaluate on silicone + ROC
-python -m difftactile.scripts.script_iros_gnn silicone-to-meat  # cross-domain, no retraining
-python -m difftactile.scripts.script_iros_gnn sim-to-meat       # train on meat, test on silicone
+# Train each of the three models from scratch
+python -m difftactile.scripts.script_iros_gnn A-to-B --train   # train on sim,  test on silicone
+python -m difftactile.scripts.script_iros_gnn C-to-B --train   # train on meat, test on silicone
+python -m difftactile.scripts.script_iros_gnn A-to-C --train   # train on sim,  test on meat
+
+# ...or reproduce the published numbers without retraining
+python -m difftactile.scripts.script_iros_gnn A-to-B --eval    # evaluate on silicone + ROC
+python -m difftactile.scripts.script_iros_gnn A-to-C --eval    # cross-domain, no retraining
 ```
 
-| Scenario | What it does | Trains? |
-|---|---|---|
-| `sim-to-silicone` | Loads the IROS checkpoint, evaluates on the real silicone phantom, writes the ROC curve. | no |
-| `silicone-to-meat` | Loads the **silicone-trained (ICRA)** checkpoint and tests it on the real meat trials, with every trial in the test split. | no |
-| `sim-to-meat` | Trains on the real meat trials and tests the best checkpoint on silicone. | yes |
+| Config | Train set | Test set | `--train` | `--eval` | Default |
+|---|---|---|---|---|---|
+| `A-to-B` | simulation | silicone | Trains the large (ICRA) model on sim, tests on silicone. | Loads the published sim-trained checkpoint, evaluates on silicone, writes the ROC curve. | `--eval` |
+| `C-to-B` | meat | silicone | Trains the small (IROS) model on the real meat trials, tests the best checkpoint on silicone. | Same as `--train` — the published run ends by testing on silicone. | `--train` |
+| `A-to-C` | simulation | meat | Trains the large (ICRA) model on sim, tests on meat with every trial in the test split. | Loads the published sim-trained checkpoint and tests it on meat, no retraining. | `--eval` |
+
+Omitting the mode uses the default in the last column (evaluation wherever a published
+checkpoint makes it the cheaper path). The configuration can also be given as
+`DIFFTACTILE_SCENARIO` and the mode as `DIFFTACTILE_MODE`.
+
+> The **older scenario names still work** as aliases: `sim-to-silicone` → `A-to-B`,
+> `sim-to-meat` → `C-to-B`, `silicone-to-meat` → `A-to-C`. Note that `silicone-to-meat` was a
+> misnomer: it loads `final_segmentation_model_gnn_icra.pt`, which is the **simulation**-trained
+> checkpoint, so the configuration it actually runs is sim → meat (A→C), as the paper describes.
 
 Two architectures exist, and a checkpoint only loads into the one it was trained with —
 `GNN(arch="iros")` is the small model (`latent_dim` 64) and `GNN(arch="icra")` the large one
 (`latent_dim` 256), whose sizes come from the `*_icra` keys of the `gnn` config block. The
-dispatcher picks the right one per scenario.
+dispatcher picks the right one per configuration: the two sim-trained models (A→B, A→C) use
+the large architecture, the meat-trained model (C→B) the small one.
+
+Training writes `*_retrained` artifacts rather than overwriting the published checkpoints —
+see the note in [Reproduce the published results](#reproduce-the-published-results).
 
 The legacy `python -m difftactile.scripts.script_gnn` entrypoint (ICRA model) still exists.
 
@@ -436,11 +469,11 @@ Hyperparameters come from the `gnn` block of `system-params.json`. Outputs:
 | Pickled test set + normalisation stats | `difftactile/output/test_loader_gnn_iros.pickle` |
 | ROC curve | `difftactile/output/roc_curve_iros.pdf` |
 
-`sim-to-silicone` needs **both** the `.pt` weights and the `.pickle` (it recovers the
+`A-to-B --eval` needs **both** the `.pt` weights and the `.pickle` (it recovers the
 normalisation statistics from the latter), plus the silicone dataset at
 `SYSTEM_PARAMS.files.exp_data_endgame` — all three ship in the Zenodo bundle. The ROC PDF is
-always written to disk; the interactive window is skipped automatically when there is no
-display, or with `DIFFTACTILE_HEADLESS=1`.
+always written to disk; matplotlib falls back to a non-interactive backend when there is no
+display, or with `DIFFTACTILE_HEADLESS=1`, so plotting never blocks a container or SSH run.
 
 ### 5. Visualisation and results
 
