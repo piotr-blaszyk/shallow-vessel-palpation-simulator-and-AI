@@ -34,7 +34,7 @@ from torch_geometric.loader import DataLoader
 from sklearn.metrics import roc_auc_score, roc_curve
 
 import matplotlib
-from difftactile.main.display import is_headless, finish_plot
+from difftactile.main.display import is_headless
 
 if is_headless():
     matplotlib.use("Agg")
@@ -42,6 +42,7 @@ import matplotlib.pyplot as plt
 
 from difftactile.cnn.common import *
 from difftactile.cnn.dataset import *
+from difftactile.cnn.roc_plot import plot_roc
 from difftactile.cnn.segmentation_gnn import GNN
 from difftactile.main.paths import repo_path
 
@@ -197,47 +198,6 @@ def _collect_probabilities(model, dataset, device, batch_size, num_workers):
     return torch.cat(all_probs).numpy(), torch.cat(all_labels).numpy()
 
 
-def _plot_roc(fpr, tpr, all_probs, all_labels, auc, title, out_path):
-    """Draw the ROC curve in the same style as the published figures.
-
-    Red markers annotate decision thresholds sampled around 0.5, matching
-    Fig. "ROC curves on the test set" in the paper.
-    """
-    thresholds = np.linspace(0.4, 0.6, 5)
-    tpr_list, fpr_list = [], []
-    for thr in thresholds:
-        preds = (all_probs >= thr).astype(int)
-        tp = np.sum((preds == 1) & (all_labels == 1))
-        fp = np.sum((preds == 1) & (all_labels == 0))
-        tn = np.sum((preds == 0) & (all_labels == 0))
-        fn = np.sum((preds == 0) & (all_labels == 1))
-        tpr_list.append(tp / (tp + fn) if (tp + fn) > 0 else 0.0)
-        fpr_list.append(fp / (fp + tn) if (fp + tn) > 0 else 0.0)
-
-    fontsize = 20
-    plt.figure(figsize=(7, 6))
-    plt.plot(fpr, tpr, label="ROC curve", alpha=0.8, linewidth=6.0)
-    plt.scatter(fpr_list, tpr_list, color="red", s=200, label="thresholds")
-    for thr, x, y in zip(thresholds, fpr_list, tpr_list):
-        plt.text(x, y, f"{thr:.2f}", fontsize=fontsize, ha="left", va="bottom",
-                 fontweight="bold")
-    plt.tick_params(axis="both", which="major", labelsize=fontsize)
-    for label in plt.gca().get_xticklabels() + plt.gca().get_yticklabels():
-        label.set_fontweight("bold")
-    plt.plot([0, 1], [0, 1], "k-", alpha=0.5, linewidth=6.0)
-    plt.xlabel("False Positive Rate", fontsize=fontsize, fontweight="bold")
-    plt.ylabel("True Positive Rate", fontsize=fontsize, fontweight="bold")
-    # The scenario and its AUROC are in the title so a PDF is self-identifying
-    # once separated from its filename.
-    plt.title(f"{title}\nAUROC = {auc:.4f}", fontsize=fontsize - 4, fontweight="bold")
-    plt.grid(True, linestyle="--", alpha=0.3, linewidth=3.0)
-    for spine in plt.gca().spines.values():
-        spine.set_linewidth(3.0)
-    plt.tight_layout()
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    finish_plot(plt, out_path, format="pdf", dpi=300)
-
-
 def evaluate_scenario(config, weights):
     """Score one (configuration, weight-source) scenario.
 
@@ -276,11 +236,13 @@ def evaluate_scenario(config, weights):
     duration = time.perf_counter() - start
 
     auc = roc_auc_score(all_labels, all_probs)
-    fpr, tpr, _ = roc_curve(all_labels, all_probs)
+    # `roc_thresholds` gives the decision threshold at each vertex of the curve,
+    # which is what the curve's colour encodes.
+    fpr, tpr, roc_thresholds = roc_curve(all_labels, all_probs)
 
     out_path = repo_path(f"{ROC_DIR}/roc_curve_{config}_{weights}.pdf")
-    _plot_roc(fpr, tpr, all_probs, all_labels, auc,
-              f"{config} ({weights}): {cfg['description']}", out_path)
+    plot_roc(plt, fpr, tpr, all_probs, all_labels, auc, out_path,
+             thresholds_roc=roc_thresholds)
 
     n_pos = int(all_labels.sum())
     print(f"AUROC = {auc:.4f}   ({len(all_labels)} nodes, {n_pos} positive)")

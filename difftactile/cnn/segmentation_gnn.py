@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 
 from difftactile.cnn.common import *
 from difftactile.cnn.dataset import *
+from difftactile.cnn.roc_plot import plot_roc
 from difftactile.main.paths import repo_path
 
 
@@ -1016,57 +1017,18 @@ def evaluate_and_plot_roc():
         all_labels = torch.cat(all_labels).numpy()
 
         auc = roc_auc_score(all_labels, all_probs)
-        fpr, tpr, _ = roc_curve(all_labels, all_probs)
+        # `roc_thresholds` gives the decision threshold at each vertex of the
+        # curve, which is what the curve's colour encodes.
+        fpr, tpr, roc_thresholds = roc_curve(all_labels, all_probs)
 
-        thresholds = np.linspace(0.4, 0.6, 5)
-        tpr_list, fpr_list = [], []
-        for thr in thresholds:
-            preds = (all_probs >= thr).astype(int)
-            tp = np.sum((preds == 1) & (all_labels == 1))
-            fp = np.sum((preds == 1) & (all_labels == 0))
-            tn = np.sum((preds == 0) & (all_labels == 0))
-            fn = np.sum((preds == 0) & (all_labels == 1))
-            tpr_list.append(tp / (tp + fn) if (tp + fn) > 0 else 0.0)
-            fpr_list.append(fp / (fp + tn) if (fp + tn) > 0 else 0.0)
-    
-    if False:
-        fpr_list = np.linspace(0, 1, 11)
-        tpr_list = fpr_list ** 0.5
-        fpr = fpr_list
-        tpr = tpr_list
-        auc = 0.75
-        thresholds = np.linspace(0, 1, 11)
-
-    fontsize = 20
-    plt.figure(figsize=(7, 6))
-    plt.plot(fpr, tpr, label=f"ROC curve", alpha=0.8, linewidth=6.0)
-    plt.scatter(fpr_list, tpr_list, color="red", s=200, label="thresholds")
-
-    for thr, x, y in zip(thresholds, fpr_list, tpr_list):
-        plt.text(x, y, f"{thr:.2f}", fontsize=fontsize, ha="left", va="bottom", fontweight="bold")
-    
-    plt.tick_params(axis="both", which="major", labelsize=fontsize)
-    for label in plt.gca().get_xticklabels() + plt.gca().get_yticklabels():
-        label.set_fontweight("bold")
-
-    plt.plot([0, 1], [0, 1], "k-", alpha=0.5, linewidth=6.0)
-    plt.xlabel("False Positive Rate", fontsize=fontsize, fontweight="bold")
-    plt.ylabel("True Positive Rate", fontsize=fontsize, fontweight="bold")
-    plt.grid(True, linestyle="--", alpha=0.3, linewidth=3.0)
-    for spine in plt.gca().spines.values():
-        spine.set_linewidth(3.0)
-    plt.tight_layout()
-    # Named for the configuration, not the checkpoint: the legacy `script_gnn`
-    # entrypoint in cnn/gnn.py already writes roc_curve_sim.pdf.
+    # Styling lives in cnn/roc_plot.py so this figure matches the six written by
+    # `auroc_all_scenarios`. Named for the configuration, not the checkpoint:
+    # the legacy `script_gnn` entrypoint in cnn/gnn.py already writes
+    # roc_curve_sim.pdf. `plot_roc` handles savefig / show-guard / close.
     roc_path = repo_path("difftactile/output/roc_curve_A-to-B.pdf")
-    os.makedirs(os.path.dirname(roc_path), exist_ok=True)
-    plt.savefig(roc_path, format="pdf", dpi=300)
+    plot_roc(plt, fpr, tpr, all_probs, all_labels, auc, roc_path,
+             thresholds_roc=roc_thresholds)
     print(f"ROC curve written to: {roc_path}")
-    # The PDF above is the output. A blocking window is opened only when the
-    # user asks for one with DIFFTACTILE_INTERACTIVE=1.
-    if _show_plots():
-        plt.show()
-    plt.close()
 
     print(f'auc: {auc}')
 
