@@ -1,41 +1,41 @@
 {
   "vein_pose": [
-    0.0975,
-    0.1975,
-    0.0575,
+    0.095,
+    0.195,
+    0.06,
     0.0,
     0.7071067811865475,
     0.0,
     0.7071067811865476
   ],
   "phantom_closest_vertex": [
-    0.0975,
-    0.0975,
-    0.0425
+    0.095,
+    0.095,
+    0.045
   ],
   "phantom_centroid_pose": [
-    0.1975,
-    0.1975,
-    0.0575,
+    0.195,
+    0.195,
+    0.06,
     0,
     0,
     0
   ],
-  "phantom_top_surface_z": 0.07250000000000001,
+  "phantom_top_surface_z": 0.075,
   "phantom_dimensions": [
     0.2,
     0.2,
     0.03
   ],
   "vitactip_tip_position": [
-    0.1975,
-    -0.0025000000000000022,
-    0.0575
+    0.195,
+    -0.0050000000000000044,
+    0.06
   ],
   "vitactip_tip_pose": [
-    0.1975,
-    -0.0025000000000000022,
-    0.0575,
+    0.195,
+    -0.0050000000000000044,
+    0.06,
     0.0,
     1.0,
     0.0,
@@ -43,31 +43,31 @@
   ],
   "phantom_volume": 0.0012000000000000001,
   "object_scale": 0.2,
-  "phantom_min_max_particle_spacing": 0.0025,
-  "vitactip_mean_particle_spacing": 0.0012126806935590518,
+  "phantom_min_max_particle_spacing": 0.005,
+  "vitactip_mean_particle_spacing": 0.0023230613737553244,
   "contact_surface_area": 0.0011341149479459152,
   "rigid_static": {
     "num_particles_cube_1d": -1
   },
   "phantom": {
-    "num_particles_cube_1d": 81,
-    "n_grid_x": 79,
-    "n_grid_y": 79,
-    "n_grid_z": 34
+    "num_particles_cube_1d": 41,
+    "n_grid_x": 39,
+    "n_grid_y": 39,
+    "n_grid_z": 17
   },
   "min_coords": [
-    0.0975,
-    0.0975,
-    0.0425
+    0.095,
+    0.095,
+    0.045
   ],
   "min_ixs": [
-    19,
-    19,
-    8
+    9,
+    9,
+    4
   ],
   "max_ixs": [
-    59,
-    59,
-    14
+    29,
+    29,
+    7
   ]
 }

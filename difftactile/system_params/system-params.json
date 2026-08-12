@@ -26,7 +26,7 @@
     },
     "phantom": {
         "mass_eps": 1.000e-08,
-        "mpm_grid_cube_size": 5.000e-03,
+        "mpm_grid_cube_size": 1.000e-02,
         "bound": 3,
         "gravity": [
             0.0,
@@ -48,11 +48,11 @@
         "keypoint_search_xy_threshold": 2.000e-01,
         "rayleigh_damping_alpha": 1.000e-01,
         "rayleigh_damping_beta": 1.000e-02,
-        "particle_spacing": 2.500e-03
+        "particle_spacing": 5.000e-03
     },
     "contact": {
         "dt": 1.270e-06,
-        "dt_override": 5.000e-06,
+        "dt_override": 1.000e-05,
         "normal_stiffness": [
             44.8,
             0,
@@ -103,7 +103,7 @@
     },
     "gmsh_mm": {
         "vitactip": {
-            "characteristic_length_factor": 1.500e-01,
+            "characteristic_length_factor": 3.000e-01,
             "radii": [
                 19,
                 20
@@ -119,7 +119,7 @@
             "refinement_offset": 3
         },
         "vein": {
-            "characteristic_length_factor": 1.500e-01,
+            "characteristic_length_factor": 3.000e-01,
             "radius": 2,
             "length": 40
         },
@@ -222,7 +222,7 @@
     "visualisation": {
         "visualise_exp_markers_during_bp": 1,
         "camera_offset": 5.000e+00,
-        "particle_size_normal": 4.500e-04,
+        "particle_size_normal": 9.000e-04,
         "particle_size_keypoint": 9.000e-03,
         "tactile_readout_width": 9.600e+02,
         "tactile_readout_height": 5.400e+02,
@@ -434,6 +434,6 @@
         "sim_data_endgame": "difftactile/output/training_data/pickle_20250901_220921_reordered_dense"
     },
     "rigid_static": {
-        "particle_spacing": 2.500e-03
+        "particle_spacing": 5.000e-03
     }
 }
