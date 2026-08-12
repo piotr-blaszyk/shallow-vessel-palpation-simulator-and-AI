@@ -116,42 +116,11 @@ echo "Restoring from ${BUNDLE}"
 echo "            to ${REPO_DIR}"
 echo
 
-# Where a path used to live before the naming cleanup. Bundles published prior
-# to that rename -- including the current Zenodo record -- still carry the old
-# layout, so each expected path falls back to its legacy name and is restored
-# under the new one. Keep these entries as long as such a bundle is downloadable.
-legacy_path_for() {
-    case "$1" in
-        "difftactile/manual_or_experimental_data/silicone_training_data/20250901-131547_dense")
-            echo "difftactile/manual_or_experimental_data/endgame/20250901-131547_dense" ;;
-        "difftactile/manual_or_experimental_data/meat_training_data/clean")
-            echo "difftactile/manual_or_experimental_data/iros_training_data/clean" ;;
-        "saved_models_sim/final_segmentation_model_gnn_sim.pt")
-            echo "saved_models_icra/final_segmentation_model_gnn_icra.pt" ;;
-        "saved_models_meat/final_segmentation_model_gnn_meat.pt")
-            echo "saved_models_iros/final_segmentation_model_gnn_iros.pt" ;;
-        "difftactile/output/test_loader_gnn_sim.pickle")
-            echo "difftactile/output/test_loader_gnn_icra.pickle" ;;
-        "difftactile/output/test_loader_gnn_meat.pickle")
-            echo "difftactile/output/test_loader_gnn_iros.pickle" ;;
-        "difftactile/output/marker_locations_ordered.npz")
-            echo "difftactile/output/iros_marker_locations_ordered.npz" ;;
-        *) echo "" ;;
-    esac
-}
-
 # Copy each expected path into place. Existing files are replaced; anything the
 # bundle does not carry is left untouched, so this is safe to re-run.
 for rel in "${EXPECTED[@]}"; do
     src="${BUNDLE}/${rel}"
     dest="${REPO_DIR}/${rel}"
-    if [ ! -e "${src}" ]; then
-        legacy_rel="$(legacy_path_for "${rel}")"
-        if [ -n "${legacy_rel}" ] && [ -e "${BUNDLE}/${legacy_rel}" ]; then
-            src="${BUNDLE}/${legacy_rel}"
-            echo "  (pre-rename bundle: ${legacy_rel} -> ${rel})"
-        fi
-    fi
     if [ ! -e "${src}" ]; then
         echo "  not in bundle (skipped): ${rel}"
         continue

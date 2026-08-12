@@ -17,34 +17,16 @@ is therefore treated as non-generable and shipped.
 
 ## Bundle paths vs. the currently published archive
 
-The paths in the tables below are the **current** ones. The archive presently
-attached to the Zenodo record was built before the naming cleanup and still uses
-the older directory names (`endgame/`, `iros_training_data/`, `saved_models_iros/`,
-`saved_models_icra/`, and the `*_iros` / `*_icra` file suffixes).
+The bundle must be the **post-rename** one: its paths, and the names stored
+*inside* its pickles and checkpoints, match the current code exactly. The
+compatibility shims that let a pre-rename archive restore into this layout were
+removed once the rebuilt bundle became the published artifact; see the repository
+history if you ever need to read a pre-rename bundle again.
 
-That mismatch is handled automatically: `restore_data.sh` looks for each expected
-path under its current name and falls back to the pre-rename name, restoring it
-under the **new** name either way. A fresh clone therefore reproduces the published
-results from the existing Zenodo archive with no manual steps. `make_data_bundle.sh`
-applies the same fallback on the source side, so a rebuilt bundle contains only the
-new names. The fallback tables in both scripts can be dropped once a re-built bundle
-replaces the published one.
-
-Old names also survive *inside* two kinds of binary artifact, which a path rename
-alone cannot reach. `data/migrate_bundle_artifacts.py` rewrites both, and
-`make_data_bundle.sh` runs it over the staged bundle so a rebuild is clean:
-
-- **Test-loader pickles** carry an `'iros'` flag key and a pickled `MyDataset`
-  whose attributes are `iros_data` / `dilation_iros` with `scheme='iros'`.
-  `pickle.load` restores `__dict__` without calling `__init__`, so an un-migrated
-  loader's `scheme` no longer matches the renamed `"meat"` branch and
-  `len(dataset)` silently returns 0. The three paper configurations are unaffected
-  (they read only `dataset_stats`), but `cnn/visualise.py` uses the dataset object.
-- **`.pt` checkpoints** are zip archives whose internal entries are named after the
-  file's name at save time, so the meat checkpoint embedded
-  `final_segmentation_model_gnn_iros/`. Re-saving clears it; the tensors are
-  bit-for-bit identical, though the round-trip can shift a reported metric by
-  ~1 ULP (AUC `…4648` → `…4646`).
+> If a restore reports paths under `endgame/`, `iros_training_data/` or
+> `saved_models_{iros,icra}/`, you have an outdated archive. Re-download it from
+> the DOI rather than renaming files by hand — the old bundle also carries stale
+> names inside its pickles, which a path rename cannot reach.
 
 ## What IS in the bundle
 

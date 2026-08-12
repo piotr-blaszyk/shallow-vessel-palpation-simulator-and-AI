@@ -6,19 +6,15 @@ import torch.nn.functional as F
 # ("C") scheme, whose `dataset_stats` entry is a single flat stats dict instead
 # of the curriculum's {difficulty: stats} mapping.
 MEAT_LOADER_FLAG = "meat"
-# The published Zenodo bundle predates the rename and stamps the same flag under
-# the old conference-derived key, so both spellings are accepted on read.
-LEGACY_MEAT_LOADER_FLAG = "iros"
 
 
 def has_flat_stats(test_data):
     """True when `test_data['dataset_stats']` is a single stats dict.
 
     Meat-scheme loaders store stats flat; simulation/curriculum loaders store
-    them keyed by difficulty. Accepts the pre-rename key so that the published
-    bundle's pickles keep loading unchanged.
+    them keyed by difficulty.
     """
-    return MEAT_LOADER_FLAG in test_data or LEGACY_MEAT_LOADER_FLAG in test_data
+    return MEAT_LOADER_FLAG in test_data
 
 
 class TverskyLoss(torch.nn.Module):

@@ -39,55 +39,13 @@ echo "Source: ${SOURCE_DIR}"
 echo "Staging in: ${BUNDLE}"
 echo
 
-# Where a path lives in the frozen source snapshot, which predates the naming
-# cleanup and so still uses the old conference-derived directory names. The
-# bundle is always written under the CURRENT names; only the lookup falls back.
-legacy_path_for() {
-    case "$1" in
-        "difftactile/manual_or_experimental_data/silicone_training_data/20250901-131547_dense")
-            echo "difftactile/manual_or_experimental_data/endgame/20250901-131547_dense" ;;
-        "difftactile/manual_or_experimental_data/meat_training_data/clean")
-            echo "difftactile/manual_or_experimental_data/iros_training_data/clean" ;;
-        "saved_models_sim/final_segmentation_model_gnn_sim.pt")
-            echo "saved_models_icra/final_segmentation_model_gnn_icra.pt" ;;
-        "saved_models_meat/final_segmentation_model_gnn_meat.pt")
-            echo "saved_models_iros/final_segmentation_model_gnn_iros.pt" ;;
-        "difftactile/output/test_loader_gnn_sim.pickle")
-            echo "difftactile/output/test_loader_gnn_icra.pickle" ;;
-        "difftactile/output/test_loader_gnn_meat.pickle")
-            echo "difftactile/output/test_loader_gnn_iros.pickle" ;;
-        "difftactile/output/marker_locations_ordered.npz")
-            echo "difftactile/output/iros_marker_locations_ordered.npz" ;;
-        *) echo "" ;;
-    esac
-}
-
-# resolve_src <relative-path>
-# Echoes the path to read for <rel>: the current name if present in the source
-# tree, else its pre-rename equivalent. Empty if neither exists.
-resolve_src() {
-    local rel="$1"
-    if [ -e "${SOURCE_DIR}/${rel}" ]; then
-        echo "${SOURCE_DIR}/${rel}"
-        return 0
-    fi
-    local legacy
-    legacy="$(legacy_path_for "${rel}")"
-    if [ -n "${legacy}" ] && [ -e "${SOURCE_DIR}/${legacy}" ]; then
-        echo "${SOURCE_DIR}/${legacy}"
-        return 0
-    fi
-    echo ""
-}
-
 # copy_tree <relative-path> [find-filter...]
 # Copies SOURCE_DIR/<rel> to BUNDLE/<rel>, preserving layout. Extra args are
 # passed to `find` so we can ship only the file types actually consumed.
 copy_tree() {
     local rel="$1"; shift
-    local src
-    src="$(resolve_src "${rel}")"
-    if [ -z "${src}" ]; then
+    local src="${SOURCE_DIR}/${rel}"
+    if [ ! -e "${src}" ]; then
         echo "  MISSING (skipped): ${rel}" >&2
         return 0
     fi
@@ -105,9 +63,8 @@ copy_tree() {
 
 copy_file() {
     local rel="$1"
-    local src
-    src="$(resolve_src "${rel}")"
-    if [ -z "${src}" ]; then
+    local src="${SOURCE_DIR}/${rel}"
+    if [ ! -e "${src}" ]; then
         echo "  MISSING (skipped): ${rel}" >&2
         return 0
     fi
@@ -133,25 +90,6 @@ copy_file "saved_models_meat/final_segmentation_model_gnn_meat.pt"
 echo "[4/5] Small artifacts required by the ML entrypoints"
 copy_file "difftactile/output/test_loader_gnn_sim.pickle"
 copy_file "difftactile/output/test_loader_gnn_meat.pickle"
-# The pickles and checkpoints were serialised before the naming cleanup and
-# still carry the old names INSIDE the file: the pickles hold an 'iros' flag key
-# plus the dataset's iros_data / dilation_iros attributes and scheme string, and
-# a .pt names its internal zip entries after the filename it was saved under.
-# Rewrite both so the bundle ships current names throughout. See the migration
-# script's docstring for why an un-migrated pickle makes len(dataset) return 0.
-# Unpickling reconstructs a MyDataset, so the repo must be importable.
-if PYTHONPATH="${REPO_DIR}" DIFFTACTILE_HEADLESS=1 python3 \
-        "${SCRIPT_DIR}/migrate_bundle_artifacts.py" \
-        "${BUNDLE}/difftactile/output/test_loader_gnn_sim.pickle" \
-        "${BUNDLE}/difftactile/output/test_loader_gnn_meat.pickle" \
-        "${BUNDLE}/saved_models_sim/final_segmentation_model_gnn_sim.pt" \
-        "${BUNDLE}/saved_models_meat/final_segmentation_model_gnn_meat.pt" \
-        2>/dev/null | sed 's/^/  /'; then
-    :
-else
-    echo "  WARNING: artifact migration failed - bundle keeps pre-rename names inside" >&2
-    echo "           the pickles/checkpoints. Run it manually with the ML env active." >&2
-fi
 
 echo "[5/5] Sensor geometry / marker layout (~5 MB)"
 # Derived from the sensor CAD and a reference photo of the undeformed sensor.

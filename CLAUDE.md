@@ -212,15 +212,13 @@ Do not "fix" such a failure by inventing data. Restore the published bundle inst
 ./data/restore_data.sh --verify                  # check what is present
 ```
 
-> **Pre-rename bundles restore fine.** The archive currently on Zenodo predates the naming
-> cleanup and still contains `endgame/`, `iros_training_data/`, `saved_models_{iros,icra}/`
-> and the `*_iros` / `*_icra` suffixes. `restore_data.sh` falls back to those legacy names and
-> restores them under the current ones, and `make_data_bundle.sh` does the same when reading
-> the frozen source snapshot — so both a fresh restore and a rebuild work unchanged. Verified:
-> a clean clone restored from the published tarball reproduced AUC 0.6785678641614648 exactly
-> (that check predates the `evaluate_and_plot_roc()` checkpoint fix, so the equivalent figure
-> for `A-to-B --eval` today is 0.7314; the restore itself is unaffected).
-> The `legacy_path_for()` tables in both scripts can go once a rebuilt bundle is published.
+> **The bundle must be the post-rename one.** Its paths — and the names stored *inside* its
+> pickles and checkpoints — match the current code exactly. The fallbacks that let a
+> pre-rename archive (`endgame/`, `iros_training_data/`, `saved_models_{iros,icra}/`) restore
+> into this layout have been removed now that the rebuilt bundle is the published artifact;
+> they are in the git history if ever needed. A restore that reports those old paths means an
+> outdated archive — re-download from the DOI rather than renaming by hand, since the old
+> bundle also carries stale names inside its pickles that a path rename cannot reach.
 
 The published bundle is the Zenodo record **shallow-vessel-palpation-dataset**, DOI
 **10.5281/zenodo.21900934**. The file attached to that record is named
@@ -336,6 +334,5 @@ There is no pinned lockfile and no `requirements.txt` (it was deleted from upstr
   used conference names (`iros`, `icra`) and a timeline word (`endgame`) for these; those are
   gone from the code. The only survivors are load-bearing and deliberate: the historical git
   branch names, the `git clone --branch iros` line in the verbatim transcript in
-  `REPRODUCTION_TEST.md`, `LEGACY_MEAT_LOADER_FLAG` in `cnn/common.py` (a key inside the
-  published pickles), the `legacy_path_for()` fallbacks in `data/*.sh`, and the external
-  snapshot path in `make_data_bundle.sh`. Do not "clean up" any of those.
+  `REPRODUCTION_TEST.md`, and the external snapshot path in `make_data_bundle.sh` (a real
+  directory outside this repository). Do not "clean up" any of those.
