@@ -24,7 +24,8 @@ This work spans two repositories, submitted together to an **ECCV 2026 workshop*
 | **[shallow-vessel-palpation-simulator-and-AI](https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI)** (this one) | **Main repository.** Simulation, dataset generation, GNN training and evaluation — everything needed to reproduce the published results. |
 | [shallow-vessel-palpation-robot-control](https://github.com/piotr-blaszyk/shallow-vessel-palpation-robot-control) | Robot control. Drives the DOBOT Magician E6 arm that collected the real tactile recordings for both phantoms. Needed only to *gather new* data, not to reproduce results. |
 
-Data and trained model weights are published on Zenodo — see
+Data and trained model weights are published on Zenodo as **shallow-vessel-palpation-dataset**
+([10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934)) — see
 [Quickstart](#quickstart-docker) below.
 
 ```
@@ -63,7 +64,9 @@ cd shallow-vessel-palpation-simulator-and-AI
 
 # 2. Fetch the data bundle from Zenodo (~190 MB) and unpack it into place
 #    (datasets + trained checkpoints; see data/MANIFEST.md for what is inside)
-wget https://zenodo.org/records/<RECORD_ID>/files/shallow-vessel-palpation-data.tar.gz
+#    Zenodo record "shallow-vessel-palpation-dataset", DOI 10.5281/zenodo.21900934
+#    -> https://doi.org/10.5281/zenodo.21900934
+wget https://zenodo.org/records/21900934/files/shallow-vessel-palpation-data.tar.gz
 ./data/restore_data.sh shallow-vessel-palpation-data.tar.gz
 
 # 3. Build the image (~10-30 min, downloads several GB) and start the container
@@ -285,10 +288,12 @@ A fresh clone does **not** contain:
 
 ### The fix: restore the published data bundle
 
-Everything in that table is supplied by the Zenodo archive, so none of it has to be
+Everything in that table is supplied by the Zenodo archive
+([10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934)), so none of it has to be
 regenerated:
 
 ```bash
+wget https://zenodo.org/records/21900934/files/shallow-vessel-palpation-data.tar.gz
 ./data/restore_data.sh shallow-vessel-palpation-data.tar.gz   # ~190 MB
 ./data/restore_data.sh --verify                  # list what is present / missing
 ```
@@ -599,5 +604,6 @@ MIT — see [LICENSE](LICENSE). Inherited from upstream DiffTactile.
 
 ## Contact
 
-Piotr Blaszyk — for questions about this fork, or to request the experimental datasets and
-trained weights that are not included here, please open an issue on this repository.
+Piotr Blaszyk — for questions about this fork please open an issue on this repository. The
+experimental datasets and trained weights are not in the repository itself; they are published
+on Zenodo at [10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934).

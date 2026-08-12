@@ -179,6 +179,47 @@ Do not "fix" such a failure by inventing data. Restore the published bundle inst
 ./data/restore_data.sh --verify                  # check what is present
 ```
 
+The published bundle is the Zenodo record **shallow-vessel-palpation-dataset**, DOI
+**10.5281/zenodo.21900934**. The file attached to that record is named
+`shallow-vessel-palpation-data.tar.gz` — the same name as the local copy and as
+`make_data_bundle.sh`'s default output — so the download URL is:
+
+```
+https://zenodo.org/records/21900934/files/shallow-vessel-palpation-data.tar.gz
+```
+
+Note the record *title* and the *filename* differ by one word (`-dataset` vs `-data`); the URL
+uses the **filename**. If the attached file is ever renamed, the `wget` lines in `README.md`
+and `docker/run_pipeline.sh` must be updated to match.
+
+### Restoring without downloading from Zenodo (local/offline route)
+
+`restore_data.sh` takes **any local path** — it never contacts Zenodo itself, so the download
+step in the README is only a convenience. Both of these are supported and are the route to use
+for local testing (e.g. while the Zenodo record is still an unpublished draft):
+
+```bash
+./data/restore_data.sh /path/to/shallow-vessel-palpation-data.tar.gz   # local tarball
+./data/restore_data.sh /path/to/shallow-vessel-palpation-data          # already-unpacked dir
+```
+
+On the author's machine the exact bundle uploaded to Zenodo is kept at:
+
+```
+/home/psb120/Documents/phd/data/masters/zenodo-bundle/shallow-vessel-palpation-data.tar.gz
+```
+
+with a `.sha256` sidecar next to it (`sha256sum -c *.sha256` to check integrity). Use that path
+to test the full restore → train → eval flow without touching Zenodo.
+
+Deliberately **not documented in the README** — end users should get the bundle from the DOI so
+the published artefact stays the single source of truth.
+
+If no bundle exists on disk, rebuild one from the author's frozen submission-state tree with
+`./data/make_data_bundle.sh [SOURCE_DIR] [OUTPUT_TAR]` (defaults are in the script header).
+Note that gzip output is not byte-reproducible, so a rebuilt tarball will not match the
+published SHA256 even when its contents are identical.
+
 `data/MANIFEST.md` documents what the bundle contains and — more usefully — what is
 deliberately excluded (raw videos, intermediate preprocessing stages, training logs), which
 is what takes it from 4.5 GB to ~190 MB. `data/make_data_bundle.sh` rebuilds it (author-side).
