@@ -13,7 +13,8 @@ from scipy.spatial.distance import pdist, squareform
 from difftactile.data_analysis.experiment.predict_exp import *
 from difftactile.main.constants import *
 from difftactile.main.display import (
-    destroy_windows, imshow, is_interactive, iteration_limit, wait_key,
+    destroy_windows, imshow, is_interactive, iteration_limit,
+    run_frame_browser, wait_key,
 )
 
 
