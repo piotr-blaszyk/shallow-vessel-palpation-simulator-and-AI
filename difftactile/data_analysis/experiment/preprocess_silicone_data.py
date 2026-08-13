@@ -306,12 +306,10 @@ class SiliconePreprocessData:
                 annotations[avi_path] = [[] for _ in range(n_frames)]
         video_idx = 0
         # Frame index lives in a dict so the render/key callbacks below can
-        # mutate it without `nonlocal` gymnastics; `dirty` is set by the mouse
-        # callback to request a repaint after a click.
-        # `scale` is the factor the last rendered frame was shrunk by for
-        # display, so the mouse callback can convert clicks back to full
-        # resolution.
-        state = {"frame": 0, "dirty": False, "scale": 1.0}
+        # mutate it without `nonlocal` gymnastics. `scale` is the factor the
+        # last rendered frame was shrunk by for display, so the mouse callback
+        # can convert clicks back to full resolution.
+        state = {"frame": 0, "scale": 1.0}
 
         # Editing guard, toggled with `g` and held for the whole session. Off by
         # default so that merely opening the tool to look at existing
@@ -366,9 +364,13 @@ class SiliconePreprocessData:
                         [int(round(x / scale)), int(round(y / scale))]
                     )
                     session_additions.append((avi_path, frame_idx))
-                    # Ask the browser loop to repaint so the new dot appears
-                    # without needing a keypress.
-                    state["dirty"] = True
+                    # Repaint immediately, here in the callback. The browser loop
+                    # is blocked in cv2.waitKey(0) - which is what pumps the GUI
+                    # event loop and so is what called us - and it will not wake
+                    # until a key is pressed, so nothing else can draw the new
+                    # dot. Doing it directly is also why that loop no longer has
+                    # to wake on a timer to check a dirty flag.
+                    imshow(cv2, "Annotator", render())
                     print(f"Added point {len(frame_annots) + 1}/{4}")
                 else:
                     print("Maximum 4 points allowed.")
@@ -546,14 +548,10 @@ class SiliconePreprocessData:
                 return "redraw"
             return None
 
-        def needs_repaint():
-            """True when a mouse click changed the annotations since last draw."""
-            if state["dirty"]:
-                state["dirty"] = False
-                return True
-            return False
-
-        run_frame_browser(cv2, "Annotator", render, on_key, needs_repaint)
+        # No `needs_repaint` callback: the mouse callback repaints the window
+        # itself (see above), so the browser loop can just block on a keypress
+        # like a normal GUI instead of waking on a timer to poll a dirty flag.
+        run_frame_browser(cv2, "Annotator", render, on_key)
         destroy_windows(cv2)
         for _ in range(10):
             cv2.waitKey(1)

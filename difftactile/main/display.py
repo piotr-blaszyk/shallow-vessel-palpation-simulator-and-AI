@@ -246,7 +246,7 @@ def prompt(message, default=""):
         return default
 
 
-def run_frame_browser(cv2, window, render, on_key, needs_repaint=None):
+def run_frame_browser(cv2, window, render, on_key):
     """Shared event loop for the frame-stepping annotation viewers.
 
     Both real-world datasets are browsed the same way - step through frames,
@@ -274,10 +274,12 @@ def run_frame_browser(cv2, window, render, on_key, needs_repaint=None):
             the loop. Called only when `on_key` reports the state changed.
         on_key: `(key) -> "redraw" | "quit" | None`. Return "redraw" when the
             key changed what should be displayed, "quit" to exit.
-        needs_repaint: optional `() -> bool`, for viewers whose state can change
-            without a keypress (a mouse callback adding a point). When given,
-            the loop polls instead of blocking so such changes show up promptly;
-            it consumes the flag itself, so the callback should clear it.
+
+    The loop always BLOCKS on a keypress, like any ordinary GUI - it never wakes
+    on a timer. A viewer whose state can also change without a keypress (the
+    silicone annotator, via a mouse callback) repaints from inside its own
+    callback: `cv2.waitKey(0)` is what pumps the GUI event loop, so callbacks
+    run while this loop is blocked and can draw straight to the window.
 
     Returns when the user quits, or immediately when not interactive.
     """
@@ -310,19 +312,17 @@ def run_frame_browser(cv2, window, render, on_key, needs_repaint=None):
 
         if pending_key is not None:
             key, pending_key = pending_key, None
-        elif needs_repaint is None:
-            # Block so an idle viewer does not spin at 100% CPU.
+        else:
+            # Block until a key is actually pressed, like any ordinary GUI: no
+            # timer, no polling, and no CPU burned while idle. An earlier version
+            # woke every 30 ms for viewers with a mouse callback, to re-check a
+            # dirty flag. That put a 30 ms floor on how fast frames could be
+            # stepped and up to 30 ms of dead latency in front of every keypress
+            # - about 4.5x the cost of an actual redraw (~7 ms), and the reason
+            # stepping through frames felt choppy. Mouse callbacks now repaint
+            # themselves, so there is nothing left to poll for.
             key = wait_key(cv2, 0) & 0xFF
             if key == 255:
-                continue
-        else:
-            # This viewer can change without a keypress (mouse input), so poll
-            # at ~30 Hz rather than blocking. That is responsive to a click while
-            # still leaving the process essentially idle between events.
-            key = wait_key(cv2, 30) & 0xFF
-            if key == 255:
-                if needs_repaint():
-                    needs_redraw = True
                 continue
 
         outcome = on_key(key)
