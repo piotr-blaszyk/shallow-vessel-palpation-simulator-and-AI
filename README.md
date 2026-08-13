@@ -197,7 +197,22 @@ reachable by name:
 ./docker/view_predictions.sh A-to-B --all        # every frame of every window
 ./docker/view_predictions.sh A-to-C --retrained  # locally trained
 ./docker/view_predictions.sh A-to-B --all --x11  # force X11 instead of Wayland
+
+# one seed's model out of a sweep (see "Training is deterministic" below)
+./docker/view_predictions.sh C-to-B --sweep 20260813-163201 --seed 1
 ```
+
+`--sweep TS [--seed N]` is the only way to say *which* trained model to view once a sweep has
+produced several — `--retrained` alone means "whatever was trained last". `TS` is the sweep's
+timestamp (or a full path); an unknown sweep or seed lists what is available rather than
+silently falling back to a different model.
+
+> **The viewer shows one model, never an average over seeds — deliberately.** A mean prediction
+> over N models is an *ensemble*: a different model, whose AUROC and AP are not the numbers any
+> table here reports, so displaying it would put the figures at odds with the results.
+> Ensembling is a legitimate research direction, but it would need its own entrypoint and its
+> own reported numbers rather than being smuggled in as a display option. To compare seeds, open
+> two viewers at different `--seed` values; to quantify the spread, read `AUROC_RESULTS.md`.
 
 Run it from the **host** — like `annotate_data_docker.sh` it `docker exec`s into the running
 container for you (start it with `./docker/docker-run.sh` first). It still runs *inside* the
@@ -884,10 +899,27 @@ Note how unevenly the variance is spread: A→C is almost seed-independent (±0.
 trains on the large simulated set, while C→B swings 25× more (±0.0208) on its 139 meat clips.
 That contrast is itself worth reporting.
 
-> Sweeping **trains**, so it is far slower than plain scoring, and it leaves only the last
-> seed's checkpoint — re-training a configuration overwrites its `*_retrained_<config>`
-> artifacts in place. Sweeps characterise the spread; train a single seed normally when you want
-> a checkpoint to keep.
+**Every seed's weights are kept.** Each sweep creates a new timestamped directory, so sweeping
+repeatedly accumulates rather than overwriting:
+
+```
+saved_models_sweeps/20260813-163201/
+    sweep.json                  all metrics, machine-readable, with each checkpoint's path
+    C-to-B_seed00/
+        final_segmentation_model_gnn_meat_retrained_C-to-B.pt
+        test_loader_gnn_meat_retrained_C-to-B.pickle
+    C-to-B_seed01/
+        ...
+```
+
+The checkpoint and its test-loader pickle travel together deliberately: the pickle holds the
+normalisation statistics that checkpoint was trained with, and pairing a checkpoint with the
+wrong statistics evaluates it on mis-normalised inputs — a silent wrong answer rather than an
+error. (That exact mistake once understated the cross-domain result six-fold.) Nothing prunes
+these directories; delete them when you are done. The published checkpoints and the ordinary
+`*_retrained_<config>` artifacts are untouched by a sweep.
+
+> Sweeping **trains** once per seed, so it is far slower than plain scoring.
 
 The legacy `python -m difftactile.scripts.script_gnn` entrypoint (large model) still exists.
 

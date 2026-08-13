@@ -45,6 +45,14 @@ from difftactile.main.paths import repo_path
 _ACTIVE_CONFIG = None
 
 
+# Directory a training run should write its artifacts into, instead of the
+# default `*_retrained_<config>` names beside the published ones. Set by the seed
+# sweep (see cnn/seed_sweep.py) so each seed's checkpoint is preserved rather
+# than overwritten by the next. Read from the environment because the sweep runs
+# each seed in a separate process.
+ARTIFACT_DIR_ENV_VAR = "DIFFTACTILE_ARTIFACT_DIR"
+
+
 def _retrained_path(rel):
     """Path for an artifact produced by a *new* training run.
 
@@ -58,7 +66,20 @@ def _retrained_path(rel):
     without it, running the two in sequence would leave the first one's
     checkpoint silently replaced by the second's. Re-running the *same*
     configuration still overwrites in place, which is the intended behaviour.
+
+    $DIFFTACTILE_ARTIFACT_DIR overrides all of that: the artifact keeps its
+    basename but lands in that directory. The seed sweep uses this to give each
+    seed its own folder, since the in-place overwrite above would otherwise
+    leave only the last seed's weights. The BASENAME IS PRESERVED so that
+    everything reading these artifacts - `_load_stats()`, the viewer, the
+    scenario table - recognises them by the same `*_sim` / `*_meat` naming it
+    already uses; only the directory changes.
     """
+    artifact_dir = os.environ.get(ARTIFACT_DIR_ENV_VAR)
+    if artifact_dir:
+        base, ext = os.path.splitext(os.path.basename(rel))
+        suffix = f"_retrained_{_ACTIVE_CONFIG}" if _ACTIVE_CONFIG else "_retrained"
+        return os.path.join(artifact_dir, f"{base}{suffix}{ext}")
     if os.environ.get("DIFFTACTILE_OVERWRITE_PUBLISHED", "0") == "1":
         return repo_path(rel)
     base, ext = os.path.splitext(rel)

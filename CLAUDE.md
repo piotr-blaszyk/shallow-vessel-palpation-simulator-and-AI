@@ -279,11 +279,27 @@ std, range, and every per-seed value). Design points worth keeping:
   `main()`, `train_on_sim()` and `silicone_to_meat()` all now **return** their metrics dict.
 - **`write_markdown()` replaces only the `## Seed sweep` section**, so the scenario table from
   `auroc_all_scenarios` survives and re-runs do not accumulate copies.
-- Sweeps keep no per-seed checkpoints — re-training overwrites `*_retrained_<config>` in place,
-  so the checkpoint left on disk is the last seed's. That is intended; a sweep measures spread.
+- **Every seed's weights are kept**, under `saved_models_sweeps/<timestamp>/<config>_seed<NN>/`.
+  `DIFFTACTILE_ARTIFACT_DIR` (read by `_retrained_path()`) redirects a training run's artifacts
+  there; the **basename is preserved** so everything that reads these files still recognises the
+  `*_sim` / `*_meat` naming. The checkpoint and its test-loader pickle are always written and
+  read as a pair — the pickle carries the normalisation stats, and mismatching them is a silent
+  wrong answer, not an error. New timestamp per sweep, so sweeps accumulate; nothing prunes them.
+- `sweep.json` beside the weights repeats every metric plus each checkpoint's path, so a sweep
+  directory is self-contained.
 
 Variance is very uneven across configurations, which is itself a reportable finding: over three
 seeds A→C is ±0.0008 (large simulated training set) while C→B is ±0.0208 — 25× more.
+
+**The prediction viewer shows ONE model, never a mean over seeds — do not "improve" this into an
+ensemble view.** `view_predictions.sh --sweep TS [--seed N]` selects a specific seed's model
+(checkpoint and stats pickle from the same per-seed directory). Averaging N models' predictions
+would display an *ensemble*, which is a different model whose AUROC/AP are not the numbers any
+table in this project reports — the figures would then contradict the results. Ensembling is a
+research direction needing its own entrypoint and its own reported row, not a display toggle.
+The viewer's job is "what does *this* model see on *this* frame"; the seed spread is already
+quantified numerically in `AUROC_RESULTS.md`, which answers the variance question better than a
+heat-map would.
 
 ### The vessel map (`vessel_map.sh`) and the confusion colour scheme
 

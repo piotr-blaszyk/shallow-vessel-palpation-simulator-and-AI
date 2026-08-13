@@ -93,6 +93,58 @@ def _retrained_variant(rel, config):
     return f"{base}_retrained_{config}{ext}"
 
 
+def _sweep_artifacts(sweep_dir, config, seed):
+    """(checkpoint, stats pickle) for one seed of a sweep.
+
+    Both come from the same `<config>_seed<NN>/` directory, which is what keeps a
+    checkpoint with the normalisation statistics it was trained with.
+
+    `sweep_dir` may be a full path or just the timestamp, in which case it is
+    resolved under `saved_models_sweeps/`. Raises with the available seeds listed
+    when the requested one is not there - a missing model should say so, not fall
+    back to the published checkpoint and quietly show a different model.
+    """
+    candidate = sweep_dir
+    if not os.path.isdir(candidate):
+        candidate = repo_path(f"saved_models_sweeps/{sweep_dir}")
+    if not os.path.isdir(candidate):
+        raise SystemExit(
+            f"No such sweep directory: {sweep_dir}\n"
+            f"Looked in {candidate}. Available sweeps:\n  "
+            + "\n  ".join(_available_sweeps() or ["(none - run --seeds N first)"])
+        )
+
+    seed_dir = os.path.join(candidate, f"{config}_seed{int(seed):02d}")
+    if not os.path.isdir(seed_dir):
+        available = sorted(
+            d for d in os.listdir(candidate)
+            if os.path.isdir(os.path.join(candidate, d))
+        )
+        raise SystemExit(
+            f"No model for {config} seed {seed} in {candidate}.\n"
+            f"Available: {', '.join(available) or '(none)'}"
+        )
+
+    ckpt = [f for f in sorted(os.listdir(seed_dir)) if f.endswith(".pt")]
+    stats = [f for f in sorted(os.listdir(seed_dir)) if f.endswith(".pickle")]
+    if not ckpt or not stats:
+        raise SystemExit(
+            f"{seed_dir} is missing a checkpoint (.pt) or its stats pickle "
+            f"(.pickle); found: {sorted(os.listdir(seed_dir))}"
+        )
+    return os.path.join(seed_dir, ckpt[0]), os.path.join(seed_dir, stats[0])
+
+
+def _available_sweeps():
+    """Timestamps of the sweeps present on disk, newest last."""
+    root = repo_path("saved_models_sweeps")
+    if not os.path.isdir(root):
+        return []
+    return sorted(
+        d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))
+    )
+
+
 class _CentralFrameNavigator:
     """Two-level cursor over one central-frame prediction per sliding window.
 
@@ -354,7 +406,8 @@ class _MeatNavigator:
 
 
 class Visualisation:
-    def __init__(self, scenario=None, weights="pretrained", frames="central"):
+    def __init__(self, scenario=None, weights="pretrained", frames="central",
+                 sweep_dir=None, sweep_seed=0):
         """Interactive viewer for per-frame predictions.
 
         With `scenario=None` the historical behaviour is kept: the checkpoint and
@@ -377,11 +430,25 @@ class Visualisation:
 
         Central is the default because it is the reported view: if the two ever
         disagree about how good the model looks, that is the one to see first.
+
+        `sweep_dir` selects one seed's model out of a seed sweep instead
+        (`saved_models_sweeps/<timestamp>/`, with `sweep_seed` choosing which),
+        which is the only way to say *which* trained model to view once a sweep
+        has produced several. It overrides `weights`.
+
+        Deliberately shows ONE model, not an average over the sweep. A mean
+        prediction is a different model - an ensemble - whose metrics are not the
+        ones any table here reports, so displaying it would make the figures
+        disagree with the numbers. Ensembling is a research direction, not a
+        display option; it would need its own entrypoint and its own row.
         """
         if frames not in ("all", "central"):
             raise ValueError(f"unknown frames mode {frames!r}; expected 'all' or 'central'")
         self.scenario = scenario
         self.weights = weights
+        # Overwritten below once the source is known; set here so the legacy
+        # `scenario=None` path, which returns early, still has a label.
+        self.weights_label = weights
         self.frames = frames
         self.scenario_cfg = None
 
@@ -402,12 +469,28 @@ class Visualisation:
         self.scenario_cfg = cfg
         ckpt_rel = getattr(SYSTEM_PARAMS.files, cfg["ckpt_key"])
         stats_rel = getattr(SYSTEM_PARAMS.files, cfg["stats_key"])
-        if weights == "retrained":
-            ckpt_rel = _retrained_variant(ckpt_rel, scenario)
-            stats_rel = _retrained_variant(stats_rel, scenario)
-        self.model_path = repo_path(ckpt_rel)
-        self.test_loader = repo_path(stats_rel)
-        print(f"=== {scenario} [{weights}]: {cfg['description']} ===")
+
+        if sweep_dir is not None:
+            # One seed's model out of a sweep. The checkpoint and the stats
+            # pickle are taken from the SAME directory, never mixed with the
+            # defaults: the pickle carries the normalisation statistics that
+            # checkpoint was trained with, and pairing a checkpoint with the
+            # wrong statistics evaluates it on mis-normalised inputs - a silent
+            # wrong answer, not an error.
+            self.model_path, self.test_loader = _sweep_artifacts(
+                sweep_dir, scenario, sweep_seed
+            )
+            weights_label = f"sweep {os.path.basename(sweep_dir)} seed {sweep_seed}"
+        else:
+            if weights == "retrained":
+                ckpt_rel = _retrained_variant(ckpt_rel, scenario)
+                stats_rel = _retrained_variant(stats_rel, scenario)
+            self.model_path = repo_path(ckpt_rel)
+            self.test_loader = repo_path(stats_rel)
+            weights_label = weights
+
+        self.weights_label = weights_label
+        print(f"=== {scenario} [{weights_label}]: {cfg['description']} ===")
         print(f"checkpoint:  {self.model_path}")
         print(f"stats:       {self.test_loader}")
 
@@ -1338,7 +1421,7 @@ class Visualisation:
             # lives in the Metadata panel, and duplicating it made the two
             # disagree about what "frame" meant (clip-index vs frame-in-clip).
             return [
-                f"[{self.scenario} {self.weights} {self.frames}]",
+                f"[{self.scenario} {self.weights_label} {self.frames}]",
                 keys_help,
             ]
 
@@ -1360,7 +1443,7 @@ class Visualisation:
         from difftactile.main.qt_viewer import run_browser
 
         run_browser(
-            title=f"Predictions - {self.scenario} ({self.weights}, {self.frames} frames)",
+            title=f"Predictions - {self.scenario} ({self.weights_label}, {self.frames} frames)",
             render=render,
             on_key=on_key,
             status=status,
@@ -1570,6 +1653,25 @@ def main():
     DIFFTACTILE_FRAMES (all | central).
     """
     argv = sys.argv[1:]
+    # --sweep and --seed take a value, so they are pulled out before the rest is
+    # split into flags and positionals.
+    sweep_dir = os.environ.get("DIFFTACTILE_SWEEP_DIR")
+    sweep_seed = int(os.environ.get("DIFFTACTILE_SWEEP_SEED", 0))
+    rest = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--sweep" and i + 1 < len(argv):
+            sweep_dir = argv[i + 1]; i += 2
+        elif argv[i].startswith("--sweep="):
+            sweep_dir = argv[i].split("=", 1)[1]; i += 1
+        elif argv[i] == "--seed" and i + 1 < len(argv):
+            sweep_seed = int(argv[i + 1]); i += 2
+        elif argv[i].startswith("--seed="):
+            sweep_seed = int(argv[i].split("=", 1)[1]); i += 1
+        else:
+            rest.append(argv[i]); i += 1
+    argv = rest
+
     flags = [a for a in argv if a.startswith("--")]
     positional = [a for a in argv if not a.startswith("--")]
 
@@ -1596,7 +1698,8 @@ def main():
         # the honest one; --all is the opt-in debugging view.
         frames = os.environ.get("DIFFTACTILE_FRAMES", "central")
 
-    v = Visualisation(scenario=scenario, weights=weights, frames=frames)
+    v = Visualisation(scenario=scenario, weights=weights, frames=frames,
+                      sweep_dir=sweep_dir, sweep_seed=sweep_seed)
     v.visualise_gnn(
         mode='predictions',
         data_source='fresh_dataset'

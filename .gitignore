@@ -27,6 +27,9 @@ logs/
 difftactile/output/
 saved_models_meat/
 saved_models_sim/
+# One timestamped directory per seed sweep, each holding a checkpoint and its
+# test-loader pickle per (configuration, seed). See cnn/seed_sweep.py.
+saved_models_sweeps/
 shallow-vessel-palpation-data.tar.gz
 
 # Per-run output of the particle-spacing study (screenshots and logs). The

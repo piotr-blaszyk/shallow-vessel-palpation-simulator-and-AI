@@ -22,6 +22,22 @@
 #   --pretrained  the published Zenodo checkpoint (default)
 #   --retrained   the checkpoint written by a local `--train` run of the same
 #                 configuration, i.e. saved_models_*/*_retrained_<config>.pt
+#   --sweep TS [--seed N]
+#                 one seed's model out of a seed sweep, from
+#                 saved_models_sweeps/TS/ (TS is the sweep's timestamp, or a full
+#                 path). --seed picks which, default 0. This is the only way to
+#                 say WHICH trained model to view once a sweep has produced
+#                 several; --retrained alone means "whatever was trained last".
+#                 The checkpoint and its normalisation statistics are taken from
+#                 the same per-seed directory, which is what keeps them matched.
+#
+# ONE MODEL, NOT AN AVERAGE. This viewer deliberately shows a single model even
+# when a sweep has trained many. A mean prediction over N seeds is an ENSEMBLE -
+# a different model, whose AUROC/AP are not the numbers any table in this project
+# reports - so showing it here would make the figures disagree with the results.
+# Ensembling is a research direction that would need its own entrypoint and its
+# own reported numbers, not a display toggle. To compare seeds, open two viewers
+# with different --seed values, or read the spread in AUROC_RESULTS.md.
 #
 # The configuration selects BOTH the model weights and the test dataset, so the
 # six combinations above are the six scenarios.
@@ -123,28 +139,51 @@ FRAMES="--central"
 FRAMES_GIVEN=""
 BACKEND="wayland"
 PRINT_ONLY=0
+SWEEP_DIR=""
+SWEEP_SEED="0"
 
-for arg in "$@"; do
-    case "${arg}" in
-        A-to-B|C-to-B|A-to-C) CONFIG="${arg}" ;;
-        --pretrained|--retrained) WEIGHTS="${arg}" ;;
+# A while loop rather than `for arg`, because --sweep and --seed consume the
+# argument that follows them.
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        A-to-B|C-to-B|A-to-C) CONFIG="$1" ;;
+        --pretrained|--retrained) WEIGHTS="$1" ;;
+        --sweep)
+            shift
+            [ "$#" -gt 0 ] || { echo "ERROR: --sweep needs a sweep timestamp or path." >&2; exit 1; }
+            SWEEP_DIR="$1"
+            ;;
+        --sweep=*) SWEEP_DIR="${1#*=}" ;;
+        --seed)
+            shift
+            [ "$#" -gt 0 ] || { echo "ERROR: --seed needs a seed number." >&2; exit 1; }
+            SWEEP_SEED="$1"
+            ;;
+        --seed=*) SWEEP_SEED="${1#*=}" ;;
         --all|--central)
             # Asking for both is contradictory, so reject it rather than letting
             # the last one silently win. Tracked separately from FRAMES, which
             # already holds the default.
-            if [ -n "${FRAMES_GIVEN}" ] && [ "${FRAMES_GIVEN}" != "${arg}" ]; then
+            if [ -n "${FRAMES_GIVEN}" ] && [ "${FRAMES_GIVEN}" != "$1" ]; then
                 echo "ERROR: --all and --central are mutually exclusive; pass exactly one." >&2
                 exit 1
             fi
-            FRAMES_GIVEN="${arg}"
-            FRAMES="${arg}"
+            FRAMES_GIVEN="$1"
+            FRAMES="$1"
             ;;
         --x11) BACKEND="x11" ;;
         --shell) PRINT_ONLY=1 ;;
         -h|--help) usage; exit 0 ;;
-        *) echo "ERROR: unrecognised argument: ${arg}" >&2; echo; usage; exit 1 ;;
+        *) echo "ERROR: unrecognised argument: $1" >&2; echo; usage; exit 1 ;;
     esac
+    shift
 done
+
+if [ -n "${SWEEP_DIR}" ]; then
+    case "${SWEEP_SEED}" in
+        ''|*[!0-9]*) echo "ERROR: --seed needs a non-negative integer, got '${SWEEP_SEED}'" >&2; exit 1 ;;
+    esac
+fi
 
 if [ -z "${CONFIG}" ]; then
     echo "ERROR: no configuration given." >&2
@@ -195,6 +234,7 @@ EOF
     [ -t 0 ] && [ -t 1 ] && TTY_ARGS=(-it)
     CMD=(docker exec "${TTY_ARGS[@]}" "${CONTAINER_NAME}"
          ./docker/view_predictions.sh "${CONFIG}" "${WEIGHTS}" "${FRAMES}")
+    [ -n "${SWEEP_DIR}" ] && CMD+=(--sweep "${SWEEP_DIR}" --seed "${SWEEP_SEED}")
     [ "${BACKEND}" = "x11" ] && CMD+=(--x11)
 
     if [ "${PRINT_ONLY}" -eq 1 ]; then
@@ -239,7 +279,13 @@ if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -z "${XDG_RUNTIME_DIR:-}" ]; then
 fi
 
 echo "Qt platform: ${QT_QPA_PLATFORM}  (DISPLAY=${DISPLAY:-<unset>}, WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-<unset>})"
-echo "Viewing predictions: ${CONFIG} ${WEIGHTS} ${FRAMES}"
+VIEW_ARGS=("${CONFIG}" "${WEIGHTS}" "${FRAMES}")
+if [ -n "${SWEEP_DIR}" ]; then
+    VIEW_ARGS+=(--sweep "${SWEEP_DIR}" --seed "${SWEEP_SEED}")
+    echo "Viewing predictions: ${CONFIG} ${FRAMES} (sweep ${SWEEP_DIR}, seed ${SWEEP_SEED})"
+else
+    echo "Viewing predictions: ${CONFIG} ${WEIGHTS} ${FRAMES}"
+fi
 if [ "${FRAMES}" = "--central" ]; then
     echo "Showing each sliding window's CENTRAL frame only (what the metrics report)."
     echo "Keys: i/o trial, j/k central frame, q quit."
@@ -247,4 +293,4 @@ else
     echo "Showing every frame of every sliding window."
     echo "Keys: i/o trial, j/k clip, n/m frame, q quit."
 fi
-exec python -m difftactile.scripts.script_visualise "${CONFIG}" "${WEIGHTS}" "${FRAMES}"
+exec python -m difftactile.scripts.script_visualise "${VIEW_ARGS[@]}"

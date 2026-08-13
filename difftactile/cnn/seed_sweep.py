@@ -11,16 +11,32 @@ This sweeps seeds 0..N-1, trains a model per seed, and writes mean, standard
 deviation, min and max of AUROC and AP to AUROC_RESULTS.md, alongside the
 per-seed values so nothing is hidden behind a summary statistic.
 
-TWO THINGS IT DELIBERATELY DOES NOT DO:
+EVERY SEED'S WEIGHTS ARE KEPT. Each sweep creates a timestamped directory under
+`saved_models_sweeps/`, with one subdirectory per (configuration, seed) holding
+that model's checkpoint and its test-loader pickle:
 
-  * It does not pick a winner. The best-scoring seed is not a result - selecting
-    it is fitting to the test set exactly as tuning a threshold there would be.
-    The output is a distribution, and that is the thing to report.
-  * It does not keep the per-seed checkpoints. Training the same configuration
-    twice overwrites its `*_retrained_<config>` artifacts in place, so after a
-    sweep the checkpoint on disk is simply the last seed's. That is intentional:
-    a sweep exists to characterise the spread, not to harvest N models. Train a
-    single seed normally if you want a checkpoint you can point at.
+    saved_models_sweeps/20260813-142530/
+        sweep.json                       every metric, plus the paths below
+        C-to-B_seed00/
+            final_segmentation_model_gnn_meat_retrained_C-to-B.pt
+            test_loader_gnn_meat_retrained_C-to-B.pickle
+        C-to-B_seed01/
+            ...
+
+The checkpoint and the pickle travel together on purpose: the pickle holds the
+normalisation statistics that checkpoint was trained with, and loading one
+without the other silently evaluates on mis-normalised inputs. That exact bug
+cost a six-fold understatement of the cross-domain result once already (see the
+note on `set_stats` in segmentation_gnn.silicone_to_meat).
+
+Because each run is timestamped, sweeping repeatedly accumulates rather than
+overwrites. Nothing prunes these - they are ordinary directories, delete them
+when done. `saved_models_sweeps/` is gitignored.
+
+ONE THING IT DELIBERATELY DOES NOT DO: it does not pick a winner. The
+best-scoring seed is not a result - selecting it is fitting to the test set
+exactly as tuning a threshold there would be. The output is a distribution, and
+that is the thing to report.
 
 EACH SEED RUNS IN A SUBPROCESS. Within one process the second run would inherit
 CUDA context, cuDNN autotuning state and torch's global RNG from the first, so
@@ -52,6 +68,36 @@ METRICS_MARKER = "###SEED_SWEEP_METRICS###"
 # at all and sweeping them would produce N identical rows.
 SWEEPABLE = ("A-to-B", "C-to-B", "A-to-C")
 
+# Root for the per-sweep timestamped directories. Gitignored.
+SWEEP_ROOT = "saved_models_sweeps"
+
+# Tells a child where to write its checkpoint and test-loader pickle; read by
+# `segmentation_gnn._retrained_path()`. Spelled out here rather than imported
+# from that module, which would pull torch onto the parent's critical path when
+# the parent only orchestrates subprocesses. `_run_child()` asserts the two
+# agree, so a rename cannot silently break the wiring.
+ARTIFACT_DIR_ENV_VAR = "DIFFTACTILE_ARTIFACT_DIR"
+
+
+def run_directory(timestamp=None):
+    """Create and return this sweep's timestamped directory.
+
+    One per invocation, so repeated sweeps accumulate side by side instead of
+    overwriting each other's weights. The timestamp is taken once by the parent
+    and passed down, so every seed of one sweep lands in the same folder.
+    """
+    timestamp = timestamp or time.strftime("%Y%m%d-%H%M%S")
+    path = repo_path(f"{SWEEP_ROOT}/{timestamp}")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def seed_directory(run_dir, config, seed):
+    """Directory holding one (configuration, seed) model's artifacts."""
+    path = os.path.join(run_dir, f"{config}_seed{seed:02d}")
+    os.makedirs(path, exist_ok=True)
+    return path
+
 
 def _child_command(config, seed):
     """The command that trains `config` once under `seed`, in a fresh process."""
@@ -60,17 +106,24 @@ def _child_command(config, seed):
     ]
 
 
-def run_one_seed(config, seed, env=None):
+def run_one_seed(config, seed, run_dir, env=None):
     """Train `config` once under `seed`; return its metrics dict, or None.
 
     Runs in a subprocess (see the module docstring) with DIFFTACTILE_SEED set.
     Returns None when the child fails, so one bad seed cannot sink the sweep -
     the failure is reported and the remaining seeds still run.
+
+    `run_dir` is this sweep's timestamped directory; the child writes its
+    checkpoint and test-loader pickle into a per-seed subdirectory of it, so
+    every seed's weights survive instead of being overwritten by the next.
     """
     child_env = dict(os.environ if env is None else env)
     child_env["DIFFTACTILE_SEED"] = str(seed)
     # Training writes figures; never block on a window mid-sweep.
     child_env.setdefault("DIFFTACTILE_HEADLESS", "1")
+    # Redirects _retrained_path() (segmentation_gnn.py) into this seed's folder.
+    artifact_dir = seed_directory(run_dir, config, seed)
+    child_env[ARTIFACT_DIR_ENV_VAR] = artifact_dir
 
     print(f"\n{'=' * 62}\n {config}  seed {seed}\n{'=' * 62}", flush=True)
     start = time.perf_counter()
@@ -99,11 +152,31 @@ def run_one_seed(config, seed, env=None):
 
     metrics["seed"] = seed
     metrics["seconds"] = duration
+    metrics["artifact_dir"] = artifact_dir
+    # Recorded per seed so a model can be found later without guessing at
+    # filenames; see `checkpoint_for()`.
+    metrics["checkpoint"] = _find_checkpoint(artifact_dir)
     print(
         f"seed {seed}: AUROC = {metrics['auroc']:.4f}   AP = {metrics['ap']:.4f}"
         f"   ({duration:.1f} s)"
     )
+    print(f"  weights: {metrics['checkpoint'] or '(none written)'}")
     return metrics
+
+
+def _find_checkpoint(artifact_dir):
+    """The .pt file a seed's training run wrote, or None.
+
+    Located by extension rather than by rebuilding the name, because the
+    basename depends on the configuration (`*_sim` vs `*_meat`) and on
+    `_ACTIVE_CONFIG`. One training run writes exactly one checkpoint here.
+    """
+    if not os.path.isdir(artifact_dir):
+        return None
+    for name in sorted(os.listdir(artifact_dir)):
+        if name.endswith(".pt"):
+            return os.path.join(artifact_dir, name)
+    return None
 
 
 def _parse_metrics(stdout):
@@ -132,7 +205,7 @@ def summarise(values):
     }
 
 
-def sweep(config, num_seeds, seeds=None):
+def sweep(config, num_seeds, run_dir, seeds=None):
     """Train `config` once per seed and summarise the spread.
 
     `seeds` overrides the default 0..num_seeds-1 when a specific set is wanted.
@@ -146,7 +219,7 @@ def sweep(config, num_seeds, seeds=None):
 
     runs = []
     for seed in seeds:
-        result = run_one_seed(config, seed)
+        result = run_one_seed(config, seed, run_dir)
         if result is not None:
             runs.append(result)
 
@@ -163,7 +236,7 @@ def sweep(config, num_seeds, seeds=None):
     return summary
 
 
-def format_markdown(summaries):
+def format_markdown(summaries, run_dir=None):
     """Render sweep results as the Markdown section appended to AUROC_RESULTS.md."""
     lines = [
         "## Seed sweep",
@@ -195,6 +268,16 @@ def format_markdown(summaries):
             f"{chance_cell} |"
         )
 
+    if run_dir is not None:
+        rel = os.path.relpath(run_dir, repo_path("."))
+        lines += [
+            "",
+            f"Weights for every seed above are preserved under `{rel}/`, one subdirectory per",
+            "(configuration, seed), each holding the checkpoint **and** the test-loader pickle",
+            "carrying the normalisation statistics it was trained with. `sweep.json` in that",
+            "directory repeats these metrics in machine-readable form.",
+        ]
+
     lines += ["", "### Per-seed values", "",
               "Shown in full so the summary above can be checked, and so an outlier is visible",
               "rather than averaged away.", ""]
@@ -202,10 +285,13 @@ def format_markdown(summaries):
         if not s["runs"]:
             continue
         lines += [f"**{s['config']}**", "",
-                  "| Seed | AUROC | AP | Seconds |", "|---|---|---|---|"]
+                  "| Seed | AUROC | AP | Seconds | Weights |", "|---|---|---|---|---|"]
         for r in sorted(s["runs"], key=lambda r: r["seed"]):
+            ckpt = r.get("checkpoint")
+            where = f"`{os.path.basename(os.path.dirname(ckpt))}/`" if ckpt else "-"
             lines.append(
-                f"| {r['seed']} | {r['auroc']:.4f} | {r['ap']:.4f} | {r['seconds']:.1f} |"
+                f"| {r['seed']} | {r['auroc']:.4f} | {r['ap']:.4f} | "
+                f"{r['seconds']:.1f} | {where} |"
             )
         failed = set(s["seeds_requested"]) - {r["seed"] for r in s["runs"]}
         if failed:
@@ -214,16 +300,16 @@ def format_markdown(summaries):
         lines.append("")
 
     lines += [
-        "> Sweeps do **not** leave one checkpoint per seed: re-training a configuration",
-        "> overwrites its `*_retrained_<config>` artifacts, so the checkpoint on disk after a",
-        "> sweep is the last seed's. Train a single seed normally if you want a checkpoint to",
-        "> point at.",
+        "> Each sweep writes a **new timestamped directory**, so sweeping repeatedly",
+        "> accumulates rather than overwriting. Nothing prunes them - delete them when done.",
+        "> The published checkpoints and the ordinary `*_retrained_<config>` artifacts are",
+        "> untouched by a sweep.",
         "",
     ]
     return "\n".join(lines)
 
 
-def write_markdown(summaries, md_path=None):
+def write_markdown(summaries, md_path=None, run_dir=None):
     """Append (or add) the seed-sweep section to AUROC_RESULTS.md.
 
     The scenario table written by `auroc_all_scenarios` is preserved: this
@@ -231,7 +317,7 @@ def write_markdown(summaries, md_path=None):
     one file whichever order they were produced in.
     """
     md_path = md_path or repo_path("AUROC_RESULTS.md")
-    section = format_markdown(summaries)
+    section = format_markdown(summaries, run_dir=run_dir)
 
     existing = ""
     if os.path.exists(md_path):
@@ -254,7 +340,13 @@ def write_markdown(summaries, md_path=None):
 
 def main(configs, num_seeds, seeds=None):
     """Sweep each configuration and write the combined summary."""
-    summaries = [sweep(c, num_seeds, seeds=seeds) for c in configs]
+    # One directory for the whole invocation, stamped once so every seed of
+    # every configuration in this sweep lands together.
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    run_dir = run_directory(timestamp)
+    print(f"Sweep artifacts: {run_dir}")
+
+    summaries = [sweep(c, num_seeds, run_dir, seeds=seeds) for c in configs]
 
     print(f"\n{'=' * 62}\n Seed sweep summary\n{'=' * 62}")
     for s in summaries:
@@ -269,8 +361,19 @@ def main(configs, num_seeds, seeds=None):
             f"   over {a['n']} seeds"
         )
 
-    md_path = write_markdown(summaries)
+    # Machine-readable twin of the Markdown, kept beside the weights it
+    # describes so a sweep directory is self-contained: metrics, and the path of
+    # the checkpoint that produced each one.
+    json_path = os.path.join(run_dir, "sweep.json")
+    with open(json_path, "w") as f:
+        json.dump(
+            {"timestamp": timestamp, "num_seeds": num_seeds, "summaries": summaries},
+            f, indent=2,
+        )
+
+    md_path = write_markdown(summaries, run_dir=run_dir)
     print(f"\nSeed sweep written to: {md_path}")
+    print(f"Weights and sweep.json: {run_dir}")
     return summaries
 
 
@@ -306,7 +409,15 @@ def _run_child(config, seed):
     only orchestrates, never pays for importing torch.
     """
     os.environ["DIFFTACTILE_SEED"] = str(seed)
+    from difftactile.cnn import segmentation_gnn
     from difftactile.cnn.segmentation_gnn import run_scenario
+
+    # The parent spells this constant out to avoid importing torch; fail loudly
+    # here if the two ever drift apart, rather than silently writing the
+    # per-seed weights back over each other.
+    assert segmentation_gnn.ARTIFACT_DIR_ENV_VAR == ARTIFACT_DIR_ENV_VAR, (
+        "artifact-dir env var name disagrees between seed_sweep and segmentation_gnn"
+    )
 
     # run_scenario() parses sys.argv itself for its config and --train/--eval,
     # and rejects flags it does not know - so our own `--child <config> <seed>`
