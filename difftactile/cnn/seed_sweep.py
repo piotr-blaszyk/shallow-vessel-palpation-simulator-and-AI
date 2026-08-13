@@ -235,6 +235,18 @@ def sweep(config, num_seeds, run_dir, seeds=None):
         "iou_foreground": summarise([r["iou_foreground"] for r in runs]),
         "iou_background": summarise([r["iou_background"] for r in runs]),
     }
+
+    # In-domain (held-out simulation) figures, present only for the
+    # simulation-trained configurations - C-to-B trains on meat and has no
+    # same-distribution split to report. `None` when absent, which the Markdown
+    # renders as a skipped section rather than an empty table.
+    if runs and "in_domain_iou_foreground" in runs[0]:
+        summary["in_domain"] = {
+            "auroc": summarise([r["in_domain_auroc"] for r in runs]),
+            "ap": summarise([r["in_domain_ap"] for r in runs]),
+            "iou_foreground": summarise([r["in_domain_iou_foreground"] for r in runs]),
+            "iou_background": summarise([r["in_domain_iou_background"] for r in runs]),
+        }
     if runs:
         # Constant across seeds (same test set), so carried once rather than per row.
         summary["chance"] = runs[0].get("chance")
@@ -299,6 +311,39 @@ def format_markdown(summaries, run_dir=None):
             f"**{fg['mean']:.4f} ± {fg['std']:.4f}** | {fg['min']:.4f}–{fg['max']:.4f} | "
             f"{bg['mean']:.4f} ± {bg['std']:.4f} | {bg['min']:.4f}–{bg['max']:.4f} |"
         )
+
+    # In-domain reference, for the simulation-trained configurations only.
+    in_domain = [s for s in summaries if s.get("in_domain")]
+    if in_domain:
+        lines += [
+            "",
+            "### In-domain reference (simulation → simulation)",
+            "",
+            "The same models scored on the **held-out 15% of the simulated dataset** — same",
+            "distribution as their training data, never seen during training. The gap between",
+            "this and the cross-domain table above **is the sim-to-real transfer cost**, which",
+            "is the quantity the project exists to measure, so the pair is worth reporting",
+            "together.",
+            "",
+            "This is the simulated **test** split, not the validation split: validation drives",
+            "early stopping and checkpoint selection, so a number read off it is optimistic by",
+            "construction. Only the simulation-trained configurations (A→B, A→C) appear here —",
+            "C→B trains on meat and has no same-distribution split to report.",
+            "",
+            "| Config | Seeds | AUROC mean ± std | AP mean ± std | Foreground IoU mean ± std | Background IoU mean ± std |",
+            "|---|---|---|---|---|---|",
+        ]
+        for s in in_domain:
+            d = s["in_domain"]
+            a, p = d["auroc"], d["ap"]
+            fg, bg = d["iou_foreground"], d["iou_background"]
+            lines.append(
+                f"| {s['config']} | {a['n']} | "
+                f"**{a['mean']:.4f} ± {a['std']:.4f}** | "
+                f"**{p['mean']:.4f} ± {p['std']:.4f}** | "
+                f"**{fg['mean']:.4f} ± {fg['std']:.4f}** | "
+                f"{bg['mean']:.4f} ± {bg['std']:.4f} |"
+            )
 
     if run_dir is not None:
         rel = os.path.relpath(run_dir, repo_path("."))
@@ -398,6 +443,15 @@ def main(configs, num_seeds, seeds=None):
               f"[{fg['min']:.4f}, {fg['max']:.4f}]")
         print(f"  IoU background {bg['mean']:.4f} ± {bg['std']:.4f}   "
               f"[{bg['min']:.4f}, {bg['max']:.4f}]")
+        d = s.get("in_domain")
+        if d:
+            print("  in-domain (held-out simulation, same distribution as training):")
+            print(f"    AUROC          {d['auroc']['mean']:.4f} ± {d['auroc']['std']:.4f}")
+            print(f"    AP             {d['ap']['mean']:.4f} ± {d['ap']['std']:.4f}")
+            print(f"    IoU foreground {d['iou_foreground']['mean']:.4f} "
+                  f"± {d['iou_foreground']['std']:.4f}")
+            print(f"    IoU background {d['iou_background']['mean']:.4f} "
+                  f"± {d['iou_background']['std']:.4f}")
 
     # Machine-readable twin of the Markdown, kept beside the weights it
     # describes so a sweep directory is self-contained: metrics, and the path of

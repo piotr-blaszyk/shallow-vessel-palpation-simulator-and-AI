@@ -174,6 +174,25 @@ number as the real result. And unlike AUROC and AP, IoU **depends on the decisio
 (`DECISION_THRESHOLD`, 0.5), so it carries every caveat about that choice; it is reported
 because it is the intuitive quantity, not because it is the most trustworthy one.
 
+#### The in-domain (simulation → simulation) reference
+
+A `--train` run of a simulation-trained configuration also scores the model on the **held-out
+15% of the simulated dataset** — same distribution as its training data, never seen during
+training. The gap between that and the cross-domain number **is the sim-to-real transfer cost**:
+
+```bash
+./run_pipeline.sh A-to-B --train    # prints both, in-domain then cross-domain
+```
+
+Measured over three seeds, A→B scores AUROC **0.9170 ± 0.0024** in-domain against
+**0.7740 ± 0.0088** on real silicone — the drop is the thing worth reporting, and the sweep
+tabulates both.
+
+This is the simulated **test** split, not the validation split. Validation drives early stopping
+and checkpoint selection, so a number read off it is optimistic by construction; the test split
+is untouched by both. Only A→B and A→C have such a reference — C→B trains on meat and has no
+same-distribution held-out split.
+
 #### Why AUROC *and* average precision
 
 Both are **threshold-free and ranking-based**: they read only the *order* of the predicted

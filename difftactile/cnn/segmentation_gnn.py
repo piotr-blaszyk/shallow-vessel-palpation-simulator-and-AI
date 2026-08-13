@@ -1255,11 +1255,31 @@ def train_on_sim(test_on="silicone"):
     trainer.test(best_model, datamodule=data_module)
     print(f"\nTesting on the real {test_on} dataset:")
     trainer.test(best_model, dataloaders=real_loader)
+
+    # IN-DOMAIN reference: the held-out 15% of dataset A, same distribution as
+    # the training data. This is the "sim -> sim" number the manuscript reports
+    # beside the cross-domain one, and the gap between them IS the sim-to-real
+    # transfer cost - which is why it is worth reporting as a metric rather than
+    # leaving it inside a Lightning table.
+    #
+    # The TEST split, not the val split: val drives early stopping and
+    # ModelCheckpoint's `save_top_k`, so a number read off it is optimistic by
+    # construction. The test split is untouched by both.
+    print("\nIn-domain reference (held-out simulation, same distribution as training):")
+    in_domain = score_ranking_metrics(
+        best_model, data_module.test_dataloader(), f"{config_name_for(test_on)}-sim",
+    )
+
     # Threshold-free metrics on the real target domain, matching what the other
     # configurations report - and what the seed sweep collects. `test_on` names
     # the target dataset (silicone -> A-to-B, meat -> A-to-C).
-    config_name = "A-to-B" if test_on == "silicone" else "A-to-C"
+    config_name = config_name_for(test_on)
+    print(f"\nCross-domain result on the real {test_on} dataset:")
     metrics = score_ranking_metrics(best_model, real_loader, config_name)
+    # Carried under an `in_domain_` prefix so one flat dict holds both, which is
+    # what lets the seed sweep summarise them side by side.
+    for key, value in in_domain.items():
+        metrics[f"in_domain_{key}"] = value
     duration = time.perf_counter() - start
     print(f"\nTraining and testing completed in {duration:.2f} s ({duration / 60:.2f} min)")
 
@@ -1272,6 +1292,15 @@ def train_on_sim(test_on="silicone"):
         "DIFFTACTILE_OVERWRITE_PUBLISHED=1 to overwrite it instead)"
     )
     return metrics
+
+
+def config_name_for(test_on):
+    """Configuration name for a `train_on_sim(test_on=...)` run.
+
+    Both A-to-B and A-to-C train on simulation; the target dataset is what tells
+    them apart.
+    """
+    return "A-to-B" if test_on == "silicone" else "A-to-C"
 
 
 def marker_iou(probs, labels, threshold=DECISION_THRESHOLD):

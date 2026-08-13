@@ -210,6 +210,18 @@ number (the negative class is ~89% of nodes on silicone, ~93% on meat). And unli
 is **threshold-dependent** — it uses `DECISION_THRESHOLD`, not `MAP_DECISION_THRESHOLD`, since
 it is a reported metric rather than a figure.
 
+**In-domain (simulation → simulation) reference.** `train_on_sim()` splits dataset A 70/15/15
+and, after the cross-domain evaluation, scores the model on the held-out **test** split too —
+same distribution as training. The gap between the two is the sim-to-real transfer cost.
+Measured over three seeds, A→B is AUROC 0.9170 ± 0.0024 in-domain vs 0.7740 ± 0.0088 on real
+silicone.
+
+Deliberately the **test** split and not `val`: val drives `EarlyStopping` and
+`ModelCheckpoint(save_top_k=1)`, so a number read off it is optimistic by construction. Only the
+sim-trained configurations have this — C→B trains on meat, and `sweep()` omits the section
+entirely rather than emitting an empty table. The metrics are carried in the same flat dict
+under an `in_domain_` prefix, which is what lets the sweep summarise both side by side.
+
 **Why both, and why not a tuned threshold.** Both are ranking-based: they read only the *order*
 of the probabilities, never their scale. In a sim-to-real project the scale is the first thing to
 shift across a domain gap, so a single-threshold score confounds "doesn't know where the vessels
