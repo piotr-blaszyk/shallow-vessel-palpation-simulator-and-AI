@@ -6,8 +6,19 @@
 # it loads whatever annotations already exist, draws them over the data, and lets
 # you step through frames - adding to them where that is meaningful.
 #
-# Run this INSIDE the container (see docker/docker-run.sh + docker/docker-connect.sh).
-# It needs a display: these are mouse-and-keyboard tools.
+# RUN THIS ON BARE METAL, NOT IN DOCKER. These are mouse-and-keyboard tools that
+# you drive frame by frame, so responsiveness matters more here than for any
+# other entrypoint in the project. Inside the container every repaint crosses a
+# forwarded X socket, which makes stepping through frames visibly choppy; run
+# natively and it is immediate. This is the one script that is expected to run
+# outside the container, and it needs no part of the Docker stack - no Taichi,
+# no CUDA, no torch.
+#
+# It uses its own small micromamba environment, created once with:
+#
+#     micromamba env create -f requirements/annotator-env.yml
+#
+# The script activates that env itself, so just run it directly:
 #
 # Usage:
 #   ./docker/annotate_data.sh --silicone [--source DIR]
@@ -80,10 +91,11 @@ if [ -z "${DISPLAY:-}" ]; then
     cat >&2 <<'EOF'
 ERROR: DISPLAY is not set, so no windows can be opened.
 
-These are interactive tools. Start the container with X forwarding
-(docker/docker-run.sh passes the host display through) and allow it on the host:
+These are interactive tools and must run on a machine with a display. Run this
+script from a normal desktop terminal rather than over a plain SSH session.
 
-    xhost +local:docker
+On a Wayland desktop DISPLAY is normally still set (Xwayland); if it is not,
+check that you are in a graphical session.
 EOF
     exit 1
 fi
@@ -92,10 +104,68 @@ fi
 # than the project default of never waiting on a GUI.
 export DIFFTACTILE_INTERACTIVE=1
 
+# --- pick the interpreter -----------------------------------------------------
+#
+# Prefer the dedicated `vessel-palpation-annotator` micromamba env. It is the
+# only environment this script is tested against, and crucially it installs the
+# GUI-capable `opencv-python` wheel: several of the project's other envs (and the
+# Docker image's batch tooling) deliberately install `opencv-python-headless`,
+# which is built with GUI: NONE and cannot open a window at all.
+#
+# If the caller has already activated something themselves - or is running this
+# inside the container, which is supported but slower - we leave their
+# interpreter alone rather than second-guessing it.
+ENV_NAME="vessel-palpation-annotator"
+
+# Look for the env's interpreter directly rather than requiring `micromamba` on
+# PATH: a desktop terminal often has not run the shell hook, and MAMBA_ROOT_PREFIX
+# may be unset, but the binary is still sitting in a predictable place.
+ENV_PYTHON=""
+for root in "${MAMBA_ROOT_PREFIX:-}" "${HOME}/micromamba" "${HOME}/.micromamba" \
+            "${CONDA_PREFIX:-}/envs/.." "/opt/conda"; do
+    [ -n "${root}" ] || continue
+    if [ -x "${root}/envs/${ENV_NAME}/bin/python" ]; then
+        ENV_PYTHON="${root}/envs/${ENV_NAME}/bin/python"
+        break
+    fi
+done
+
+if [ -n "${DIFFTACTILE_ANNOTATOR_PYTHON:-}" ]; then
+    PYTHON="${DIFFTACTILE_ANNOTATOR_PYTHON}"
+elif [ "${CONDA_DEFAULT_ENV:-}" = "${ENV_NAME}" ]; then
+    PYTHON="python"
+elif [ -n "${ENV_PYTHON}" ]; then
+    PYTHON="${ENV_PYTHON}"
+elif command -v micromamba >/dev/null 2>&1 \
+     && micromamba env list 2>/dev/null | grep -qE "(^|[[:space:]])${ENV_NAME}[[:space:]]"; then
+    PYTHON="micromamba run -n ${ENV_NAME} python"
+elif [ -f /.dockerenv ]; then
+    # Inside the container: the image already carries a GUI-capable OpenCV.
+    PYTHON="python"
+else
+    cat >&2 <<EOF
+ERROR: the '${ENV_NAME}' micromamba environment does not exist.
+
+Create it once (takes about a minute, ~500 MB, no torch or CUDA):
+
+    micromamba env create -f requirements/annotator-env.yml
+
+Then re-run this script. To use a different interpreter instead, set
+DIFFTACTILE_ANNOTATOR_PYTHON to its path - it needs numpy, scipy, tqdm and a
+GUI-capable opencv-python (NOT opencv-python-headless).
+EOF
+    exit 1
+fi
+
+# Frames are 1080p; the viewers scale them down for display so each repaint
+# pushes ~4x less data. Override to change the on-screen width, or set 0 to
+# disable scaling entirely.
+export DIFFTACTILE_VIEW_WIDTH="${DIFFTACTILE_VIEW_WIDTH:-960}"
+
 if [ "${DATASET}" = "meat" ]; then
     echo "Meat annotations: red = vessel present, green = absent."
     echo "Keys: m/n trial, k/j frame, q quit."
-    exec python -m difftactile.scripts.script_browse_meat_annotations
+    exec ${PYTHON} -m difftactile.scripts.script_browse_meat_annotations
 fi
 
 # --- silicone: stage the videos and annotations if the bundle did not carry them
@@ -136,4 +206,4 @@ echo "Editing starts LOCKED - press g to allow clicks (lasts the whole session).
 echo "Keys: g toggle editing, left click add (max 4/frame), z undo this session's"
 echo "      last point, d clear frame, m/n video, k/j frame, p save, q save+quit,"
 echo "      x quit WITHOUT saving (press x twice to confirm)."
-exec python -m difftactile.scripts.script_annotate_silicone
+exec ${PYTHON} -m difftactile.scripts.script_annotate_silicone

@@ -159,14 +159,32 @@ previous run instead of re-running inference.
 Manual annotation and annotation review for the two real datasets. In each, one tool does both
 jobs: it loads the annotations already on disk, redraws them, and lets you step through frames.
 
+**This is the one entrypoint that runs outside Docker.** These are hand-driven, frame-by-frame
+GUI tools, and inside the container every repaint crosses a forwarded X socket, which makes
+stepping through frames choppy. Run them natively instead — they need no part of the Docker
+stack (no Taichi, no CUDA, no torch), just a small dedicated environment created once:
+
 ```bash
-docker exec -it vessel-palpation ./docker/annotate_data.sh --silicone   # click annotator
-docker exec -it vessel-palpation ./docker/annotate_data.sh --meat       # marker-label review
+micromamba env create -f requirements/annotator-env.yml   # once, ~500 MB, about a minute
+
+./docker/annotate_data.sh --silicone   # click annotator
+./docker/annotate_data.sh --meat       # marker-label review
 ```
+
+The script activates that environment itself. If you would rather use your own interpreter,
+point `DIFFTACTILE_ANNOTATOR_PYTHON` at it — it needs numpy, scipy, tqdm and a **GUI-capable**
+`opencv-python` (the `opencv-python-headless` wheel used elsewhere in this project is built
+with `GUI: NONE` and cannot open a window at all). Running inside the container still works if
+you prefer it; the script detects that and uses the image's own Python.
 
 Both need a display and set `DIFFTACTILE_INTERACTIVE=1` for you. Keys are printed on start-up
 (`m`/`n` video or trial, `k`/`j` frame, `q` quit; silicone additionally: left click to add a
 point, `d` to clear the frame, `p` to save).
+
+The source videos are 1080p, which is larger than most screens and slow to push to a window, so
+both viewers scale frames to 960 px wide for display. Clicks are mapped back to full-resolution
+pixels before being stored, so annotations on disk are unaffected. Override the display width
+with `DIFFTACTILE_VIEW_WIDTH` (`0` disables scaling).
 
 The meat viewer draws the labels over the **real camera frames**: the bundle ships
 `clean/<trial>/frames.mp4`, the 26 decimated frames per trial that preprocessing kept, aligned
@@ -512,8 +530,10 @@ DIFFTACTILE_INTERACTIVE=1 python -m difftactile.scripts.script_browse_meat_annot
 ```
 
 Both load whatever annotations already exist and redraw them, so the same window reviews the
-shipped annotations and creates new ones. `docker/annotate_data.sh --silicone|--meat` wraps them
-and handles staging the silicone videos, which the bundle excludes. Note the meat labels are
+shipped annotations and creates new ones. `docker/annotate_data.sh --silicone|--meat` wraps them,
+selects the dedicated bare-metal environment and handles staging the silicone videos, which the
+bundle excludes; it is the recommended way to run these two — see
+[Annotate or review the real-world datasets](#annotate-or-review-the-real-world-datasets). Note the meat labels are
 derived analytically from robot kinematics and straw geometry rather than clicked, so the meat
 tool is review-only.
 
@@ -658,6 +678,8 @@ Two environment variables change this:
 | `DIFFTACTILE_INTERACTIVE=1` | Restore the original blocking behaviour: `plt.show()` waits, frame browsers step on your key presses (`j`/`k`/`q`), the Gmsh FLTK viewer opens, and the tkinter marker-labelling GUI runs. Requires a real display. |
 | `DIFFTACTILE_HEADLESS=1` | Stronger: do not create windows at all. Implied automatically when `DISPLAY` is unset. |
 | `DIFFTACTILE_MAX_FRAMES=N` | How many frames a viewer loop steps through before returning when non-interactive. |
+| `DIFFTACTILE_VIEW_WIDTH=N` | Width in pixels the frame browsers scale their display image to (default 960; `0` disables scaling). Only the displayed copy is resized — annotations are stored in full-resolution coordinates. |
+| `DIFFTACTILE_ANNOTATOR_PYTHON` | Interpreter `docker/annotate_data.sh` should use, instead of the `vessel-palpation-annotator` micromamba env. |
 
 Two tools exist *only* to collect manual input — the cv2 click-annotator in
 `preprocess_silicone_data.py::annotate()` and the tkinter labeller in
@@ -763,11 +785,13 @@ interpreting the simulator's output correctly. The remainder are known rough edg
 - **Non-interactive by default.** Nothing blocks waiting for a window to be closed; inspect
   the saved figures in `difftactile/output/` instead. `DIFFTACTILE_INTERACTIVE=1` restores the
   blocking windows — see [Interactive windows](#interactive-windows).
-- **The annotation viewers feel laggy, but they are correct.** The frame browsers behind
-  `docker/annotate_data.sh` draw each frame twice, because on Wayland/Xwayland a single draw
-  can briefly show the previous frame instead. Stepping through frames is therefore less
-  smooth than a normal video player, but what you see is always right: one keypress moves one
-  frame, and the image on screen always matches the frame number in the overlay.
+- **The annotation viewers draw each frame twice.** On Wayland/Xwayland a single draw can
+  briefly show the previous frame instead, so the frame browsers behind
+  `docker/annotate_data.sh` present twice. What you see is therefore always right: one keypress
+  moves one frame, and the image on screen always matches the frame number in the overlay.
+  Run the script **on bare metal** (its default) rather than inside the container — the double
+  present is cheap locally, but over a forwarded X socket it doubles an already large per-frame
+  cost and is what used to make these viewers feel choppy.
 - **`script_main` can segfault at exit when the Taichi GGUI window is open** (exit code 139,
   "Segmentation fault (core dumped)"). This happens *after* `main()` has finished and printed
   `all done`, during CUDA/GGUI teardown, so **the collected trajectories are complete and

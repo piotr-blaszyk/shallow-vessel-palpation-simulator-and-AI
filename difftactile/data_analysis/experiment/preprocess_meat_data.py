@@ -9,7 +9,6 @@ import numpy as np
 from scipy.interpolate import interp1d
 from tqdm import tqdm
 
-from difftactile.data_analysis.experiment.predict_exp import PredictExp
 from difftactile.main.display import (
     destroy_windows, imshow, is_interactive, run_frame_browser, wait_key,
 )
@@ -331,6 +330,13 @@ class MeatPreprocessData:
         return {k: (avi_map[k], npz_map[k]) for k in keys}
 
     def _extract_reordered_markers(self, decimated_video: Path, trial_id: str) -> np.ndarray:
+        # Imported here rather than at module scope because `predict_exp` pulls in
+        # torch and the whole GNN stack, while `browse()` - the interactive
+        # annotation viewer - needs none of it. Keeping this import lazy is what
+        # lets the viewer run in the small `vessel-palpation-annotator` env
+        # (requirements/annotator-env.yml), which has no torch installed.
+        from difftactile.data_analysis.experiment.predict_exp import PredictExp
+
         markers_raw_npz = self.tmp_dir / f"{trial_id}_markers_raw.npz"
         markers_vis_avi = self.tmp_dir / f"{trial_id}_markers_vis.avi"
         markers_reordered_npz = self.tmp_dir / f"{trial_id}_markers_reordered.npz"

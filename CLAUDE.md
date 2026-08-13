@@ -45,7 +45,20 @@ docker exec -it vessel-palpation ./docker/run_pipeline.sh A-to-B
 **Claude Code: test through the Docker container.** It is the only environment with the full
 stack (Taichi included). Fall back to the bare-metal `/home/psb120/micromamba/envs/claude`
 env only if the container fails or is too much hassle — note it has **no Taichi**, so the
-simulator cannot run there and `run_pipeline.sh check` will fail partway through.
+simulator cannot run there and `run_pipeline.sh check` will fail partway through. That env
+installs `opencv-python-headless` on purpose; leave it that way.
+
+**The one exception is `docker/annotate_data.sh`, which runs on bare metal by design.** It
+drives the two interactive annotation viewers, which are hand-operated frame by frame, and
+X-socket forwarding out of the container makes them choppy enough to be useless as a debugging
+tool. It uses its own dedicated micromamba env, `vessel-palpation-annotator`, defined by
+`requirements/annotator-env.yml` and created with
+`micromamba env create -f requirements/annotator-env.yml`. That env is deliberately minimal —
+numpy, scipy, tqdm and a **GUI-capable** `opencv-python`, with no torch, no torch-geometric and
+no Taichi — which is why `predict_exp` (the module that drags in the whole GNN stack) is
+imported *lazily* inside the two methods that need it in `preprocess_{silicone,meat}_data.py`
+rather than at module scope. Do not hoist those imports back to the top: it would put torch
+back on the annotator's critical path and break the small env.
 
 Directly, as a module:
 
@@ -106,6 +119,8 @@ Re-running the *same* configuration still overwrites in place.
 | `DIFFTACTILE_HEADLESS=1` | Skip creating Taichi GGUI / Gmsh FLTK / cv2 windows entirely. Implied when `DISPLAY` is unset. |
 | `DIFFTACTILE_INTERACTIVE=1` | Opt back in to **blocking** GUI windows (`plt.show()`, `cv2.waitKey(0)`, Gmsh FLTK, the tkinter labeller). Off by default: no script waits on user input, so unattended runs always terminate. See `difftactile/main/display.py`. |
 | `DIFFTACTILE_MAX_FRAMES` | Frames a non-interactive viewer loop steps through before returning (per-loop defaults apply otherwise). |
+| `DIFFTACTILE_VIEW_WIDTH` | Display width the frame browsers scale to (default 960, `0` disables). Display only — clicks are mapped back, so stored annotations stay in full-resolution pixels. |
+| `DIFFTACTILE_ANNOTATOR_PYTHON` | Interpreter for `docker/annotate_data.sh`, instead of the `vessel-palpation-annotator` env. |
 | `DIFFTACTILE_TRAJECTORIES` | Comma-separated trajectory types to collect (0 press, 1 slide-vein, 2 twist-y, 3 twist-z). Default all four. **The published dataset is entirely type 3** — use `3` to reproduce it. |
 | `DIFFTACTILE_VEIN_PAIR=1` | Enable the sensor↔vein contact pair on the first of each loop's two substeps, so a trajectory runs once **with** a subsurface vein and once **without**. The vein half is hard-disabled in the committed default (`if False and j < 1` in `main()`), so every substep otherwise runs vein-free. |
 | `DIFFTACTILE_SCENARIO` | Configuration name (`A-to-B`, `C-to-B`, `A-to-C`, or a legacy alias), if not passed as an argument. |

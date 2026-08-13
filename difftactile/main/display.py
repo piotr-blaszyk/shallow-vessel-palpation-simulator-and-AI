@@ -21,6 +21,12 @@ Environment variables:
                                 loops, and `prompt()` reads stdin.
     DIFFTACTILE_HEADLESS=1      Stronger still: do not even create windows.
                                 Implies non-interactive.
+    DIFFTACTILE_VIEW_WIDTH      Width in pixels that the frame browsers scale
+                                their display image down to (default 960, `0`
+                                disables scaling). The source videos are 1080p,
+                                which is both bigger than most screens and slow
+                                to push over an X connection; see
+                                `fit_to_view()`.
 
 With neither set, windows are still drawn (so you can watch a run go past) but
 they are never waited on: `show_plots()` returns False, `wait_key()` returns
@@ -131,6 +137,48 @@ def imshow(cv2, window_name, image):
     if is_headless():
         return
     _guard_gui(lambda: cv2.imshow(window_name, image), None)
+
+
+def view_width():
+    """Width the frame browsers scale their display image down to, or 0 for none.
+
+    Override with DIFFTACTILE_VIEW_WIDTH; `0` keeps the frames at full size.
+    """
+    try:
+        return max(0, int(os.environ.get("DIFFTACTILE_VIEW_WIDTH", "960")))
+    except ValueError:
+        return 960
+
+
+def fit_to_view(cv2, image):
+    """Scale a frame down to `view_width()` for display, preserving aspect ratio.
+
+    The source videos are 1080p, so every `cv2.imshow` hands the GUI a 6.2 MB
+    uncompressed BGR buffer. That is the dominant per-keypress cost in the
+    interactive browsers: it is larger than most screens (so the window is
+    downscaled for display anyway), and when the window is served over a
+    forwarded X connection the whole buffer crosses a socket on every repaint,
+    which is what makes stepping through frames feel choppy. Halving each
+    dimension cuts the data pushed per repaint by ~4x.
+
+    Only the *displayed* copy is resized. Annotation coordinates are unaffected:
+    callers scale clicks back up themselves (see the silicone annotator's mouse
+    callback), so what is stored on disk stays in full-resolution pixels.
+
+    Returns `(scaled_image, scale)`, where `scale` is the factor applied - 1.0
+    when the frame was already small enough or scaling is disabled.
+    """
+    width = view_width()
+    if not width:
+        return image, 1.0
+    h, w = image.shape[:2]
+    if w <= width:
+        return image, 1.0
+    scale = width / float(w)
+    resized = cv2.resize(
+        image, (width, max(1, int(round(h * scale)))), interpolation=cv2.INTER_AREA
+    )
+    return resized, scale
 
 
 def move_window(cv2, window_name, x, y):

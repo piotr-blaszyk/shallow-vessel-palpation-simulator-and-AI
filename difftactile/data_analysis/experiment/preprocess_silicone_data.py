@@ -1,6 +1,7 @@
 import copy
 import os
 import glob
+import math
 import numpy as np
 import cv2
 import pickle
@@ -10,10 +11,17 @@ import time
 import shutil
 from scipy.spatial.distance import pdist, squareform
 
-from difftactile.data_analysis.experiment.predict_exp import *
+# NOTE: `predict_exp` is deliberately NOT imported here. It pulls in torch,
+# torch-geometric and the rest of the GNN stack, none of which the interactive
+# annotator (`annotate()`, at the bottom of this file) touches - it only decodes
+# video and draws circles. Keeping the import inside the two methods that
+# actually call PredictExp lets the annotator run in the small
+# `vessel-palpation-annotator` env (requirements/annotator-env.yml), which has
+# no torch installed. `math` used to arrive via that star-import; it is now
+# imported directly above.
 from difftactile.main.constants import *
 from difftactile.main.display import (
-    destroy_windows, imshow, is_interactive, iteration_limit,
+    destroy_windows, fit_to_view, imshow, is_interactive, iteration_limit,
     run_frame_browser, wait_key,
 )
 
@@ -193,6 +201,9 @@ class SiliconePreprocessData:
         destroy_windows(cv2)
 
     def extract_markers(self):
+        # Lazy: see the note by the imports at the top of this file.
+        from difftactile.data_analysis.experiment.predict_exp import PredictExp
+
         input_dir = os.path.join(self.root, f"{self.dir}_dilated")
         output_dir = os.path.join(self.root, f"{self.dir}_markers")
         os.makedirs(output_dir, exist_ok=True)
@@ -213,6 +224,9 @@ class SiliconePreprocessData:
                 shutil.copy(npz_path, dst_path)
 
     def reorder_interpolate_markers(self):
+        # Lazy: see the note by the imports at the top of this file.
+        from difftactile.data_analysis.experiment.predict_exp import PredictExp
+
         input_dir = os.path.join(self.root, f"{self.dir}_markers")
         output_dir = os.path.join(
             self.root, f"{self.dir}_reordered_interpolated_markers"
@@ -294,7 +308,10 @@ class SiliconePreprocessData:
         # Frame index lives in a dict so the render/key callbacks below can
         # mutate it without `nonlocal` gymnastics; `dirty` is set by the mouse
         # callback to request a repaint after a click.
-        state = {"frame": 0, "dirty": False}
+        # `scale` is the factor the last rendered frame was shrunk by for
+        # display, so the mouse callback can convert clicks back to full
+        # resolution.
+        state = {"frame": 0, "dirty": False, "scale": 1.0}
 
         # Editing guard, toggled with `g` and held for the whole session. Off by
         # default so that merely opening the tool to look at existing
@@ -339,7 +356,15 @@ class SiliconePreprocessData:
                 frame_idx = state["frame"]
                 frame_annots = annotations[avi_path][frame_idx]
                 if len(frame_annots) < 4:
-                    annotations[avi_path][frame_idx].append([x, y])
+                    # The window shows a downscaled copy of the frame (see
+                    # fit_to_view), so a click arrives in display pixels. Map it
+                    # back to full-resolution pixels before storing, since every
+                    # downstream stage expects annotations in the video's own
+                    # coordinates.
+                    scale = state["scale"] or 1.0
+                    annotations[avi_path][frame_idx].append(
+                        [int(round(x / scale)), int(round(y / scale))]
+                    )
                     session_additions.append((avi_path, frame_idx))
                     # Ask the browser loop to repaint so the new dot appears
                     # without needing a keypress.
@@ -377,11 +402,24 @@ class SiliconePreprocessData:
                 return None
             n_frames = len(frames)
             state["frame"] = max(0, min(state["frame"], n_frames - 1))
-            display = frames[state["frame"]].copy()
+            # Downscale FIRST, then draw: the overlays are then rendered into a
+            # ~4x smaller buffer, and the status text keeps a constant on-screen
+            # size instead of shrinking with the frame. The stored annotations
+            # stay in full-resolution coordinates, so they are scaled on the way
+            # in here and clicks are scaled back out in the mouse callback.
+            display, scale = fit_to_view(cv2, frames[state["frame"]])
+            display = display.copy()
+            state["scale"] = scale
             frame_annots = annotations[avi_path][state["frame"]]
             for idx, pt in enumerate(frame_annots):
                 color = colors[idx % len(colors)]
-                cv2.circle(display, (int(pt[0]), int(pt[1])), 30, color, -1)
+                cv2.circle(
+                    display,
+                    (int(round(pt[0] * scale)), int(round(pt[1] * scale))),
+                    max(3, int(round(30 * scale))),
+                    color,
+                    -1,
+                )
             text = (
                 f"Video {video_idx + 1}/{len(avi_files)} | "
                 f"Frame {state['frame'] + 1}/{n_frames} | "
