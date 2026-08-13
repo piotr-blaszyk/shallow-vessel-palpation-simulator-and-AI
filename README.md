@@ -90,6 +90,68 @@ cd docker
 > If you prefer not to keep a shell open, every in-container command below is equivalent to
 > `docker exec -it vessel-palpation ./docker/<script> <args>` run from the host.
 
+### Which script produces which figure or table in the paper
+
+Every script below maps onto a specific artifact in the manuscript:
+
+| Script | Produces | In the paper |
+|---|---|---|
+| `./domain_adaptation.sh` | simulated (red) vs real (green) marker alignment, four interactions | **Fig. 5** (a) press, (b) twist-z, (c) twist-x, (d) slide |
+| `./score_all_scenarios.sh` | foreground / background IoU per model | **Table 3** |
+| `./score_all_scenarios.sh` | ROC curves per scenario | **Fig. 6** |
+| `./view_predictions.sh` | per-frame prediction panels | **Fig. 7** |
+| `./vessel_map.sh` | bird's-eye vessel map and confusion overlays | **Fig. 8** (a), (c), (d) |
+| `./run_pipeline.sh <config>` | the same IoU / ROC numbers, one configuration at a time | Table 3, Fig. 6 |
+
+Two things in the manuscript are **not** reproduced by this repository:
+
+- **Fig. 8(b)** starts from `vessel_map.sh` output but its yellow annotations were added by hand
+  in a photo editor afterwards.
+- **Table 4** reports a manual analysis of Fig. 8(b), so nothing here computes it.
+
+`score_all_scenarios.sh --seeds N` additionally produces mean ROC and PR curves with a
+variance band across seeds — beyond what the manuscript currently shows, and worth considering
+for Fig. 6, since a single-seed curve understates the spread (see
+[Training is deterministic](#training-is-deterministic)).
+
+### Domain adaptation: simulated vs real marker alignment
+
+> 📄 **Manuscript: Fig. 5.**
+
+The premise of the whole project is that a model trained purely in simulation transfers to a
+real sensor — which only holds if the simulator's markers move like the real ones. This drives
+the four canonical interactions through the simulator and overlays the **simulated** marker
+positions (red) on the **real** ones (green), photographed from the physical sensor in the same
+configuration:
+
+```bash
+# (inside the container, from the docker/ directory)
+./domain_adaptation.sh
+```
+
+Writes one PNG per panel of Fig. 5 to `difftactile/output/`, and prints the mean absolute
+marker distance for each:
+
+| Output | Fig. 5 panel |
+|---|---|
+| `da_overlay_press.png` | (a) press |
+| `da_overlay_twist_z.png` | (b) twist about the *z*-axis |
+| `da_overlay_twist_x.png` | (c) twist about the *x*-axis |
+| `da_overlay_slide.png` | (d) slide |
+
+> ⏱ **Expect hours, not minutes.** This is not a forward-only render: it is a
+> differentiable-simulation optimisation loop, doing a forward pass, a **backward pass through
+> every timestep**, and an optimiser step, for each of the four interactions, twice
+> (`num_opt_steps`). The backward pass costs more than the forward one and `slide` alone runs
+> 327 timesteps. It needs Taichi and a GPU, and is the only figure script with no bare-metal
+> path.
+>
+> The panels appear **progressively** — each is written when its own trajectory finishes, so
+> `da_overlay_press.png` exists long before the run does. And because `update_params()` is
+> guarded by `if opts > 0`, the first optimisation step changes no parameters: the PNGs it
+> writes are already the "after domain adaptation" figures. Once all four exist, you have Fig. 5
+> and can stop the run.
+
 ### Reproduce the published results
 
 The paper's three models — one per (train → test) configuration over the simulated (**A**),
@@ -124,6 +186,8 @@ keeps A→B and A→C apart, since they share the same underlying `*_sim` artifa
 `DIFFTACTILE_OVERWRITE_PUBLISHED=1` if you deliberately want to replace them.
 
 ### IoU, AUROC and AP for all six scenarios
+
+> 📄 **Manuscript: Table 3** (the IoU values) and **Fig. 6** (the ROC curves).
 
 The three configurations above, each scored from either the published checkpoint or one you
 trained yourself, give six scenarios. `score_all_scenarios.sh` measures all of them in one
@@ -258,6 +322,8 @@ get them without a separate scoring pass. Use this script when you want all six 
 
 ### Inspect predictions frame by frame
 
+> 📄 **Manuscript: Fig. 7.**
+
 An interactive viewer that steps through the test-set frames and shows the confusion overlay
 (per marker: green TP, yellow TN, red FP, blue FN — note this is the marker-dot scheme, not the
 [vessel map's](#birds-eye-vessel-localisation-map)) alongside the ground truth and soft predictions. The
@@ -265,13 +331,14 @@ configuration selects **both** the model weights and the test dataset, so all si
 reachable by name:
 
 ```bash
-./docker/view_predictions.sh A-to-B              # central frames (default), published checkpoint
-./docker/view_predictions.sh A-to-B --all        # every frame of every window
-./docker/view_predictions.sh A-to-C --retrained  # locally trained
-./docker/view_predictions.sh A-to-B --all --x11  # force X11 instead of Wayland
+# (from the docker/ directory on the HOST - this one execs into the container itself)
+./view_predictions.sh A-to-B              # central frames (default), published checkpoint
+./view_predictions.sh A-to-B --all        # every frame of every window
+./view_predictions.sh A-to-C --retrained  # locally trained
+./view_predictions.sh A-to-B --all --x11  # force X11 instead of Wayland
 
 # one seed's model out of a sweep (see "Training is deterministic" below)
-./docker/view_predictions.sh C-to-B --sweep 20260813-163201 --seed 1
+./view_predictions.sh C-to-B --sweep 20260813-163201 --seed 1
 ```
 
 `--sweep TS [--seed N]` is the only way to say *which* trained model to view once a sweep has
@@ -287,7 +354,7 @@ silently falling back to a different model.
 > two viewers at different `--seed` values; to quantify the spread, read `AUROC_RESULTS.md`.
 
 Run it from the **host** — like `annotate_data_docker.sh` it `docker exec`s into the running
-container for you (start it with `./docker/docker-run.sh` first). It still runs *inside* the
+container for you (start it with `./docker-run.sh` first). It still runs *inside* the
 container, because it needs torch and CUDA for inference; there is no bare-metal variant.
 
 #### Which frames: `--central` (default) or `--all`
@@ -345,6 +412,10 @@ probabilities with no cut at all, and the reported metrics (AUROC, AP) never app
 is purely a display choice.
 
 ### Bird's-eye vessel localisation map
+
+> 📄 **Manuscript: Fig. 8** (a), (c) and (d). Panel **(b)** begins as this script's confusion
+> overlay but its yellow shapes were added by hand in a photo editor, and **Table 4** is a manual
+> analysis of that edited panel — neither is reproduced here.
 
 Projects the per-marker predictions through the sensor pose onto the phantom surface at
 1 mm/pixel and renders the top view against the ground truth:
@@ -408,8 +479,9 @@ stack (no Taichi, no CUDA, no torch), just a small dedicated environment created
 ```bash
 micromamba env create -f requirements/annotator-env.yml   # once, ~500 MB, about a minute
 
-./docker/annotate_data_bare_metal.sh --silicone   # click annotator
-./docker/annotate_data_bare_metal.sh --meat       # marker-label review
+# (from the docker/ directory on the HOST - these run on bare metal by design)
+./annotate_data_bare_metal.sh --silicone   # click annotator
+./annotate_data_bare_metal.sh --meat       # marker-label review
 ```
 
 The script activates that environment itself. If you would rather use your own interpreter,
@@ -432,12 +504,13 @@ difference in responsiveness is the container's rather than the code's. Bare met
 normal way to annotate; this is a debugging aid.
 
 ```bash
-./docker/annotate_data_docker.sh --meat          # native Wayland window (default)
-./docker/annotate_data_docker.sh --meat --x11    # force the X11/Xwayland path instead
+# (from the docker/ directory on the HOST - execs into the container itself)
+./annotate_data_docker.sh --meat          # native Wayland window (default)
+./annotate_data_docker.sh --meat --x11    # force the X11/Xwayland path instead
 ```
 
 Run it from the **host** — it `docker exec`s into the running container for you (start it first
-with `./docker/docker-run.sh`). The default is a genuine Wayland client: the container gets the
+with `./docker-run.sh`). The default is a genuine Wayland client: the container gets the
 host compositor's socket bind-mounted, which is the entire client/compositor interface, so it
 talks to the compositor over the identical IPC path a host-native client uses, with no proxy or
 nested compositor in between. `--x11` is the A/B switch for isolating a Wayland-specific bug.

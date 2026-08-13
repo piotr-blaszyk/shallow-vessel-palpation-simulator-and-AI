@@ -1994,9 +1994,11 @@ class Contact:
     def maybe_save_tactile_sensor_mesh_to_pickle(self, ts):
         if self.mesh_needs_to_be_saved[None] == 1:
             particles = self.vitactip.vertices_deformed_A.to_numpy()[0]
-            with open(
-                SYSTEM_PARAMS.files.deformed_node_coordinates.format(ts), "wb"
-            ) as f:
+            path = SYSTEM_PARAMS.files.deformed_node_coordinates.format(ts)
+            # mesh_snapshots/ is gitignored output, so it is absent in a fresh
+            # clone or after a clean restore; create it rather than failing.
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
                 pickle.dump(particles, f)
             self.mesh_needs_to_be_saved[None] = 0
     
@@ -2714,6 +2716,55 @@ class Contact:
                     self.bo.write_to_file()
         print("training data collection done")
         print("all done")
+
+
+def domain_adaptation_main():
+    """Entrypoint for the domain-adaptation alignment figure (manuscript Fig. 5).
+
+    Runs the four canonical interactions - press, twist about z, twist about x,
+    and slide - through the simulator, and at the moment each one reaches its
+    target pose overlays the SIMULATED marker positions (red) on the REAL ones
+    (green) photographed from the physical sensor in the same configuration.
+    One PNG per interaction, plus the mean absolute marker distance for each.
+
+    `Contact.domain_adaptation()` has always existed but was reachable only by
+    editing `main()`, which is why it had no entrypoint. The setup below mirrors
+    `main()`'s, minus the training-data collection.
+    """
+    if RUN_ON_LAB_MACHINE:
+        ti.init(
+            debug=False,
+            offline_cache=False,
+            log_level=ti.ERROR,
+            arch=ti.cuda,
+            device_memory_GB=float(os.environ.get("TI_DEVICE_MEMORY_GB", 9)),
+        )
+    else:
+        ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)
+
+    contact_model = Contact()
+    contact_model.visualisation_set_up_gui()
+    # The four DA interactions, which are NOT the four training trajectory types
+    # set up in set_up_trajectories_and_phantom_states(). This call replaces
+    # them with press / twist_z / twist_x / slide, in the order the figure's
+    # panels (a)-(d) expect.
+    contact_model.generate_trajectories()
+    contact_model.trajectory_ix[None] = 0
+    contact_model.set_up_initial_positions_state_and_trajectory()
+    contact_model.reset_pid_controller()
+    contact_model.reset_exp_sim_traj()
+    contact_model.get_keypoint_indices_and_validate()
+
+    start = time.perf_counter()
+    contact_model.domain_adaptation()
+    print(f"\nDomain adaptation took {time.perf_counter() - start:.2f} s")
+
+    overlay = SYSTEM_PARAMS.files.da_overlay
+    print("\nAlignment overlays (simulated = red, real = green):")
+    for name in ("press", "twist_z", "twist_x", "slide"):
+        path = overlay.format(name)
+        if os.path.exists(path):
+            print(f"  {path}")
 
 
 def main():

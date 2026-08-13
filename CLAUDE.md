@@ -348,6 +348,32 @@ The viewer's job is "what does *this* model see on *this* frame"; the seed sprea
 quantified numerically in `AUROC_RESULTS.md`, which answers the variance question better than a
 heat-map would.
 
+### Manuscript artifacts: which script makes which figure
+
+Recorded so a future change knows what it might break. The README quickstart carries the same
+table for end users.
+
+| Script | Manuscript artifact |
+|---|---|
+| `domain_adaptation.sh` | **Fig. 5** — sim (red) vs real (green) marker alignment, four interactions |
+| `score_all_scenarios.sh` | **Table 3** (IoU) and **Fig. 6** (ROC curves) |
+| `view_predictions.sh` | **Fig. 7** |
+| `vessel_map.sh` | **Fig. 8** (a), (c), (d) |
+
+**Fig. 8(b)** is `vessel_map.sh`'s confusion overlay with yellow shapes added by hand in a photo
+editor, and **Table 4** is a manual analysis of that edited panel — neither is reproducible from
+this repository, and nothing here should claim to produce them.
+
+`domain_adaptation.sh` is new: `Contact.domain_adaptation()` had always existed but was
+reachable only by editing `main()`, so it had no entrypoint. `main.py::domain_adaptation_main()`
+now provides one. Note it calls `generate_trajectories()`, which REPLACES the four training
+trajectory types with the four DA interactions (press / twist_z / twist_x / slide) — the two
+sets are different and share the `trajectory_names` attribute.
+
+Running it also fixed a latent bug: `maybe_save_tactile_sensor_mesh_to_pickle()` wrote into
+`difftactile/output/mesh_snapshots/` without creating it, so it raised `FileNotFoundError` on any
+clean checkout. It now `makedirs` first.
+
 ### The vessel map (`vessel_map.sh`) and the confusion colour scheme
 
 `predict_exp.py::evaluate_downscaled()` writes **two** confusion maps, each as a raw `.png` and
