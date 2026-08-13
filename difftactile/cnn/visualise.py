@@ -92,6 +92,132 @@ def _retrained_variant(rel, config):
     return f"{base}_retrained_{config}{ext}"
 
 
+class _CentralFrameNavigator:
+    """Two-level cursor over one central-frame prediction per sliding window.
+
+    The `--central` counterpart to `_MeatNavigator`. The model consumes a
+    `clip_len`-frame window and predicts a label for *every* frame in it, but
+    only the central frame's prediction is ever reported: it is the one with
+    temporal context on both sides, and it is the one the metrics use
+    (`dataset.py::get_mask()` marks exactly `clip_len // 2`, and
+    `segmentation_gnn.shared_step()` applies that mask in the val/test stages).
+    This mode shows that frame and nothing else, so what you step through is
+    what the numbers are computed from.
+
+    With the sliding-window tiling (a clip starting at every frame) the central
+    frames of consecutive clips are themselves consecutive video frames, so one
+    axis disappears entirely and the navigation collapses to two levels:
+
+        i / o   previous / next trial
+        j / k   previous / next central frame, within the trial
+
+    The cost is the trial's first and last `clip_len // 2` frames, which are
+    never any window's centre and so have no prediction to show. That is
+    inherent to reporting the central frame, not a limitation of the viewer.
+
+    `frame_index` is the parallel list of `(clip_ix, frame_in_clip)` built while
+    the panels were rendered; only the entries whose `frame_in_clip` is the
+    centre are kept. `dataset` is used to name the trials and to recover which
+    video frame each window is centred on.
+    """
+
+    def __init__(self, frame_index, dataset):
+        self.clip_len = max((f for _, f in frame_index), default=0) + 1
+        self.centre = self.clip_len // 2
+
+        meat_clips = getattr(dataset, "meat_data", None) or []
+
+        # One entry per clip: the position in the flat frame list of that clip's
+        # central frame. Everything else is dropped, which is the whole point.
+        self.positions = []
+        clip_ids = []
+        for pos, (clip_ix, frame_in_clip) in enumerate(frame_index):
+            if frame_in_clip == self.centre:
+                self.positions.append(pos)
+                clip_ids.append(clip_ix)
+
+        # Trial each retained entry belongs to, and the video frame its window is
+        # centred on. Falls back to a synthetic id when there is no meat
+        # structure to read (the simulated and silicone datasets have no trials).
+        self.entry_trial = []
+        self.entry_video_frame = []
+        for clip_ix in clip_ids:
+            if clip_ix < len(meat_clips):
+                self.entry_trial.append(os.path.basename(meat_clips[clip_ix][0]))
+                self.entry_video_frame.append(meat_clips[clip_ix][2][self.centre])
+            else:
+                self.entry_trial.append(f"clip-{clip_ix}")
+                self.entry_video_frame.append(None)
+
+        # Trials in first-appearance order, so numbering follows playback order.
+        self.trials = []
+        for t in self.entry_trial:
+            if t not in self.trials:
+                self.trials.append(t)
+        # Retained-entry indices belonging to each trial, in order.
+        self.entries_of = {
+            t: [i for i, et in enumerate(self.entry_trial) if et == t]
+            for t in self.trials
+        }
+
+        self.trial_ix = 0
+        self.entry_in_trial = 0
+
+    # --- position ---------------------------------------------------------
+
+    @property
+    def _entry_ix(self):
+        """Index into the retained (central-frame-only) entry list."""
+        return self.entries_of[self.trials[self.trial_ix]][self.entry_in_trial]
+
+    @property
+    def position(self):
+        """Index into the flat frame list of the frame currently shown."""
+        return self.positions[self._entry_ix]
+
+    # --- movement ---------------------------------------------------------
+
+    def handle_key(self, key):
+        """Apply one keypress. Returns True if the position actually changed."""
+        before = (self.trial_ix, self.entry_in_trial)
+        if key == ord('i'):
+            self._go_trial(self.trial_ix - 1)
+        elif key == ord('o'):
+            self._go_trial(self.trial_ix + 1)
+        elif key == ord('j'):
+            self._go_entry(self.entry_in_trial - 1)
+        elif key == ord('k'):
+            self._go_entry(self.entry_in_trial + 1)
+        else:
+            return False
+        return (self.trial_ix, self.entry_in_trial) != before
+
+    def _go_trial(self, ix):
+        self.trial_ix = max(0, min(ix, len(self.trials) - 1))
+        # Land at the start of the trial, as the three-level navigator does.
+        self.entry_in_trial = 0
+
+    def _go_entry(self, ix):
+        n = len(self.entries_of[self.trials[self.trial_ix]])
+        self.entry_in_trial = max(0, min(ix, n - 1))
+
+    # --- reporting --------------------------------------------------------
+
+    def metadata_lines(self):
+        """The lines shown in the Metadata panel."""
+        trial = self.trials[self.trial_ix]
+        n_entries = len(self.entries_of[trial])
+        video_frame = self.entry_video_frame[self._entry_ix]
+        centred_on = "n/a" if video_frame is None else str(video_frame)
+        return [
+            f"trial: {self.trial_ix + 1}/{len(self.trials)}",
+            meat_trial_description(trial),
+            f"central frame: {self.entry_in_trial + 1}/{n_entries}",
+            f"video frame: {centred_on}",
+            f"(centre of a {self.clip_len}-frame window)",
+        ]
+
+
 class _MeatNavigator:
     """Three-level cursor over the viewer's flat list of rendered frames.
 
@@ -227,7 +353,7 @@ class _MeatNavigator:
 
 
 class Visualisation:
-    def __init__(self, scenario=None, weights="pretrained"):
+    def __init__(self, scenario=None, weights="pretrained", frames="all"):
         """Interactive viewer for per-frame predictions.
 
         With `scenario=None` the historical behaviour is kept: the checkpoint and
@@ -238,9 +364,22 @@ class Visualisation:
         dataset together, so all six canonical scenarios are reachable by name
         instead of by editing source. `weights` is "pretrained" (the published
         checkpoint) or "retrained" (what a local `--train` run wrote).
+
+        `frames` picks which of the model's outputs are shown, and there is
+        deliberately no default at the entrypoint - the two answer different
+        questions and the user should know which they asked:
+
+          "all"      every frame of every window, navigated trial/clip/frame.
+                     Shows what the model emits, including the off-centre
+                     predictions that training learns from but reporting ignores.
+          "central"  only each window's central frame, navigated trial/frame.
+                     Shows what is actually reported and scored.
         """
+        if frames not in ("all", "central"):
+            raise ValueError(f"unknown frames mode {frames!r}; expected 'all' or 'central'")
         self.scenario = scenario
         self.weights = weights
+        self.frames = frames
         self.scenario_cfg = None
 
         if scenario is None:
@@ -292,16 +431,24 @@ class Visualisation:
             if difficulty is not None:
                 test_dataset.set_difficulty_level(difficulty)
         else:
-            # Sequential (non-overlapping) clips so that stepping through the
-            # viewer walks each trial once from start to finish. The default
-            # sliding window starts a clip at every frame, which drops the viewer
-            # into the middle of a vein sweep.
+            # Which tiling to cut the trials into depends on the frames mode.
+            #
+            # "all": sequential (non-overlapping) clips, so stepping through the
+            #   viewer walks each trial once from start to finish. The sliding
+            #   window would drop the viewer into the middle of a vein sweep,
+            #   which looks like the vein has already passed the sensor centre.
+            # "central": sliding clips (one starting at every frame), because
+            #   only their centres are shown - and the centres of consecutive
+            #   sliding windows are themselves consecutive video frames. That is
+            #   what makes j/k a real per-frame axis. Sequential clips would
+            #   instead give one prediction every clip_len frames, with the rest
+            #   of the trial simply missing.
             full_dataset = MyDataset(
                 scheme="meat",
                 sim_exp="apple",
                 data_dir="banana",
                 apply_augmentations=False,
-                meat_sequential_clips=True,
+                meat_sequential_clips=(self.frames == "all"),
                 name="meat",
             )
             _, _, test_dataset = full_dataset.create_splits(all_to_test=True)
@@ -316,28 +463,82 @@ class Visualisation:
         iou_score = np.sum(intersection) / np.sum(union) if np.sum(union) > 0 else 0
         return iou_score
 
+    # The project-wide confusion colour scheme, in RGB, as floats in [0, 1].
+    #
+    # Read it as "what is there, and did we find it":
+    #   green  agreement on a positive - both say vessel
+    #   red    a MISS - ground truth says vessel, the prediction does not
+    #   blue   a FALSE ALARM - the prediction says vessel, ground truth does not
+    #   black  agreement on a negative - neither says vessel
+    #
+    # Red for misses and blue for false alarms is the deliberate part: a missed
+    # vessel is the dangerous error in a palpation setting, so it takes the
+    # warning colour. Keep the four in step wherever confusion is drawn.
+    CONFUSION_COLOURS_RGB = {
+        "tp": (0.0, 1.0, 0.0),   # green
+        "fn": (1.0, 0.0, 0.0),   # red
+        "fp": (0.0, 0.0, 1.0),   # blue
+        "tn": (0.0, 0.0, 0.0),   # black
+    }
+
     @staticmethod
     def create_confusion_matrix_overlay(ground_truth, prediction):
-        overlay = np.zeros((*ground_truth.shape, 3))
-        
-        # True Negative (black)
-        tn_mask = (ground_truth == 0) & (prediction == 0)
-        overlay[tn_mask] = [0, 0, 0]
-        
-        # True Positive (white)
-        tp_mask = (ground_truth == 1) & (prediction == 1)
-        overlay[tp_mask] = [1, 1, 1]
-        
-        # False Positive (red)
-        fp_mask = (ground_truth == 0) & (prediction == 1)
-        overlay[fp_mask] = [1, 0, 0]
-        
-        # False Negative (blue)
-        fn_mask = (ground_truth == 1) & (prediction == 0)
-        overlay[fn_mask] = [0, 0, 1]
-        
+        """Per-pixel confusion overlay of `prediction` against `ground_truth`.
+
+        Returns float RGB in [0, 1] - matplotlib's order, so `plt.imshow()` takes
+        it directly. Anything writing it with `cv2.imwrite()` must convert first;
+        `confusion_overlay_bgr()` below does that and is what the PNG writers use.
+
+        Both inputs are treated as binary: non-zero is positive. The two need not
+        be a model prediction and a label - `vessel_map.sh`'s second artifact
+        passes the video-derived and photo-derived ground truths, taking the
+        video as the reference and the photo as the thing being judged.
+        """
+        colours = Visualisation.CONFUSION_COLOURS_RGB
+        gt = np.asarray(ground_truth) != 0
+        pred = np.asarray(prediction) != 0
+
+        overlay = np.zeros((*gt.shape, 3), dtype=float)
+        overlay[~gt & ~pred] = colours["tn"]   # black: agreed negative
+        overlay[gt & pred] = colours["tp"]     # green: agreed positive
+        overlay[gt & ~pred] = colours["fn"]    # red:   missed
+        overlay[~gt & pred] = colours["fp"]    # blue:  false alarm
         return overlay
-    
+
+    @staticmethod
+    def confusion_overlay_bgr(ground_truth, prediction):
+        """`create_confusion_matrix_overlay` as a uint8 BGR image for cv2.imwrite.
+
+        The channel flip is the whole point: the helper above returns RGB, and
+        handing RGB straight to `cv2.imwrite` silently swaps red and blue - which
+        on this colour scheme turns every miss into a false alarm and vice versa.
+        """
+        rgb = Visualisation.create_confusion_matrix_overlay(ground_truth, prediction)
+        return cv2.cvtColor((rgb * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+
+    @staticmethod
+    def confusion_legend_handles(plt, positive="vessel", reference="ground truth",
+                                 candidate="prediction"):
+        """Legend patches for the confusion colour scheme, in a fixed order.
+
+        Parameterised because the scheme is used for two different comparisons:
+        prediction-vs-ground-truth, and photo-derived-vs-video-derived ground
+        truth. The colours and their meanings do not change, only the words for
+        who is being compared with whom.
+        """
+        colours = Visualisation.CONFUSION_COLOURS_RGB
+        labels = [
+            ("tp", f"both say {positive}"),
+            ("fn", f"{reference} says {positive}, {candidate} does not"),
+            ("fp", f"{candidate} says {positive}, {reference} does not"),
+            ("tn", f"neither says {positive}"),
+        ]
+        return [
+            plt.Rectangle((0, 0), 1, 1, fc=colours[key], ec="0.5", lw=0.5, label=text)
+            for key, text in labels
+        ]
+
+
     def visualize_experiment(
             self,
             mode,
@@ -1099,11 +1300,18 @@ class Visualisation:
             print("Nothing to display: the loader produced no clips.")
             return
 
-        # Navigation is over three nested levels - trial, clip within trial,
-        # frame within clip - with one key pair per level and no key doing two
-        # jobs. `_MeatNavigator` owns the index arithmetic; the callbacks below
-        # only translate keys into its moves.
-        nav = _MeatNavigator(frame_index, getattr(self, "viewer_dataset", None))
+        # Navigation levels depend on the frames mode: three for "all" (trial,
+        # clip within trial, frame within clip) and two for "central" (trial,
+        # central frame within trial), with one key pair per level and no key
+        # doing two jobs. The navigator owns all the index arithmetic; the
+        # callbacks below only translate keys into its moves.
+        viewer_dataset = getattr(self, "viewer_dataset", None)
+        if self.frames == "central":
+            nav = _CentralFrameNavigator(frame_index, viewer_dataset)
+            keys_help = "i/o trial   j/k central frame   q quit"
+        else:
+            nav = _MeatNavigator(frame_index, viewer_dataset)
+            keys_help = "i/o trial   j/k clip   n/m frame   q quit"
         panels_for = self._prediction_panels(mode, gt, hp, co, sp, meta)
 
         def render():
@@ -1122,8 +1330,8 @@ class Visualisation:
             # lives in the Metadata panel, and duplicating it made the two
             # disagree about what "frame" meant (clip-index vs frame-in-clip).
             return [
-                f"[{self.scenario} {self.weights}]",
-                "i/o trial   j/k clip   n/m frame   q quit",
+                f"[{self.scenario} {self.weights} {self.frames}]",
+                keys_help,
             ]
 
         def on_key(key):
@@ -1144,7 +1352,7 @@ class Visualisation:
         from difftactile.main.qt_viewer import run_browser
 
         run_browser(
-            title=f"Predictions - {self.scenario} ({self.weights})",
+            title=f"Predictions - {self.scenario} ({self.weights}, {self.frames} frames)",
             render=render,
             on_key=on_key,
             status=status,
@@ -1335,14 +1543,24 @@ class Visualisation:
 def main():
     """Open the interactive per-frame prediction viewer.
 
-    With no arguments the historical behaviour is kept. Pass one of the three
-    configurations to select the checkpoint and the test dataset together:
+    Pass one of the three configurations to select the checkpoint and the test
+    dataset together, plus exactly one of --all / --central:
 
-        python -m difftactile.scripts.script_visualise A-to-B
-        python -m difftactile.scripts.script_visualise A-to-C --retrained
+        python -m difftactile.scripts.script_visualise A-to-B --all
+        python -m difftactile.scripts.script_visualise A-to-C --central --retrained
 
-    The configuration may also come from DIFFTACTILE_SCENARIO and the weight
-    source from DIFFTACTILE_WEIGHTS (pretrained | retrained).
+    --all      every frame of every sliding window (trial / clip / frame).
+    --central  only each window's central frame (trial / frame) - which is the
+               prediction the reported metrics are computed from.
+
+    **--all and --central have no default and are not interchangeable**: they
+    answer different questions, and picking one silently would let a reader
+    mistake the model's off-centre outputs for the reported ones. Omitting both
+    is an error rather than a guess.
+
+    The configuration may also come from DIFFTACTILE_SCENARIO, the weight source
+    from DIFFTACTILE_WEIGHTS (pretrained | retrained) and the frames mode from
+    DIFFTACTILE_FRAMES (all | central).
     """
     argv = sys.argv[1:]
     flags = [a for a in argv if a.startswith("--")]
@@ -1356,7 +1574,26 @@ def main():
     else:
         weights = os.environ.get("DIFFTACTILE_WEIGHTS", "pretrained")
 
-    v = Visualisation(scenario=scenario, weights=weights)
+    # No default, and no silent tie-break either: both flags together is as
+    # ambiguous as neither.
+    if "--all" in flags and "--central" in flags:
+        raise SystemExit(
+            "ERROR: --all and --central are mutually exclusive; pass exactly one."
+        )
+    if "--all" in flags:
+        frames = "all"
+    elif "--central" in flags:
+        frames = "central"
+    else:
+        frames = os.environ.get("DIFFTACTILE_FRAMES")
+    if frames is None:
+        raise SystemExit(
+            "ERROR: no frames mode given. Pass exactly one of:\n"
+            "  --all      show every frame of every sliding window\n"
+            "  --central  show only each window's central frame (what is reported)"
+        )
+
+    v = Visualisation(scenario=scenario, weights=weights, frames=frames)
     v.visualise_gnn(
         mode='predictions',
         data_source='fresh_dataset'

@@ -493,6 +493,108 @@ class PredictExp:
         
         return downsampled
 
+    @staticmethod
+    def render_confusion_figure(reference_mask, candidate_mask, out_path, title,
+                                reference, candidate, positive="vessel"):
+        """Save a labelled confusion overlay: the map, a title and a legend.
+
+        The PNG twin of each artifact is the raw pixels and nothing else, which
+        is the right thing to drop into a figure or measure from. This is the
+        standalone version - same four colours, but self-explanatory, so it can
+        be read without the surrounding caption.
+
+        `reference` / `candidate` name the two things being compared; the colour
+        meanings never change, only who plays which role.
+        """
+        overlay = Visualisation.create_confusion_matrix_overlay(
+            reference_mask, candidate_mask
+        )
+
+        fig_w = 10
+        fig_h = fig_w * overlay.shape[0] / overlay.shape[1] + 1.6
+        plt.figure(figsize=(fig_w, fig_h))
+        plt.imshow(overlay, interpolation="nearest")
+        plt.title(title)
+        plt.axis("off")
+        plt.figlegend(
+            handles=Visualisation.confusion_legend_handles(
+                plt, positive=positive, reference=reference, candidate=candidate
+            ),
+            loc="lower center",
+            ncol=2,
+            frameon=False,
+            fontsize=9,
+        )
+        # Room at the bottom for the two-row legend.
+        plt.tight_layout(rect=(0, 0.12, 1, 1))
+        finish_plot(plt, out_path, dpi=300, bbox_inches="tight")
+        print(f"Confusion figure: {out_path}")
+
+    def overlay_ground_truth_sources(self):
+        """Confusion overlay of the two INDEPENDENT ground truths for the phantom.
+
+        The vessel positions are known two different ways, and this is the map of
+        where they disagree:
+
+          * from the VIDEO - the per-frame annotations reprojected onto the
+            phantom surface through the sensor pose, i.e. the same 2D->3D->2D
+            path the prediction takes.
+          * from a TOP-VIEW PHOTO of the phantom - a single overhead shot,
+            segmented once, then downsampled onto the prediction grid by the
+            block majority vote in `downsample_ground_truth_image_to_prediction_shape`.
+
+        Neither is a model output, so "prediction" is a role here rather than a
+        fact. The video-derived mask plays the reference and the photo-derived
+        mask plays the candidate, which keeps the colour scheme unchanged and
+        makes this map directly comparable with the prediction-vs-ground-truth
+        one: red is where the video says vessel and the photo does not, blue the
+        reverse.
+
+        Only where the sensor actually went can the video say anything, so the
+        photo will claim vessel over stretches the video never visited. Those
+        show up blue and are expected - read this map as agreement *within* the
+        swept region rather than as one source being wrong.
+        """
+        from_video = cv2.imread(self.ground_truth_from_video_img_path, cv2.IMREAD_GRAYSCALE)
+        from_photo = cv2.imread(self.ground_truth_img_downsampled_path, cv2.IMREAD_GRAYSCALE)
+        if from_video is None or from_photo is None:
+            raise ValueError(
+                "Failed to load the video-derived and/or photo-derived ground truth. "
+                f"Expected:\n  {self.ground_truth_from_video_img_path}\n"
+                f"  {self.ground_truth_img_downsampled_path}"
+            )
+
+        from_video = (from_video > 127).astype(np.uint8)
+        from_photo = (from_photo > 127).astype(np.uint8)
+        if from_video.shape != from_photo.shape:
+            raise ValueError(
+                "The two ground truths are on different grids "
+                f"({from_video.shape} vs {from_photo.shape}); "
+                "downsample_ground_truth_image_to_prediction_shape() should have "
+                "put the photo-derived one onto the prediction grid."
+            )
+
+        png_path = SYSTEM_PARAMS.files.ground_truth_sources_overlay
+        cv2.imwrite(png_path, Visualisation.confusion_overlay_bgr(from_video, from_photo))
+        print(f"Ground-truth source overlay (video vs photo): {png_path}")
+
+        # How much the two sources agree, reported for the same reason the map
+        # is drawn: it bounds how well any model can possibly score against
+        # either one.
+        intersection = int(np.logical_and(from_video, from_photo).sum())
+        union = int(np.logical_or(from_video, from_photo).sum())
+        if union:
+            print(f"Ground-truth agreement (IoU, video vs photo): {intersection / union:.4f}")
+
+        self.render_confusion_figure(
+            from_video,
+            from_photo,
+            SYSTEM_PARAMS.files.ground_truth_sources_overlay_pdf,
+            title="Ground truth from video vs from top-view photo (silicone phantom)",
+            reference="video",
+            candidate="photo",
+        )
+
     def evaluate_downscaled(self):
         # Load prediction and feasible ground truth images
         prediction = cv2.imread(self.prediction_img_path, cv2.IMREAD_GRAYSCALE)
@@ -512,12 +614,37 @@ class PredictExp:
         metrics = Common.iou_score(prediction_tensor, ground_truth_tensor)
         print("IoU Metrics (downscaled):", metrics)
         
-        # Create confusion matrix overlay
-        confusion_overlay = Visualisation.create_confusion_matrix_overlay(ground_truth_from_video, prediction)
-        confusion_overlay = (confusion_overlay * 255).astype(np.uint8)
-        confusion_overlay_path = 'difftactile/output/confusion_overlay_vein_map.png'
+        # --- artifact 1: prediction vs ground truth ---------------------------
+        #
+        # The video-derived ground truth is the reference here, not the
+        # photo-derived one: it lives on the same reprojected grid as the
+        # prediction, so the comparison is like for like. See `overlay_ground_truth_sources`
+        # for the separate question of how well those two ground truths agree.
+        #
+        # Written through confusion_overlay_bgr(), which does the RGB->BGR flip
+        # cv2.imwrite needs. Without it red and blue swap, and on this scheme
+        # that silently turns every miss into a false alarm.
+        confusion_overlay = Visualisation.confusion_overlay_bgr(
+            ground_truth_from_video, prediction
+        )
+        confusion_overlay_path = SYSTEM_PARAMS.files.confusion_overlay_vein_map
         cv2.imwrite(confusion_overlay_path, confusion_overlay)
-        
+        print(f"Confusion overlay (prediction vs ground truth): {confusion_overlay_path}")
+
+        # The bare PNG is the raw map; the PDF is the same thing with a legend,
+        # which is what makes the four colours readable without the caption.
+        self.render_confusion_figure(
+            ground_truth_from_video,
+            prediction,
+            SYSTEM_PARAMS.files.confusion_overlay_vein_map_pdf,
+            title="Predicted vessel map vs ground truth (silicone phantom)",
+            reference="ground truth",
+            candidate="prediction",
+        )
+
+        # --- artifact 2: the two ground truths against each other -------------
+        self.overlay_ground_truth_sources()
+
         # Load all images for visualization
         images = {
             'Original Ground Truth': cv2.imread(self.ground_truth_img_path, cv2.IMREAD_GRAYSCALE),
@@ -648,13 +775,13 @@ class PredictExp:
         plt.imshow(confusion_overlay)
         plt.title(f'Overlay')
         plt.axis('off')
-        legend_elements = [
-            plt.Rectangle((0, 0), 1, 1, fc='black', label='True Negative'),
-            plt.Rectangle((0, 0), 1, 1, fc='white', label='True Positive'),
-            plt.Rectangle((0, 0), 1, 1, fc='red', label='False Positive'),
-            plt.Rectangle((0, 0), 1, 1, fc='blue', label='False Negative')
-        ]
-        plt.figlegend(handles=legend_elements, loc='center right')
+        # Legend from the shared helper rather than hardcoded, so it cannot drift
+        # out of step with the colours create_confusion_matrix_overlay() draws.
+        plt.figlegend(
+            handles=Visualisation.confusion_legend_handles(plt),
+            loc='center right',
+            fontsize=8,
+        )
         plt.tight_layout()
         finish_plot(plt, SYSTEM_PARAMS.files.exp_overlay_upscaled)
 

@@ -11,7 +11,7 @@
 # and opens a native Wayland window by default.
 #
 # Usage (from the HOST):
-#   ./docker/view_predictions.sh <config> [--pretrained|--retrained] [--x11]
+#   ./docker/view_predictions.sh <config> (--all|--central) [--pretrained|--retrained] [--x11]
 #
 # Configurations (A = simulation, B = real silicone, C = real meat):
 #   A-to-B    model trained on simulation, predictions shown on silicone
@@ -25,6 +25,29 @@
 #
 # The configuration selects BOTH the model weights and the test dataset, so the
 # six combinations above are the six scenarios.
+#
+# Which frames to show - REQUIRED, no default:
+#   --all      Every frame of every sliding window, navigated over three levels
+#              (trial / clip / frame). The model takes a clip_len-frame window
+#              and predicts a label for every frame in it, so this shows
+#              everything it emits - including the off-centre predictions.
+#   --central  Only each window's CENTRAL frame, navigated over two levels
+#              (trial / central frame). This is the prediction that is actually
+#              reported and scored: the central frame is the one with temporal
+#              context on both sides, and it is the only one the val/test
+#              metrics look at (dataset.py::get_mask() masks to clip_len // 2,
+#              and segmentation_gnn.shared_step() applies it). Consecutive
+#              sliding windows have consecutive centres, so j/k walks the trial
+#              frame by frame.
+#
+#              Its one cost: the first and last clip_len // 2 frames of each
+#              trial are never any window's centre, so they have no prediction
+#              to show and are skipped. That is inherent to central-frame
+#              reporting, not a viewer limitation.
+#
+# There is deliberately NO default. The two modes answer different questions,
+# and choosing one silently would let the model's off-centre outputs be mistaken
+# for the reported ones - so omitting both is an error.
 #
 # Options:
 #   --x11     Force the X11/Xwayland backend instead of Wayland. Expect this to
@@ -53,12 +76,19 @@
 #     delays, so the frame you wanted had usually gone before you registered
 #     it. Now nothing moves unless you press a key.
 #
-# Keys, one per action - three nested levels of navigation:
+# Keys, one per action. --all has three nested levels of navigation:
 #   i / o   previous / next trial
 #   j / k   previous / next clip, within the trial
 #   n / m   previous / next frame, within the clip
 #   q       quit
-# Changing trial or clip lands on that unit's first frame, and all moves clamp
+#
+# --central has two, since showing one frame per window collapses the innermost
+# level away:
+#   i / o   previous / next trial
+#   j / k   previous / next central frame, within the trial
+#   q       quit
+#
+# Changing trial (or clip) lands on that unit's first frame, and all moves clamp
 # at the ends rather than wrapping.
 #
 # As with the annotators, the Wayland path is smooth and the --x11 path is
@@ -67,9 +97,10 @@
 # fix - prefer the default.
 #
 # Examples:
-#   ./docker/view_predictions.sh A-to-B
-#   ./docker/view_predictions.sh A-to-C --retrained
-#   ./docker/view_predictions.sh A-to-B --x11
+#   ./docker/view_predictions.sh A-to-B --central
+#   ./docker/view_predictions.sh A-to-B --all
+#   ./docker/view_predictions.sh A-to-C --central --retrained
+#   ./docker/view_predictions.sh A-to-B --all --x11
 #
 set -euo pipefail
 
@@ -82,6 +113,8 @@ usage() {
 
 CONFIG=""
 WEIGHTS="--pretrained"
+# No default: --all and --central must be chosen explicitly (see the header).
+FRAMES=""
 BACKEND="wayland"
 PRINT_ONLY=0
 
@@ -89,6 +122,15 @@ for arg in "$@"; do
     case "${arg}" in
         A-to-B|C-to-B|A-to-C) CONFIG="${arg}" ;;
         --pretrained|--retrained) WEIGHTS="${arg}" ;;
+        --all|--central)
+            # Both flags given is as ambiguous as neither, so reject it rather
+            # than letting the last one silently win.
+            if [ -n "${FRAMES}" ] && [ "${FRAMES}" != "${arg}" ]; then
+                echo "ERROR: --all and --central are mutually exclusive; pass exactly one." >&2
+                exit 1
+            fi
+            FRAMES="${arg}"
+            ;;
         --x11) BACKEND="x11" ;;
         --shell) PRINT_ONLY=1 ;;
         -h|--help) usage; exit 0 ;;
@@ -100,6 +142,23 @@ if [ -z "${CONFIG}" ]; then
     echo "ERROR: no configuration given." >&2
     echo
     usage
+    exit 1
+fi
+
+if [ -z "${FRAMES}" ]; then
+    cat >&2 <<'EOF'
+ERROR: no frames mode given. Pass exactly one of:
+
+    --all      show every frame of every sliding window
+               (navigate: i/o trial, j/k clip, n/m frame)
+
+    --central  show only each window's CENTRAL frame - the prediction the
+               reported metrics are actually computed from
+               (navigate: i/o trial, j/k central frame)
+
+This has no default on purpose: the two show different things, and the choice
+should be a deliberate one.
+EOF
     exit 1
 fi
 
@@ -144,7 +203,7 @@ EOF
     TTY_ARGS=()
     [ -t 0 ] && [ -t 1 ] && TTY_ARGS=(-it)
     CMD=(docker exec "${TTY_ARGS[@]}" "${CONTAINER_NAME}"
-         ./docker/view_predictions.sh "${CONFIG}" "${WEIGHTS}")
+         ./docker/view_predictions.sh "${CONFIG}" "${WEIGHTS}" "${FRAMES}")
     [ "${BACKEND}" = "x11" ] && CMD+=(--x11)
 
     if [ "${PRINT_ONLY}" -eq 1 ]; then
@@ -189,6 +248,12 @@ if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -z "${XDG_RUNTIME_DIR:-}" ]; then
 fi
 
 echo "Qt platform: ${QT_QPA_PLATFORM}  (DISPLAY=${DISPLAY:-<unset>}, WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-<unset>})"
-echo "Viewing predictions: ${CONFIG} ${WEIGHTS}"
-echo "Keys: i/o trial, j/k clip, n/m frame, q quit."
-exec python -m difftactile.scripts.script_visualise "${CONFIG}" "${WEIGHTS}"
+echo "Viewing predictions: ${CONFIG} ${WEIGHTS} ${FRAMES}"
+if [ "${FRAMES}" = "--central" ]; then
+    echo "Showing each sliding window's CENTRAL frame only (what the metrics report)."
+    echo "Keys: i/o trial, j/k central frame, q quit."
+else
+    echo "Showing every frame of every sliding window."
+    echo "Keys: i/o trial, j/k clip, n/m frame, q quit."
+fi
+exec python -m difftactile.scripts.script_visualise "${CONFIG}" "${WEIGHTS}" "${FRAMES}"

@@ -118,6 +118,23 @@ Structured like `annotate_data_docker.sh` — launched from the host, `exec`s in
 native Wayland by default, `--x11` and `--shell` available. Unlike the annotators there is **no
 bare-metal twin**: it runs GNN inference, so it needs torch and CUDA.
 
+**`--all` vs `--central` is mandatory — do not give it a default.** The model takes a
+`clip_len`-frame window (`clip_len` is 7) and predicts a label for *every* frame in it, but only
+the **central** frame is ever reported: `dataset.py::get_mask()` marks exactly `clip_len // 2`,
+and `segmentation_gnn.shared_step()` applies that mask in the `val`/`test` stages but **not** in
+`train` (so training gets signal from all 7 frames), as does `evaluate_and_plot_roc()`. The two
+flags therefore show genuinely different things and the choice is deliberately explicit — both
+the shell script and `visualise.main()` error out when neither is given, and when both are.
+
+- `--all` → `_MeatNavigator`, three levels (`i`/`o` trial, `j`/`k` clip, `n`/`m` frame), clips
+  tiled **sequentially** so playback walks each trial once.
+- `--central` → `_CentralFrameNavigator`, two levels (`i`/`o` trial, `j`/`k` central frame),
+  clips cut as a **sliding** window so consecutive windows have consecutive centres and `j`/`k`
+  is a real per-frame axis. Sequential clips here would give one prediction every 7 frames.
+  The trial's first and last `clip_len // 2` frames are never a window's centre, so they are
+  skipped — inherent to central-frame reporting, and accepted. Measured on the meat dataset:
+  10 trials × ~20 central frames, video frames 3..22 of 26.
+
 `visualise_gnn()` was reworked in three ways, all in `cnn/visualise.py`:
 
 - **One Qt window, not five OpenCV ones.** The five panels (Ground Truth, Hard Prediction,
@@ -158,6 +175,32 @@ there. On Python 3.10 importing **PySide6 before torch** breaks torch — PySide
 `TypeError: Plain typing.Self is not valid as type argument`. Importing at module scope would
 put PySide6 first. The same lazy-import rule already applies to the annotation viewers, for the
 separate reason that their small env has no torch.
+
+### The vessel map (`vessel_map.sh`) and the confusion colour scheme
+
+`predict_exp.py::evaluate_downscaled()` writes **two** confusion maps, each as a raw `.png` and
+a legended `.pdf` (paths in the `files` block of `system-params.json`):
+
+1. `confusion_overlay_vein_map.*` — prediction vs the **video-derived** ground truth. The video
+   one, not the photo one, because it is on the same reprojected grid as the prediction.
+2. `ground_truth_sources_overlay.*` — the two **independent** ground truths against each other,
+   video-derived (reference) vs photo-derived (candidate), written by
+   `overlay_ground_truth_sources()`. Neither is a model output; those are roles chosen so the
+   colour scheme carries over. Expect lots of blue: the photo sees the whole phantom, the video
+   only the swept region. It also prints the video-vs-photo IoU, which bounds what any model
+   could score. Measured: **0.2640**.
+
+**One colour scheme, defined once** in `Visualisation.CONFUSION_COLOURS_RGB`:
+green = both say vessel, **red = reference says vessel and the other does not (a miss)**,
+**blue = the other says vessel and the reference does not (a false alarm)**, black = neither.
+Red-for-misses is deliberate (a missed vessel is the dangerous error in palpation) and is the
+*opposite* of the old scheme, which also used white for TP — do not "restore" it.
+
+**`create_confusion_matrix_overlay()` returns float RGB**, for `plt.imshow()`. Anything writing
+it with `cv2.imwrite` must go through **`confusion_overlay_bgr()`**, which does the flip. Handing
+RGB straight to `cv2.imwrite` swaps red and blue, which on this scheme silently turns every miss
+into a false alarm — that was a real bug in the old code, where the PNG and the PDF panel
+disagreed. `confusion_legend_handles()` builds the legend from the same dict so it cannot drift.
 
 Why containerised Wayland is fast: the entire client/compositor interface is that one Unix
 socket, so a bind-mount puts the container on the identical IPC path a host-native client uses

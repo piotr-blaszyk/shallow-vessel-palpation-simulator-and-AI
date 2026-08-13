@@ -26,14 +26,45 @@
 # meat equivalent of this map - which is also why the paper omits the
 # sim->meat localisation map.
 #
+# THE COLOUR SCHEME, used by every confusion map this script writes. Read it as
+# "what is there, and did we find it":
+#
+#   GREEN  both say vessel                         (agreement, positive)
+#   RED    the reference says vessel, the other does not   (a MISS)
+#   BLUE   the other says vessel, the reference does not   (a FALSE ALARM)
+#   BLACK  neither says vessel                     (agreement, negative)
+#
+# Red for misses rather than for false alarms is deliberate: in a palpation
+# setting a missed vessel is the dangerous error, so it gets the warning colour.
+# It lives in one place, Visualisation.CONFUSION_COLOURS_RGB in cnn/visualise.py.
+#
 # Outputs (under difftactile/output/):
-#   confusion_overlay_vein_map.png            ground truth vs prediction
-#                                             (TP white, FP red, FN blue, TN black)
-#   segmentation_mask_predicted_aggregated.png  predicted vessel mask alone
-#   exp_overlay_downscaled.pdf                the multi-panel comparison figure:
-#                                             photo-derived ground truth,
-#                                             video-derived ground truth,
-#                                             prediction, confusion overlay
+#
+#   1. Prediction vs ground truth - the vessel map proper.
+#      confusion_overlay_vein_map.png   the raw map
+#      confusion_overlay_vein_map.pdf   the same, with a title and a legend
+#      Reference = the VIDEO-derived ground truth, because it is reprojected
+#      onto the same grid as the prediction, so the comparison is like for like.
+#
+#   2. Ground truth from video vs from top-view photo - how well the two
+#      INDEPENDENT ground truths agree, which bounds how well any model could
+#      possibly score against either.
+#      ground_truth_sources_overlay.png   the raw map
+#      ground_truth_sources_overlay.pdf   the same, with a title and a legend
+#      Same colour scheme, with the VIDEO-derived mask as the reference and the
+#      PHOTO-derived one in the "prediction" role - so red means the video saw a
+#      vessel the photo did not, and blue the reverse. Neither is a model output;
+#      those are roles, not claims about which one is right. Expect blue wherever
+#      the sensor never went: the photo sees the whole phantom, the video only
+#      the swept region.
+#      Also prints the video-vs-photo IoU.
+#
+#   3. Supporting figures.
+#      segmentation_mask_predicted_aggregated.png  predicted vessel mask alone
+#      exp_overlay_downscaled.pdf                  the multi-panel comparison:
+#                                                  photo-derived ground truth,
+#                                                  video-derived ground truth,
+#                                                  prediction, confusion overlay
 #
 set -euo pipefail
 
@@ -75,9 +106,23 @@ fi
 python -m difftactile.scripts.script_predict_exp
 
 echo
-echo "Vessel map written to difftactile/output/:"
+echo "Written to difftactile/output/:"
+echo
+echo "  prediction vs ground truth:"
 for f in confusion_overlay_vein_map.png \
-         segmentation_mask_predicted_aggregated.png \
-         exp_overlay_downscaled.pdf; do
-    [ -f "difftactile/output/${f}" ] && echo "  ${f}"
+         confusion_overlay_vein_map.pdf; do
+    [ -f "difftactile/output/${f}" ] && echo "    ${f}"
 done
+echo "  ground truth from video vs from top-view photo:"
+for f in ground_truth_sources_overlay.png \
+         ground_truth_sources_overlay.pdf; do
+    [ -f "difftactile/output/${f}" ] && echo "    ${f}"
+done
+echo "  supporting:"
+for f in segmentation_mask_predicted_aggregated.png \
+         exp_overlay_downscaled.pdf; do
+    [ -f "difftactile/output/${f}" ] && echo "    ${f}"
+done
+echo
+echo "Colours: green = both say vessel, red = reference says vessel and the other"
+echo "does not, blue = the other says vessel and the reference does not, black = neither."

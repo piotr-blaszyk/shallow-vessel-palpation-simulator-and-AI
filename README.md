@@ -69,13 +69,26 @@ cd shallow-vessel-palpation-simulator-and-AI
 wget https://zenodo.org/records/21900934/files/shallow-vessel-palpation-data.tar.gz
 ./data/restore_data.sh shallow-vessel-palpation-data.tar.gz
 
-# 3. Build the image (~10-30 min, downloads several GB) and start the container
-./docker/docker-build.sh
-./docker/docker-run.sh
+# 3. Build the image (~10-30 min, downloads several GB), start the container,
+#    and open a shell inside it
+cd docker
+./docker-build.sh
+./docker-run.sh
+./docker-connect.sh
 
-# 4. Verify GPU, dependencies and data are all in place
-docker exec -it vessel-palpation ./docker/run_pipeline.sh check
+# 4. You are now INSIDE the container. Verify GPU, dependencies and data
+cd docker
+./run_pipeline.sh check
 ```
+
+> **Everything from step 4 onwards runs *inside* the container, from the `docker/` directory.**
+> `./docker-connect.sh` puts you there; `cd docker` is what makes the `./run_pipeline.sh` form
+> below work. The two exceptions are the viewer scripts — `view_predictions.sh` and
+> `annotate_data_docker.sh` — which are launched from the **host** and `docker exec` into the
+> container themselves; each says so where it appears.
+>
+> If you prefer not to keep a shell open, every in-container command below is equivalent to
+> `docker exec -it vessel-palpation ./docker/<script> <args>` run from the host.
 
 ### Reproduce the published results
 
@@ -83,17 +96,19 @@ The paper's three models — one per (train → test) configuration over the sim
 silicone (**B**) and meat (**C**) datasets — are selected **by name**, with no source editing:
 
 ```bash
+# (inside the container, from the docker/ directory)
+
 # Evaluate the sim-trained GNN on the real SILICONE phantom -> ROC curve
-docker exec -it vessel-palpation ./docker/run_pipeline.sh A-to-B
+./run_pipeline.sh A-to-B
 
 # Cross-domain: test the sim-trained checkpoint on real MEAT (no retraining)
-docker exec -it vessel-palpation ./docker/run_pipeline.sh A-to-C
+./run_pipeline.sh A-to-C
 
 # Train on real MEAT trials, test on silicone
-docker exec -it vessel-palpation ./docker/run_pipeline.sh C-to-B
+./run_pipeline.sh C-to-B
 
 # ...or all three in sequence
-docker exec -it vessel-palpation ./docker/run_pipeline.sh all-scenarios
+./run_pipeline.sh all-scenarios
 ```
 
 Each configuration also takes `--train` (reproduce the model from scratch) or `--eval` (load
@@ -115,11 +130,13 @@ trained yourself, give six scenarios. `script_auroc_all_scenarios` measures all 
 pass — per **marker node across video frames**, not from a reprojected phantom map:
 
 ```bash
+# (inside the container; this one is a module, so the docker/ directory is irrelevant)
+
 # score every scenario whose checkpoint is present -> AUROC_RESULTS.md
-docker exec -it vessel-palpation python -m difftactile.scripts.script_auroc_all_scenarios
+python -m difftactile.scripts.script_auroc_all_scenarios
 
 # published checkpoints only (no training needed)
-docker exec -it vessel-palpation python -m difftactile.scripts.script_auroc_all_scenarios --pretrained
+python -m difftactile.scripts.script_auroc_all_scenarios --pretrained
 ```
 
 ROC curves are written one per scenario to `difftactile/output/roc_curves/`
@@ -129,36 +146,63 @@ The `retrained` rows need a `--train` run of the matching configuration first.
 ### Inspect predictions frame by frame
 
 An interactive viewer that steps through the test-set frames and shows the confusion overlay
-(green TP, yellow TN, red FP, blue FN) alongside the ground truth and soft predictions. The
+(per marker: green TP, yellow TN, red FP, blue FN — note this is the marker-dot scheme, not the
+[vessel map's](#birds-eye-vessel-localisation-map)) alongside the ground truth and soft predictions. The
 configuration selects **both** the model weights and the test dataset, so all six scenarios are
 reachable by name:
 
 ```bash
-./docker/view_predictions.sh A-to-B              # published checkpoint
-./docker/view_predictions.sh A-to-C --retrained  # locally trained
-./docker/view_predictions.sh A-to-B --x11        # force X11 instead of Wayland
+./docker/view_predictions.sh A-to-B --central              # published checkpoint
+./docker/view_predictions.sh A-to-B --all                  # every frame of every window
+./docker/view_predictions.sh A-to-C --central --retrained  # locally trained
+./docker/view_predictions.sh A-to-B --all --x11            # force X11 instead of Wayland
 ```
 
 Run it from the **host** — like `annotate_data_docker.sh` it `docker exec`s into the running
 container for you (start it with `./docker/docker-run.sh` first). It still runs *inside* the
 container, because it needs torch and CUDA for inference; there is no bare-metal variant.
 
-**Step through it with the keyboard**, one key per action across the three nested levels the
-data actually has — a trial holds several clips, and a clip holds `clip_len` frames:
+#### Which frames: `--central` or `--all` (required)
 
-| Key | Action |
-|---|---|
-| `i` / `o` | previous / next **trial** |
-| `j` / `k` | previous / next **clip**, within the trial |
-| `n` / `m` | previous / next **frame**, within the clip |
-| `q` | quit |
+The model consumes a **`clip_len`-frame sliding window** (`clip_len` is 7) and predicts a label
+for *every* frame in it. That is a training decision — supervising all seven frames gives far
+more learning signal per window than supervising one — but it is **not** what gets reported.
+Only the **central** frame's prediction is scored, because it is the only one with temporal
+context on both sides. That masking is real and lives in the code: `dataset.py::get_mask()`
+marks exactly frame `clip_len // 2`, and `segmentation_gnn.shared_step()` applies it in the
+`val` and `test` stages (but not in `train`), as does `evaluate_and_plot_roc()`.
 
-Changing trial or clip lands on that unit's first frame, and every move clamps at the ends
+So the viewer offers both views, and **you must pick one — there is no default**, because
+mistaking the model's off-centre outputs for the reported ones would flatter or damn it for no
+reason:
+
+| Flag | Shows | Navigation |
+|---|---|---|
+| `--central` | one prediction per window: its **central frame** — what is reported and scored | `i`/`o` trial, `j`/`k` central frame |
+| `--all` | **every** frame of every window, off-centre predictions included | `i`/`o` trial, `j`/`k` clip, `n`/`m` frame |
+
+| Key | `--central` | `--all` |
+|---|---|---|
+| `i` / `o` | previous / next **trial** | previous / next **trial** |
+| `j` / `k` | previous / next **central frame**, within the trial | previous / next **clip**, within the trial |
+| `n` / `m` | — | previous / next **frame**, within the clip |
+| `q` | quit | quit |
+
+Changing trial (or clip) lands on that unit's first frame, and every move clamps at the ends
 rather than wrapping. Nothing advances on its own.
 
-The **Metadata** panel reports exactly where you are: the trial number and what that trial is
-(e.g. "1 silicone straw beneath 2 steaks"), the clip number, the frames the clip covers as a
-closed interval `[first, last]`, and the frame within the clip.
+Under `--central` the clips are cut as a **sliding** window (one starting at every frame), so
+consecutive windows have consecutive centres and `j`/`k` walks the trial frame by frame. The
+one consequence is that a trial's **first and last `clip_len // 2` frames — 3 of each — are
+never any window's centre**, so they have no prediction and are skipped. That is inherent to
+central-frame reporting, not a limitation of the viewer. Under `--all` the clips are instead
+tiled **sequentially** (non-overlapping), so stepping walks each trial once from start to
+finish rather than dropping you into the middle of a vein sweep.
+
+The **Metadata** panel reports exactly where you are. Under `--all`: the trial number and what
+that trial is (e.g. "1 silicone straw beneath 2 steaks"), the clip number, the frames the clip
+covers as a closed interval `[first, last]`, and the frame within the clip. Under `--central`:
+the trial, the central-frame number within it, and the video frame that window is centred on.
 
 The five panels (Ground Truth, Hard Prediction, Confusion Matrix, Soft Prediction, Metadata)
 are tiled into **one** Qt window rather than five OpenCV ones. That window is a native Wayland
@@ -173,13 +217,44 @@ Projects the per-marker predictions through the sensor pose onto the phantom sur
 1 mm/pixel and renders the top view against the ground truth:
 
 ```bash
-docker exec -it vessel-palpation ./docker/vessel_map.sh
+# (inside the container, from the docker/ directory)
+./vessel_map.sh
 ```
 
-Writes `confusion_overlay_vein_map.png`, `segmentation_mask_predicted_aggregated.png` and
-`exp_overlay_downscaled.pdf` to `difftactile/output/`. **Silicone only** — the workspace bounds
-and sensor offsets are specific to that rig. Add `--cached` to reuse the probabilities from a
-previous run instead of re-running inference.
+It writes two confusion maps, each as a raw `.png` and as a `.pdf` carrying a title and a
+legend, into `difftactile/output/`:
+
+| Artifact | Compares |
+|---|---|
+| `confusion_overlay_vein_map.{png,pdf}` | the **prediction** against the video-derived ground truth |
+| `ground_truth_sources_overlay.{png,pdf}` | the two **independent ground truths** against each other |
+
+Both use the same colour scheme, defined once in `Visualisation.CONFUSION_COLOURS_RGB`:
+
+| Colour | Meaning |
+|---|---|
+| 🟩 **green** | both say vessel |
+| 🟥 **red** | the **reference** says vessel, the other does not — a **miss** |
+| 🟦 **blue** | the **other** says vessel, the reference does not — a **false alarm** |
+| ⬛ **black** | neither says vessel |
+
+Red for misses rather than for false alarms is deliberate: in a palpation setting the missed
+vessel is the dangerous error, so it takes the warning colour.
+
+The **second** map answers a different question from the first. The vessel positions are known
+two independent ways — reprojected from the annotated **video** through the sensor pose (the
+same 2D→3D→2D path the prediction takes), and segmented once from an overhead **photo** of the
+phantom. That map shows where they disagree, taking the video as the reference and the photo in
+the "prediction" role, so the colours carry over unchanged; it also prints the video-vs-photo
+IoU. Expect blue wherever the sensor never went — the photo sees the whole phantom, the video
+only the swept region — so read it as agreement *within* the swept region rather than as one
+source being wrong. It is worth having because it bounds how well any model could score against
+either ground truth.
+
+Also writes `segmentation_mask_predicted_aggregated.png` (the predicted mask alone) and
+`exp_overlay_downscaled.pdf` (the multi-panel comparison). **Silicone only** — the workspace
+bounds and sensor offsets are specific to that rig. Add `--cached` to reuse the probabilities
+from a previous run instead of re-running inference.
 
 ### Annotate or review the real-world datasets
 
@@ -268,11 +343,13 @@ The simulated training set ships in the Zenodo bundle, so **this is not required
 reproduce the results. Run it only if you want to extend the project:
 
 ```bash
+# (inside the container, from the docker/ directory)
+
 # ~2-3 minutes: a single loop (8 trials), to check the simulator works
-docker exec -it vessel-palpation ./docker/run_pipeline.sh sim-short
+./run_pipeline.sh sim-short
 
 # ~2 h 45 m: a full 800-trial collection run
-docker exec -it vessel-palpation ./docker/run_pipeline.sh sim-full
+./run_pipeline.sh sim-full
 ```
 
 > **To regenerate the *published* dataset specifically, set
@@ -283,14 +360,31 @@ docker exec -it vessel-palpation ./docker/run_pipeline.sh sim-full
 > (it ends in ~36 timesteps, below the `ts > 80` recording threshold).
 >
 > ```bash
-> docker exec -it -e DIFFTACTILE_TRAJECTORIES=3 vessel-palpation \
->     ./docker/run_pipeline.sh sim-full
+> # (inside the container, from the docker/ directory)
+> DIFFTACTILE_TRAJECTORIES=3 ./run_pipeline.sh sim-full
 > ```
 
-Open an interactive shell with `./docker/docker-connect.sh`. GUI windows (Taichi GGUI,
-the cv2 annotation tool, matplotlib) appear on your desktop automatically — the image ships
-Vulkan, which GGUI requires — and `DIFFTACTILE_HEADLESS=1` suppresses them when running over
-SSH or in CI.
+GUI windows (Taichi GGUI, the cv2 annotation tool, matplotlib) appear on your desktop
+automatically — the image ships Vulkan, which GGUI requires — and `DIFFTACTILE_HEADLESS=1`
+suppresses them when running over SSH or in CI.
+
+### Rebuilding and restarting the container
+
+If you change the `Dockerfile`, or a `docker-run.sh` change needs picking up (a container keeps
+the mounts, environment and ulimits it was **created** with, so a running one never gains them),
+stop it and go round again — from the **host**, in `docker/`:
+
+```bash
+docker stop vessel-palpation
+./docker-build.sh
+./docker-run.sh
+```
+
+There is no `docker rm` step: `docker-run.sh` starts the container with `--rm`, so **stopping it
+also removes it**. That is the container only — the *image* built by `docker-build.sh` persists,
+which is why an unchanged `Dockerfile` makes the rebuild a near-instant cache hit and only
+`docker-run.sh` really needs re-running. It also means nothing inside the container survives a
+stop: keep your work in the repository, which is bind-mounted, not in the container filesystem.
 
 > With the GUI enabled, Taichi may segfault **during interpreter shutdown**, after the
 > simulation has already printed `all done` and written its data. This is a teardown-only
