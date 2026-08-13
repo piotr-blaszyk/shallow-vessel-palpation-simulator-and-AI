@@ -53,7 +53,8 @@ import matplotlib.pyplot as plt
 from difftactile.cnn.common import *
 from difftactile.cnn.dataset import *
 from difftactile.cnn.curve_plots import plot_pr, plot_roc
-from difftactile.cnn.segmentation_gnn import GNN
+from difftactile.cnn.segmentation_gnn import GNN, marker_iou
+from difftactile.cnn.curve_plots import DECISION_THRESHOLD
 from difftactile.main.paths import repo_path
 
 
@@ -270,6 +271,10 @@ def evaluate_scenario(config, weights):
     plot_pr(plt, precision, recall, all_probs, all_labels, ap, pr_path,
             thresholds_pr=pr_thresholds)
 
+    # IoU at the decision threshold - the manuscript's table. Threshold-dependent,
+    # unlike the two above; see `marker_iou` for what foreground/background mean.
+    ious = marker_iou(all_probs, all_labels)
+
     n_pos = int(all_labels.sum())
     baseline = n_pos / len(all_labels)
     # The lift over chance is what makes AP readable: its baseline is the
@@ -277,6 +282,8 @@ def evaluate_scenario(config, weights):
     lift = ap / baseline if baseline > 0 else float("nan")
     print(f"AUROC = {auc:.4f}   ({len(all_labels)} nodes, {n_pos} positive)")
     print(f"AP    = {ap:.4f}   (chance = {baseline:.4f}, i.e. {lift:.2f}x lift)")
+    print(f"IoU   = {ious['foreground']:.4f} foreground (vessel present), "
+          f"{ious['background']:.4f} background (vessel absent)")
     print(f"ROC curve written to: {out_path}")
     print(f"PR curve written to:  {pr_path}")
     return {
@@ -286,6 +293,9 @@ def evaluate_scenario(config, weights):
         "auroc": float(auc),
         "ap": float(ap),
         "ap_lift": float(lift),
+        "iou_foreground": ious["foreground"],
+        "iou_background": ious["background"],
+        "iou_macro": ious["macro"],
         "checkpoint": ckpt_path,
         "num_nodes": int(len(all_labels)),
         "num_positive": n_pos,
@@ -344,20 +354,40 @@ def write_markdown(results, md_path):
         "  column, so AP must be read against that - hence the `Lift` column",
         "  (AP / chance), which is how many times better than random ranking the model is.",
         "",
+        "### Intersection over union",
+        "",
+        f"Also reported, at decision threshold **{DECISION_THRESHOLD}**, over the same",
+        "frame-by-frame marker predictions (**not** the reprojected bird's-eye phantom map,",
+        "whose separate IoU comes from `vessel_map.sh`):",
+        "",
+        "- **Foreground IoU** — the *vessel present* class. Note this is the agreement between",
+        "  prediction and ground truth over that class, `|pred AND true| / |pred OR true|`, not",
+        "  \"what the ground truth says\" or \"what the prediction says\" on its own.",
+        "- **Background IoU** — the same for *vessel absent*. Always the flattering number: the",
+        "  negative class is ~89% of nodes on silicone and ~93% on meat, so even a poor model",
+        "  overlaps with it heavily. The foreground number is the informative one.",
+        "",
+        "Unlike AUROC and AP, IoU **depends on the decision threshold**, so it carries every",
+        "caveat about that choice. It is reported because it is the intuitive quantity, not",
+        "because it is the most trustworthy one.",
+        "",
         f"ROC curves: `{ROC_DIR}/roc_curve_<config>_<weights>.pdf`",
         f"PR curves:  `{PR_DIR}/pr_curve_<config>_<weights>.pdf`",
         "",
-        "| Scenario | Train -> Test | Weights | AUROC | AP | Chance | Lift | Nodes | Positive |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Scenario | Train -> Test | Weights | AUROC | AP | IoU fg | IoU bg | Chance | Lift | Nodes | Positive |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in results:
         name = f"{r['config']} [{r['weights']}]"
         if "error" in r:
-            lines.append(f"| {name} | - | {r['weights']} | not run | - | - | - | - | - |")
+            lines.append(
+                f"| {name} | - | {r['weights']} | not run | - | - | - | - | - | - | - |"
+            )
             continue
         lines.append(
             f"| {name} | {r['description']} | {r['weights']} | **{r['auroc']:.4f}** | "
-            f"**{r['ap']:.4f}** | {r['positive_fraction']:.4f} | {r['ap_lift']:.2f}x | "
+            f"**{r['ap']:.4f}** | **{r['iou_foreground']:.4f}** | {r['iou_background']:.4f} | "
+            f"{r['positive_fraction']:.4f} | {r['ap_lift']:.2f}x | "
             f"{r['num_nodes']} | {r['num_positive']} ({r['positive_fraction']:.1%}) |"
         )
     errors = [r for r in results if "error" in r]

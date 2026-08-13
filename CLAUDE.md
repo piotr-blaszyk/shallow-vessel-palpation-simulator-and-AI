@@ -193,6 +193,23 @@ and `main()` (C→B) call it after their `trainer.test()`, which previously repo
 fixed threshold and nothing else. `auroc_all_scenarios.py` has its own copy of the collection
 loop (it must, since it loads checkpoints itself) and reports the same pair.
 
+**IoU is reported too, by the same function.** `marker_iou()` computes foreground (class 1,
+vessel present) and background (class 0, vessel absent) IoU over the pooled scored marker nodes,
+and `score_ranking_metrics()` returns them, so all three configurations print both. Previously
+A→B `--eval` reported **no IoU at all**, and the other two emitted it only inside a Lightning
+table as `test_iou/0` / `test_iou/1`, which never said which class was which.
+
+Verified against that Lightning table on A→C: `test_iou/1` = 0.19748 = **foreground**,
+`test_iou/0` = 0.80767 = **background** — so the 0.198 cross-domain figure quoted elsewhere in
+this file is the foreground IoU. Keep `marker_iou()` and `compute_ious_acc()` in agreement; they
+are independent implementations of the same quantity and their agreement is the check.
+
+Note "foreground" is the **class**, not a side of the comparison: it is `|pred AND true| / |pred
+OR true|` over the vessel-present class, needing both. Background IoU is always the flattering
+number (the negative class is ~89% of nodes on silicone, ~93% on meat). And unlike AUROC/AP it
+is **threshold-dependent** — it uses `DECISION_THRESHOLD`, not `MAP_DECISION_THRESHOLD`, since
+it is a reported metric rather than a figure.
+
 **Why both, and why not a tuned threshold.** Both are ranking-based: they read only the *order*
 of the probabilities, never their scale. In a sim-to-real project the scale is the first thing to
 shift across a domain gap, so a single-threshold score confounds "doesn't know where the vessels
@@ -288,8 +305,13 @@ std, range, and every per-seed value). Design points worth keeping:
 - `sweep.json` beside the weights repeats every metric plus each checkpoint's path, so a sweep
   directory is self-contained.
 
+The sweep summarises **AUROC, AP and both IoU values** as mean ± std, range and per-seed rows.
+
 Variance is very uneven across configurations, which is itself a reportable finding: over three
-seeds A→C is ±0.0008 (large simulated training set) while C→B is ±0.0208 — 25× more.
+seeds A→C is ±0.0008 (large simulated training set) while C→B is ±0.0208 — 25× more. **IoU is
+much less stable than the ranking metrics**, as expected of a threshold-dependent metric: C→B's
+background IoU has std ±0.1184 over three seeds, an eighth of the metric's whole range, so a
+single-seed IoU there is close to meaningless.
 
 **The prediction viewer shows ONE model, never a mean over seeds — do not "improve" this into an
 ensemble view.** `view_predictions.sh --sweep TS [--seed N]` selects a specific seed's model

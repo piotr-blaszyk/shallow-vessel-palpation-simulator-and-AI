@@ -229,6 +229,11 @@ def sweep(config, num_seeds, run_dir, seeds=None):
         "runs": runs,
         "auroc": summarise([r["auroc"] for r in runs]),
         "ap": summarise([r["ap"] for r in runs]),
+        # IoU gets the same treatment, which is the point of a sweep for the
+        # manuscript's table: a single-seed IoU is as seed-dependent as a
+        # single-seed AUROC, and more so on the small meat training set.
+        "iou_foreground": summarise([r["iou_foreground"] for r in runs]),
+        "iou_background": summarise([r["iou_background"] for r in runs]),
     }
     if runs:
         # Constant across seeds (same test set), so carried once rather than per row.
@@ -251,6 +256,8 @@ def format_markdown(summaries, run_dir=None):
         "comparing two configurations, compare their distributions - a gap smaller than the",
         "seed spread is not evidence of anything.",
         "",
+        "### Threshold-free metrics",
+        "",
         "| Config | Seeds | AUROC mean ± std | AUROC range | AP mean ± std | AP range | Chance |",
         "|---|---|---|---|---|---|---|",
     ]
@@ -266,6 +273,31 @@ def format_markdown(summaries, run_dir=None):
             f"**{a['mean']:.4f} ± {a['std']:.4f}** | {a['min']:.4f}–{a['max']:.4f} | "
             f"**{p['mean']:.4f} ± {p['std']:.4f}** | {p['min']:.4f}–{p['max']:.4f} | "
             f"{chance_cell} |"
+        )
+
+    lines += [
+        "",
+        "### Intersection over union",
+        "",
+        "Over the frame-by-frame marker predictions, at the decision threshold — **this is the",
+        "table to quote in the manuscript**, with the ± rather than a single seed's value.",
+        "*Foreground* is the vessel-present class and *background* the vessel-absent one; each",
+        "is the agreement between prediction and ground truth over that class, so neither is",
+        "\"what the ground truth says\" alone. Background IoU is always the flattering number,",
+        "since the negative class dominates — read the foreground column as the real result.",
+        "",
+        "| Config | Seeds | Foreground IoU mean ± std | Foreground range | Background IoU mean ± std | Background range |",
+        "|---|---|---|---|---|---|",
+    ]
+    for s in summaries:
+        if not s["runs"]:
+            lines.append(f"| {s['config']} | 0 | not run | - | - | - |")
+            continue
+        fg, bg = s["iou_foreground"], s["iou_background"]
+        lines.append(
+            f"| {s['config']} | {fg['n']} | "
+            f"**{fg['mean']:.4f} ± {fg['std']:.4f}** | {fg['min']:.4f}–{fg['max']:.4f} | "
+            f"{bg['mean']:.4f} ± {bg['std']:.4f} | {bg['min']:.4f}–{bg['max']:.4f} |"
         )
 
     if run_dir is not None:
@@ -285,12 +317,14 @@ def format_markdown(summaries, run_dir=None):
         if not s["runs"]:
             continue
         lines += [f"**{s['config']}**", "",
-                  "| Seed | AUROC | AP | Seconds | Weights |", "|---|---|---|---|---|"]
+                  "| Seed | AUROC | AP | IoU fg | IoU bg | Seconds | Weights |",
+                  "|---|---|---|---|---|---|---|"]
         for r in sorted(s["runs"], key=lambda r: r["seed"]):
             ckpt = r.get("checkpoint")
             where = f"`{os.path.basename(os.path.dirname(ckpt))}/`" if ckpt else "-"
             lines.append(
                 f"| {r['seed']} | {r['auroc']:.4f} | {r['ap']:.4f} | "
+                f"{r['iou_foreground']:.4f} | {r['iou_background']:.4f} | "
                 f"{r['seconds']:.1f} | {where} |"
             )
         failed = set(s["seeds_requested"]) - {r["seed"] for r in s["runs"]}
@@ -354,12 +388,16 @@ def main(configs, num_seeds, seeds=None):
             print(f"{s['config']}: no successful runs")
             continue
         a, p = s["auroc"], s["ap"]
-        print(
-            f"{s['config']}: AUROC {a['mean']:.4f} ± {a['std']:.4f} "
-            f"[{a['min']:.4f}, {a['max']:.4f}]   "
-            f"AP {p['mean']:.4f} ± {p['std']:.4f} [{p['min']:.4f}, {p['max']:.4f}]"
-            f"   over {a['n']} seeds"
-        )
+        fg, bg = s["iou_foreground"], s["iou_background"]
+        print(f"\n{s['config']}  (over {a['n']} seeds)")
+        print(f"  AUROC          {a['mean']:.4f} ± {a['std']:.4f}   "
+              f"[{a['min']:.4f}, {a['max']:.4f}]")
+        print(f"  AP             {p['mean']:.4f} ± {p['std']:.4f}   "
+              f"[{p['min']:.4f}, {p['max']:.4f}]")
+        print(f"  IoU foreground {fg['mean']:.4f} ± {fg['std']:.4f}   "
+              f"[{fg['min']:.4f}, {fg['max']:.4f}]")
+        print(f"  IoU background {bg['mean']:.4f} ± {bg['std']:.4f}   "
+              f"[{bg['min']:.4f}, {bg['max']:.4f}]")
 
     # Machine-readable twin of the Markdown, kept beside the weights it
     # describes so a sweep directory is self-contained: metrics, and the path of

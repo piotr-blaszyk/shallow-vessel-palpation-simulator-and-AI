@@ -123,7 +123,7 @@ configurations in sequence would silently change the reported AUC. The `<config>
 keeps A→B and A→C apart, since they share the same underlying `*_sim` artifact names. Pass
 `DIFFTACTILE_OVERWRITE_PUBLISHED=1` if you deliberately want to replace them.
 
-### Ranking metrics for all six scenarios
+### IoU, AUROC and AP for all six scenarios
 
 The three configurations above, each scored from either the published checkpoint or one you
 trained yourself, give six scenarios. `score_all_scenarios.sh` measures all of them in one
@@ -145,6 +145,34 @@ pass — per **marker node across video frames**, not from a reprojected phantom
 Scenarios whose checkpoint is absent are skipped with a note rather than failing the run, so
 this is safe on a fresh restore where nothing has been retrained yet. The `retrained` rows need
 a `--train` run of the matching configuration first.
+
+> **This is the script that reports the paper's IoU table.** `./score_all_scenarios.sh` prints
+> and tabulates **foreground IoU** (vessel present) and **background IoU** (vessel absent) for
+> every model, alongside AUROC and AP, into `AUROC_RESULTS.md`. The three `run_pipeline.sh`
+> configurations print the same two numbers for their own model. Add `--seeds N` for
+> **mean ± std** over N seeds, which is what a table ought to quote.
+
+#### What foreground and background IoU mean
+
+Each is an ordinary per-class intersection-over-union over the **frame-by-frame marker
+predictions** — not the reprojected bird's-eye phantom map, which has its own separate IoU from
+`vessel_map.sh`:
+
+```
+foreground IoU = |predicted vessel AND truly vessel| / |predicted vessel OR truly vessel|
+background IoU = the same, for the "vessel absent" class
+```
+
+So "foreground" is the **class label**, not a claim about one side: it is the agreement between
+prediction and ground truth over the vessel-present class, needing both. A model that finds
+every vessel marker but also flags many empty ones scores a low foreground IoU despite perfect
+recall, because the union grows.
+
+**Background IoU is always the flattering one** — the negative class is ~89% of nodes on
+silicone and ~93% on meat, so even a poor model overlaps with it heavily. Read the foreground
+number as the real result. And unlike AUROC and AP, IoU **depends on the decision threshold**
+(`DECISION_THRESHOLD`, 0.5), so it carries every caveat about that choice; it is reported
+because it is the intuitive quantity, not because it is the most trustworthy one.
 
 #### Why AUROC *and* average precision
 
@@ -881,23 +909,29 @@ worker counts change floating-point reduction order, so cross-machine agreement 
 ```
 
 It trains each configuration from scratch once per seed (0…N−1) and appends a **Seed sweep**
-section to `AUROC_RESULTS.md` with mean ± std and range of AUROC and AP, plus every per-seed
-value so an outlier is visible rather than averaged away. The existing scenario table is kept —
-the section is replaced rather than duplicated on a re-run.
+section to `AUROC_RESULTS.md` with mean ± std and range of AUROC, AP **and both IoU values**,
+plus every per-seed value so an outlier is visible rather than averaged away. The existing
+scenario table is kept — the section is replaced rather than duplicated on a re-run.
 
 Each seed runs in a **fresh subprocess**, so "seed *k*" means the same thing inside a sweep as
 it does standalone; run in one process, the second run would inherit CUDA context and RNG state
 from the first. Measured on three seeds:
 
-| Config | AUROC mean ± std | AUROC range | AP mean ± std |
-|---|---|---|---|
-| A-to-B | 0.7740 ± 0.0088 | 0.7639–0.7792 | 0.3243 ± 0.0048 |
-| C-to-B | 0.6767 ± 0.0208 | 0.6550–0.6964 | 0.2788 ± 0.0106 |
-| A-to-C | 0.8238 ± 0.0008 | 0.8229–0.8244 | 0.2203 ± 0.0004 |
+| Config | AUROC mean ± std | AP mean ± std | IoU foreground | IoU background |
+|---|---|---|---|---|
+| A-to-B | 0.7740 ± 0.0088 | 0.3243 ± 0.0048 | 0.2023 ± 0.0314 | 0.8636 ± 0.0193 |
+| C-to-B | 0.6767 ± 0.0208 | 0.2788 ± 0.0106 | 0.1536 ± 0.0133 | 0.5397 ± 0.1184 |
+| A-to-C | 0.8238 ± 0.0008 | 0.2203 ± 0.0004 | 0.1922 ± 0.0032 | 0.7765 ± 0.0188 |
 
-Note how unevenly the variance is spread: A→C is almost seed-independent (±0.0008) because it
-trains on the large simulated set, while C→B swings 25× more (±0.0208) on its 139 meat clips.
-That contrast is itself worth reporting.
+Two things worth noticing, both arguments for quoting ± rather than a single run:
+
+- **The variance is very unevenly spread.** A→C is almost seed-independent on AUROC (±0.0008)
+  because it trains on the large simulated set, while C→B swings 25× more (±0.0208) on its 139
+  meat clips.
+- **IoU is markedly less stable than the ranking metrics**, which is expected — it depends on
+  the decision threshold, so it absorbs calibration wobble that AUROC and AP ignore by
+  construction. C→B's *background* IoU is the extreme case at ±0.1184, an eighth of the metric's
+  whole range. A single-seed IoU there is close to meaningless.
 
 **Every seed's weights are kept.** Each sweep creates a new timestamped directory, so sweeping
 repeatedly accumulates rather than overwriting:

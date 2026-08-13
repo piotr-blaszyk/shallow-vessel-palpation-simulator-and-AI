@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 #
-# Threshold-free ranking metrics for every canonical scenario, in one pass.
+# IoU, AUROC and average precision for every canonical scenario, in one pass.
+#
+# THIS IS THE SCRIPT THAT REPORTS THE PAPER'S IoU TABLE: foreground IoU (vessel
+# present) and background IoU (vessel absent), over the frame-by-frame marker
+# predictions - NOT the reprojected bird's-eye phantom map, whose separate IoU
+# comes from vessel_map.sh. Each is |pred AND true| / |pred OR true| over that
+# class, so "foreground" names the class, not one side of the comparison.
+# Background IoU is always the flattering number, since the negative class is
+# ~89% of nodes on silicone and ~93% on meat - read foreground as the result.
+#
+# Unlike AUROC and AP, IoU depends on the decision threshold, so it carries every
+# caveat about that choice. Use --seeds N to get mean +/- std instead of one run.
 #
 # A short wrapper for:
 #     python -m difftactile.scripts.script_auroc_all_scenarios [args]

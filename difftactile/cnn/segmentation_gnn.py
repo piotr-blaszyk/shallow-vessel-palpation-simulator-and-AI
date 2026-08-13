@@ -1274,6 +1274,57 @@ def train_on_sim(test_on="silicone"):
     return metrics
 
 
+def marker_iou(probs, labels, threshold=DECISION_THRESHOLD):
+    """Foreground and background IoU over marker nodes, as the paper's table reports.
+
+    WHAT THE TWO NUMBERS MEAN. Each is an ordinary per-class intersection-over-
+    union, computed over every scored marker node pooled together (not averaged
+    per frame):
+
+        foreground IoU = |predicted vessel AND truly vessel|
+                         --------------------------------------
+                         |predicted vessel OR  truly vessel|
+
+        background IoU = the same with "vessel absent" as the class.
+
+    So "foreground" is NOT "ground truth says vessel" nor "prediction says
+    vessel" - it is the class label, and the metric is the agreement between the
+    two over that class. A prediction that finds every vessel marker but also
+    flags many empty ones scores a low foreground IoU despite perfect recall,
+    because the union grows.
+
+    Background IoU is always the flattering one here: the negative class is ~89%
+    of nodes on silicone and ~93% on meat, so even a poor model overlaps heavily
+    with it. Report the pair, and read the foreground number as the real one.
+
+    UNLIKE AUROC AND AP, THIS DEPENDS ON A DECISION THRESHOLD, so it inherits
+    every caveat about that choice (see cnn/curve_plots.py). It is reported
+    because the manuscript's table uses it and it is the intuitive quantity, not
+    because it is the most trustworthy one.
+
+    These are frame-by-frame marker predictions - NOT the reprojected bird's-eye
+    phantom map, whose separate IoU comes from `vessel_map.sh`.
+    """
+    preds = (probs > threshold).astype(int)
+    labels = labels.astype(int)
+
+    ious = {}
+    for class_ix, name in ((1, "foreground"), (0, "background")):
+        pred_mask = preds == class_ix
+        true_mask = labels == class_ix
+        intersection = int((pred_mask & true_mask).sum())
+        union = int((pred_mask | true_mask).sum())
+        # A class absent from both prediction and truth is perfectly agreed on;
+        # present in one but not the other is total disagreement. Matches
+        # `compute_ious_acc()`, which is what the Lightning test table reports.
+        if union == 0:
+            ious[name] = 1.0
+        else:
+            ious[name] = intersection / union
+    ious["macro"] = (ious["foreground"] + ious["background"]) / 2
+    return ious
+
+
 def score_ranking_metrics(model, loader, config, device=None):
     """AUROC and AP for a loaded model over a dataloader, with both figures.
 
@@ -1324,16 +1375,38 @@ def score_ranking_metrics(model, loader, config, device=None):
     plot_pr(plt, precision, recall, all_probs, all_labels, ap, pr_path,
             thresholds_pr=pr_thresholds)
 
+    # IoU at the decision threshold, which is what the manuscript's table
+    # reports. Computed here so all three configurations produce it from one
+    # implementation - previously A-to-B --eval reported no IoU at all, and the
+    # other two only emitted it inside a Lightning table as `test_iou/0` and
+    # `test_iou/1`, which does not say which class is which.
+    ious = marker_iou(all_probs, all_labels)
+
     baseline = float(all_labels.mean())
     lift = ap / baseline if baseline > 0 else float("nan")
     n_pos = int(all_labels.sum())
-    print(f"\nThreshold-free ranking metrics ({config}):")
-    print(f"  AUROC = {auc:.4f}   ({len(all_labels)} nodes, {n_pos} positive)")
-    print(f"  AP    = {ap:.4f}   (chance = {baseline:.4f}, i.e. {lift:.2f}x lift)")
-    print(f"  ROC curve: {roc_path}")
+    print(f"\n=== Metrics for {config} ===")
+    print(f"  nodes scored: {len(all_labels)} ({n_pos} vessel, {baseline:.1%})")
+    print("\n  Threshold-free (what the paper leads with):")
+    print(f"    AUROC = {auc:.4f}")
+    print(f"    AP    = {ap:.4f}   (chance = {baseline:.4f}, i.e. {lift:.2f}x lift)")
+    print(f"\n  IoU at threshold {DECISION_THRESHOLD} "
+          f"(frame-by-frame marker predictions):")
+    print(f"    foreground IoU (vessel present) = {ious['foreground']:.4f}")
+    print(f"    background IoU (vessel absent)  = {ious['background']:.4f}")
+    print(f"    macro IoU (mean of the two)     = {ious['macro']:.4f}")
+    print(f"\n  ROC curve: {roc_path}")
     print(f"  PR curve:  {pr_path}")
-    return {"auroc": float(auc), "ap": float(ap), "chance": baseline,
-            "lift": float(lift)}
+    return {
+        "auroc": float(auc), "ap": float(ap), "chance": baseline,
+        "lift": float(lift),
+        "iou_foreground": ious["foreground"],
+        "iou_background": ious["background"],
+        "iou_macro": ious["macro"],
+        "iou_threshold": DECISION_THRESHOLD,
+        "num_nodes": int(len(all_labels)),
+        "num_positive": n_pos,
+    }
 
 
 def silicone_to_meat():
