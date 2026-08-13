@@ -184,8 +184,35 @@ itself and no compatibility layer is involved. Nothing is forced — set `QT_QPA
 to fall back to X11, which is what to use inside the container or over X forwarding. Because
 Qt needs no X server, `DISPLAY` may be unset entirely: `WAYLAND_DISPLAY` alone is enough.
 
-Running inside the container is no longer the recommended fallback: the image ships neither
-PySide6 nor PyAV, and the script will tell you to run on the host instead.
+There is also an **in-container twin**, `docker/annotate_data_docker.sh`, which runs the same
+two viewers through the same modules and the same PySide6/PyAV versions inside the Docker
+image. It exists so the two can be compared directly — run one, run the other, and any
+difference in responsiveness is the container's rather than the code's. Bare metal is still the
+normal way to annotate; this is a debugging aid.
+
+```bash
+./docker/annotate_data_docker.sh --meat          # native Wayland window (default)
+./docker/annotate_data_docker.sh --meat --x11    # force the X11/Xwayland path instead
+```
+
+Run it from the **host** — it `docker exec`s into the running container for you (start it first
+with `./docker/docker-run.sh`). The default is a genuine Wayland client: the container gets the
+host compositor's socket bind-mounted, which is the entire client/compositor interface, so it
+talks to the compositor over the identical IPC path a host-native client uses, with no proxy or
+nested compositor in between. `--x11` is the A/B switch for isolating a Wayland-specific bug.
+To confirm which you got, run `xlsclients` on the host while a viewer is up — in Wayland mode
+it must not appear. A container started before this feature was added has no Wayland socket;
+`docker stop vessel-palpation && ./docker/docker-run.sh` picks it up.
+
+> **Known limitation: `--x11` is choppy.** Measured on Ubuntu 24.04 / GNOME Wayland, the
+> containerised viewer under Wayland feels **indistinguishable from bare metal** when stepping
+> through frames, which is what the socket bind-mount buys. Under `--x11` it is noticeably
+> choppy — every repaint takes an extra copy through the Xwayland compatibility layer. This is
+> not fixed and is not planned to be: the X11 path exists only as a fallback for X11-only hosts
+> and as an A/B switch for isolating Wayland-specific bugs. **If you are annotating rather than
+> debugging, use the default Wayland path** (or the bare-metal script). Note the cost is
+> Xwayland's, not Docker's — the project's other in-container GUIs are X11-only and pay the same
+> price, but they are not hand-driven frame by frame, so it does not matter for them.
 
 Both need a display and set `DIFFTACTILE_INTERACTIVE=1` for you. Keys are printed on start-up
 (`m`/`n` video or trial, `k`/`j` frame, `q` quit; silicone additionally: left click to add a

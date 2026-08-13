@@ -184,3 +184,52 @@ COPY inputrc /root/.inputrc
 
 COPY inputrc /etc/inputrc
 RUN echo "PS1='[docker \W] '" >> /etc/bash.bashrc
+
+# -----------------------------------------------------------------------------
+# 9. The annotation viewers: PySide6 (Qt 6) + PyAV, and a Qt 6 runtime that can
+#    drive BOTH backends.
+#
+#    Why this is here at all. `docker/annotate_data.sh` runs the two interactive
+#    annotation viewers on bare metal, in the tiny `vessel-palpation-annotator`
+#    micromamba env, because a hand-driven frame stepper is the one tool whose
+#    latency a human actually feels. `docker/annotate_data_docker.sh` is its
+#    in-container twin: same modules, same libraries, so the two can be run
+#    side by side and compared. That comparison is only meaningful if the
+#    container reaches the compositor the same way the host does - natively over
+#    the Wayland socket, with no Xwayland in the path - which is what the
+#    packages below and the socket mounts in docker-run.sh are for.
+#
+#    Backend selection is PER PROCESS, not per container: each app picks its
+#    transport from its own environment (QT_QPA_PLATFORM / DISPLAY /
+#    WAYLAND_DISPLAY). So installing both backends costs nothing at runtime and
+#    lets the Qt viewers run on Wayland while the project's OpenCV/Taichi/Gmsh
+#    windows keep using X11 in the same container.
+#
+#    Package notes:
+#      * libxcb-cursor0 / -icccm4 / -image0 / -keysyms1 / -render-util0 / -util1
+#        are the well-known missing links behind Qt 6's "could not load the Qt
+#        platform plugin xcb" error. The base image already has the other
+#        libxcb-* pieces, and all the WAYLAND libraries (libwayland-client,
+#        -cursor, -egl, libxkbcommon, libEGL) are present too, so only the xcb
+#        side needs topping up.
+#      * libxkbcommon0 is what the Wayland plugin uses for the keymap the
+#        compositor hands it over an fd - the annotator is keyboard-driven, so
+#        this is load-bearing rather than cosmetic.
+#      * libdecor / GTK are NOT installed. Qt draws its own client-side window
+#        decorations via the bundled `libqwayland-generic` plugin.
+#      * PySide6/av versions match requirements/annotator-env.yml so the two
+#        scripts really do run the same code. OpenCV stays the GUI-capable wheel
+#        here (unlike the annotator env) because the rest of this image's
+#        pipeline still opens cv2 windows.
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+        libxcb-render-util0 libxcb-util1 libxcb-shape0 libxcb-xkb1 \
+        libxkbcommon0 libxkbcommon-x11-0 \
+        libwayland-client0 libwayland-cursor0 libwayland-egl1 \
+        libegl1 libdbus-1-3 libfontconfig1 fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m pip install --no-cache-dir \
+        "PySide6==6.9.1" \
+        "av==15.1.0"

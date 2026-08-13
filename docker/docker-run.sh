@@ -45,8 +45,24 @@ if [ -n "$(docker ps -aq -f "name=^/${CONTAINER_NAME}$")" ]; then
 fi
 
 # --- GUI passthrough ----------------------------------------------------------
-# Taichi GGUI, Gmsh's FLTK viewer, the cv2 annotation tool and matplotlib are all
-# genuine X11 GUI applications, so the container needs the host's X server.
+# The container hosts two kinds of GUI application, and they use different
+# transports. Both sockets are therefore mounted, and each app picks its own:
+# backend selection is per PROCESS (via DISPLAY / WAYLAND_DISPLAY /
+# QT_QPA_PLATFORM), never per container, so there is no conflict.
+#
+#   X11 (the default here)  Taichi GGUI, Gmsh's FLTK viewer, the cv2 windows and
+#                           matplotlib. These are X clients with no Wayland
+#                           backend, so they go through the host's X server -
+#                           which on a Wayland desktop is the session's own
+#                           Xwayland, reached at /tmp/.X11-unix.
+#   Wayland (opt-in)        The two PySide6 annotation viewers launched by
+#                           docker/annotate_data_docker.sh. That script unsets
+#                           DISPLAY and forces QT_QPA_PLATFORM=wayland in its own
+#                           process, so it talks straight to the compositor over
+#                           the socket mounted below. See the header there.
+#
+# DISPLAY is still set container-wide because the X11 group is the majority and
+# has no alternative; the Wayland opt-in is what overrides it, not the reverse.
 RUN_DISPLAY="${DISPLAY:-}"
 if [ -z "${RUN_DISPLAY}" ]; then
     for sock in /tmp/.X11-unix/X*; do
@@ -54,7 +70,33 @@ if [ -z "${RUN_DISPLAY}" ]; then
     done
     RUN_DISPLAY="${RUN_DISPLAY:-:0}"
 fi
-echo "Using DISPLAY=${RUN_DISPLAY} for GUI windows."
+echo "Using DISPLAY=${RUN_DISPLAY} for X11 GUI windows."
+
+# --- Wayland passthrough ------------------------------------------------------
+# The entire Wayland client/compositor interface is one Unix socket, so a
+# bind-mount of it makes a containerised client indistinguishable from a native
+# one: same IPC path, no proxy, no relay, no nested compositor. Buffers are
+# passed as file descriptors over SCM_RIGHTS, which crosses namespaces intact,
+# so wl_shm frames are shared zero-copy exactly as on the host; input arrives on
+# the same socket via wl_seat, needing no /dev/input access.
+#
+# XDG_RUNTIME_DIR inside the container is set to the host's own /run/user/<uid>
+# path so Qt's Wayland plugin - which resolves the socket relative to it - finds
+# it where it expects. Only the one socket is mounted, not the whole runtime
+# directory, which would hand the container the session bus and much more.
+WAYLAND_ARGS=()
+HOST_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -S "${HOST_RUNTIME_DIR}/${WAYLAND_DISPLAY}" ]; then
+    CTR_RUNTIME_DIR="/run/user/$(id -u)"
+    WAYLAND_ARGS=(
+        -e XDG_RUNTIME_DIR="${CTR_RUNTIME_DIR}"
+        -e WAYLAND_DISPLAY="${WAYLAND_DISPLAY}"
+        -v "${HOST_RUNTIME_DIR}/${WAYLAND_DISPLAY}:${CTR_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+    )
+    echo "Using WAYLAND_DISPLAY=${WAYLAND_DISPLAY} for native Wayland windows."
+else
+    echo "No Wayland socket found; X11 only (annotate_data_docker.sh will use xcb)."
+fi
 
 # Let the container talk to the host X server. The container runs as the
 # invoking user (not root), so grant local access broadly rather than to root
@@ -64,11 +106,29 @@ if command -v xhost >/dev/null 2>&1; then
     xhost +local: >/dev/null 2>&1 || true
 fi
 
+# X11 authorisation. The container runs as the invoking user with HOME=/tmp, so
+# the cookie is mounted somewhere that user can actually read and XAUTHORITY is
+# pointed at it explicitly rather than relying on the ~/.Xauthority default.
+#
+# On a GNOME Wayland session XAUTHORITY is often unset, because Mutter writes its
+# Xwayland cookie to a randomly-named file that is regenerated every login
+# ($XDG_RUNTIME_DIR/.mutter-Xwaylandauth.XXXXXX); that file is picked up here as
+# the last resort. If none of the three is found we simply skip the mount:
+# `xhost +local:` above already grants local access, and Mutter's Xwayland
+# commonly accepts unauthenticated local connections anyway.
 XAUTH_ARGS=()
+XAUTH_FILE=""
 if [ -n "${XAUTHORITY:-}" ] && [ -f "${XAUTHORITY}" ]; then
-    XAUTH_ARGS=(-v "${XAUTHORITY}:/root/.Xauthority:rw" -e XAUTHORITY=/root/.Xauthority)
+    XAUTH_FILE="${XAUTHORITY}"
 elif [ -f "${HOME}/.Xauthority" ]; then
-    XAUTH_ARGS=(-v "${HOME}/.Xauthority:/root/.Xauthority:rw" -e XAUTHORITY=/root/.Xauthority)
+    XAUTH_FILE="${HOME}/.Xauthority"
+else
+    for cookie in "${HOST_RUNTIME_DIR}"/.mutter-Xwaylandauth.*; do
+        [ -f "${cookie}" ] && XAUTH_FILE="${cookie}" && break
+    done
+fi
+if [ -n "${XAUTH_FILE}" ]; then
+    XAUTH_ARGS=(-v "${XAUTH_FILE}:/tmp/.Xauthority:ro" -e XAUTHORITY=/tmp/.Xauthority)
 fi
 
 # Exposing /dev/dri helps some GL paths (and gives a Mesa fallback).
@@ -129,8 +189,12 @@ USER_ARGS+=(-e HOME=/tmp -e MPLCONFIGDIR=/tmp/matplotlib -e XDG_CACHE_HOME=/tmp/
 # through 1024 and die with "RuntimeError: received 0 items of ancdata" partway
 # through an epoch. The hard limit is left at the daemon's own value, which is
 # already far higher, so this needs no privileged configuration.
+# --hostname matches the host's, because X clients set WM_CLIENT_MACHINE from it.
+# When it does not match, the compositor cannot tie a window back to a local PID,
+# so "Force Quit" on a hung window degrades to XKillClient. Costs nothing.
 docker run -d --rm \
     --name "${CONTAINER_NAME}" \
+    --hostname "$(hostname)" \
     --gpus all \
     --ipc host \
     --ulimit nofile=65535:524288 \
@@ -138,6 +202,7 @@ docker run -d --rm \
     -e DISPLAY="${RUN_DISPLAY}" \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
     "${XAUTH_ARGS[@]}" \
+    "${WAYLAND_ARGS[@]}" \
     "${DRI_ARGS[@]}" \
     "${DATA_ARGS[@]}" \
     -v "${REPO_DIR}:/workspace/shallow-vessel-palpation-simulator-and-AI:rw" \

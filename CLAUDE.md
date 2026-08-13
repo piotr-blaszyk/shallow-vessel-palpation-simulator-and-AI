@@ -51,7 +51,16 @@ installs `opencv-python-headless` on purpose; leave it that way.
 **The one exception is `docker/annotate_data.sh`, which runs on bare metal by design.** It
 drives the two interactive annotation viewers, which are hand-operated frame by frame, and
 X-socket forwarding out of the container makes them choppy enough to be useless as a debugging
-tool. It uses its own dedicated micromamba env, `vessel-palpation-annotator`, defined by
+tool. `docker/annotate_data_docker.sh` is its **in-container twin** — same viewers, same
+modules, same PySide6/PyAV versions, so the two can be run side by side and any difference
+attributed to the container rather than the code. It is a comparison and debugging aid; bare
+metal remains the normal way to annotate. It defaults to a **native Wayland** window (no
+Xwayland), which is what makes the comparison fair; `--x11` forces the xcb path instead. See
+"Both display transports in the container" below. `annotate_data.sh` itself is unchanged, and
+the docker twin `exec`s into it for everything that is not display-related, so the viewer logic
+lives in exactly one place.
+
+`annotate_data.sh` uses its own dedicated micromamba env, `vessel-palpation-annotator`, defined by
 `requirements/annotator-env.yml` and created with
 `micromamba env create -f requirements/annotator-env.yml`. That env is deliberately minimal —
 numpy, scipy, tqdm, **PySide6**, **av** and headless OpenCV, with no torch, no torch-geometric
@@ -79,6 +88,53 @@ Wayland plugins, so these run natively. Consequences worth knowing:
   `DIFFTACTILE_DOUBLE_PRESENT` are gone with them.
 - Silicone annotation points are `QGraphicsEllipseItem`s, not pixels drawn into the frame, so
   clicking one selects it and `Delete` removes that specific point.
+
+### Both display transports in the container
+
+`docker-run.sh` mounts **both** the X11 socket and the host compositor's Wayland socket, and
+each application picks its own. Backend selection is per **process** (`DISPLAY` /
+`WAYLAND_DISPLAY` / `QT_QPA_PLATFORM`), never per container, so there is no conflict and
+nothing had to be traded off:
+
+- **X11 stays the container-wide default.** `DISPLAY` is still set on `docker run`, because
+  Taichi GGUI, Gmsh's FLTK viewer, the cv2 windows and matplotlib are X clients with no Wayland
+  backend. On a Wayland desktop they reach the session's own Xwayland via `/tmp/.X11-unix`.
+- **Wayland is opt-in, and only `annotate_data_docker.sh` takes it.** That script `unset`s
+  `DISPLAY` in its own process and sets `QT_QPA_PLATFORM=wayland` with **no `;xcb` fallback**,
+  so a broken setup fails loudly rather than silently degrading onto Xwayland — which would
+  quietly invalidate the whole bare-metal-vs-container comparison. A stray inherited `DISPLAY`
+  is the usual cause of that silent downgrade, hence the explicit unset.
+
+Measured outcome on Ubuntu 24.04 / GNOME Wayland: the containerised viewer under **Wayland is
+indistinguishable from bare metal**, while **`--x11` is visibly choppy** (an extra copy per
+repaint through Xwayland). That is a known, accepted limitation — do not try to "fix" the X11
+path; it is a fallback and a debugging switch, not the route anyone should annotate through.
+
+Why containerised Wayland is fast: the entire client/compositor interface is that one Unix
+socket, so a bind-mount puts the container on the identical IPC path a host-native client uses
+— no proxy, no relay, no nested compositor. Buffers pass as file descriptors over `SCM_RIGHTS`,
+which crosses namespaces intact, so frames are shared zero-copy; input arrives on the same
+socket via `wl_seat`, needing no `/dev/input` access.
+
+To verify which transport a viewer actually got, run `xlsclients` on the **host** while it is
+up: in Wayland mode it must *not* be listed. The script also prints Qt's resolved platform at
+startup.
+
+Two smaller things `docker-run.sh` now does, both for the X11 side: it passes
+`--hostname "$(hostname)"` so X clients' `WM_CLIENT_MACHINE` matches and the compositor can tie
+a window to a local PID, and it finds Mutter's randomly-named
+`$XDG_RUNTIME_DIR/.mutter-Xwaylandauth.*` cookie when `XAUTHORITY` is unset (normal on GNOME
+Wayland), mounting it at `/tmp/.Xauthority` where the non-root container user can read it.
+
+**A container keeps the mounts it was created with**, so one started before this change has no
+Wayland socket. `docker stop vessel-palpation && ./docker/docker-run.sh` to pick it up; the
+script detects the missing socket and says exactly this rather than letting Qt fail obscurely.
+
+The image gained PySide6 and PyAV (Dockerfile section 9) purely for this script, pinned to the
+same versions as `requirements/annotator-env.yml`. It also gained the `libxcb-*` packages
+behind Qt 6's classic "could not load the Qt platform plugin xcb" error — the Wayland
+libraries were already there. Note the image keeps the **GUI-capable** `opencv-python`, unlike
+the annotator env's headless wheel, because the rest of its pipeline still opens cv2 windows.
 
 Directly, as a module:
 
@@ -139,7 +195,7 @@ Re-running the *same* configuration still overwrites in place.
 | `DIFFTACTILE_HEADLESS=1` | Skip creating Taichi GGUI / Gmsh FLTK / cv2 windows entirely. Implied when `DISPLAY` is unset. |
 | `DIFFTACTILE_INTERACTIVE=1` | Opt back in to **blocking** GUI windows (`plt.show()`, `cv2.waitKey(0)`, Gmsh FLTK, the tkinter labeller). Off by default: no script waits on user input, so unattended runs always terminate. See `difftactile/main/display.py`. |
 | `DIFFTACTILE_MAX_FRAMES` | Frames a non-interactive viewer loop steps through before returning (per-loop defaults apply otherwise). |
-| `QT_QPA_PLATFORM` | Force the Qt annotation viewers onto a platform plugin (`xcb` for X11). Unset, Qt picks `wayland` natively. |
+| `QT_QPA_PLATFORM` | Force the Qt annotation viewers onto a platform plugin (`xcb` for X11). Unset, Qt picks `wayland` natively. `annotate_data_docker.sh` sets it itself (`wayland`, or `xcb` under `--x11`), so pass `--x11` there rather than this. |
 | `DIFFTACTILE_ANNOTATOR_PYTHON` | Interpreter for `docker/annotate_data.sh`, instead of the `vessel-palpation-annotator` env. |
 | `DIFFTACTILE_TRAJECTORIES` | Comma-separated trajectory types to collect (0 press, 1 slide-vein, 2 twist-y, 3 twist-z). Default all four. **The published dataset is entirely type 3** — use `3` to reproduce it. |
 | `DIFFTACTILE_VEIN_PAIR=1` | Enable the sensor↔vein contact pair on the first of each loop's two substeps, so a trajectory runs once **with** a subsurface vein and once **without**. The vein half is hard-disabled in the committed default (`if False and j < 1` in `main()`), so every substep otherwise runs vein-free. |
