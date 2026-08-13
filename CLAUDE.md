@@ -456,8 +456,24 @@ to test the full restore → train → eval flow without touching Zenodo.
 Deliberately **not documented in the README** — end users should get the bundle from the DOI so
 the published artefact stays the single source of truth.
 
-If no bundle exists on disk, rebuild one from the author's frozen submission-state tree with
-`./data/make_data_bundle.sh [SOURCE_DIR] [OUTPUT_TAR]` (defaults are in the script header).
+If no bundle exists on disk — or the data has changed and the published one is stale — rebuild
+with `./data/make_data_bundle.sh [SOURCE_DIR] [OUTPUT_TAR]`. Run it **on bare metal** from the
+repository root: it is plain bash and tar, so Docker adds nothing, and the container cannot see
+the paths anyway.
+
+**`SOURCE_DIR` defaults to this repository**, which is the authoritative copy of the data: the
+meat trial rename and trim happened here, as did the checkpoint/pickle path renames. The
+author's frozen submission-state snapshot is now an explicit opt-in rather than the default,
+because it **predates all of that** — its meat data is under `iros_training_data/` as 23
+bare-timestamp trials, and `saved_models_{sim,meat}/` and `test_loader_gnn_*.pickle` do not
+exist under those names. Bundling from it used to succeed while silently omitting the meat
+data, both checkpoints, both pickles and the silicone dataset.
+
+That silent-omission failure mode is gone: `copy_tree` / `copy_file` now **collect** every
+missing path and the script **refuses to write the tarball**, listing them all in one go. Each
+bundled path is either unregenerable or hours of GPU time, so a gap is a broken artifact, not a
+warning. `DIFFTACTILE_BUNDLE_ALLOW_MISSING=1` overrides for a deliberately partial build.
+
 Note that gzip output is not byte-reproducible, so a rebuilt tarball will not match the
 published SHA256 even when its contents are identical.
 
@@ -534,5 +550,6 @@ There is no pinned lockfile and no `requirements.txt` (it was deleted from upstr
   used conference names (`iros`, `icra`) and a timeline word (`endgame`) for these; those are
   gone from the code. The only survivors are load-bearing and deliberate: the historical git
   branch names, the `git clone --branch iros` line in the verbatim transcript in
-  `REPRODUCTION_TEST.md`, and the external snapshot path in `make_data_bundle.sh` (a real
-  directory outside this repository). Do not "clean up" any of those.
+  `REPRODUCTION_TEST.md`, and the external snapshot path documented in `make_data_bundle.sh`
+  (a real directory outside this repository — no longer that script's default, but still the
+  literal path to pass when you want it). Do not "clean up" any of those.

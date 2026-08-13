@@ -6,23 +6,45 @@
 # scripts, plus the simulated dataset (generable, but ~2h45m of GPU time, so it is
 # shipped for convenience). See data/MANIFEST.md for the full rationale.
 #
+# Run this on BARE METAL, from the repository root. It is plain bash + tar and
+# needs no Python, Taichi or CUDA, so there is nothing Docker adds.
+#
 # Usage:
 #   ./data/make_data_bundle.sh [SOURCE_DIR] [OUTPUT_TAR]
 #
-#   SOURCE_DIR   Repository-shaped tree holding the full data (defaults to the
-#                original submission-state archive on the author's machine).
+#   SOURCE_DIR   Repository-shaped tree holding the full data. Defaults to THIS
+#                repository, which is the authoritative copy - the meat trial
+#                rename and trim live here, as do the renamed checkpoint paths.
+#                You normally want the default.
 #   OUTPUT_TAR   Destination .tar.gz (default: ./shallow-vessel-palpation-data.tar.gz)
+#
+# The script REFUSES to write a tarball if any path it wants is absent from
+# SOURCE_DIR, listing everything missing in one go: each of them is either
+# unregenerable or hours of GPU time, so a gap is a broken artifact rather than
+# something to warn about. Override with DIFFTACTILE_BUNDLE_ALLOW_MISSING=1.
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# NOTE: a frozen on-disk snapshot of the original submission state, living
-# OUTSIDE this repository. Its directory name is whatever it was created as and
-# is not ours to rename, so this literal must match the real path on disk.
-# Override it with the first positional argument rather than editing it.
-SOURCE_DIR="${1:-/home/psb120/Documents/phd/data/masters/diff-tactile-fork-IROS-submission-state/diff-tactile-fork}"
+# The repository itself is the default source, because the working tree is the
+# authoritative copy of the data: the meat dataset's descriptive trial names and
+# its trim to the 10 trials the model uses were both done here, and the renamed
+# checkpoint/pickle paths only exist here.
+#
+# The author's frozen submission-state snapshot lives OUTSIDE this repository at
+#
+#   /home/psb120/Documents/phd/data/masters/diff-tactile-fork-IROS-submission-state/diff-tactile-fork
+#
+# and is now an explicit opt-in (pass it as the first argument) rather than the
+# default. It PREDATES the rename - its meat data is under `iros_training_data/`
+# with 23 bare-timestamp trials, and it has neither `saved_models_{sim,meat}/`
+# nor the `test_loader_gnn_*.pickle` files under those names - so bundling from
+# it silently produced an archive missing the meat data, both checkpoints, both
+# pickles and the silicone dataset. That is exactly what the strict `copy_tree` /
+# `copy_file` below now refuses to do.
+SOURCE_DIR="${1:-${REPO_DIR}}"
 OUTPUT_TAR="${2:-${REPO_DIR}/shallow-vessel-palpation-data.tar.gz}"
 
 if [ ! -d "${SOURCE_DIR}" ]; then
@@ -42,11 +64,24 @@ echo
 # copy_tree <relative-path> [find-filter...]
 # Copies SOURCE_DIR/<rel> to BUNDLE/<rel>, preserving layout. Extra args are
 # passed to `find` so we can ship only the file types actually consumed.
+# Paths that were asked for but are not in SOURCE_DIR. Collected rather than
+# fatal-on-first, so one run tells you everything that is wrong with the source
+# tree instead of making you fix them one at a time. Checked before the tarball
+# is written - see the guard at the end.
+MISSING_PATHS=()
+
 copy_tree() {
     local rel="$1"; shift
     local src="${SOURCE_DIR}/${rel}"
     if [ ! -e "${src}" ]; then
-        echo "  MISSING (skipped): ${rel}" >&2
+        echo "  MISSING: ${rel}" >&2
+        # Guard against double-reporting: two calls ship different file types
+        # out of the same meat clean/ directory.
+        local seen
+        for seen in ${MISSING_PATHS[@]+"${MISSING_PATHS[@]}"}; do
+            [ "${seen}" = "${rel}" ] && return 0
+        done
+        MISSING_PATHS+=("${rel}")
         return 0
     fi
     mkdir -p "${BUNDLE}/${rel}"
@@ -65,7 +100,8 @@ copy_file() {
     local rel="$1"
     local src="${SOURCE_DIR}/${rel}"
     if [ ! -e "${src}" ]; then
-        echo "  MISSING (skipped): ${rel}" >&2
+        echo "  MISSING: ${rel}" >&2
+        MISSING_PATHS+=("${rel}")
         return 0
     fi
     mkdir -p "${BUNDLE}/$(dirname "${rel}")"
@@ -125,6 +161,42 @@ copy_tree "difftactile/output/marker_tracker/domain-adaptation-vascular-markers"
 # download is self-describing even if separated from the repository.
 cp "${SCRIPT_DIR}/MANIFEST.md" "${BUNDLE}/MANIFEST.md" 2>/dev/null || true
 cp "${SCRIPT_DIR}/restore_data.sh" "${BUNDLE}/restore_data.sh" 2>/dev/null || true
+
+# --- refuse to ship an incomplete bundle --------------------------------------
+#
+# Every path above is in the bundle because it cannot be regenerated (or costs
+# hours of GPU time), so a missing one is a broken artifact, not a warning. This
+# used to `return 0` and carry on, which produced a plausible-looking tarball
+# that was quietly missing whole datasets - the failure only surfaced later, for
+# whoever downloaded it. Fail here instead.
+#
+# DIFFTACTILE_BUNDLE_ALLOW_MISSING=1 overrides, for deliberately partial builds.
+if [ "${#MISSING_PATHS[@]}" -gt 0 ]; then
+    if [ "${DIFFTACTILE_BUNDLE_ALLOW_MISSING:-}" = "1" ]; then
+        echo
+        echo "WARNING: ${#MISSING_PATHS[@]} path(s) missing; continuing because" >&2
+        echo "DIFFTACTILE_BUNDLE_ALLOW_MISSING=1. The bundle is INCOMPLETE." >&2
+    else
+        echo
+        echo "ERROR: ${#MISSING_PATHS[@]} path(s) are not in the source tree, so the" >&2
+        echo "bundle would be incomplete. No tarball written." >&2
+        echo >&2
+        printf '  %s\n' "${MISSING_PATHS[@]}" >&2
+        echo >&2
+        echo "Source tree was: ${SOURCE_DIR}" >&2
+        echo >&2
+        echo "The default source is the repository itself, which is the authoritative" >&2
+        echo "copy of the data. If you passed the frozen submission-state snapshot," >&2
+        echo "note that it predates the meat-dataset rename and the checkpoint path" >&2
+        echo "renames, so most of these will be missing from it - bundle from the" >&2
+        echo "repository instead. Otherwise restore the data bundle first:" >&2
+        echo >&2
+        echo "    ./data/restore_data.sh <tarball>" >&2
+        echo >&2
+        echo "Set DIFFTACTILE_BUNDLE_ALLOW_MISSING=1 to build a partial bundle anyway." >&2
+        exit 1
+    fi
+fi
 
 echo
 echo "Bundle contents: $(du -sh "${BUNDLE}" | cut -f1)"
