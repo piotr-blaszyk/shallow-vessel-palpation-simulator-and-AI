@@ -11,7 +11,7 @@
 # and opens a native Wayland window by default.
 #
 # Usage (from the HOST):
-#   ./docker/view_predictions.sh <config> (--all|--central) [--pretrained|--retrained] [--x11]
+#   ./docker/view_predictions.sh <config> [--central|--all] [--pretrained|--retrained] [--x11]
 #
 # Configurations (A = simulation, B = real silicone, C = real meat):
 #   A-to-B    model trained on simulation, predictions shown on silicone
@@ -26,28 +26,32 @@
 # The configuration selects BOTH the model weights and the test dataset, so the
 # six combinations above are the six scenarios.
 #
-# Which frames to show - REQUIRED, no default:
-#   --all      Every frame of every sliding window, navigated over three levels
-#              (trial / clip / frame). The model takes a clip_len-frame window
-#              and predicts a label for every frame in it, so this shows
-#              everything it emits - including the off-centre predictions.
-#   --central  Only each window's CENTRAL frame, navigated over two levels
-#              (trial / central frame). This is the prediction that is actually
-#              reported and scored: the central frame is the one with temporal
-#              context on both sides, and it is the only one the val/test
-#              metrics look at (dataset.py::get_mask() masks to clip_len // 2,
-#              and segmentation_gnn.shared_step() applies it). Consecutive
-#              sliding windows have consecutive centres, so j/k walks the trial
-#              frame by frame.
+# Which frames to show. --central is the DEFAULT, because it is what the paper
+# reports; pass --all only when you specifically want to inspect the rest.
+#
+#   --central  (default) Only each window's CENTRAL frame, navigated over two
+#              levels (trial / central frame). This is the prediction that is
+#              actually reported and scored: the central frame is the one with
+#              temporal context on both sides, and it is the only one the
+#              val/test metrics look at (dataset.py::get_mask() masks to
+#              clip_len // 2, and segmentation_gnn.shared_step() applies it).
+#              Consecutive sliding windows have consecutive centres, so j/k
+#              walks the trial frame by frame.
 #
 #              Its one cost: the first and last clip_len // 2 frames of each
 #              trial are never any window's centre, so they have no prediction
 #              to show and are skipped. That is inherent to central-frame
 #              reporting, not a viewer limitation.
 #
-# There is deliberately NO default. The two modes answer different questions,
-# and choosing one silently would let the model's off-centre outputs be mistaken
-# for the reported ones - so omitting both is an error.
+#   --all      Every frame of every sliding window, navigated over three levels
+#              (trial / clip / frame). The model takes a clip_len-frame window
+#              and predicts a label for every frame in it, so this shows
+#              everything it emits - including the off-centre predictions that
+#              training learns from but reporting ignores. A debugging view.
+#
+# The default is deliberately the reported one: if the two ever disagree about
+# how good the model looks, the reported view is the one that should be seen
+# first. The script prints which mode it is in either way.
 #
 # Options:
 #   --x11     Force the X11/Xwayland backend instead of Wayland. Expect this to
@@ -97,9 +101,9 @@
 # fix - prefer the default.
 #
 # Examples:
-#   ./docker/view_predictions.sh A-to-B --central
-#   ./docker/view_predictions.sh A-to-B --all
-#   ./docker/view_predictions.sh A-to-C --central --retrained
+#   ./docker/view_predictions.sh A-to-B                # central frames (default)
+#   ./docker/view_predictions.sh A-to-B --all          # every frame of every window
+#   ./docker/view_predictions.sh A-to-C --retrained
 #   ./docker/view_predictions.sh A-to-B --all --x11
 #
 set -euo pipefail
@@ -113,8 +117,10 @@ usage() {
 
 CONFIG=""
 WEIGHTS="--pretrained"
-# No default: --all and --central must be chosen explicitly (see the header).
-FRAMES=""
+# Defaults to the frames the paper actually reports; --all is the opt-in
+# debugging view (see the header).
+FRAMES="--central"
+FRAMES_GIVEN=""
 BACKEND="wayland"
 PRINT_ONLY=0
 
@@ -123,12 +129,14 @@ for arg in "$@"; do
         A-to-B|C-to-B|A-to-C) CONFIG="${arg}" ;;
         --pretrained|--retrained) WEIGHTS="${arg}" ;;
         --all|--central)
-            # Both flags given is as ambiguous as neither, so reject it rather
-            # than letting the last one silently win.
-            if [ -n "${FRAMES}" ] && [ "${FRAMES}" != "${arg}" ]; then
+            # Asking for both is contradictory, so reject it rather than letting
+            # the last one silently win. Tracked separately from FRAMES, which
+            # already holds the default.
+            if [ -n "${FRAMES_GIVEN}" ] && [ "${FRAMES_GIVEN}" != "${arg}" ]; then
                 echo "ERROR: --all and --central are mutually exclusive; pass exactly one." >&2
                 exit 1
             fi
+            FRAMES_GIVEN="${arg}"
             FRAMES="${arg}"
             ;;
         --x11) BACKEND="x11" ;;
@@ -142,23 +150,6 @@ if [ -z "${CONFIG}" ]; then
     echo "ERROR: no configuration given." >&2
     echo
     usage
-    exit 1
-fi
-
-if [ -z "${FRAMES}" ]; then
-    cat >&2 <<'EOF'
-ERROR: no frames mode given. Pass exactly one of:
-
-    --all      show every frame of every sliding window
-               (navigate: i/o trial, j/k clip, n/m frame)
-
-    --central  show only each window's CENTRAL frame - the prediction the
-               reported metrics are actually computed from
-               (navigate: i/o trial, j/k central frame)
-
-This has no default on purpose: the two show different things, and the choice
-should be a deliberate one.
-EOF
     exit 1
 fi
 

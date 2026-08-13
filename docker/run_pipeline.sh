@@ -27,6 +27,20 @@
 #       ./docker/run_pipeline.sh A-to-B --train
 #   The older names sim-to-silicone / sim-to-meat / silicone-to-meat still work.
 #
+# METRICS. Every configuration reports AUROC and average precision (AP), both
+# threshold-free and ranking-based - they read only the ORDER of the predicted
+# probabilities, never their scale, so no decision threshold is chosen. That
+# matters for a sim-to-real project: the output scale is the first thing to
+# shift across a domain gap, and a single-threshold score (the IoU also printed)
+# confounds that with what the model actually learned. AP is reported beside
+# AUROC because it ignores true negatives, so the ~5-11% positive rate here
+# cannot flatter it the way it can flatter AUROC; its baseline is the positive
+# rate, so the lift over chance is printed with it.
+#
+# Each writes difftactile/output/roc_curve_<config>.pdf and pr_curve_<config>.pdf.
+# To score all six (config x pretrained/retrained) scenarios side by side into
+# one table instead, use ./docker/score_all_scenarios.sh.
+#
 # Environment:
 #   DIFFTACTILE_HEADLESS=1   Skip GUI windows (default inside this script for the
 #                            sim stages when no DISPLAY is set).

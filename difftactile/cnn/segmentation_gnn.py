@@ -15,7 +15,12 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GINEConv
 from tqdm import tqdm
 from torch_geometric.nn import global_add_pool
-from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.metrics import (
+    average_precision_score,
+    precision_recall_curve,
+    roc_auc_score,
+    roc_curve,
+)
 import matplotlib
 from difftactile.main.display import is_headless, show_plots
 # Pick a non-interactive backend BEFORE pyplot is imported when there is no
@@ -28,7 +33,7 @@ import matplotlib.pyplot as plt
 
 from difftactile.cnn.common import *
 from difftactile.cnn.dataset import *
-from difftactile.cnn.roc_plot import plot_roc
+from difftactile.cnn.curve_plots import plot_pr, plot_roc
 from difftactile.main.paths import repo_path
 
 
@@ -866,6 +871,9 @@ def main():
     best_model = GNN.load_from_checkpoint(best_model_path)
     print("\nTesting on silicone dataset:")
     trainer.test(best_model, dataloaders=silicone_loader)
+    # Threshold-free companions to the IoU above, so C-to-B reports the same
+    # metrics as the other two configurations.
+    score_ranking_metrics(best_model, silicone_loader, "C-to-B")
     end = time.perf_counter()
     duration = end - start
     print(
@@ -939,7 +947,7 @@ def compute_mean_std(dataset, ixs, key):
     }
 
 def evaluate_and_plot_roc():
-    """Evaluate the SIMULATION-trained checkpoint on silicone (B) and plot the ROC.
+    """Evaluate the SIMULATION-trained checkpoint on silicone (B); ROC and PR curves.
 
     This is the evaluate-only half of A-to-B, so it must load dataset A's
     checkpoint. It previously loaded `final_segmentation_model_gnn_meat` (the
@@ -951,6 +959,10 @@ def evaluate_and_plot_roc():
     The checkpoint is the LARGE architecture, and its normalisation statistics
     come from the matching sim test-loader pickle, exactly as `silicone_to_meat()`
     (the A-to-C evaluate path) does.
+
+    Reports AUROC *and* average precision, with a figure for each; the scoring
+    itself lives in `score_ranking_metrics()`, shared with the other two
+    configurations. Returns those metrics as a dict (callers currently ignore it).
     """
     if True:
         model = GNN(arch="large")
@@ -998,44 +1010,11 @@ def evaluate_and_plot_roc():
             persistent_workers=False,
         )
 
-        all_probs = []
-        all_labels = []
-
-        with torch.no_grad():
-            for batch, labels_images, poses, metadata, frame_ix in data_loader:
-                batch = batch.to(device)
-
-                x, x_mask, edge_index, edge_index_regular_nodes, edge_attr = model.my_prepare_data(batch, batch.num_graphs)
-                out = model(x, edge_index, edge_attr, batch.batch)
-                out = out.squeeze(-1)
-                out = out[x_mask]
-                mask = batch.mask
-                out = out[mask]
-                probs = torch.sigmoid(out)
-                labels = batch.y[mask]
-                all_probs.append(probs.cpu())
-                all_labels.append(labels.cpu())
-
-        all_probs = torch.cat(all_probs).numpy()
-        all_labels = torch.cat(all_labels).numpy()
-
-        auc = roc_auc_score(all_labels, all_probs)
-        # `roc_thresholds` gives the decision threshold at each vertex of the
-        # curve, which is what the curve's colour encodes.
-        fpr, tpr, roc_thresholds = roc_curve(all_labels, all_probs)
-
-    # Styling lives in cnn/roc_plot.py so this figure matches the six written by
-    # `auroc_all_scenarios`. Named for the configuration, not the checkpoint:
-    # the legacy `script_gnn` entrypoint in cnn/gnn.py already writes
-    # roc_curve_sim.pdf. `plot_roc` handles savefig / show-guard / close.
-    roc_path = repo_path("difftactile/output/roc_curve_A-to-B.pdf")
-    plot_roc(plt, fpr, tpr, all_probs, all_labels, auc, roc_path,
-             thresholds_roc=roc_thresholds)
-    print(f"ROC curve written to: {roc_path}")
-
-    print(f'auc: {auc}')
-
-    return auc
+    # Scoring and figure-writing are shared with the other two configurations, so
+    # all three report the same threshold-free metrics from one implementation.
+    # Figures are named for the configuration, not the checkpoint: the legacy
+    # `script_gnn` entrypoint in cnn/gnn.py already writes roc_curve_sim.pdf.
+    return score_ranking_metrics(model, data_loader, "A-to-B", device=device)
 
 
 # =============================================================================
@@ -1241,6 +1220,68 @@ def train_on_sim(test_on="silicone"):
     )
 
 
+def score_ranking_metrics(model, loader, config, device=None):
+    """AUROC and AP for a loaded model over a dataloader, with both figures.
+
+    Factored out so every configuration reports the same threshold-free numbers.
+    `evaluate_and_plot_roc()` (A-to-B) computed them inline; the other two ran
+    only `trainer.test()` and so reported IoU at a fixed threshold and nothing
+    else - which is exactly the metric that does not survive a domain shift,
+    since it confounds ranking quality with output calibration.
+
+    Scores the same masked central-frame nodes the val/test stages do (see
+    `shared_step`), so these numbers describe the reported predictions.
+
+    Writes `roc_curve_<config>.pdf` and `pr_curve_<config>.pdf` under
+    difftactile/output/, and returns the metrics as a dict.
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    model.eval()
+
+    all_probs, all_labels = [], []
+    with torch.no_grad():
+        for batch, labels_images, poses, metadata, frame_ix in loader:
+            batch = batch.to(device)
+            x, x_mask, edge_index, _, edge_attr = model.my_prepare_data(
+                batch, batch.num_graphs
+            )
+            out = model(x, edge_index, edge_attr, batch.batch)
+            out = out.squeeze(-1)[x_mask]
+            # Central-frame mask: the same one the reported metrics use.
+            mask = batch.mask
+            out = out[mask]
+            all_probs.append(torch.sigmoid(out).cpu())
+            all_labels.append(batch.y[mask].cpu())
+
+    all_probs = torch.cat(all_probs).numpy()
+    all_labels = torch.cat(all_labels).numpy()
+
+    auc = roc_auc_score(all_labels, all_probs)
+    fpr, tpr, roc_thresholds = roc_curve(all_labels, all_probs)
+    ap = average_precision_score(all_labels, all_probs)
+    precision, recall, pr_thresholds = precision_recall_curve(all_labels, all_probs)
+
+    roc_path = repo_path(f"difftactile/output/roc_curve_{config}.pdf")
+    plot_roc(plt, fpr, tpr, all_probs, all_labels, auc, roc_path,
+             thresholds_roc=roc_thresholds)
+    pr_path = repo_path(f"difftactile/output/pr_curve_{config}.pdf")
+    plot_pr(plt, precision, recall, all_probs, all_labels, ap, pr_path,
+            thresholds_pr=pr_thresholds)
+
+    baseline = float(all_labels.mean())
+    lift = ap / baseline if baseline > 0 else float("nan")
+    n_pos = int(all_labels.sum())
+    print(f"\nThreshold-free ranking metrics ({config}):")
+    print(f"  AUROC = {auc:.4f}   ({len(all_labels)} nodes, {n_pos} positive)")
+    print(f"  AP    = {ap:.4f}   (chance = {baseline:.4f}, i.e. {lift:.2f}x lift)")
+    print(f"  ROC curve: {roc_path}")
+    print(f"  PR curve:  {pr_path}")
+    return {"auroc": float(auc), "ap": float(ap), "chance": baseline,
+            "lift": float(lift)}
+
+
 def silicone_to_meat():
     """Test the simulation-trained (large) checkpoint on the real meat trials.
 
@@ -1304,6 +1345,11 @@ def silicone_to_meat():
     print("\nTesting simulation-trained model on the meat dataset:")
     start = time.perf_counter()
     trainer.test(model, dataloaders=meat_loader)
+    # trainer.test() reports IoU at a fixed threshold, which confounds ranking
+    # quality with output calibration - and calibration is the first thing to
+    # shift across a domain gap, which is precisely what this configuration
+    # measures. The threshold-free metrics are the ones to read here.
+    score_ranking_metrics(model, meat_loader, "A-to-C")
     print(f"\nDone in {time.perf_counter() - start:.2f} s")
 
 

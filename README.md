@@ -123,25 +123,66 @@ configurations in sequence would silently change the reported AUC. The `<config>
 keeps A→B and A→C apart, since they share the same underlying `*_sim` artifact names. Pass
 `DIFFTACTILE_OVERWRITE_PUBLISHED=1` if you deliberately want to replace them.
 
-### AUROC for all six scenarios
+### Ranking metrics for all six scenarios
 
 The three configurations above, each scored from either the published checkpoint or one you
-trained yourself, give six scenarios. `script_auroc_all_scenarios` measures all of them in one
+trained yourself, give six scenarios. `score_all_scenarios.sh` measures all of them in one
 pass — per **marker node across video frames**, not from a reprojected phantom map:
 
 ```bash
-# (inside the container; this one is a module, so the docker/ directory is irrelevant)
+# (inside the container, from the docker/ directory)
 
 # score every scenario whose checkpoint is present -> AUROC_RESULTS.md
-python -m difftactile.scripts.script_auroc_all_scenarios
+./score_all_scenarios.sh
 
 # published checkpoints only (no training needed)
-python -m difftactile.scripts.script_auroc_all_scenarios --pretrained
+./score_all_scenarios.sh --pretrained
+
+# one configuration
+./score_all_scenarios.sh A-to-B
 ```
 
-ROC curves are written one per scenario to `difftactile/output/roc_curves/`
-(`roc_curve_A-to-B_pretrained.pdf` and so on), and the AUROC table to `AUROC_RESULTS.md`.
-The `retrained` rows need a `--train` run of the matching configuration first.
+Scenarios whose checkpoint is absent are skipped with a note rather than failing the run, so
+this is safe on a fresh restore where nothing has been retrained yet. The `retrained` rows need
+a `--train` run of the matching configuration first.
+
+#### Why AUROC *and* average precision
+
+Both are **threshold-free and ranking-based**: they read only the *order* of the predicted
+probabilities, never their absolute scale, so no decision threshold is picked anywhere. That is
+deliberate — this is a sim-to-real project, and the first thing to shift when a model crosses a
+domain gap is the output *scale*, not the ranking. A single-threshold score (IoU, F1) confounds
+the two, so it cannot tell "the model doesn't know where the vessels are" from "the model knows,
+but its probabilities are miscalibrated for this domain".
+
+Both are reported because each is blind to something the other sees:
+
+| Metric | Ignores | Baseline | Reads as |
+|---|---|---|---|
+| **AUROC** | the absolute count of false positives, which it normalises by the (huge) negative total | always **0.5** | comparable across papers, but can look reassuring where precision is poor |
+| **AP** | true negatives entirely, so the negative majority cannot flatter it | the **positive rate** (~7–11% here) | the honest summary of a needle-in-a-haystack problem |
+
+Because AP's baseline moves with the dataset, the table reports the chance level and the **lift**
+(AP / chance) beside it. The two metrics can and do disagree — on the published checkpoints
+C-to-B scores *worse* than A-to-B on AUROC (0.679 vs 0.731) but *better* on AP (0.287 vs 0.255).
+That disagreement is information, not noise, and is the reason for reporting both.
+
+Outputs, one PDF per scenario:
+
+```
+AUROC_RESULTS.md                                        the summary table
+difftactile/output/roc_curves/roc_curve_<config>_<weights>.pdf
+difftactile/output/pr_curves/pr_curve_<config>_<weights>.pdf
+```
+
+Both figure types share their styling — the same threshold colourmap along the curve, the same
+marked operating points — so a ROC and a PR panel can sit side by side. The PR figure
+additionally draws its **chance baseline** as a dashed line, because a PR curve cannot be read
+without it: the same curve is excellent on a 1% positive set and worthless on a 50% one.
+
+The three `run_pipeline.sh` configurations report the same two metrics (and write
+`roc_curve_<config>.pdf` / `pr_curve_<config>.pdf` directly under `difftactile/output/`), so you
+get them without a separate scoring pass. Use this script when you want all six side by side.
 
 ### Inspect predictions frame by frame
 
@@ -152,17 +193,17 @@ configuration selects **both** the model weights and the test dataset, so all si
 reachable by name:
 
 ```bash
-./docker/view_predictions.sh A-to-B --central              # published checkpoint
-./docker/view_predictions.sh A-to-B --all                  # every frame of every window
-./docker/view_predictions.sh A-to-C --central --retrained  # locally trained
-./docker/view_predictions.sh A-to-B --all --x11            # force X11 instead of Wayland
+./docker/view_predictions.sh A-to-B              # central frames (default), published checkpoint
+./docker/view_predictions.sh A-to-B --all        # every frame of every window
+./docker/view_predictions.sh A-to-C --retrained  # locally trained
+./docker/view_predictions.sh A-to-B --all --x11  # force X11 instead of Wayland
 ```
 
 Run it from the **host** — like `annotate_data_docker.sh` it `docker exec`s into the running
 container for you (start it with `./docker/docker-run.sh` first). It still runs *inside* the
 container, because it needs torch and CUDA for inference; there is no bare-metal variant.
 
-#### Which frames: `--central` or `--all` (required)
+#### Which frames: `--central` (default) or `--all`
 
 The model consumes a **`clip_len`-frame sliding window** (`clip_len` is 7) and predicts a label
 for *every* frame in it. That is a training decision — supervising all seven frames gives far
@@ -172,14 +213,12 @@ context on both sides. That masking is real and lives in the code: `dataset.py::
 marks exactly frame `clip_len // 2`, and `segmentation_gnn.shared_step()` applies it in the
 `val` and `test` stages (but not in `train`), as does `evaluate_and_plot_roc()`.
 
-So the viewer offers both views, and **you must pick one — there is no default**, because
-mistaking the model's off-centre outputs for the reported ones would flatter or damn it for no
-reason:
+The viewer offers both views, defaulting to the reported one:
 
 | Flag | Shows | Navigation |
 |---|---|---|
-| `--central` | one prediction per window: its **central frame** — what is reported and scored | `i`/`o` trial, `j`/`k` central frame |
-| `--all` | **every** frame of every window, off-centre predictions included | `i`/`o` trial, `j`/`k` clip, `n`/`m` frame |
+| `--central` *(default)* | one prediction per window: its **central frame** — what is reported and scored | `i`/`o` trial, `j`/`k` central frame |
+| `--all` | **every** frame of every window, off-centre predictions included — a debugging view | `i`/`o` trial, `j`/`k` clip, `n`/`m` frame |
 
 | Key | `--central` | `--all` |
 |---|---|---|

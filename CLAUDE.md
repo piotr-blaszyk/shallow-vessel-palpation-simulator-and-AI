@@ -118,13 +118,14 @@ Structured like `annotate_data_docker.sh` — launched from the host, `exec`s in
 native Wayland by default, `--x11` and `--shell` available. Unlike the annotators there is **no
 bare-metal twin**: it runs GNN inference, so it needs torch and CUDA.
 
-**`--all` vs `--central` is mandatory — do not give it a default.** The model takes a
+**`--central` is the default; `--all` is the opt-in debugging view.** The model takes a
 `clip_len`-frame window (`clip_len` is 7) and predicts a label for *every* frame in it, but only
 the **central** frame is ever reported: `dataset.py::get_mask()` marks exactly `clip_len // 2`,
 and `segmentation_gnn.shared_step()` applies that mask in the `val`/`test` stages but **not** in
-`train` (so training gets signal from all 7 frames), as does `evaluate_and_plot_roc()`. The two
-flags therefore show genuinely different things and the choice is deliberately explicit — both
-the shell script and `visualise.main()` error out when neither is given, and when both are.
+`train` (so training gets signal from all 7 frames), as does `evaluate_and_plot_roc()`. The
+default is the reported view on purpose — if the two ever disagree about how good the model
+looks, that is the one to see first. Passing **both** flags is still an error (in the shell
+script and in `visualise.main()`): asking for both is contradictory, so neither silently wins.
 
 - `--all` → `_MeatNavigator`, three levels (`i`/`o` trial, `j`/`k` clip, `n`/`m` frame), clips
   tiled **sequentially** so playback walks each trial once.
@@ -175,6 +176,35 @@ there. On Python 3.10 importing **PySide6 before torch** breaks torch — PySide
 `TypeError: Plain typing.Self is not valid as type argument`. Importing at module scope would
 put PySide6 first. The same lazy-import rule already applies to the annotation viewers, for the
 separate reason that their small env has no torch.
+
+### Metrics: AUROC and average precision (`curve_plots.py`)
+
+`cnn/roc_plot.py` is now **`cnn/curve_plots.py`**, because it owns both curve types. It exports
+`plot_roc()` and `plot_pr()`, styled as twins (same threshold colourmap, same marked operating
+points) so a manuscript can place them side by side. The PR figure also draws its **chance
+baseline** at the positive rate — unlike ROC's fixed diagonal that line moves with the dataset,
+and a PR curve is unreadable without it.
+
+**Every evaluation path reports both metrics.** `segmentation_gnn.score_ranking_metrics()` is
+the single implementation: it collects probabilities over the same central-frame mask the
+val/test stages use, computes AUROC + AP, and writes both figures. All three configurations call
+it — `evaluate_and_plot_roc()` (A→B) delegates to it entirely, and `silicone_to_meat()` (A→C)
+and `main()` (C→B) call it after their `trainer.test()`, which previously reported IoU at a
+fixed threshold and nothing else. `auroc_all_scenarios.py` has its own copy of the collection
+loop (it must, since it loads checkpoints itself) and reports the same pair.
+
+**Why both, and why not a tuned threshold.** Both are ranking-based: they read only the *order*
+of the probabilities, never their scale. In a sim-to-real project the scale is the first thing to
+shift across a domain gap, so a single-threshold score confounds "doesn't know where the vessels
+are" with "knows, but is miscalibrated here". AUROC normalises false positives by the huge
+negative total, so it can look reassuring where precision is poor; AP ignores true negatives, so
+it cannot be flattered that way, but its baseline is the positive rate rather than 0.5 — hence
+the `Chance` and `Lift` columns in `AUROC_RESULTS.md`. Measured on the published checkpoints the
+two **disagree in rank**: C→B is worse than A→B on AUROC (0.679 vs 0.731) but better on AP
+(0.287 vs 0.255). That disagreement is the reason for reporting both — do not drop either.
+
+`docker/score_all_scenarios.sh` wraps `script_auroc_all_scenarios` so users need not type the
+module path. ROC PDFs go to `difftactile/output/roc_curves/`, PR PDFs to `pr_curves/`.
 
 ### The vessel map (`vessel_map.sh`) and the confusion colour scheme
 

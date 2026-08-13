@@ -353,7 +353,7 @@ class _MeatNavigator:
 
 
 class Visualisation:
-    def __init__(self, scenario=None, weights="pretrained", frames="all"):
+    def __init__(self, scenario=None, weights="pretrained", frames="central"):
         """Interactive viewer for per-frame predictions.
 
         With `scenario=None` the historical behaviour is kept: the checkpoint and
@@ -365,15 +365,17 @@ class Visualisation:
         instead of by editing source. `weights` is "pretrained" (the published
         checkpoint) or "retrained" (what a local `--train` run wrote).
 
-        `frames` picks which of the model's outputs are shown, and there is
-        deliberately no default at the entrypoint - the two answer different
-        questions and the user should know which they asked:
+        `frames` picks which of the model's outputs are shown:
 
+          "central"  (default) only each window's central frame, navigated
+                     trial/frame. Shows what is actually reported and scored.
           "all"      every frame of every window, navigated trial/clip/frame.
                      Shows what the model emits, including the off-centre
-                     predictions that training learns from but reporting ignores.
-          "central"  only each window's central frame, navigated trial/frame.
-                     Shows what is actually reported and scored.
+                     predictions that training learns from but reporting
+                     ignores - a debugging view.
+
+        Central is the default because it is the reported view: if the two ever
+        disagree about how good the model looks, that is the one to see first.
         """
         if frames not in ("all", "central"):
             raise ValueError(f"unknown frames mode {frames!r}; expected 'all' or 'central'")
@@ -1544,19 +1546,18 @@ def main():
     """Open the interactive per-frame prediction viewer.
 
     Pass one of the three configurations to select the checkpoint and the test
-    dataset together, plus exactly one of --all / --central:
+    dataset together:
 
-        python -m difftactile.scripts.script_visualise A-to-B --all
-        python -m difftactile.scripts.script_visualise A-to-C --central --retrained
+        python -m difftactile.scripts.script_visualise A-to-B
+        python -m difftactile.scripts.script_visualise A-to-C --all --retrained
 
-    --all      every frame of every sliding window (trial / clip / frame).
-    --central  only each window's central frame (trial / frame) - which is the
-               prediction the reported metrics are computed from.
+    --central  (default) only each window's central frame (trial / frame) -
+               the prediction the reported metrics are computed from.
+    --all      every frame of every sliding window (trial / clip / frame),
+               off-centre predictions included. A debugging view.
 
-    **--all and --central have no default and are not interchangeable**: they
-    answer different questions, and picking one silently would let a reader
-    mistake the model's off-centre outputs for the reported ones. Omitting both
-    is an error rather than a guess.
+    The default is the reported view on purpose: if the two ever disagree about
+    how good the model looks, that is the one that should be seen first.
 
     The configuration may also come from DIFFTACTILE_SCENARIO, the weight source
     from DIFFTACTILE_WEIGHTS (pretrained | retrained) and the frames mode from
@@ -1574,8 +1575,8 @@ def main():
     else:
         weights = os.environ.get("DIFFTACTILE_WEIGHTS", "pretrained")
 
-    # No default, and no silent tie-break either: both flags together is as
-    # ambiguous as neither.
+    # Asking for both is contradictory, so reject it rather than letting one
+    # silently win.
     if "--all" in flags and "--central" in flags:
         raise SystemExit(
             "ERROR: --all and --central are mutually exclusive; pass exactly one."
@@ -1585,13 +1586,9 @@ def main():
     elif "--central" in flags:
         frames = "central"
     else:
-        frames = os.environ.get("DIFFTACTILE_FRAMES")
-    if frames is None:
-        raise SystemExit(
-            "ERROR: no frames mode given. Pass exactly one of:\n"
-            "  --all      show every frame of every sliding window\n"
-            "  --central  show only each window's central frame (what is reported)"
-        )
+        # Defaults to the frames the paper reports, so the unqualified view is
+        # the honest one; --all is the opt-in debugging view.
+        frames = os.environ.get("DIFFTACTILE_FRAMES", "central")
 
     v = Visualisation(scenario=scenario, weights=weights, frames=frames)
     v.visualise_gnn(
