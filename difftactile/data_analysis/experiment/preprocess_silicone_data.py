@@ -21,9 +21,12 @@ from scipy.spatial.distance import pdist, squareform
 # imported directly above.
 from difftactile.main.constants import *
 from difftactile.main.display import (
-    destroy_windows, fit_to_view, imshow, is_interactive, iteration_limit,
-    run_frame_browser, wait_key,
+    destroy_windows, imshow, is_interactive, iteration_limit, wait_key,
 )
+# The interactive annotator's window is Qt, not OpenCV - see qt_viewer.py. These
+# are imported lazily inside annotate() rather than here, so the rest of this
+# module (the batch preprocessing pipeline) keeps running in environments that
+# have neither PySide6 nor PyAV installed.
 
 
 class SiliconePreprocessData:
@@ -276,6 +279,16 @@ class SiliconePreprocessData:
         **without** saving, discarding everything changed since the last save
         (confirmed by a second `x`, so a mistyped key cannot throw work away).
         Killing the process has the same effect as `x`.
+
+        The window is Qt (PySide6), not OpenCV - see `difftactile/main/qt_viewer.py`
+        for why. Two consequences for this tool specifically:
+
+        * Points are real scene objects, not pixels drawn into the frame, so
+          clicking one selects it and Delete removes **that** point. `z`
+          (undo-last) and `d` (clear frame) still work as before.
+        * The view is scaled to fit the window while the scene stays in the
+          video's own pixel grid, so clicks arrive already in full-resolution
+          coordinates and annotations need no rescaling in either direction.
         """
         if not is_interactive():
             print(
@@ -284,6 +297,11 @@ class SiliconePreprocessData:
                 "Existing annotations on disk are left as they are."
             )
             return
+        # Imported here, not at module scope, so the batch preprocessing stages
+        # in this file stay importable without PySide6/PyAV installed.
+        from difftactile.main.qt_viewer import run_browser
+        from difftactile.main.video_decode import count_frames, decode_frames
+
         input_dir = os.path.join(self.root, f"{self.dir}_dilated")
         output_dir = os.path.join(self.root, f"{self.dir}_annotations")
         os.makedirs(output_dir, exist_ok=True)
@@ -300,16 +318,16 @@ class SiliconePreprocessData:
                 with open(pkl_path, "rb") as f:
                     annotations[avi_path] = pickle.load(f)
             else:
-                cap = cv2.VideoCapture(avi_path)
-                n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                cap.release()
-                annotations[avi_path] = [[] for _ in range(n_frames)]
+                annotations[avi_path] = [
+                    [] for _ in range(count_frames(avi_path))
+                ]
         video_idx = 0
         # Frame index lives in a dict so the render/key callbacks below can
-        # mutate it without `nonlocal` gymnastics. `scale` is the factor the
-        # last rendered frame was shrunk by for display, so the mouse callback
-        # can convert clicks back to full resolution.
-        state = {"frame": 0, "scale": 1.0}
+        # mutate it without `nonlocal` gymnastics. No display scale is tracked
+        # any more: the Qt scene is in full video resolution and the *view* is
+        # what gets fitted to the window, so clicks arrive already in the
+        # video's own coordinates.
+        state = {"frame": 0}
 
         # Editing guard, toggled with `g` and held for the whole session. Off by
         # default so that merely opening the tool to look at existing
@@ -342,147 +360,155 @@ class SiliconePreprocessData:
             """True when the in-memory annotations differ from what was saved."""
             return annotations != saved_state
 
-        def mouse_callback(event, x, y, flags, param):
-            if event == cv2.EVENT_LBUTTONDOWN:
-                if not edit_enabled[0]:
-                    print(
-                        "Editing is locked - press 'g' to enable adding points "
-                        "(the setting lasts for the whole session)."
-                    )
-                    return
-                avi_path = avi_files[video_idx]
-                frame_idx = state["frame"]
-                frame_annots = annotations[avi_path][frame_idx]
-                if len(frame_annots) < 4:
-                    # The window shows a downscaled copy of the frame (see
-                    # fit_to_view), so a click arrives in display pixels. Map it
-                    # back to full-resolution pixels before storing, since every
-                    # downstream stage expects annotations in the video's own
-                    # coordinates.
-                    scale = state["scale"] or 1.0
-                    annotations[avi_path][frame_idx].append(
-                        [int(round(x / scale)), int(round(y / scale))]
-                    )
-                    session_additions.append((avi_path, frame_idx))
-                    # Repaint immediately, here in the callback. The browser loop
-                    # is blocked in cv2.waitKey(0) - which is what pumps the GUI
-                    # event loop and so is what called us - and it will not wake
-                    # until a key is pressed, so nothing else can draw the new
-                    # dot. Doing it directly is also why that loop no longer has
-                    # to wake on a timer to check a dirty flag.
-                    imshow(cv2, "Annotator", render())
-                    print(f"Added point {len(frame_annots) + 1}/{4}")
-                else:
-                    print("Maximum 4 points allowed.")
+        # Set when the user quits with `x`: the window closes either way, so this
+        # is how the post-loop save knows not to write.
+        discard_on_exit = [False]
 
-        cv2.namedWindow("Annotator")
-        cv2.setMouseCallback("Annotator", mouse_callback)
+        # True while an `x` is awaiting its confirming second press.
+        confirm_discard = [False]
 
-        # Decoded frames per video, cached: the loop used to re-open the .avi and
-        # seek on every keypress, which is the bulk of the per-step cost.
+        # Decoded frames per video, cached: stepping used to re-open the .avi and
+        # seek on every keypress, which was the bulk of the per-step cost.
         frame_cache = {}
 
         def video_frames(path):
             if path not in frame_cache:
-                cap = cv2.VideoCapture(path)
-                frames = []
-                while True:
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    frames.append(frame)
-                cap.release()
-                frame_cache[path] = frames
+                frame_cache[path] = decode_frames(path)
             return frame_cache[path]
 
+        def on_click(x, y):
+            """Place a point at a click, which arrives in full-resolution pixels."""
+            if not edit_enabled[0]:
+                print(
+                    "Editing is locked - press 'g' to enable adding points "
+                    "(the setting lasts for the whole session)."
+                )
+                return None
+            avi_path = avi_files[video_idx]
+            frame_idx = state["frame"]
+            frame_annots = annotations[avi_path][frame_idx]
+            if len(frame_annots) >= 4:
+                print("Maximum 4 points allowed.")
+                return None
+            # No rescaling: the Qt view maps the click through mapToScene(), and
+            # the scene is the video's own pixel grid, so what arrives here is
+            # already what downstream stages expect on disk.
+            frame_annots.append([int(round(x)), int(round(y))])
+            session_additions.append((avi_path, frame_idx))
+            print(f"Added point {len(frame_annots)}/{4}")
+            return "redraw"
+
+        def on_delete(point_idx):
+            """Remove the specific point the user selected by clicking it.
+
+            Only possible because the dots are scene objects Qt can hit-test;
+            the old burned-in circles could only support undo-last and
+            clear-frame. A deleted point is dropped from the undo stack too,
+            since `z` pops by (video, frame) and would otherwise take a point
+            that no longer exists.
+            """
+            avi_path = avi_files[video_idx]
+            frame_idx = state["frame"]
+            frame_annots = annotations[avi_path][frame_idx]
+            if not edit_enabled[0]:
+                print("Editing is locked - press 'g' to enable deleting points.")
+                return None
+            if not 0 <= point_idx < len(frame_annots):
+                return None
+            frame_annots.pop(point_idx)
+            for position, entry in enumerate(session_additions):
+                if entry == (avi_path, frame_idx):
+                    session_additions.pop(position)
+                    break
+            print(f"Deleted point {point_idx + 1}; {len(frame_annots)} left on this frame.")
+            return "redraw"
+
         def render():
-            """Frame with annotations and status lines, or None to end."""
+            """The current video frame, unannotated, or None to end.
+
+            Annotations are no longer drawn into the image - `overlay_points`
+            below hands them to Qt as scene items instead, which is what makes
+            an individual dot selectable and deletable.
+            """
             avi_path = avi_files[video_idx]
             frames = video_frames(avi_path)
             if not frames:
                 print(f"Failed to read frames from {avi_path}")
                 return None
-            n_frames = len(frames)
-            state["frame"] = max(0, min(state["frame"], n_frames - 1))
-            # Downscale FIRST, then draw: the overlays are then rendered into a
-            # ~4x smaller buffer, and the status text keeps a constant on-screen
-            # size instead of shrinking with the frame. The stored annotations
-            # stay in full-resolution coordinates, so they are scaled on the way
-            # in here and clicks are scaled back out in the mouse callback.
-            display, scale = fit_to_view(cv2, frames[state["frame"]])
-            display = display.copy()
-            state["scale"] = scale
+            state["frame"] = max(0, min(state["frame"], len(frames) - 1))
+            return frames[state["frame"]]
+
+        def overlay_points():
+            """Annotation dots for the current frame, in video coordinates.
+
+            Returned raw; the viewer turns each into a scene item, colouring
+            them with `colors` above (BGR, as the rest of this module uses).
+            """
+            return annotations[avi_files[video_idx]][state["frame"]]
+
+        def status_lines():
+            """Status bar: position, edit state, and whether work is unsaved."""
+            avi_path = avi_files[video_idx]
+            n_frames = len(video_frames(avi_path))
             frame_annots = annotations[avi_path][state["frame"]]
-            for idx, pt in enumerate(frame_annots):
-                color = colors[idx % len(colors)]
-                cv2.circle(
-                    display,
-                    (int(round(pt[0] * scale)), int(round(pt[1] * scale))),
-                    max(3, int(round(30 * scale))),
-                    color,
-                    -1,
-                )
-            text = (
+            first = (
                 f"Video {video_idx + 1}/{len(avi_files)} | "
                 f"Frame {state['frame'] + 1}/{n_frames} | "
                 f"Annotations {len(frame_annots)}/4"
             )
-            cv2.putText(
-                display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
-            )
-            # Second line: whether a click will do anything, and how much of this
-            # session's work `z` can still take back. Red when locked, green when
-            # editing, so the state is obvious at a glance.
             if edit_enabled[0]:
-                status = f"EDIT ON (g to lock) | undo available: {len(session_additions)}"
-                status_colour = (0, 255, 0)
+                second = (
+                    f"EDIT ON (g to lock) | undo available: {len(session_additions)} "
+                    "| click a point to select it, Delete removes it"
+                )
             else:
-                status = "EDIT LOCKED - press g to enable clicking"
-                status_colour = (0, 0, 255)
-            cv2.putText(
-                display, status, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.0,
-                status_colour, 2
-            )
-            # Third line: whether anything would be lost by quitting with `x`.
-            dirty = unsaved_changes()
-            exit_hint = (
+                second = "EDIT LOCKED - press g to enable clicking"
+            third = (
                 "UNSAVED changes | p save, q save+quit, x quit WITHOUT saving"
-                if dirty
+                if unsaved_changes()
                 else "no unsaved changes | q or x to quit"
             )
-            cv2.putText(
-                display, exit_hint, (20, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
-                (0, 200, 255) if dirty else (200, 200, 200), 2
-            )
-            return display
+            return [first, second, third]
 
         def on_key(key):
             """Map a keypress to a state change; see the docstring for bindings."""
             nonlocal video_idx
             avi_path = avi_files[video_idx]
             n_frames = len(video_frames(avi_path))
+            # Any key other than a second `x` cancels a pending discard, which
+            # is the "or any other key to stay" half of that prompt.
+            if key != ord("x") and confirm_discard[0]:
+                confirm_discard[0] = False
+                print("Cancelled; still editing.")
             if key == ord("q"):
-                save_all()
+                # Saving happens once the window has closed, via on_close.
                 return "quit"
             if key == ord("x"):
                 # Quit WITHOUT saving. Nothing has reached disk unless `p` was
                 # pressed, so this drops the in-memory state - which is why the
                 # prompt talks about changes since the last save, not launch.
                 if not unsaved_changes():
-                    print("No unsaved changes; exiting.")
+                    # Nothing to lose, so no confirmation. on_close() prints the
+                    # "files unchanged" line; don't duplicate it here.
+                    discard_on_exit[0] = True
                     return "quit"
+                # Confirm on a second press, so a mistyped key cannot throw away
+                # work the same way an accidental `q` used to save it. The old
+                # OpenCV version read the confirmation with a blocking
+                # waitKey(3000); under Qt the event loop must keep running, so
+                # the pending state is held in a flag and the next keypress
+                # either confirms or cancels it.
+                if confirm_discard[0]:
+                    confirm_discard[0] = False
+                    discard_on_exit[0] = True
+                    return "quit"
+                confirm_discard[0] = True
                 print(
                     f"Discard {len(session_additions)} unsaved point(s) added this "
                     "session and any frame clears, and quit? Press x again to "
                     "confirm, or any other key to stay."
                 )
-                # Confirm on a second press, so a mistyped key cannot throw away
-                # work the same way an accidental `q` used to save it.
-                if (wait_key(cv2, 3000) & 0xFF) == ord("x"):
-                    print("Exited without saving. Files on disk are unchanged.")
-                    return "quit"
-                print("Cancelled; still editing.")
-                return None
+                return "redraw"
             if key == ord("m"):
                 video_idx = (video_idx + 1) % len(avi_files)
                 state["frame"] = 0
@@ -548,14 +574,30 @@ class SiliconePreprocessData:
                 return "redraw"
             return None
 
-        # No `needs_repaint` callback: the mouse callback repaints the window
-        # itself (see above), so the browser loop can just block on a keypress
-        # like a normal GUI instead of waking on a timer to poll a dirty flag.
-        run_frame_browser(cv2, "Annotator", render, on_key)
-        destroy_windows(cv2)
-        for _ in range(10):
-            cv2.waitKey(1)
-            time.sleep(0.1)
+        def on_close():
+            """Save unless the user explicitly discarded with `x`.
+
+            Closing the window with its title-bar button is treated like `q`:
+            the safe default for a tool whose whole purpose is producing
+            annotations is to keep them. Only `x` (confirmed twice) discards.
+            """
+            if discard_on_exit[0]:
+                print("Exited without saving. Files on disk are unchanged.")
+                return
+            save_all()
+            print("Annotations saved.")
+
+        run_browser(
+            "Annotator",
+            render,
+            on_key,
+            on_click=on_click,
+            on_delete=on_delete,
+            status=status_lines,
+            overlay_points=overlay_points,
+            point_colours=colors,
+            on_close=on_close,
+        )
 
     def annotations_to_line_points(self):
         cx = self.cx

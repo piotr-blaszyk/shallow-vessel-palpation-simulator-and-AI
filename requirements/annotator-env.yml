@@ -7,8 +7,8 @@
 # debugging tool.
 #
 # It is deliberately tiny. The annotation viewers only decode video, draw
-# circles and text, and read/write pickles and npz files - so they need numpy
-# and a GUI-capable OpenCV, and nothing else. In particular there is NO torch,
+# circles and text, and read/write pickles and npz files - so they need numpy,
+# PySide6, PyAV and OpenCV, and nothing else. In particular there is NO torch,
 # NO torch-geometric and NO taichi here: none of the model or simulator stack is
 # reachable from these tools, and leaving it out is what keeps the env at a few
 # hundred MB and a ~1 minute install instead of several GB.
@@ -19,12 +19,18 @@
 #
 # `docker/annotate_data.sh` activates this env automatically when it is present.
 #
-# IMPORTANT: the OpenCV package must be `opencv-python`, NOT
-# `opencv-python-headless`. The headless wheel is built with GUI: NONE, so
-# cv2.imshow / cv2.waitKey cannot open a window at all and the viewers exit
-# immediately with a "no GUI support" warning. Several other environments in
-# this project install the headless build on purpose (it is the right choice for
-# batch runs and CI); this one must not.
+# THE GUI IS Qt, NOT OPENCV. The viewers' windows are PySide6 (see
+# difftactile/main/qt_viewer.py), which is what makes them native Wayland
+# clients. This has two consequences for this file:
+#
+#   * OpenCV is now the `-headless` wheel, and that is correct. It is used only
+#     for image operations (resize, circle, colour handling); it opens no
+#     windows, so the GUI-capable build - and the pile of xcb/xorg system
+#     libraries its bundled Qt5 plugin linked against - are no longer needed.
+#     Earlier revisions of this file insisted on `opencv-python`; that
+#     requirement is gone, not relaxed.
+#   * The PySide6 wheel bundles its own Qt, including the wayland platform
+#     plugins, so no Qt system packages are required either.
 name: vessel-palpation-annotator
 
 channels:
@@ -34,26 +40,19 @@ dependencies:
   # Python 3.10 matches the rest of the project's supported range (3.9-3.12).
   - python=3.10
 
-  # Qt/X11 runtime libraries that the opencv-python wheel's bundled Qt5 plugin
-  # links against. The wheel ships the Qt libs themselves but not these system
-  # dependencies, so without them `cv2.imshow` aborts with
-  # "no Qt platform plugin could be initialized ... available: xcb".
-  - xorg-libx11
-  - xorg-libxext
-  - libxcb
-  - xcb-util-cursor
-  - xcb-util-image
-  - xcb-util-keysyms
-  - xcb-util-renderutil
-  - xcb-util-wm
-
   - pip
 
   - pip:
       # Pinned so a fresh clone reproduces the environment this was tested with.
       - numpy==2.2.6
-      # GUI-capable build - see the note above about the headless variant.
-      - opencv-python==5.0.0.93
+      # The GUI. Ships the wayland/wayland-egl/xcb Qt platform plugins, so Qt
+      # picks Wayland natively and falls back to X11 when that is what is there.
+      - PySide6==6.9.1
+      # Video decoding. Decodes real frames rather than seeking by keyframe,
+      # which is what keeps frame i of a decode equal to frame i of the labels.
+      - av==15.1.0
+      # Image operations only - no windows, hence the headless wheel.
+      - opencv-python-headless==5.0.0.93
       # Not used by the viewers themselves, but imported at module scope by the
       # preprocessing modules the viewer entrypoints live in. Both are small, so
       # installing them is simpler than restructuring those imports.

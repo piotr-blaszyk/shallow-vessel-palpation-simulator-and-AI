@@ -10,7 +10,7 @@ from scipy.interpolate import interp1d
 from tqdm import tqdm
 
 from difftactile.main.display import (
-    destroy_windows, imshow, is_interactive, run_frame_browser, wait_key,
+    is_interactive,
 )
 from difftactile.sensor_model.fisheye_model_no_taichi import FisheyeModelNoTaichi
 
@@ -560,6 +560,13 @@ class MeatPreprocessData:
         This is the view behind Fig. "annotation-line"(d) of the paper.
 
         Keys: m / n next / previous trial, k / j next / previous frame, q quit.
+
+        The window is Qt (PySide6) rather than OpenCV, so it is a native Wayland
+        client - see `difftactile/main/qt_viewer.py`. The marker dots stay drawn
+        into the frame here (unlike the silicone annotator's scene-graph points):
+        meat labels are derived analytically and are not editable, so there is
+        nothing to select or delete and 127 pixel-drawn dots per frame are
+        cheaper than 127 scene items.
         """
         if not is_interactive():
             print(
@@ -567,6 +574,10 @@ class MeatPreprocessData:
                 "show unattended. Set DIFFTACTILE_INTERACTIVE=1 to open it."
             )
             return
+        # Imported here, not at module scope, so the batch preprocessing in this
+        # file stays importable without PySide6/PyAV installed.
+        from difftactile.main.qt_viewer import run_browser
+        from difftactile.main.video_decode import decode_frames
 
         trials = sorted(p for p in self.output_dir.iterdir() if p.is_dir())
         trials = [
@@ -600,17 +611,13 @@ class MeatPreprocessData:
             n_frames = markers.shape[0]
 
             # Decode sequentially - no seeking - which is both correct and fast.
-            frames = []
-            video_path = trial_dir / "frames.mp4"
-            if video_path.exists():
-                cap = cv2.VideoCapture(str(video_path))
-                if cap.isOpened():
-                    while True:
-                        ret, frame = cap.read()
-                        if not ret:
-                            break
-                        frames.append(cv2.resize(frame, (canvas_w, canvas_h)))
-                    cap.release()
+            # PyAV decodes real frames, so frame i of this list is genuinely
+            # frame i of the file, which is what lets the label arrays below be
+            # indexed by the same number.
+            frames = [
+                cv2.resize(frame, (canvas_w, canvas_h))
+                for frame in decode_frames(trial_dir / "frames.mp4")
+            ]
 
             rendered = []
             for t in range(n_frames):
@@ -630,17 +637,13 @@ class MeatPreprocessData:
                     cv2.circle(canvas, centre, 6, (0, 0, 0), -1, cv2.LINE_AA)
                     cv2.circle(canvas, centre, 4, colour, -1, cv2.LINE_AA)
 
-                text = (
-                    f"[{trial_dir.name}] Frame {t + 1}/{n_frames} | "
-                    f"vessel markers {int(frame_labels.sum())}   "
-                    f"(m/n trial, k/j frame, q quit)"
-                )
-                cv2.putText(canvas, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                            (0, 0, 0), 4, cv2.LINE_AA)
-                cv2.putText(canvas, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                            (255, 255, 255), 2, cv2.LINE_AA)
+                # The frame counter and vessel count used to be drawn into the
+                # canvas with two putText calls; under Qt they live in the
+                # window's status bar instead, so they stay crisp and constant
+                # in size however the view is scaled.
                 rendered.append(canvas)
-            return rendered, len(frames) > 0
+            vessel_counts = [int(labels[t].sum()) for t in range(n_frames)]
+            return rendered, len(frames) > 0, vessel_counts
 
         # Trials are rendered on first visit and kept, so revisiting one is
         # instant. Rendering all 23 up front would cost ~1 GB of RAM.
@@ -658,7 +661,7 @@ class MeatPreprocessData:
         def render():
             """Current frame, or None to end the loop."""
             trial_dir = trials[state["trial"]]
-            frames, had_video = get_trial(trial_dir)
+            frames, had_video, _ = get_trial(trial_dir)
             if not had_video and not state["warned"]:
                 print(
                     "No clean/<trial>/frames.mp4 found - drawing markers on a "
@@ -670,6 +673,19 @@ class MeatPreprocessData:
                 return None
             state["frame"] = max(0, min(state["frame"], len(frames) - 1))
             return frames[state["frame"]]
+
+        def status_lines():
+            """Status bar: which trial and frame, and how many markers are labelled."""
+            trial_dir = trials[state["trial"]]
+            frames, _, vessel_counts = get_trial(trial_dir)
+            frame_idx = state["frame"]
+            count = vessel_counts[frame_idx] if frame_idx < len(vessel_counts) else 0
+            return [
+                f"[{trial_dir.name}] Trial {state['trial'] + 1}/{len(trials)} | "
+                f"Frame {frame_idx + 1}/{len(frames)} | vessel markers {count}",
+                "red = vessel present, green = absent   "
+                "(m/n trial, k/j frame, q quit)",
+            ]
 
         def on_key(key):
             """Map a keypress to a state change; see the docstring for bindings."""
@@ -695,7 +711,7 @@ class MeatPreprocessData:
             state["frame"] = new_frame
             return "redraw"
 
-        run_frame_browser(cv2, "Meat annotations", render, on_key)
+        run_browser("Meat annotations", render, on_key, status=status_lines)
 
 
 def main():

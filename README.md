@@ -172,19 +172,32 @@ micromamba env create -f requirements/annotator-env.yml   # once, ~500 MB, about
 ```
 
 The script activates that environment itself. If you would rather use your own interpreter,
-point `DIFFTACTILE_ANNOTATOR_PYTHON` at it — it needs numpy, scipy, tqdm and a **GUI-capable**
-`opencv-python` (the `opencv-python-headless` wheel used elsewhere in this project is built
-with `GUI: NONE` and cannot open a window at all). Running inside the container still works if
-you prefer it; the script detects that and uses the image's own Python.
+point `DIFFTACTILE_ANNOTATOR_PYTHON` at it — it needs numpy, scipy, tqdm, **PySide6** (the
+windows) and **av** (video decoding); the script checks for the last two and says so if they
+are missing. Note that these two viewers are the **only** part of the project that does not
+draw its windows with OpenCV.
+
+**They are Qt 6 applications, so they are native Wayland clients.** The `opencv-python` wheel
+ships exactly one Qt platform plugin (`xcb`), so every OpenCV window on a Wayland desktop goes
+through Xwayland; the PySide6 wheels bundle the Wayland plugins, so Qt selects `wayland` by
+itself and no compatibility layer is involved. Nothing is forced — set `QT_QPA_PLATFORM=xcb`
+to fall back to X11, which is what to use inside the container or over X forwarding. Because
+Qt needs no X server, `DISPLAY` may be unset entirely: `WAYLAND_DISPLAY` alone is enough.
+
+Running inside the container is no longer the recommended fallback: the image ships neither
+PySide6 nor PyAV, and the script will tell you to run on the host instead.
 
 Both need a display and set `DIFFTACTILE_INTERACTIVE=1` for you. Keys are printed on start-up
 (`m`/`n` video or trial, `k`/`j` frame, `q` quit; silicone additionally: left click to add a
 point, `d` to clear the frame, `p` to save).
 
-The source videos are 1080p, which is larger than most screens and slow to push to a window, so
-both viewers scale frames to 960 px wide for display. Clicks are mapped back to full-resolution
-pixels before being stored, so annotations on disk are unaffected. Override the display width
-with `DIFFTACTILE_VIEW_WIDTH` (`0` disables scaling).
+Annotation points in the silicone tool are real Qt scene objects rather than circles burned
+into the image, so **clicking a point selects it and `Delete` removes that one** — alongside
+the older `z` (undo last) and `d` (clear frame). The view is scaled to fit the window while the
+scene stays in the video's own 1080p pixel grid, so the window is freely resizable and clicks
+map back to full-resolution coordinates exactly. (This replaces the old `DIFFTACTILE_VIEW_WIDTH`
+downscaling, which existed because OpenCV had to shrink the frame itself before pushing it over
+an X socket.)
 
 The meat viewer draws the labels over the **real camera frames**: the bundle ships
 `clean/<trial>/frames.mp4`, the 26 decimated frames per trial that preprocessing kept, aligned
@@ -676,12 +689,12 @@ Two environment variables change this:
 | Variable | Effect |
 |---|---|
 | `DIFFTACTILE_INTERACTIVE=1` | Restore the original blocking behaviour: `plt.show()` waits, frame browsers step on your key presses (`j`/`k`/`q`), the Gmsh FLTK viewer opens, and the tkinter marker-labelling GUI runs. Requires a real display. |
-| `DIFFTACTILE_HEADLESS=1` | Stronger: do not create windows at all. Implied automatically when `DISPLAY` is unset. |
+| `DIFFTACTILE_HEADLESS=1` | Stronger: do not create windows at all. Implied automatically when neither `DISPLAY` nor `WAYLAND_DISPLAY` is set. |
 | `DIFFTACTILE_MAX_FRAMES=N` | How many frames a viewer loop steps through before returning when non-interactive. |
-| `DIFFTACTILE_VIEW_WIDTH=N` | Width in pixels the frame browsers scale their display image to (default 960; `0` disables scaling). Only the displayed copy is resized — annotations are stored in full-resolution coordinates. |
+| `QT_QPA_PLATFORM=xcb` | Force the Qt annotation viewers onto X11 instead of letting Qt pick Wayland. Use inside the container or over X forwarding. |
 | `DIFFTACTILE_ANNOTATOR_PYTHON` | Interpreter `docker/annotate_data.sh` should use, instead of the `vessel-palpation-annotator` micromamba env. |
 
-Two tools exist *only* to collect manual input — the cv2 click-annotator in
+Two tools exist *only* to collect manual input — the Qt click-annotator in
 `preprocess_silicone_data.py::annotate()` and the tkinter labeller in
 `marker_tracker.py::VideoPlayer.run()`. Without `DIFFTACTILE_INTERACTIVE=1` they print a note
 and return immediately, leaving any annotations already on disk untouched.
@@ -785,13 +798,11 @@ interpreting the simulator's output correctly. The remainder are known rough edg
 - **Non-interactive by default.** Nothing blocks waiting for a window to be closed; inspect
   the saved figures in `difftactile/output/` instead. `DIFFTACTILE_INTERACTIVE=1` restores the
   blocking windows — see [Interactive windows](#interactive-windows).
-- **The annotation viewers draw each frame twice.** On Wayland/Xwayland a single draw can
-  briefly show the previous frame instead, so the frame browsers behind
-  `docker/annotate_data.sh` present twice. What you see is therefore always right: one keypress
-  moves one frame, and the image on screen always matches the frame number in the overlay.
-  Run the script **on bare metal** (its default) rather than inside the container — the double
-  present is cheap locally, but over a forwarded X socket it doubles an already large per-frame
-  cost and is what used to make these viewers feel choppy.
+- **The annotation viewers need their own environment.** They are the only Qt (PySide6) windows
+  in the project — everything else uses OpenCV — so they run from the dedicated
+  `vessel-palpation-annotator` env on bare metal, not inside the container, which ships neither
+  PySide6 nor PyAV. Being native Wayland clients is the point: it removed the stale-frame
+  double-present workaround the OpenCV viewers needed, so one keypress moves exactly one frame.
 - **`script_main` can segfault at exit when the Taichi GGUI window is open** (exit code 139,
   "Segmentation fault (core dumped)"). This happens *after* `main()` has finished and printed
   `all done`, during CUDA/GGUI teardown, so **the collected trajectories are complete and

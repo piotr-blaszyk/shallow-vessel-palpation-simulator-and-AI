@@ -14,6 +14,13 @@
 # outside the container, and it needs no part of the Docker stack - no Taichi,
 # no CUDA, no torch.
 #
+# The windows are Qt 6 (PySide6), not OpenCV, and video is decoded with PyAV.
+# That makes them native Wayland clients rather than Xwayland ones, which is the
+# whole point: the opencv-python wheel ships only the `xcb` Qt plugin, so every
+# cv2 window on a Wayland desktop is an X client going through a compatibility
+# layer. See difftactile/main/qt_viewer.py. The rest of the project still uses
+# OpenCV windows; only these two hand-driven viewers were moved.
+#
 # It uses its own small micromamba environment, created once with:
 #
 #     micromamba env create -f requirements/annotator-env.yml
@@ -32,8 +39,13 @@
 #                Editing is LOCKED until you press g, so browsing cannot alter
 #                annotations by accident. z undoes the last point added in this
 #                session only - it never touches points loaded from disk.
-#                Keys: g toggle editing, left click add, z undo, d clear frame,
-#                      m/n video, k/j frame, p save, q save and quit,
+#                Points are Qt scene objects, so clicking one selects it (white
+#                ring) and Delete removes that specific point - which the old
+#                OpenCV version, drawing circles into the pixels, could not do.
+#                Keys: g toggle editing, left click add, click a point to
+#                      select it, Delete remove selected, Esc deselect,
+#                      z undo, d clear frame, m/n video, k/j frame,
+#                      p save, q save and quit,
 #                      x quit WITHOUT saving (press twice to confirm).
 #                Nothing is written until p or q.
 #
@@ -87,15 +99,15 @@ if [ -z "${DATASET}" ]; then
     exit 1
 fi
 
-if [ -z "${DISPLAY:-}" ]; then
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     cat >&2 <<'EOF'
-ERROR: DISPLAY is not set, so no windows can be opened.
+ERROR: neither WAYLAND_DISPLAY nor DISPLAY is set, so no windows can be opened.
 
 These are interactive tools and must run on a machine with a display. Run this
 script from a normal desktop terminal rather than over a plain SSH session.
 
-On a Wayland desktop DISPLAY is normally still set (Xwayland); if it is not,
-check that you are in a graphical session.
+Either variable is enough: the viewers are Qt (PySide6) and run natively on
+Wayland, so a Wayland session with no Xwayland at all is fine.
 EOF
     exit 1
 fi
@@ -104,27 +116,33 @@ fi
 # than the project default of never waiting on a GUI.
 export DIFFTACTILE_INTERACTIVE=1
 
-# Force the X11 path rather than letting the toolkits pick a backend.
+# Let Qt pick its own platform plugin.
 #
-# The opencv-python wheel ships exactly one Qt platform plugin - xcb - so on a
-# Wayland session it goes through Xwayland regardless; naming it explicitly just
-# makes that deterministic instead of leaving it to Qt's autodetection, which
-# prints "Ignoring XDG_SESSION_TYPE=wayland on Gnome" and can abort outright if
-# it guesses a plugin that is not present. GDK_BACKEND covers the GTK side for
-# builds of OpenCV compiled against GTK instead of Qt.
+# The viewers are PySide6, whose wheels bundle libqwayland-generic.so and
+# libqwayland-egl.so alongside libqxcb.so, so on a Wayland session Qt selects
+# the `wayland` platform by itself and the windows are native Wayland clients -
+# no Xwayland, no extra copy per repaint. This is why the tools were moved off
+# OpenCV, whose wheel ships only the xcb plugin and so always went through
+# Xwayland here.
 #
-# Both are overridable, so a user on a build with a real Wayland plugin can opt
-# back out with QT_QPA_PLATFORM=wayland.
-export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
-export GDK_BACKEND="${GDK_BACKEND:-x11}"
+# Nothing is forced, so QT_QPA_PLATFORM is still honoured if it is already set:
+# `QT_QPA_PLATFORM=xcb ./docker/annotate_data.sh --silicone` falls back to X11,
+# which is what to use inside the container or over X forwarding.
+if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    # Qt's Wayland plugin locates the compositor socket relative to
+    # XDG_RUNTIME_DIR and aborts without it. It is normally set by the session,
+    # but not always under `sudo`, `su` or a bare service manager.
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+fi
 
 # --- pick the interpreter -----------------------------------------------------
 #
 # Prefer the dedicated `vessel-palpation-annotator` micromamba env. It is the
-# only environment this script is tested against, and crucially it installs the
-# GUI-capable `opencv-python` wheel: several of the project's other envs (and the
-# Docker image's batch tooling) deliberately install `opencv-python-headless`,
-# which is built with GUI: NONE and cannot open a window at all.
+# only environment this script is tested against, and the one that carries the
+# two packages these viewers need and nothing else does: PySide6 for the window
+# and PyAV for decoding. OpenCV is still used for image operations, but the
+# headless wheel is now the right one - Qt owns the window, so no GUI-capable
+# OpenCV build is required anywhere.
 #
 # If the caller has already activated something themselves - or is running this
 # inside the container, which is supported but slower - we leave their
@@ -154,7 +172,8 @@ elif command -v micromamba >/dev/null 2>&1 \
      && micromamba env list 2>/dev/null | grep -qE "(^|[[:space:]])${ENV_NAME}[[:space:]]"; then
     PYTHON="micromamba run -n ${ENV_NAME} python"
 elif [ -f /.dockerenv ]; then
-    # Inside the container: the image already carries a GUI-capable OpenCV.
+    # Inside the container. Supported but slower, and note the image does not
+    # install PySide6 or PyAV - the check below reports that clearly.
     PYTHON="python"
 else
     cat >&2 <<EOF
@@ -165,16 +184,44 @@ Create it once (takes about a minute, ~500 MB, no torch or CUDA):
     micromamba env create -f requirements/annotator-env.yml
 
 Then re-run this script. To use a different interpreter instead, set
-DIFFTACTILE_ANNOTATOR_PYTHON to its path - it needs numpy, scipy, tqdm and a
-GUI-capable opencv-python (NOT opencv-python-headless).
+DIFFTACTILE_ANNOTATOR_PYTHON to its path - it needs numpy, scipy, tqdm,
+PySide6 (the GUI) and av (video decoding).
 EOF
     exit 1
 fi
 
-# Frames are 1080p; the viewers scale them down for display so each repaint
-# pushes ~4x less data. Override to change the on-screen width, or set 0 to
-# disable scaling entirely.
-export DIFFTACTILE_VIEW_WIDTH="${DIFFTACTILE_VIEW_WIDTH:-960}"
+# Fail early and legibly if the interpreter is missing the two packages these
+# viewers need. Without this the user gets a bare ModuleNotFoundError traceback
+# from deep inside a preprocessing module. The container hits this branch: its
+# image carries neither PySide6 nor PyAV, since the viewers are meant to run on
+# bare metal.
+if ! ${PYTHON} -c "import PySide6, av" >/dev/null 2>&1; then
+    MISSING=$(${PYTHON} -c "
+import importlib
+print(' '.join(m for m in ('PySide6', 'av') if not importlib.util.find_spec(m)))
+" 2>/dev/null || echo "PySide6 av")
+    cat >&2 <<EOF
+ERROR: the interpreter for these viewers is missing: ${MISSING}
+
+    interpreter: ${PYTHON}
+
+The annotation viewers use Qt (PySide6) for their windows and PyAV for video
+decoding. Install them there, or - the intended route - use the dedicated env:
+
+    micromamba env create -f requirements/annotator-env.yml
+
+If you are inside the Docker container, run this on the host instead. The image
+deliberately does not ship these: the viewers are hand-driven tools that belong
+on bare metal, which is the whole reason this script exists outside Docker.
+EOF
+    exit 1
+fi
+
+# NOTE: DIFFTACTILE_VIEW_WIDTH is gone. It existed because the OpenCV viewers
+# had to downscale the 1080p frame *itself* before pushing it over an X socket,
+# and then rescale every click back. Qt scales the view rather than the image
+# (fitInView), so the window is resizable, the frame is never resampled on the
+# way in, and clicks map back through mapToScene() exactly.
 
 if [ "${DATASET}" = "meat" ]; then
     echo "Meat annotations: red = vessel present, green = absent."
@@ -217,7 +264,8 @@ fi
 
 echo "Silicone annotator. Existing annotations are loaded and redrawn."
 echo "Editing starts LOCKED - press g to allow clicks (lasts the whole session)."
-echo "Keys: g toggle editing, left click add (max 4/frame), z undo this session's"
+echo "Keys: g toggle editing, left click add (max 4/frame), click a point to select"
+echo "      it and Delete to remove that one, Esc deselect, z undo this session's"
 echo "      last point, d clear frame, m/n video, k/j frame, p save, q save+quit,"
 echo "      x quit WITHOUT saving (press x twice to confirm)."
 exec ${PYTHON} -m difftactile.scripts.script_annotate_silicone

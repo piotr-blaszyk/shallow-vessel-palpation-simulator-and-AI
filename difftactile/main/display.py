@@ -21,33 +21,39 @@ Environment variables:
                                 loops, and `prompt()` reads stdin.
     DIFFTACTILE_HEADLESS=1      Stronger still: do not even create windows.
                                 Implies non-interactive.
-    DIFFTACTILE_DOUBLE_PRESENT=1
-                                Draw each frame twice in the frame browsers. Off
-                                by default (it costs ~45% of a redraw); turn it
-                                on if a keypress briefly shows the previous
-                                frame, which some Wayland/Xwayland compositors
-                                do. See `run_frame_browser()`.
-    DIFFTACTILE_VIEW_WIDTH      Width in pixels that the frame browsers scale
-                                their display image down to (default 960, `0`
-                                disables scaling). The source videos are 1080p,
-                                which is both bigger than most screens and slow
-                                to push over an X connection; see
-                                `fit_to_view()`.
 
 With neither set, windows are still drawn (so you can watch a run go past) but
 they are never waited on: `show_plots()` returns False, `wait_key()` returns
-"no key pressed" after a short delay, and the frame-browser loops advance on
-their own instead of asking for a keystroke.
+"no key pressed" after a short delay, and the viewer loops advance on their own
+instead of asking for a keystroke.
+
+Note that this module is the policy for the project's **OpenCV** windows. The
+two interactive annotation viewers behind `docker/annotate_data.sh` were moved
+to Qt (`difftactile/main/qt_viewer.py`) so they are native Wayland clients; they
+still honour `is_interactive()` for the "should this open at all" decision, but
+their event loop, frame scaling and key handling live there. The frame-browser
+loop and display-downscaling helpers that used to live here went with them - Qt
+fits the view to the window itself, and its native presentation removed the need
+for the double-present workaround the OpenCV loop carried.
 """
 
 import os
 
 
 def is_headless():
-    """True when no window should be created at all."""
+    """True when no window should be created at all.
+
+    A display is "reachable" if either X11 (`DISPLAY`) or Wayland
+    (`WAYLAND_DISPLAY`) is available. Checking only `DISPLAY` used to be enough
+    because every window in the project was an OpenCV/Xwayland one, but the Qt
+    annotation viewers are native Wayland clients: on a Wayland session that has
+    no Xwayland running, `DISPLAY` is unset while windows open perfectly well.
+    Treating that as headless would refuse to start the very tools that work
+    best there.
+    """
     if os.environ.get("DIFFTACTILE_HEADLESS", "0") == "1":
         return True
-    return not os.environ.get("DISPLAY")
+    return not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
 def is_interactive():
@@ -145,48 +151,6 @@ def imshow(cv2, window_name, image):
     _guard_gui(lambda: cv2.imshow(window_name, image), None)
 
 
-def view_width():
-    """Width the frame browsers scale their display image down to, or 0 for none.
-
-    Override with DIFFTACTILE_VIEW_WIDTH; `0` keeps the frames at full size.
-    """
-    try:
-        return max(0, int(os.environ.get("DIFFTACTILE_VIEW_WIDTH", "960")))
-    except ValueError:
-        return 960
-
-
-def fit_to_view(cv2, image):
-    """Scale a frame down to `view_width()` for display, preserving aspect ratio.
-
-    The source videos are 1080p, so every `cv2.imshow` hands the GUI a 6.2 MB
-    uncompressed BGR buffer. That is the dominant per-keypress cost in the
-    interactive browsers: it is larger than most screens (so the window is
-    downscaled for display anyway), and when the window is served over a
-    forwarded X connection the whole buffer crosses a socket on every repaint,
-    which is what makes stepping through frames feel choppy. Halving each
-    dimension cuts the data pushed per repaint by ~4x.
-
-    Only the *displayed* copy is resized. Annotation coordinates are unaffected:
-    callers scale clicks back up themselves (see the silicone annotator's mouse
-    callback), so what is stored on disk stays in full-resolution pixels.
-
-    Returns `(scaled_image, scale)`, where `scale` is the factor applied - 1.0
-    when the frame was already small enough or scaling is disabled.
-    """
-    width = view_width()
-    if not width:
-        return image, 1.0
-    h, w = image.shape[:2]
-    if w <= width:
-        return image, 1.0
-    scale = width / float(w)
-    resized = cv2.resize(
-        image, (width, max(1, int(round(h * scale)))), interpolation=cv2.INTER_AREA
-    )
-    return resized, scale
-
-
 def move_window(cv2, window_name, x, y):
     """`cv2.moveWindow` that becomes a no-op when no window can be shown.
 
@@ -250,116 +214,6 @@ def prompt(message, default=""):
     except EOFError:
         # stdin closed mid-run (piped input exhausted, detached process).
         return default
-
-
-def run_frame_browser(cv2, window, render, on_key):
-    """Shared event loop for the frame-stepping annotation viewers.
-
-    Both real-world datasets are browsed the same way - step through frames,
-    hop between videos/trials, quit on `q` - but their data models are not
-    interchangeable (the silicone set is up to four hand-clicked points per
-    frame in a pickle; the meat set is a fixed 127-marker label vector per frame
-    in an npz, derived from kinematics and not editable). So the *shell* is
-    shared here and each viewer keeps its own rendering and key handling.
-
-    Centralising it also means the X11 paint-ordering fix lives in exactly one
-    place. `imshow()` only queues an image; it is `waitKey()` that pumps the GUI
-    event loop and actually paints. Blocking in `waitKey(0)` straight after an
-    `imshow()` lets an already-pending keystroke be delivered *before* the paint
-    is serviced, so the window lingers on the previous frame and then snaps to
-    the requested one - visible as one wrong frame followed by the right one.
-    Under X11 forwarding the round trip is slow enough to make that obvious,
-    while on bare metal both updates usually land within one refresh. The loop
-    below pumps once after drawing, and carries over any key that arrives during
-    the pump instead of dropping it. `DIFFTACTILE_DOUBLE_PRESENT=1` adds a second
-    present for compositors that still show a stale frame (see below).
-
-    Args:
-        cv2: the OpenCV module (passed in so this file needs no cv2 import).
-        window: window name.
-        render: `() -> image | None` for the current state. Returning None ends
-            the loop. Called only when `on_key` reports the state changed.
-        on_key: `(key) -> "redraw" | "quit" | None`. Return "redraw" when the
-            key changed what should be displayed, "quit" to exit.
-
-    The loop always BLOCKS on a keypress, like any ordinary GUI - it never wakes
-    on a timer. A viewer whose state can also change without a keypress (the
-    silicone annotator, via a mouse callback) repaints from inside its own
-    callback: `cv2.waitKey(0)` is what pumps the GUI event loop, so callbacks
-    run while this loop is blocked and can draw straight to the window.
-
-    Returns when the user quits, or immediately when not interactive.
-    """
-    if not is_interactive():
-        return
-
-    double_present = os.environ.get("DIFFTACTILE_DOUBLE_PRESENT", "0") == "1"
-    needs_redraw = True
-    pending_key = None
-    while True:
-        if needs_redraw:
-            image = render()
-            if image is None:
-                break
-            imshow(cv2, window, image)
-            needs_redraw = False
-            # Pump once so the frame is actually painted before we block. This
-            # is a flush, not a wait: `imshow` only queues the image, and it is
-            # `waitKey` that services the GUI event loop. It must stay a short
-            # non-zero delay - a 0 here would block mid-redraw and demand a
-            # keypress just to finish painting. Any key typed during the pump is
-            # carried over rather than dropped.
-            pumped = wait_key(cv2, 1) & 0xFF
-            if pumped != 255:
-                pending_key = pumped
-            # Optionally present the same frame a second time. Under rootless
-            # Xwayland the window is composited from a small pool of buffers, and
-            # a keypress can briefly re-present a stale one still holding the
-            # frame from two redraws ago (seen as a flash of the
-            # opposite-direction frame); a second present fills every buffer with
-            # the current frame so the stale re-present is identical.
-            #
-            # It costs a full extra present: measured 6.2 ms vs 3.4 ms per frame
-            # step, i.e. ~45% of the redraw. Most setups do not need it, so it is
-            # off by default and DIFFTACTILE_DOUBLE_PRESENT=1 brings it back for
-            # compositors that do show the flash.
-            if double_present:
-                imshow(cv2, window, image)
-                pumped = wait_key(cv2, 1) & 0xFF
-                if pumped != 255:
-                    pending_key = pumped
-
-        if pending_key is not None:
-            key, pending_key = pending_key, None
-        else:
-            # Block until a key is actually pressed, like any ordinary GUI: no
-            # timer, no polling, and no CPU burned while idle. An earlier version
-            # woke every 30 ms for viewers with a mouse callback, to re-check a
-            # dirty flag. That put a 30 ms floor on how fast frames could be
-            # stepped and up to 30 ms of dead latency in front of every keypress
-            # - about 4.5x the cost of an actual redraw (~7 ms), and the reason
-            # stepping through frames felt choppy. Mouse callbacks now repaint
-            # themselves, so there is nothing left to poll for.
-            key = wait_key(cv2, 0) & 0xFF
-            if key == 255:
-                continue
-
-        outcome = on_key(key)
-        if outcome == "quit":
-            break
-        if outcome == "redraw":
-            needs_redraw = True
-            # Collapse whatever else is already queued into the same redraw, so
-            # a burst of presses costs one frame over the wire and lands exactly
-            # N steps away rather than falling behind the keyboard.
-            while True:
-                extra = wait_key(cv2, 1) & 0xFF
-                if extra == 255:
-                    break
-                outcome = on_key(extra)
-                if outcome == "quit":
-                    return destroy_windows(cv2)
-    destroy_windows(cv2)
 
 
 def iteration_limit(env_var, default):

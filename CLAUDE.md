@@ -54,11 +54,31 @@ X-socket forwarding out of the container makes them choppy enough to be useless 
 tool. It uses its own dedicated micromamba env, `vessel-palpation-annotator`, defined by
 `requirements/annotator-env.yml` and created with
 `micromamba env create -f requirements/annotator-env.yml`. That env is deliberately minimal —
-numpy, scipy, tqdm and a **GUI-capable** `opencv-python`, with no torch, no torch-geometric and
-no Taichi — which is why `predict_exp` (the module that drags in the whole GNN stack) is
+numpy, scipy, tqdm, **PySide6**, **av** and headless OpenCV, with no torch, no torch-geometric
+and no Taichi — which is why `predict_exp` (the module that drags in the whole GNN stack) is
 imported *lazily* inside the two methods that need it in `preprocess_{silicone,meat}_data.py`
 rather than at module scope. Do not hoist those imports back to the top: it would put torch
-back on the annotator's critical path and break the small env.
+back on the annotator's critical path and break the small env. `qt_viewer` and `video_decode`
+are imported lazily inside `annotate()` / `browse_annotations()` for the mirror-image reason —
+so the batch preprocessing in those same modules stays importable without PySide6 or PyAV.
+
+**These two viewers are the only Qt windows in the project; everything else uses OpenCV.**
+They were moved to PySide6 because the `opencv-python` wheel ships only the `xcb` Qt platform
+plugin, so every cv2 window on a Wayland desktop is an Xwayland client. PySide6 bundles the
+Wayland plugins, so these run natively. Consequences worth knowing:
+
+- The env now installs **`opencv-python-headless`**, and that is correct — cv2 is used only for
+  image operations here, Qt owns the windows. This reverses the old "must be GUI-capable
+  opencv-python" rule *for this env only*; the rest of the project is unchanged.
+- `is_headless()` accepts `WAYLAND_DISPLAY` as well as `DISPLAY`, because a Wayland session
+  with no Xwayland has `DISPLAY` unset while windows open fine.
+- `display.py`'s `run_frame_browser()`, `fit_to_view()` and `view_width()` were **deleted**:
+  they existed only for these two viewers. Qt fits the view to the window itself
+  (`fitInView`), and the scene stays in full video resolution so clicks map back through
+  `mapToScene()` with no manual rescaling. `DIFFTACTILE_VIEW_WIDTH` and
+  `DIFFTACTILE_DOUBLE_PRESENT` are gone with them.
+- Silicone annotation points are `QGraphicsEllipseItem`s, not pixels drawn into the frame, so
+  clicking one selects it and `Delete` removes that specific point.
 
 Directly, as a module:
 
@@ -119,7 +139,7 @@ Re-running the *same* configuration still overwrites in place.
 | `DIFFTACTILE_HEADLESS=1` | Skip creating Taichi GGUI / Gmsh FLTK / cv2 windows entirely. Implied when `DISPLAY` is unset. |
 | `DIFFTACTILE_INTERACTIVE=1` | Opt back in to **blocking** GUI windows (`plt.show()`, `cv2.waitKey(0)`, Gmsh FLTK, the tkinter labeller). Off by default: no script waits on user input, so unattended runs always terminate. See `difftactile/main/display.py`. |
 | `DIFFTACTILE_MAX_FRAMES` | Frames a non-interactive viewer loop steps through before returning (per-loop defaults apply otherwise). |
-| `DIFFTACTILE_VIEW_WIDTH` | Display width the frame browsers scale to (default 960, `0` disables). Display only — clicks are mapped back, so stored annotations stay in full-resolution pixels. |
+| `QT_QPA_PLATFORM` | Force the Qt annotation viewers onto a platform plugin (`xcb` for X11). Unset, Qt picks `wayland` natively. |
 | `DIFFTACTILE_ANNOTATOR_PYTHON` | Interpreter for `docker/annotate_data.sh`, instead of the `vessel-palpation-annotator` env. |
 | `DIFFTACTILE_TRAJECTORIES` | Comma-separated trajectory types to collect (0 press, 1 slide-vein, 2 twist-y, 3 twist-z). Default all four. **The published dataset is entirely type 3** — use `3` to reproduce it. |
 | `DIFFTACTILE_VEIN_PAIR=1` | Enable the sensor↔vein contact pair on the first of each loop's two substeps, so a trajectory runs once **with** a subsurface vein and once **without**. The vein half is hard-disabled in the committed default (`if False and j < 1` in `main()`), so every substep otherwise runs vein-free. |
