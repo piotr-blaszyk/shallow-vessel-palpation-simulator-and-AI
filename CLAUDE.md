@@ -370,28 +370,49 @@ now provides one. Note it calls `generate_trajectories()`, which REPLACES the fo
 trajectory types with the four DA interactions (press / twist_z / twist_x / slide) — the two
 sets are different and share the `trajectory_names` attribute.
 
-**It does NOT currently reproduce Fig. 5 — two pre-existing faults, both measured.** Do not
-re-diagnose from scratch:
+**It works, and the fix is one line — do not remove it.** `domain_adaptation()` used to hang
+forever, and the cause was subtle:
 
-1. **The PID never converges.** Position error is a constant **0.0982** against a 0.005
-   tolerance, byte-identical after 120 timesteps; the sensor never moves toward the waypoint.
-   The tip vertex the PID reads is offset from the pose `set_up_pose()` sets. **This is not
-   DA-specific** — the *training* trajectories show the same 0.0982 and also never reach their
-   target. `collect_training_data()` survives it because it loops `for ts in range(...)` and
-   treats the flag as an early exit; `domain_adaptation()`'s `while last_target_reached != 1`
-   turned it into an infinite loop (50 min at ~11 ts/s, no output). Now bounded by
-   `DIFFTACTILE_DA_MAX_TIMESTEPS` (default 400) so it terminates — safe, not correct.
-2. **The backward pass cannot run.** `meta.enable_grad = 0`, so the `.grad` fields
-   `clear_grad_helper()` fills are never allocated: `'NoneType' object has no attribute
-   'num_active_indices'`.
+- `update()` advances `vertices_undeformed_A[frame] -> [frame+1]` across the sub-frames of **one**
+  timestep. **`copy_frame()`** copies the result back to frame 0, which is where the next
+  timestep's `set_control_vel()` and the PID both read from.
+- `collect_training_data()` had always called it. The DA loop never did — it relied on
+  `memory_to_cache()`, which is a **no-op** (`vitactip.memory_to_cache()` starts with a bare
+  `return`, a memory optimisation for collection). So every DA timestep restarted from the
+  initial pose and the PID position error sat at a constant **0.0982** against a 0.005 tolerance.
+- Adding `self.copy_frame()` to the DA forward loop fixes it: press now reaches its last target
+  at ts 189 rather than never.
 
-The simulator is *not* the bottleneck — the forward pass measures 0.09 s/timestep. Fixing Fig. 5
-means fixing the controller and enabling `enable_grad` (check the memory budget: gradient fields
-roughly double it).
+Note the earlier diagnosis in this file was wrong: this is *not* a broken controller, and the
+training trajectories are not affected (they never depend on the flag, since
+`collect_training_data()` loops `for ts in range(...)` and treats it as an early exit).
 
-Running it also fixed a latent bug: `maybe_save_tactile_sensor_mesh_to_pickle()` wrote into
-`difftactile/output/mesh_snapshots/` without creating it, so it raised `FileNotFoundError` on any
-clean checkout. It now `makedirs` first.
+Three smaller gaps closed at the same time:
+
+- **`da_*.npz` were never generated.** `compute_da_loss()` loads the real marker positions from
+  them, but only the photographs shipped. `domain_adaptation.extract_real_marker_positions()`
+  now extracts them, and is called from the entrypoint. `twist_x` needs
+  `da_twist_x_add_manual_markers()` — the blob detector finds 121 of 127 markers there, and the
+  grid reordering raises `IndexError` on a short list.
+- **`compute_da_loss()` was never called** on this path; it only fired through `handle_da_loss()`,
+  which needs `use_bo`. Now called at the apex, where the manuscript compares.
+- **The optimisation half cannot run.** `set_up_torch_params()`, `update_params()`,
+  `set_optimisation_params_from_log()`, `save_gradients_for_calibration()`, the optimiser and the
+  scheduler were all deleted from `main.py`, though `domain_adaptation()` still calls them. It is
+  skipped unless `DIFFTACTILE_DA_OPTIMISE=1`. They survive on the archival branch
+  `domain-adaptation-vascular-multiple-trajectories` (~150 lines).
+
+**`enable_grad` is an env override, deliberately.** Taichi allocates `.grad` buffers at
+field-construction time, so it cannot be toggled later; the shipped JSON keeps it 0 because
+collection never differentiates and the buffers roughly double GPU memory.
+`DIFFTACTILE_ENABLE_GRAD=1` (set by `domain_adaptation.sh`) turns them on for that process only.
+**Do not flip the JSON** — that is the collection/DA clash that originally forced these onto
+separate branches.
+
+Verified after the fix: MAE 6.3 / 10.7 / 14.9 / 10.5 px for press / twist_z / twist_x / slide
+(manuscript quotes 13.5 px aggregated), all four trajectories confirmed visually via
+`DIFFTACTILE_SNAPSHOT_DIR`, and **no regression** — `sim-short` collection still runs, A→B eval
+is unchanged at 0.7314/0.2553/0.2059, C→B training reproduces 0.6043/0.1313.
 
 ### The vessel map (`vessel_map.sh`) and the confusion colour scheme
 

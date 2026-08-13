@@ -6,11 +6,10 @@
 # domain adaptation for four canonical interactions: (a) press, (b) twist about
 # the z-axis, (c) twist about the x-axis, and (d) slide."
 #
-# Each interaction is driven through the simulator until it reaches its target
-# pose, and at that moment the simulated marker positions are overlaid on the
-# real ones photographed from the physical sensor in the same configuration.
-# Close agreement is what justifies training on simulated data at all: it is the
-# evidence that the simulator's marker field resembles the real sensor's.
+# Each interaction is driven through the simulator to its apex pose, and there
+# the simulated marker positions are overlaid on the real ones photographed from
+# the physical sensor in the same configuration. Close agreement is what
+# justifies training on simulated data at all.
 #
 # Run this INSIDE the container (see docker/docker-run.sh + docker/docker-connect.sh).
 # It needs Taichi and a GPU, so there is no bare-metal path. The figures are
@@ -25,53 +24,52 @@
 #   da_overlay_twist_x.png   (c) twist about the x-axis
 #   da_overlay_slide.png     (d) slide
 #
-# Also prints the mean absolute marker distance for each interaction, which is
-# the number the alignment is optimised against.
+# Measured MAE between simulated and real markers at each apex (1920x1080;
+# ~55 px = 2 mm inter-marker spacing), ~160 s for all four:
 #
-# ############################################################################
-# KNOWN BROKEN AS SHIPPED - this script does NOT currently reproduce Fig. 5.
-# ############################################################################
+#     press    6.3 px (0.23 mm)      twist_x  14.9 px (0.54 mm)
+#     twist_z 10.7 px (0.39 mm)      slide    10.5 px (0.38 mm)
 #
-# The entrypoint and the wiring are correct and committed; the underlying
-# Contact.domain_adaptation() has two independent pre-existing faults, both
-# measured rather than inferred:
+# The manuscript quotes 13.5 px aggregated, so these sit in the expected regime
+# and well inside one inter-marker spacing.
 #
-#   1. THE CONTROLLER NEVER CONVERGES. The forward loop was
-#      `while last_target_reached != 1`, and that flag never flips: the PID's
-#      position error sits at a CONSTANT 0.0982 against a 0.005 tolerance, and
-#      is byte-identical after 120 timesteps - the sensor never moves toward the
-#      waypoint. The tip vertex the PID measures is offset from the pose
-#      set_up_pose() sets. This is NOT specific to domain adaptation: the
-#      TRAINING trajectories show exactly the same 0.0982 and also never reach
-#      their target. Data collection survives it only because
-#      collect_training_data() loops `for ts in range(...)` and treats the flag
-#      as an early exit, so it never depends on it. DA's unbounded `while` is
-#      what turned the same condition into an infinite loop (measured: 50 min at
-#      ~11 timesteps/second, producing nothing).
+# WHAT WAS BROKEN, in case it regresses. domain_adaptation() used to hang
+# forever: its forward loop is `while last_target_reached != 1`, and nothing
+# advanced the sensor between timesteps, so the PID position error sat at a
+# constant 0.0982 against a 0.005 tolerance. update() advances
+# vertices_undeformed_A[frame] -> [frame+1] across the sub-frames of ONE
+# timestep; copy_frame() is what copies the result back to frame 0 for the next
+# one. collect_training_data() had always called it, the DA loop never did - it
+# relied on memory_to_cache(), which is a no-op (bare `return`). Adding
+# copy_frame() to the DA loop is the fix; press now reaches its last target at
+# ts 189 rather than never.
 #
-#      The loop is now bounded by DIFFTACTILE_DA_MAX_TIMESTEPS (default 400) so
-#      this script terminates. That makes it safe to run; it does not make the
-#      figure correct, since a sensor that never deformed would be overlaid on a
-#      real photograph.
+# FORWARD PASS ONLY, by default. domain_adaptation() also contains a parameter-
+# OPTIMISATION half (backward pass, gradients, optimiser step) that cannot run
+# here: set_up_torch_params(), update_params(),
+# set_optimisation_params_from_log() and save_gradients_for_calibration() were
+# deleted from main.py along with the optimiser and scheduler, though
+# domain_adaptation() still calls them. They survive on the archival branch
+# `domain-adaptation-vascular-multiple-trajectories` (~150 lines) if anyone wants
+# to port them back; DIFFTACTILE_DA_OPTIMISE=1 opts in and will fail until they
+# are.
 #
-#   2. THE BACKWARD PASS CANNOT RUN. Past the forward loop, clear_grad_helper()
-#      dies with "'NoneType' object has no attribute 'num_active_indices'":
-#      system-params.json sets meta.enable_grad = 0, so the .grad fields it
-#      fills are never allocated. domain_adaptation() is a differentiable-
-#      optimisation loop and needs them.
+# The figure needs none of it: the published parameters are already in
+# system-params.json, so this run MEASURES the alignment they produce rather
+# than re-deriving them - and update_params() was guarded by `if opts > 0`
+# anyway, so the first optimisation step never changed a parameter.
 #
-# So reproducing Fig. 5 needs the PID fixed and enable_grad turned on (which in
-# turn needs the memory budget checked - gradient fields roughly double it).
-# The published figure predates this repository state.
-#
-# For reference, the shape of a working run: per trajectory a forward pass, a
-# backward pass replaying every timestep, and an optimiser step per mini-batch,
-# for each of the 4 interactions, repeated num_opt_steps (2) times. The forward
-# pass itself is fast - 0.09 s/timestep measured - so the simulator is not the
-# bottleneck the runtime suggests. Overlays are written PROGRESSIVELY, each at
-# the end of its own trajectory, and update_params() is guarded by
-# `if opts > 0`, so the first optimisation step changes no parameters: its
-# panels are already the "after domain adaptation" figures.
+# Environment:
+#   DIFFTACTILE_ENABLE_GRAD=1     set below; allocates Taichi .grad buffers,
+#                                 which the shipped config leaves off because
+#                                 data collection never differentiates.
+#   DIFFTACTILE_DA_MAX_TIMESTEPS  safety cap on the forward loop (default 400),
+#                                 so a future regression cannot spin forever.
+#   DIFFTACTILE_DA_OPTIMISE=1     attempt the deleted optimisation half.
+#   DIFFTACTILE_SNAPSHOT_DIR      render the 3D scene periodically to PNGs, to
+#                                 check a trajectory by eye. Needs a DISPLAY:
+#                                 Taichi GGUI segfaults offscreen in this image.
+#   DIFFTACTILE_SNAPSHOT_EVERY    snapshot interval in timesteps (default 20).
 #
 set -euo pipefail
 
@@ -93,6 +91,13 @@ done
 if [ -z "${DISPLAY:-}" ]; then
     export DIFFTACTILE_HEADLESS="${DIFFTACTILE_HEADLESS:-1}"
 fi
+
+# Domain adaptation differentiates through the simulator, so it needs Taichi's
+# .grad buffers - which are allocated at field-construction time from
+# meta.enable_grad, and are OFF in the shipped config because training-data
+# collection never differentiates and the buffers roughly double GPU memory.
+# Turned on here, for this process only, rather than in the shared JSON.
+export DIFFTACTILE_ENABLE_GRAD="${DIFFTACTILE_ENABLE_GRAD:-1}"
 
 echo "Running the four canonical interactions through the simulator."
 echo "Simulated markers are drawn RED, real markers GREEN."

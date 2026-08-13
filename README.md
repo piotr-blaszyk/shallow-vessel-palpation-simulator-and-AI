@@ -139,25 +139,34 @@ marker distance for each:
 | `da_overlay_twist_x.png` | (c) twist about the *x*-axis |
 | `da_overlay_slide.png` | (d) slide |
 
-> ⚠️ **Known broken as shipped — this does not currently reproduce Fig. 5.** The entrypoint and
-> wiring are correct, but `Contact.domain_adaptation()` has two independent pre-existing faults:
+Measured MAE between simulated and real markers at each apex (1920×1080, where the ~55 px
+inter-marker spacing is 2 mm) — about 160 s for all four:
+
+| Interaction | MAE |
+|---|---|
+| press | 6.3 px (0.23 mm) |
+| twist about *z* | 10.7 px (0.39 mm) |
+| twist about *x* | 14.9 px (0.54 mm) |
+| slide | 10.5 px (0.38 mm) |
+
+All sit well inside one inter-marker spacing, which is the accuracy the downstream GNN needs.
+
+> **Forward pass only.** `domain_adaptation()` also contains a parameter-*optimisation* half
+> (backward pass, gradients, optimiser step) that cannot run here: `set_up_torch_params()`,
+> `update_params()` and friends were deleted from `main.py` along with the optimiser and
+> scheduler, though the function still calls them. They survive on the archival branch
+> `domain-adaptation-vascular-multiple-trajectories` if anyone wants to port them back
+> (`DIFFTACTILE_DA_OPTIMISE=1` opts in and will fail until they are).
 >
-> 1. **The PID controller never converges.** Its position error sits at a constant **0.0982**
->    against a 0.005 tolerance and is byte-identical after 120 timesteps — the sensor never moves
->    toward the waypoint. This is *not* specific to domain adaptation: the training trajectories
->    show the same 0.0982. Data collection survives it only because it loops
->    `for ts in range(...)` and treats "target reached" as an early exit; the DA loop was
->    `while last_target_reached != 1`, which therefore spun forever (measured: 50 minutes at
->    ~11 timesteps/second, producing nothing). It is now bounded by
->    `DIFFTACTILE_DA_MAX_TIMESTEPS` (default 400) so the script terminates — which makes it safe
->    to run, not correct.
-> 2. **The backward pass cannot run.** `meta.enable_grad = 0` in `system-params.json`, so the
->    `.grad` fields the optimiser clears are never allocated and it dies with
->    `'NoneType' object has no attribute 'num_active_indices'`.
->
-> Reproducing Fig. 5 needs the controller fixed and `enable_grad` enabled. The published figure
-> predates this repository state. The simulator itself is **not** the bottleneck: the forward
-> pass runs at 0.09 s/timestep.
+> The figure needs none of it — the calibrated parameters are already in `system-params.json`,
+> so this run **measures** the alignment they produce rather than re-deriving it.
+
+To check a trajectory by eye, set `DIFFTACTILE_SNAPSHOT_DIR` to render the 3D scene
+periodically (needs a `DISPLAY`; Taichi GGUI segfaults offscreen in this image):
+
+```bash
+DIFFTACTILE_SNAPSHOT_DIR=difftactile/output/da_snapshots ./domain_adaptation.sh
+```
 
 ### Reproduce the published results
 

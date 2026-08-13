@@ -2268,15 +2268,29 @@ class Contact:
         # In headless mode no X server is available, so skip window creation
         # entirely. visualisation_update_gui() returns early for the same reason;
         # training-data collection does not depend on rendering.
-        if HEADLESS:
+        # DIFFTACTILE_SNAPSHOT_DIR renders OFFSCREEN instead of skipping: Taichi
+        # GGUI's show_window=False needs no X server but still lets
+        # window.save_image() capture frames. That is what makes it possible to
+        # verify a trajectory visually on a headless machine - see
+        # visualisation_update_gui().
+        self.snapshot_dir = os.environ.get("DIFFTACTILE_SNAPSHOT_DIR")
+        self.snapshot_every = int(os.environ.get("DIFFTACTILE_SNAPSHOT_EVERY", 20))
+        show_window = not HEADLESS
+        if HEADLESS and not self.snapshot_dir:
             print("DIFFTACTILE_HEADLESS=1: skipping Taichi GGUI window creation")
             self.window = None
             self.tactile_window = None
             return
+        if self.snapshot_dir:
+            os.makedirs(self.snapshot_dir, exist_ok=True)
+            print(
+                f"Rendering offscreen; snapshots every {self.snapshot_every} "
+                f"timesteps -> {self.snapshot_dir}"
+            )
         self.window = ti.ui.Window("high-level camera", (
             int(SYSTEM_PARAMS.visualisation.window_3d_width),
             int(SYSTEM_PARAMS.visualisation.window_3d_height)
-        ))
+        ), show_window=show_window)
         self.canvas = self.window.get_canvas()
         self.canvas.set_background_color((0, 0, 0))
         self.scene = ti.ui.Scene()
@@ -2290,7 +2304,7 @@ class Contact:
         self.tactile_window = ti.ui.Window("tactile readout", (
             int(SYSTEM_PARAMS.visualisation.tactile_readout_width),
             int(SYSTEM_PARAMS.visualisation.tactile_readout_height)
-        ))
+        ), show_window=show_window)
         self.tactile_canvas = self.tactile_window.get_canvas()
         self.bg_image = cv2.imread(self.default_photo)
         self.bg_image = cv2.cvtColor(self.bg_image, cv2.COLOR_BGR2RGB)
@@ -2313,7 +2327,11 @@ class Contact:
         return (1 - t) * start + t * end
     
     def visualisation_update_gui(self, ts):
-        if HEADLESS:
+        # Offscreen rendering keeps going when a snapshot directory is set; only
+        # a truly headless run with no snapshots skips the work entirely.
+        if HEADLESS and not getattr(self, "snapshot_dir", None):
+            return
+        if self.window is None:
             return
         self.scene.set_camera(self.camera)
         self.scene.ambient_light((0.8, 0.8, 0.8))
@@ -2355,7 +2373,17 @@ class Contact:
             radius=SYSTEM_PARAMS.visualisation.particle_size_keypoint/3,
         )
         self.canvas.scene(self.scene)
-        self.window.show()
+        if getattr(self, "snapshot_dir", None):
+            # Periodic frames of the 3D scene, named by trajectory and timestep,
+            # so a trajectory can be checked by eye afterwards. save_image()
+            # works offscreen, which window.show() would not.
+            if ts % self.snapshot_every == 0:
+                name = self.trajectory_names[self.trajectory_ix[None]]
+                self.window.save_image(
+                    os.path.join(self.snapshot_dir, f"{name}_ts{ts:04d}.png")
+                )
+        if not HEADLESS:
+            self.window.show()
 
     def forward_pass_common_part(self, ts):
         self.reset_state()
@@ -2483,11 +2511,11 @@ class Contact:
                 self.fp()
                 print("forward")
                 # Bounded, unlike the original `while last_target_reached != 1`.
-                # That flag never flips (see domain_adaptation_main's docstring:
-                # the PID position error is a constant 0.0982 against a 0.005
-                # tolerance, on the training trajectories too), so the loop ran
-                # forever at ~11 timesteps/second. A cap makes the entrypoint
-                # terminate; it does NOT make the figure correct.
+                # A safety cap, not the fix. The real cause of the old infinite
+                # loop was the missing copy_frame() below; with that in place the
+                # PID converges and the flag flips normally (press reaches its
+                # last target at ts 189). The cap only stops a future regression
+                # from spinning forever.
                 da_max_ts = int(os.environ.get("DIFFTACTILE_DA_MAX_TIMESTEPS", 400))
                 ts = 0
                 while self.last_target_reached[None] != 1 and ts < da_max_ts:
@@ -2498,6 +2526,22 @@ class Contact:
                     self.vitactip.set_pose_control_2()
                     self.vitactip.set_pose_control_3()
                     self.forward_pass_common_part(ts)
+                    # THE FIX that makes domain adaptation move the sensor at all.
+                    #
+                    # update() advances vertices_undeformed_A[frame] -> [frame+1]
+                    # across the sub-frames of one timestep, so the pose reached
+                    # at the end lives in frame num_sub_frames-1. copy_frame()
+                    # copies it back to frame 0, which is where the next
+                    # timestep's set_control_vel() and the PID both read from.
+                    # Without it every timestep restarts from the initial pose:
+                    # the measured position error was a CONSTANT 0.0982 forever.
+                    #
+                    # collect_training_data() has always called this; the DA loop
+                    # relied on memory_to_cache() instead, which was disabled
+                    # with a bare `return` in vitactip.memory_to_cache() (kept
+                    # that way - it is a memory optimisation for collection, and
+                    # the cache is only read by the backward pass).
+                    self.copy_frame()
                     self.memory_to_cache(ts)
                     self.vitactip.extract_markers(
                         SYSTEM_PARAMS.contact.num_sub_frames - 1
@@ -2507,6 +2551,55 @@ class Contact:
                     ts += 1
                 
                 total_ts = ts
+
+                # The overlay, at the APEX of the trajectory - the configuration
+                # the manuscript compares, and the pose the forward pass has just
+                # finished in. compute_da_loss() writes
+                # difftactile/output/da_overlay_<name>.png and appends the MAE
+                # between simulated and real marker positions.
+                #
+                # Called here rather than through handle_da_loss(), which is the
+                # data-collection path: that only fires when `use_bo` is set and
+                # keys off a hardcoded photo timestep, neither of which applies
+                # to a standalone figure run.
+                self.compute_da_loss()
+                # compute_da_loss() appends the MAE it just measured. This is
+                # the number the manuscript reports (px at 1920x1080, and mm via
+                # the ~55 px inter-marker spacing = 2 mm), so print it rather
+                # than leaving it in a list nothing reads on this path.
+                mae_px = self.da_losses[-1]
+                px_to_mm = 2.0 / 55.0
+                print(
+                    f"  {self.trajectory_names[i]}: MAE = {mae_px:.2f} px "
+                    f"({mae_px * px_to_mm:.2f} mm) over {total_ts} timesteps"
+                )
+
+                # FORWARD-ONLY MODE, and the default.
+                #
+                # Everything below this point is the parameter-OPTIMISATION half:
+                # backward pass, gradient accumulation, optimiser step. It cannot
+                # run in this repository - set_up_torch_params(), update_params(),
+                # set_optimisation_params_from_log() and
+                # save_gradients_for_calibration() were all deleted from main.py
+                # along with the optimiser and scheduler, though
+                # domain_adaptation() still calls them. They survive on the
+                # archival branch `domain-adaptation-vascular-multiple-trajectories`
+                # (~150 lines); porting them back is a separate job.
+                #
+                # The FIGURE does not need any of it. compute_da_loss() writes the
+                # sim-vs-real overlay during the forward pass above, and
+                # update_params() was already guarded by `if opts > 0`, so the
+                # first optimisation step never changed a parameter anyway. The
+                # published parameters are already in system-params.json - this
+                # run measures the alignment they produce, it does not re-derive
+                # them.
+                #
+                # So: skip the backward half unless someone deliberately asks for
+                # it. DIFFTACTILE_DA_OPTIMISE=1 opts in, and will fail on the
+                # missing methods until they are ported back.
+                if os.environ.get("DIFFTACTILE_DA_OPTIMISE", "0") != "1":
+                    continue
+
                 self.bp()
                 self.reset_loss()
                 self.batch_loss.fill(0.0)
@@ -2575,11 +2668,14 @@ class Contact:
                     else:
                         self.retry = False
                 losses_per_trajectory.append(float(self.trajectory_loss[None]))
-            previous_lr = self.optimiser.param_groups[-1]['lr']
-            if opts > 0:
-                self.scheduler.step()
-            current_lr = self.optimiser.param_groups[-1]['lr']
-            print(f"lr: {previous_lr:0.3e} -> {current_lr:0.3e}")
+            # Optimiser/scheduler exist only when the optimisation half runs;
+            # both were deleted from this repository (see the note above).
+            if os.environ.get("DIFFTACTILE_DA_OPTIMISE", "0") == "1":
+                previous_lr = self.optimiser.param_groups[-1]['lr']
+                if opts > 0:
+                    self.scheduler.step()
+                current_lr = self.optimiser.param_groups[-1]['lr']
+                print(f"lr: {previous_lr:0.3e} -> {current_lr:0.3e}")
             print(
                 f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
             )
@@ -2768,6 +2864,16 @@ def domain_adaptation_main():
         )
     else:
         ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)
+
+    # The REAL marker positions the simulation is measured against, extracted
+    # from the four reference photographs. compute_da_loss() loads these, and
+    # nothing else generates them - the photographs ship with the repository but
+    # the .npz files did not, so DA used to die on a missing file.
+    from difftactile.data_analysis.experiment.domain_adaptation import (
+        extract_real_marker_positions,
+    )
+    print("Real marker positions (from the reference photographs):")
+    extract_real_marker_positions()
 
     contact_model = Contact()
     contact_model.visualisation_set_up_gui()
