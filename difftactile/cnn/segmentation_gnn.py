@@ -1483,6 +1483,19 @@ def score_ranking_metrics(model, loader, config, device=None):
     # `test_iou/1`, which does not say which class is which.
     ious = marker_iou(all_probs, all_labels)
 
+    # Persist the raw (probability, label) pairs next to the checkpoint when a
+    # sweep is directing artifacts there. Every curve and every scalar above is
+    # derivable from these two arrays, so keeping them is what lets the sweep
+    # draw mean ROC/PR curves across seeds without re-running inference. A few
+    # hundred KB per seed.
+    artifact_dir = os.environ.get(ARTIFACT_DIR_ENV_VAR)
+    if artifact_dir:
+        os.makedirs(artifact_dir, exist_ok=True)
+        np.savez_compressed(
+            os.path.join(artifact_dir, f"scores_{config}.npz"),
+            probs=all_probs, labels=all_labels,
+        )
+
     baseline = float(all_labels.mean())
     lift = ap / baseline if baseline > 0 else float("nan")
     n_pos = int(all_labels.sum())

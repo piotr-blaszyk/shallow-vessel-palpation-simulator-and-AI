@@ -124,6 +124,67 @@ def operating_points(all_probs, all_labels, thresholds=MARKED_THRESHOLDS):
     return fpr_list, tpr_list
 
 
+def mean_curve_with_band(curves, grid=None):
+    """Vertically average a set of (x, y) curves onto a common x grid.
+
+    `curves` is a list of (x, y) arrays, one per seed. Returns
+    (grid, mean, std) with mean and std taken across seeds at each grid point.
+
+    VERTICAL AVERAGING is the standard way to combine ROC curves (Fawcett 2006):
+    interpolate each curve onto a shared x grid, then average y. The alternative
+    - averaging the raw (x, y) vertices - is meaningless, because the curves have
+    different numbers of vertices at different places.
+
+    `np.interp` needs an increasing x, and both ROC (fpr, tpr) and PR
+    (recall, precision) are supplied in an order that may not be, so each curve
+    is sorted first. For PR the curve is not a function of recall in general
+    (precision can revisit a recall value); taking the max precision at each
+    recall is the usual convention and is what the sort-then-interp does here
+    once duplicates are collapsed.
+    """
+    grid = np.linspace(0.0, 1.0, 201) if grid is None else np.asarray(grid)
+    stacked = []
+    for x, y in curves:
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        order = np.argsort(x)
+        x, y = x[order], y[order]
+        # Collapse duplicate x values, keeping the best (highest) y - the
+        # convention for both ROC and PR.
+        uniq_x, inverse = np.unique(x, return_inverse=True)
+        uniq_y = np.zeros_like(uniq_x)
+        np.maximum.at(uniq_y, inverse, y)
+        stacked.append(np.interp(grid, uniq_x, uniq_y))
+    stacked = np.vstack(stacked)
+    return grid, stacked.mean(axis=0), stacked.std(axis=0, ddof=1 if len(stacked) > 1 else 0)
+
+
+def mean_threshold_along_grid(curves_thr, grid=None):
+    """Mean decision threshold at each point of the shared x grid.
+
+    This is what keeps the threshold colour-coding meaningful on a mean curve.
+    Each seed reaches a given false-positive rate at its OWN threshold, so a
+    single fixed threshold cannot be attached to a point of the averaged curve.
+    Interpolating each seed's threshold onto the same grid and averaging gives
+    "the typical threshold at which a model reaches this operating point", which
+    is the only reading the mean curve supports.
+
+    `curves_thr` is a list of (x, thresholds) arrays parallel to the curves
+    passed to `mean_curve_with_band`. Returns (grid, mean_threshold, std).
+    """
+    grid = np.linspace(0.0, 1.0, 201) if grid is None else np.asarray(grid)
+    stacked = []
+    for x, thr in curves_thr:
+        x = np.asarray(x, dtype=float)
+        thr = np.clip(np.asarray(thr, dtype=float), 0.0, 1.0)
+        order = np.argsort(x)
+        x, thr = x[order], thr[order]
+        uniq_x, index = np.unique(x, return_index=True)
+        stacked.append(np.interp(grid, uniq_x, thr[index]))
+    stacked = np.vstack(stacked)
+    return grid, stacked.mean(axis=0), stacked.std(axis=0, ddof=1 if len(stacked) > 1 else 0)
+
+
 def pr_operating_points(all_probs, all_labels, thresholds=MARKED_THRESHOLDS):
     """(recall, precision) of each threshold, as the confusion matrix at that cut.
 
@@ -217,6 +278,121 @@ def plot_pr(plt, precision, recall, all_probs, all_labels, ap, out_path,
     cbar.ax.tick_params(labelsize=_FONTSIZE - 4)
     for label in cbar.ax.get_yticklabels():
         label.set_fontweight("bold")
+    cbar.outline.set_linewidth(3.0)
+
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    finish_plot(plt, out_path, format="pdf", dpi=300)
+
+
+def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
+                    baseline=None):
+    """Mean ROC or PR curve across seeds, with a ±1 std band.
+
+    `kind` is "roc" or "pr"; `curves` is a list of (x, y) per seed, `curves_thr`
+    the matching (x, thresholds), and `scores` the per-seed AUROC or AP.
+
+    HOW THE THRESHOLD COLOUR-CODING SURVIVES AVERAGING. On a single-model curve
+    each vertex has one exact decision threshold, and the colour is that value.
+    A mean curve has no such thing: seed 3 might reach FPR 0.2 at threshold 0.55
+    while seed 7 reaches it at 0.48. The colour here is therefore the MEAN
+    threshold at which the models reach that operating point - the same
+    vertical-averaging idea applied to the threshold axis rather than to y.
+
+    That is a genuinely weaker claim than the single-curve colouring, so the
+    figure says so: the colourbar is labelled "mean decision threshold", and
+    where the seeds disagree badly about which threshold reaches a point, the
+    colour is an average over a wide spread. The per-seed spread in threshold is
+    drawn as faint tick marks along the top for exactly that reason - a smooth
+    colour ramp would otherwise hide it.
+
+    The individual seed curves are drawn faintly underneath. The band shows the
+    spread; the thin lines show whether it comes from a couple of outliers or
+    from even scatter, which a band alone cannot distinguish.
+    """
+    grid, mean_y, std_y = mean_curve_with_band(curves)
+    _, mean_thr, std_thr = mean_threshold_along_grid(curves_thr)
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Chance reference, drawn first.
+    if kind == "roc":
+        ax.plot([0, 1], [0, 1], "k-", alpha=0.5, linewidth=6.0, zorder=1)
+    elif baseline is not None:
+        ax.axhline(baseline, color="k", linestyle="--", alpha=0.5, linewidth=4.0,
+                   zorder=1)
+        ax.text(0.98, baseline, f"chance = {baseline:.3f}", fontsize=_FONTSIZE - 6,
+                ha="right", va="bottom", fontweight="bold", zorder=5)
+
+    # Every seed, faintly: shows whether the band is even scatter or an outlier.
+    for x, y in curves:
+        order = np.argsort(np.asarray(x, dtype=float))
+        ax.plot(np.asarray(x)[order], np.asarray(y)[order], color="0.55",
+                linewidth=1.2, alpha=0.7, zorder=2)
+
+    # +/- 1 std band around the mean.
+    ax.fill_between(grid, np.clip(mean_y - std_y, 0, 1), np.clip(mean_y + std_y, 0, 1),
+                    color="0.35", alpha=0.22, linewidth=0, zorder=3)
+
+    # The mean curve, coloured by the MEAN threshold at each operating point.
+    points = np.column_stack([grid, mean_y]).reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    lc = LineCollection(segments, cmap=THRESHOLD_CMAP, norm=THRESHOLD_NORM,
+                        linewidth=6.0, alpha=0.95, zorder=4,
+                        capstyle="round", joinstyle="round")
+    lc.set_array(0.5 * (mean_thr[:-1] + mean_thr[1:]))
+    ax.add_collection(lc)
+
+    # Threshold disagreement between seeds, as tick marks along the top. Without
+    # this the smooth colour ramp would imply the seeds agree on which threshold
+    # reaches each point, which is exactly what is not guaranteed.
+    if len(curves) > 1 and np.nanmax(std_thr) > 0:
+        peak = float(np.nanmax(std_thr))
+        for i in range(0, len(grid), 10):
+            height = 0.035 * std_thr[i] / max(peak, 1e-9)
+            ax.plot([grid[i], grid[i]], [1.02 - height, 1.02], color="0.3",
+                    linewidth=1.5, alpha=0.8, zorder=5)
+        # Placed low-right, where neither the ticks along the top nor the curve
+        # itself (which rises to the top-left on a good model) can collide with it.
+        ax.text(0.98, 0.06,
+                f"top ticks: between-seed threshold spread (max σ={peak:.2f})",
+                fontsize=_FONTSIZE - 9, va="bottom", ha="right", color="0.3",
+                zorder=5)
+
+    scores = np.asarray(scores, dtype=float)
+    label = "AUROC" if kind == "roc" else "AP"
+    ax.set_title(
+        f"{label} = {scores.mean():.2f} ± {scores.std(ddof=1) if len(scores) > 1 else 0.0:.2f}"
+        f"  (n={len(scores)} seeds)",
+        fontsize=_FONTSIZE, fontweight="bold",
+    )
+
+    ax.set_xlim(-0.02, 1.02)
+    ax.set_ylim(-0.02, 1.02)
+    ax.tick_params(axis="both", which="major", labelsize=_FONTSIZE)
+    for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+        lbl.set_fontweight("bold")
+    if kind == "roc":
+        ax.set_xlabel("False Positive Rate", fontsize=_FONTSIZE, fontweight="bold")
+        ax.set_ylabel("True Positive Rate", fontsize=_FONTSIZE, fontweight="bold")
+    else:
+        ax.set_xlabel("Recall", fontsize=_FONTSIZE, fontweight="bold")
+        ax.set_ylabel("Precision", fontsize=_FONTSIZE, fontweight="bold")
+    ax.grid(True, linestyle="--", alpha=0.3, linewidth=3.0)
+    for spine in ax.spines.values():
+        spine.set_linewidth(3.0)
+
+    cbar = fig.colorbar(
+        ScalarMappable(norm=THRESHOLD_NORM, cmap=THRESHOLD_CMAP), ax=ax,
+        ticks=[0.0, 0.25, 0.5, 0.75, 1.0],
+    )
+    # Named "mean" deliberately: on an averaged curve a point has no single
+    # threshold, and the label should not pretend otherwise.
+    cbar.set_label("Mean decision threshold", fontsize=_FONTSIZE - 2,
+                   fontweight="bold")
+    cbar.ax.tick_params(labelsize=_FONTSIZE - 4)
+    for lbl in cbar.ax.get_yticklabels():
+        lbl.set_fontweight("bold")
     cbar.outline.set_linewidth(3.0)
 
     fig.tight_layout()

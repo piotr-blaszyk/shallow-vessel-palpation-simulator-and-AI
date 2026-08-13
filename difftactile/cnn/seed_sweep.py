@@ -187,6 +187,59 @@ def _parse_metrics(stdout):
     return None
 
 
+def _plot_mean_curves(config, runs, run_dir):
+    """Mean ROC and PR curves over a sweep's seeds. Returns the two paths.
+
+    Imports numpy, sklearn and the plotting module lazily: the sweep parent only
+    orchestrates subprocesses, and this is the one place it needs them. Torch is
+    still never imported here.
+    """
+    import numpy as np
+    from sklearn.metrics import precision_recall_curve, roc_curve
+
+    import matplotlib
+    from difftactile.main.display import is_headless
+    if is_headless():
+        matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from difftactile.cnn.curve_plots import plot_mean_curve
+
+    roc_curves, roc_thr, pr_curves, pr_thr = [], [], [], []
+    aurocs, aps, baselines = [], [], []
+    for r in sorted(runs, key=lambda r: r["seed"]):
+        scores_path = os.path.join(r["artifact_dir"], f"scores_{config}.npz")
+        if not os.path.exists(scores_path):
+            print(f"  (no scores for seed {r['seed']}; skipping it in the mean curve)")
+            continue
+        with np.load(scores_path) as d:
+            probs, labels = d["probs"], d["labels"]
+        fpr, tpr, thr = roc_curve(labels, probs)
+        roc_curves.append((fpr, tpr))
+        roc_thr.append((fpr, thr))
+        precision, recall, pthr = precision_recall_curve(labels, probs)
+        pr_curves.append((recall, precision))
+        # precision_recall_curve returns thresholds one shorter than the curve;
+        # pair them with the recall values they actually correspond to.
+        pr_thr.append((recall[:len(pthr)], pthr))
+        aurocs.append(r["auroc"])
+        aps.append(r["ap"])
+        baselines.append(float(np.mean(labels)))
+
+    if len(roc_curves) < 2:
+        print("  (fewer than two seeds have scores; no mean curve drawn)")
+        return None
+
+    roc_path = os.path.join(run_dir, f"mean_roc_curve_{config}.pdf")
+    plot_mean_curve(plt, roc_curves, roc_thr, aurocs, roc_path, kind="roc")
+    pr_path = os.path.join(run_dir, f"mean_pr_curve_{config}.pdf")
+    plot_mean_curve(plt, pr_curves, pr_thr, aps, pr_path, kind="pr",
+                    baseline=float(np.mean(baselines)))
+    print(f"  mean ROC curve: {roc_path}")
+    print(f"  mean PR curve:  {pr_path}")
+    return {"roc": roc_path, "pr": pr_path}
+
+
 def summarise(values):
     """mean / std / min / max of a list of floats.
 
@@ -235,6 +288,12 @@ def sweep(config, num_seeds, run_dir, seeds=None):
         "iou_foreground": summarise([r["iou_foreground"] for r in runs]),
         "iou_background": summarise([r["iou_background"] for r in runs]),
     }
+
+    # Mean ROC and PR curves across the seeds, with a +/- 1 std band. Drawn from
+    # the per-seed (probability, label) arrays each run saved beside its
+    # checkpoint, so no inference is repeated.
+    if len(runs) > 1:
+        summary["mean_curves"] = _plot_mean_curves(config, runs, run_dir)
 
     # In-domain (held-out simulation) figures, present only for the
     # simulation-trained configurations - C-to-B trains on meat and has no
