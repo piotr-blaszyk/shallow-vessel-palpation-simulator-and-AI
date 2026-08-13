@@ -263,6 +263,28 @@ claims between configurations. The meat training set is 139 clips, so which subs
 dominates. A single-seed number is not a result here; report a mean and spread, and never select
 the best-scoring seed.
 
+`cnn/seed_sweep.py` automates that: `./docker/score_all_scenarios.sh --seeds N` trains each
+configuration once per seed and appends a **Seed sweep** section to `AUROC_RESULTS.md` (mean ±
+std, range, and every per-seed value). Design points worth keeping:
+
+- **Each seed runs in a subprocess.** In one process the second run would inherit CUDA context,
+  cuDNN autotuning state and torch's global RNG from the first, so "seed *k*" would not mean the
+  same thing mid-sweep as standalone — which would defeat the purpose. Verified: sweep values
+  match a manual `DIFFTACTILE_SEED=k` run exactly.
+- **The child clears `sys.argv`.** `run_scenario()` parses argv itself and rejects unknown
+  flags, so the worker's own `--child <config> <seed>` would abort the run. Both are passed as
+  explicit arguments instead.
+- **Metrics cross the process boundary as JSON behind `METRICS_MARKER`**, not by parsing the
+  last line — Lightning's output is verbose and its format is not ours to depend on. This is why
+  `main()`, `train_on_sim()` and `silicone_to_meat()` all now **return** their metrics dict.
+- **`write_markdown()` replaces only the `## Seed sweep` section**, so the scenario table from
+  `auroc_all_scenarios` survives and re-runs do not accumulate copies.
+- Sweeps keep no per-seed checkpoints — re-training overwrites `*_retrained_<config>` in place,
+  so the checkpoint left on disk is the last seed's. That is intended; a sweep measures spread.
+
+Variance is very uneven across configurations, which is itself a reportable finding: over three
+seeds A→C is ±0.0008 (large simulated training set) while C→B is ±0.0208 — 25× more.
+
 ### The vessel map (`vessel_map.sh`) and the confusion colour scheme
 
 `predict_exp.py::evaluate_downscaled()` writes **two** confusion maps, each as a raw `.png` and

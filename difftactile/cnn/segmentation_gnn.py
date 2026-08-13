@@ -892,8 +892,9 @@ def main():
     print("\nTesting on silicone dataset:")
     trainer.test(best_model, dataloaders=silicone_loader)
     # Threshold-free companions to the IoU above, so C-to-B reports the same
-    # metrics as the other two configurations.
-    score_ranking_metrics(best_model, silicone_loader, "C-to-B")
+    # metrics as the other two configurations. Returned at the end of this
+    # function so the seed sweep can collect them without parsing stdout.
+    metrics = score_ranking_metrics(best_model, silicone_loader, "C-to-B")
     end = time.perf_counter()
     duration = end - start
     print(
@@ -907,6 +908,7 @@ def main():
         "  (the published checkpoint is left untouched; set "
         "DIFFTACTILE_OVERWRITE_PUBLISHED=1 to overwrite it instead)"
     )
+    return metrics
 
 
 def compute_stats(dataset, batch_size):
@@ -1232,6 +1234,11 @@ def train_on_sim(test_on="silicone"):
     trainer.test(best_model, datamodule=data_module)
     print(f"\nTesting on the real {test_on} dataset:")
     trainer.test(best_model, dataloaders=real_loader)
+    # Threshold-free metrics on the real target domain, matching what the other
+    # configurations report - and what the seed sweep collects. `test_on` names
+    # the target dataset (silicone -> A-to-B, meat -> A-to-C).
+    config_name = "A-to-B" if test_on == "silicone" else "A-to-C"
+    metrics = score_ranking_metrics(best_model, real_loader, config_name)
     duration = time.perf_counter() - start
     print(f"\nTraining and testing completed in {duration:.2f} s ({duration / 60:.2f} min)")
 
@@ -1243,6 +1250,7 @@ def train_on_sim(test_on="silicone"):
         "  (the published checkpoint is left untouched; set "
         "DIFFTACTILE_OVERWRITE_PUBLISHED=1 to overwrite it instead)"
     )
+    return metrics
 
 
 def score_ranking_metrics(model, loader, config, device=None):
@@ -1374,8 +1382,9 @@ def silicone_to_meat():
     # quality with output calibration - and calibration is the first thing to
     # shift across a domain gap, which is precisely what this configuration
     # measures. The threshold-free metrics are the ones to read here.
-    score_ranking_metrics(model, meat_loader, "A-to-C")
+    metrics = score_ranking_metrics(model, meat_loader, "A-to-C")
     print(f"\nDone in {time.perf_counter() - start:.2f} s")
+    return metrics
 
 
 # For each paper configuration: what it does in --train and in --eval mode.

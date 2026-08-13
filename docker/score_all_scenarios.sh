@@ -10,6 +10,7 @@
 #
 # Usage:
 #   ./docker/score_all_scenarios.sh [config ...] [--pretrained|--retrained]
+#   ./docker/score_all_scenarios.sh --seeds N [config ...]
 #
 # Configurations (A = simulation, B = real silicone, C = real meat):
 #   A-to-B    train on simulation, test on silicone
@@ -44,10 +45,34 @@
 #          against that - which is why the table gives both the chance level and
 #          the lift (AP / chance) beside it.
 #
+# --seeds N: THE SEED SWEEP. Trains each configuration from scratch N times, once
+# per seed (0..N-1), and reports mean, standard deviation and range of AUROC and
+# AP - plus every per-seed value, so nothing hides behind a summary statistic.
+#
+# This is the number to report. A single training run on this project reflects
+# its seed as much as it reflects the model: measured on C-to-B, seven seeds gave
+# AUROC 0.604-0.779, a spread WIDER than the differences between the three
+# configurations. The meat training set is 139 clips, small enough that which
+# subset a run favours dominates.
+#
+# Read the spread, not the best row - selecting the highest-scoring seed is
+# fitting to the test set exactly as tuning a decision threshold there would be.
+# When comparing configurations, compare distributions; a gap smaller than the
+# seed spread is not evidence of anything.
+#
+# Note this TRAINS, so it is far slower than the default scoring pass, and it
+# leaves only the last seed's checkpoint (re-training a configuration overwrites
+# its *_retrained artifacts in place). Sweeps characterise the spread; train a
+# single seed normally when you want a checkpoint to keep. Evaluation-only
+# scoring ignores --seeds, since a fixed published checkpoint has no seed.
+#
 # Outputs:
 #   AUROC_RESULTS.md                                  the summary table
 #   difftactile/output/roc_curves/roc_curve_<config>_<weights>.pdf
 #   difftactile/output/pr_curves/pr_curve_<config>_<weights>.pdf
+#
+# With --seeds N the sweep section is written into the SAME AUROC_RESULTS.md,
+# below the scenario table rather than replacing it, so the two can coexist.
 #
 # Both figure types share their styling (threshold colourmap, marked operating
 # points), so a ROC and a PR panel can sit side by side in a manuscript. The PR
@@ -60,6 +85,8 @@
 #   ./docker/score_all_scenarios.sh --pretrained        # published checkpoints only
 #   ./docker/score_all_scenarios.sh A-to-B              # one config, both weightings
 #   ./docker/score_all_scenarios.sh A-to-B --pretrained # one scenario
+#   ./docker/score_all_scenarios.sh --seeds 5 C-to-B    # 5-seed sweep of one config
+#   ./docker/score_all_scenarios.sh --seeds 5           # 5-seed sweep of all three
 #
 set -euo pipefail
 
@@ -70,21 +97,55 @@ usage() {
     sed -n '2,/^[^#]/p' "${BASH_SOURCE[0]}" | sed '/^[^#]/d; s/^# \?//'
 }
 
-for arg in "$@"; do
-    case "${arg}" in
-        A-to-B|C-to-B|A-to-C|--pretrained|--retrained) ;;
+NUM_SEEDS=""
+CONFIGS=()
+PASSTHROUGH=()
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        A-to-B|C-to-B|A-to-C)
+            CONFIGS+=("$1"); PASSTHROUGH+=("$1") ;;
+        --pretrained|--retrained)
+            PASSTHROUGH+=("$1") ;;
+        --seeds)
+            shift
+            if [ "$#" -eq 0 ]; then
+                echo "ERROR: --seeds needs a count, e.g. --seeds 5" >&2; exit 1
+            fi
+            NUM_SEEDS="$1"
+            ;;
+        --seeds=*)
+            NUM_SEEDS="${1#*=}" ;;
         -h|--help) usage; exit 0 ;;
-        *) echo "ERROR: unrecognised argument: ${arg}" >&2; echo; usage; exit 1 ;;
+        *) echo "ERROR: unrecognised argument: $1" >&2; echo; usage; exit 1 ;;
     esac
+    shift
 done
+
+if [ -n "${NUM_SEEDS}" ]; then
+    case "${NUM_SEEDS}" in
+        ''|*[!0-9]*) echo "ERROR: --seeds needs a positive integer, got '${NUM_SEEDS}'" >&2; exit 1 ;;
+    esac
+    if [ "${NUM_SEEDS}" -lt 1 ]; then
+        echo "ERROR: --seeds needs a positive integer, got '${NUM_SEEDS}'" >&2; exit 1
+    fi
+fi
 
 # No display -> never block on a window; the files on disk are the output.
 if [ -z "${DISPLAY:-}" ]; then
     export DIFFTACTILE_HEADLESS="${DIFFTACTILE_HEADLESS:-1}"
 fi
 
-echo "Scoring scenarios (AUROC + average precision, both threshold-free)."
-python -m difftactile.scripts.script_auroc_all_scenarios "$@"
+if [ -n "${NUM_SEEDS}" ]; then
+    # Sweep mode: TRAINS each configuration NUM_SEEDS times. Weight-source flags
+    # are meaningless here (every model is trained fresh), so they are not passed.
+    echo "Seed sweep: training ${CONFIGS[*]:-all three configurations} under ${NUM_SEEDS} seed(s)."
+    echo "This trains from scratch per seed, so it is much slower than plain scoring."
+    python -m difftactile.scripts.script_seed_sweep "${NUM_SEEDS}" "${CONFIGS[@]}"
+else
+    echo "Scoring scenarios (AUROC + average precision, both threshold-free)."
+    python -m difftactile.scripts.script_auroc_all_scenarios "${PASSTHROUGH[@]}"
+fi
 
 echo
 echo "Written:"

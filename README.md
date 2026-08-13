@@ -856,10 +856,38 @@ worker counts change floating-point reduction order, so cross-machine agreement 
 > So: report a mean and spread over several seeds rather than one number, compare
 > configurations as distributions rather than single runs, and **never pick the seed that scores
 > best** — that is fitting to the test set as surely as tuning a threshold on it would be.
->
-> ```bash
-> for s in 0 1 2 3 4; do DIFFTACTILE_SEED=$s ./run_pipeline.sh C-to-B; done
-> ```
+
+`--seeds N` does the sweep and the statistics for you:
+
+```bash
+# (inside the container, from the docker/ directory)
+./score_all_scenarios.sh --seeds 5           # all three configurations
+./score_all_scenarios.sh --seeds 5 C-to-B    # just one
+```
+
+It trains each configuration from scratch once per seed (0…N−1) and appends a **Seed sweep**
+section to `AUROC_RESULTS.md` with mean ± std and range of AUROC and AP, plus every per-seed
+value so an outlier is visible rather than averaged away. The existing scenario table is kept —
+the section is replaced rather than duplicated on a re-run.
+
+Each seed runs in a **fresh subprocess**, so "seed *k*" means the same thing inside a sweep as
+it does standalone; run in one process, the second run would inherit CUDA context and RNG state
+from the first. Measured on three seeds:
+
+| Config | AUROC mean ± std | AUROC range | AP mean ± std |
+|---|---|---|---|
+| A-to-B | 0.7740 ± 0.0088 | 0.7639–0.7792 | 0.3243 ± 0.0048 |
+| C-to-B | 0.6767 ± 0.0208 | 0.6550–0.6964 | 0.2788 ± 0.0106 |
+| A-to-C | 0.8238 ± 0.0008 | 0.8229–0.8244 | 0.2203 ± 0.0004 |
+
+Note how unevenly the variance is spread: A→C is almost seed-independent (±0.0008) because it
+trains on the large simulated set, while C→B swings 25× more (±0.0208) on its 139 meat clips.
+That contrast is itself worth reporting.
+
+> Sweeping **trains**, so it is far slower than plain scoring, and it leaves only the last
+> seed's checkpoint — re-training a configuration overwrites its `*_retrained_<config>`
+> artifacts in place. Sweeps characterise the spread; train a single seed normally when you want
+> a checkpoint to keep.
 
 The legacy `python -m difftactile.scripts.script_gnn` entrypoint (large model) still exists.
 
