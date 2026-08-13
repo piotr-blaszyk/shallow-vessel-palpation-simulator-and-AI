@@ -21,6 +21,12 @@ Environment variables:
                                 loops, and `prompt()` reads stdin.
     DIFFTACTILE_HEADLESS=1      Stronger still: do not even create windows.
                                 Implies non-interactive.
+    DIFFTACTILE_DOUBLE_PRESENT=1
+                                Draw each frame twice in the frame browsers. Off
+                                by default (it costs ~45% of a redraw); turn it
+                                on if a keypress briefly shows the previous
+                                frame, which some Wayland/Xwayland compositors
+                                do. See `run_frame_browser()`.
     DIFFTACTILE_VIEW_WIDTH      Width in pixels that the frame browsers scale
                                 their display image down to (default 960, `0`
                                 disables scaling). The source videos are 1080p,
@@ -265,7 +271,8 @@ def run_frame_browser(cv2, window, render, on_key):
     Under X11 forwarding the round trip is slow enough to make that obvious,
     while on bare metal both updates usually land within one refresh. The loop
     below pumps once after drawing, and carries over any key that arrives during
-    the pump instead of dropping it.
+    the pump instead of dropping it. `DIFFTACTILE_DOUBLE_PRESENT=1` adds a second
+    present for compositors that still show a stale frame (see below).
 
     Args:
         cv2: the OpenCV module (passed in so this file needs no cv2 import).
@@ -286,6 +293,7 @@ def run_frame_browser(cv2, window, render, on_key):
     if not is_interactive():
         return
 
+    double_present = os.environ.get("DIFFTACTILE_DOUBLE_PRESENT", "0") == "1"
     needs_redraw = True
     pending_key = None
     while True:
@@ -295,20 +303,31 @@ def run_frame_browser(cv2, window, render, on_key):
                 break
             imshow(cv2, window, image)
             needs_redraw = False
-            # Present the frame before blocking; keep any key typed meanwhile.
+            # Pump once so the frame is actually painted before we block. This
+            # is a flush, not a wait: `imshow` only queues the image, and it is
+            # `waitKey` that services the GUI event loop. It must stay a short
+            # non-zero delay - a 0 here would block mid-redraw and demand a
+            # keypress just to finish painting. Any key typed during the pump is
+            # carried over rather than dropped.
             pumped = wait_key(cv2, 1) & 0xFF
             if pumped != 255:
                 pending_key = pumped
-            # Present the same frame a second time. Under rootless Xwayland the
-            # window is composited from a small pool of buffers, and a keypress
-            # can briefly re-present a stale one still holding the frame from
-            # two redraws ago (seen as a flash of the opposite-direction frame).
-            # After a second present every buffer holds the current frame, so a
-            # stale re-present shows the identical image and the flash vanishes.
-            imshow(cv2, window, image)
-            pumped = wait_key(cv2, 1) & 0xFF
-            if pumped != 255:
-                pending_key = pumped
+            # Optionally present the same frame a second time. Under rootless
+            # Xwayland the window is composited from a small pool of buffers, and
+            # a keypress can briefly re-present a stale one still holding the
+            # frame from two redraws ago (seen as a flash of the
+            # opposite-direction frame); a second present fills every buffer with
+            # the current frame so the stale re-present is identical.
+            #
+            # It costs a full extra present: measured 6.2 ms vs 3.4 ms per frame
+            # step, i.e. ~45% of the redraw. Most setups do not need it, so it is
+            # off by default and DIFFTACTILE_DOUBLE_PRESENT=1 brings it back for
+            # compositors that do show the flash.
+            if double_present:
+                imshow(cv2, window, image)
+                pumped = wait_key(cv2, 1) & 0xFF
+                if pumped != 255:
+                    pending_key = pumped
 
         if pending_key is not None:
             key, pending_key = pending_key, None
