@@ -5,15 +5,21 @@ and ranking-based, with one ROC and one PR figure per scenario. See
 `cnn/curve_plots.py` for why both are reported rather than either alone.
 
 
-The paper reports three transfer configurations:
+Four configurations - one in-domain reference and three transfers:
 
+    A-to-A   train on simulation (A),  test on held-out simulation (A)
     A-to-B   train on simulation (A),  test on silicone (B)
     C-to-B   train on meat (C),        test on silicone (B)
     A-to-C   train on simulation (A),  test on meat (C)
 
+A-to-A is the ceiling the other three are measured against: the gap between it
+and A-to-B is the sim-to-real transfer cost. It scores the SAME published
+checkpoint as A-to-B and A-to-C, on the held-out simulated split taken straight
+from the test-loader pickle (never re-derived - see `_build_test_dataset`).
+
 Each can be scored either from the *published* checkpoint shipped in the Zenodo
 bundle, or from a checkpoint produced locally by a `--train` run (the
-`*_retrained_<config>` artifacts written by `_retrained_path()`), giving six
+`*_retrained_<config>` artifacts written by `_retrained_path()`), giving eight
 scenarios in total.
 
 Only A-to-B previously computed a ROC curve (`segmentation_gnn.evaluate_and_plot_roc`);
@@ -72,6 +78,13 @@ PR_DIR = "difftactile/output/pr_curves"
 #                   normalisation statistics the checkpoint expects
 #   test_dataset  : which real dataset the model is evaluated on
 CONFIGS = {
+    "A-to-A": {
+        "description": "train on simulation (A), test on held-out simulation (A)",
+        "arch": "large",
+        "ckpt_key": "final_segmentation_model_gnn_sim",
+        "stats_key": "test_loader_gnn_sim",
+        "test_dataset": "sim",
+    },
     "A-to-B": {
         "description": "train on simulation (A), test on silicone (B)",
         "arch": "large",
@@ -130,26 +143,48 @@ def _load_stats(stats_path):
     """Read the normalisation statistics a checkpoint was trained with.
 
     Simulation loaders key their stats by curriculum difficulty; meat loaders
-    store a single flat dict. Returns (stats, difficulty_or_None).
+    store a single flat dict. Returns (stats, difficulty_or_None, pickled_dataset).
+
+    The third element is the `MyDataset` the pickle carries - for the simulated
+    loaders that is the very held-out test split the checkpoint was trained
+    against, which is what A-to-A must score on. Re-deriving the split instead
+    would risk scoring on data the checkpoint had actually seen.
     """
     with open(stats_path, "rb") as f:
         test_data = pickle.load(f)
+    pickled_dataset = test_data.get("dataset")
     if has_flat_stats(test_data):
-        return test_data["dataset_stats"], None
+        return test_data["dataset_stats"], None, pickled_dataset
     all_stats = test_data["dataset_stats"]
     # train_on_sim() trains at difficulty 1.0 and stores {1.0: stats}; fall back
     # to whatever single entry exists if a loader was written differently.
     difficulty = 1.0 if 1.0 in all_stats else next(iter(all_stats))
-    return all_stats[difficulty], difficulty
+    return all_stats[difficulty], difficulty, pickled_dataset
 
 
-def _build_test_dataset(which, stats, difficulty):
+def _build_test_dataset(which, stats, difficulty, pickled_dataset=None):
     """Construct the dataset a configuration is evaluated on.
 
-    `which` is "silicone" (dataset B) or "meat" (dataset C). In both cases every
-    sample is used for evaluation - nothing is held back, since no fitting
-    happens here.
+    `which` is "sim" (dataset A's held-out split), "silicone" (B) or "meat" (C).
+    For the two real datasets every sample is used - nothing is held back, since
+    no fitting happens here.
+
+    "sim" is different: it must be the split the checkpoint was actually held out
+    from, so it comes from the test-loader pickle rather than being re-derived.
+    Rebuilding it would risk scoring on trajectories the model trained on.
     """
+    if which == "sim":
+        if pickled_dataset is None:
+            raise ValueError(
+                "the 'sim' test set comes from the test-loader pickle, but that "
+                "pickle carries no 'dataset' entry"
+            )
+        dataset = pickled_dataset
+        if difficulty is not None:
+            dataset.set_difficulty_level(difficulty)
+        dataset.set_stats(stats)
+        dataset.eval()
+        return dataset
     if which == "silicone":
         full = MyDataset(
             scheme="single_dataset",
@@ -236,9 +271,11 @@ def evaluate_scenario(config, weights):
     model.eval()
     model = model.to(device)
 
-    stats, difficulty = _load_stats(stats_path)
+    stats, difficulty, pickled_dataset = _load_stats(stats_path)
     model.set_stats(stats)
-    dataset = _build_test_dataset(cfg["test_dataset"], stats, difficulty)
+    dataset = _build_test_dataset(
+        cfg["test_dataset"], stats, difficulty, pickled_dataset
+    )
 
     batch_size = getattr(SYSTEM_PARAMS.gnn, "batch_size_large", SYSTEM_PARAMS.gnn.batch_size)
     num_workers = getattr(SYSTEM_PARAMS.gnn, "num_workers_large", SYSTEM_PARAMS.gnn.num_workers)

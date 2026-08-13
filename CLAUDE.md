@@ -210,11 +210,24 @@ number (the negative class is ~89% of nodes on silicone, ~93% on meat). And unli
 is **threshold-dependent** — it uses `DECISION_THRESHOLD`, not `MAP_DECISION_THRESHOLD`, since
 it is a reported metric rather than a figure.
 
-**In-domain (simulation → simulation) reference.** `train_on_sim()` splits dataset A 70/15/15
-and, after the cross-domain evaluation, scores the model on the held-out **test** split too —
-same distribution as training. The gap between the two is the sim-to-real transfer cost.
-Measured over three seeds, A→B is AUROC 0.9170 ± 0.0024 in-domain vs 0.7740 ± 0.0088 on real
-silicone.
+**A→A is a first-class configuration**, not a special case of A→B: `run_pipeline.sh A-to-A`,
+`score_all_scenarios.sh A-to-A`, `view_predictions.sh A-to-A`, and sweepable. `--eval` goes
+through `evaluate_on_sim()`, `--train` through `train_on_sim(test_on="sim")`. It scores the same
+published checkpoint as A→B/A→C; only the test set differs. The gap A→A → A→B is the sim-to-real
+transfer cost: AUROC 0.9369 → 0.7314 on the published checkpoint.
+
+The simulated test split is taken from the test-loader **pickle**, never re-derived — the pickle
+stores the actual `MyDataset(mode='test')` the checkpoint was held out from, so rebuilding it
+would risk scoring on trajectories the model trained on.
+
+`train_on_sim()` still splits A 70/15/15 and, for A→B and A→C, reports that in-domain reference
+before the cross-domain result (`in_domain_` prefixed keys).
+
+**The A split is mechanical, not stratified**: filenames sorted, cut at 70%/85%. This is fine
+because **every trajectory has exactly one vein** (`vein_polyline` is `(frames, 1, 50, 2)` in all
+500), so there is no vein-count variation to stratify over. Vein-present frame fraction is
+0.5019/0.5029/0.5017 across train/val/test. Splitting is by *trajectory*, so overlapping sliding
+windows cannot leak between splits.
 
 Deliberately the **test** split and not `val`: val drives `EarlyStopping` and
 `ModelCheckpoint(save_top_k=1)`, so a number read off it is optimistic by construction. Only the

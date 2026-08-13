@@ -989,6 +989,61 @@ def compute_mean_std(dataset, ixs, key):
         f"{key}_std": vals_std,
     }
 
+def evaluate_on_sim():
+    """A-to-A: score the published sim checkpoint on held-out SIMULATED data.
+
+    The in-domain result - train on dataset A, test on a disjoint part of
+    dataset A. It is the ceiling the cross-domain configurations are measured
+    against: the gap between this and A-to-B is the sim-to-real transfer cost.
+
+    The test split comes straight out of the published test-loader pickle, which
+    stores the very `MyDataset` (mode='test') that `train_on_sim()` held back,
+    rather than re-deriving it. Re-deriving would risk a different split from the
+    one the checkpoint was actually held out from - which would quietly turn this
+    into a partly-seen-data number.
+
+    Uses the simulated test split, NOT the validation split: validation drives
+    early stopping and checkpoint selection, so a number read off it is
+    optimistic by construction.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = GNN(arch="large")
+    ckpt = repo_path(SYSTEM_PARAMS.files.final_segmentation_model_gnn_sim)
+    print(f"loading simulation-trained checkpoint: {ckpt}")
+    model.load_state_dict(torch.load(ckpt, map_location=device))
+    model.eval()
+    model = model.to(device)
+
+    stats_path = repo_path(SYSTEM_PARAMS.files.test_loader_gnn_sim)
+    with open(stats_path, "rb") as f:
+        test_data = pickle.load(f)
+    test_dataset = test_data["dataset"]
+    print(f"held-out simulated test split: {len(test_dataset)} clips ({stats_path})")
+
+    all_stats = test_data["dataset_stats"]
+    if has_flat_stats(test_data):
+        stats = all_stats
+    else:
+        # Curriculum-keyed stats; 1.0 is the difficulty the checkpoint trained at.
+        target_difficulty = 1.0 if 1.0 in all_stats else next(iter(all_stats))
+        test_dataset.set_difficulty_level(target_difficulty)
+        stats = all_stats[target_difficulty]
+    test_dataset.set_stats(stats)
+    test_dataset.eval()
+
+    batch_size = getattr(SYSTEM_PARAMS.gnn, "batch_size_large", SYSTEM_PARAMS.gnn.batch_size)
+    num_workers = getattr(SYSTEM_PARAMS.gnn, "num_workers_large", SYSTEM_PARAMS.gnn.num_workers)
+    data_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=False,
+        persistent_workers=False,
+    )
+    return score_ranking_metrics(model, data_loader, "A-to-A", device=device)
+
+
 def evaluate_and_plot_roc():
     """Evaluate the SIMULATION-trained checkpoint on silicone (B); ROC and PR curves.
 
@@ -1157,8 +1212,14 @@ def train_on_sim(test_on="silicone"):
         train_size=0.7, val_size=0.15, test_size=0.15
     )
 
-    # The real dataset this configuration is evaluated against.
-    if test_on == "silicone":
+    # The dataset this configuration is evaluated against. For A-to-A that is
+    # the held-out simulated test split itself - there is no second domain - so
+    # the "real" evaluation below simply becomes the in-domain one, and the
+    # cross-domain section is skipped.
+    if test_on == "sim":
+        real_dataset = None
+        real_eval_dataset = None
+    elif test_on == "silicone":
         real_dataset = MyDataset(
             scheme="single_dataset",
             sim_exp="exp",
@@ -1178,7 +1239,9 @@ def train_on_sim(test_on="silicone"):
         # Pure transfer: nothing is held back for fitting.
         _, _, real_eval_dataset = real_dataset.create_splits(all_to_test=True)
     else:
-        raise ValueError(f"test_on must be 'silicone' or 'meat', got {test_on!r}")
+        raise ValueError(
+            f"test_on must be 'sim', 'silicone' or 'meat', got {test_on!r}"
+        )
 
     # The simulated pipeline carries a difficulty curriculum; 1.0 is the setting
     # the published checkpoint was trained at.
@@ -1189,7 +1252,10 @@ def train_on_sim(test_on="silicone"):
     for ds in (val_dataset, test_dataset):
         ds.set_difficulty_level(target_difficulty)
     for ds in (train_dataset, val_dataset, test_dataset, real_eval_dataset):
-        ds.set_stats(stats)
+        # real_eval_dataset is None for A-to-A, which evaluates on the simulated
+        # test split already covered above.
+        if ds is not None:
+            ds.set_stats(stats)
     # set_difficulty_level only applies to the simulated "single_dataset"
     # scheme; the meat scheme has no curriculum.
     if test_on == "silicone":
@@ -1235,14 +1301,16 @@ def train_on_sim(test_on="silicone"):
         callbacks=[checkpoint_cb],
         reload_dataloaders_every_n_epochs=1,
     )
-    real_loader = DataLoader(
-        real_eval_dataset,
-        batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS,
-        pin_memory=False,
-        persistent_workers=False,
-        shuffle=False,
-    )
+    real_loader = None
+    if real_eval_dataset is not None:
+        real_loader = DataLoader(
+            real_eval_dataset,
+            batch_size=BATCH_SIZE,
+            num_workers=NUM_WORKERS,
+            pin_memory=False,
+            persistent_workers=False,
+            shuffle=False,
+        )
 
     start = time.perf_counter()
     trainer.fit(model, datamodule=data_module)
@@ -1251,35 +1319,39 @@ def train_on_sim(test_on="silicone"):
     if not best_model_path:
         raise RuntimeError("No best checkpoint was saved; cannot test best model.")
     best_model = GNN.load_from_checkpoint(best_model_path)
+    config_name = config_name_for(test_on)
+
     print("\nTesting on simulation data:")
     trainer.test(best_model, datamodule=data_module)
-    print(f"\nTesting on the real {test_on} dataset:")
-    trainer.test(best_model, dataloaders=real_loader)
+    if real_loader is not None:
+        print(f"\nTesting on the real {test_on} dataset:")
+        trainer.test(best_model, dataloaders=real_loader)
 
-    # IN-DOMAIN reference: the held-out 15% of dataset A, same distribution as
-    # the training data. This is the "sim -> sim" number the manuscript reports
-    # beside the cross-domain one, and the gap between them IS the sim-to-real
-    # transfer cost - which is why it is worth reporting as a metric rather than
-    # leaving it inside a Lightning table.
+    # The held-out 15% of dataset A, same distribution as the training data.
+    #
+    # For A-to-A this IS the result. For A-to-B and A-to-C it is the in-domain
+    # reference reported beside the cross-domain number, and the gap between the
+    # two is the sim-to-real transfer cost.
     #
     # The TEST split, not the val split: val drives early stopping and
     # ModelCheckpoint's `save_top_k`, so a number read off it is optimistic by
     # construction. The test split is untouched by both.
-    print("\nIn-domain reference (held-out simulation, same distribution as training):")
-    in_domain = score_ranking_metrics(
-        best_model, data_module.test_dataloader(), f"{config_name_for(test_on)}-sim",
-    )
-
-    # Threshold-free metrics on the real target domain, matching what the other
-    # configurations report - and what the seed sweep collects. `test_on` names
-    # the target dataset (silicone -> A-to-B, meat -> A-to-C).
-    config_name = config_name_for(test_on)
-    print(f"\nCross-domain result on the real {test_on} dataset:")
-    metrics = score_ranking_metrics(best_model, real_loader, config_name)
-    # Carried under an `in_domain_` prefix so one flat dict holds both, which is
-    # what lets the seed sweep summarise them side by side.
-    for key, value in in_domain.items():
-        metrics[f"in_domain_{key}"] = value
+    if real_loader is None:
+        print("\nHeld-out simulation (A-to-A):")
+        metrics = score_ranking_metrics(
+            best_model, data_module.test_dataloader(), config_name,
+        )
+    else:
+        print("\nIn-domain reference (held-out simulation, same distribution as training):")
+        in_domain = score_ranking_metrics(
+            best_model, data_module.test_dataloader(), f"{config_name}-sim",
+        )
+        print(f"\nCross-domain result on the real {test_on} dataset:")
+        metrics = score_ranking_metrics(best_model, real_loader, config_name)
+        # Carried under an `in_domain_` prefix so one flat dict holds both, which
+        # is what lets the seed sweep summarise them side by side.
+        for key, value in in_domain.items():
+            metrics[f"in_domain_{key}"] = value
     duration = time.perf_counter() - start
     print(f"\nTraining and testing completed in {duration:.2f} s ({duration / 60:.2f} min)")
 
@@ -1297,10 +1369,10 @@ def train_on_sim(test_on="silicone"):
 def config_name_for(test_on):
     """Configuration name for a `train_on_sim(test_on=...)` run.
 
-    Both A-to-B and A-to-C train on simulation; the target dataset is what tells
-    them apart.
+    A-to-A, A-to-B and A-to-C all train on simulation; the target dataset is what
+    tells them apart.
     """
-    return "A-to-B" if test_on == "silicone" else "A-to-C"
+    return {"sim": "A-to-A", "silicone": "A-to-B", "meat": "A-to-C"}[test_on]
 
 
 def marker_iou(probs, labels, threshold=DECISION_THRESHOLD):
@@ -1518,6 +1590,11 @@ def silicone_to_meat():
 # C-to-B has no separate eval entry because its published training run ends by
 # testing on silicone; `main()` therefore serves as both.
 CONFIG_ACTIONS = {
+    "A-to-A": {
+        "description": "train on simulation (A), test on held-out simulation (A)",
+        "train": lambda: train_on_sim(test_on="sim"),
+        "eval": lambda: evaluate_on_sim(),
+    },
     "A-to-B": {
         "description": "train on simulation (A), test on silicone (B)",
         "train": lambda: train_on_sim(test_on="silicone"),
@@ -1538,15 +1615,16 @@ CONFIG_ACTIONS = {
 # Which mode each configuration runs when none is given. Evaluation is the
 # cheaper, reproduce-the-published-number path, so it is the default wherever a
 # published checkpoint exists.
-DEFAULT_MODES = {"A-to-B": "eval", "C-to-B": "train", "A-to-C": "eval"}
+DEFAULT_MODES = {"A-to-A": "eval", "A-to-B": "eval", "C-to-B": "train", "A-to-C": "eval"}
 
 _USAGE = (
     "Usage: python -m difftactile.scripts.script_segmentation_gnn <config> [--train|--eval]\n"
     "\n"
     "Configurations (paper notation; A=simulation, B=silicone, C=meat):\n"
-    "  A-to-B   train on simulation, test on silicone   [default: --eval]\n"
-    "  C-to-B   train on meat,       test on silicone   [default: --train]\n"
-    "  A-to-C   train on simulation, test on meat       [default: --eval]\n"
+    "  A-to-A   train on simulation, test on held-out simulation   [default: --eval]\n"
+    "  A-to-B   train on simulation, test on silicone              [default: --eval]\n"
+    "  C-to-B   train on meat,       test on silicone              [default: --train]\n"
+    "  A-to-C   train on simulation, test on meat                  [default: --eval]\n"
     "\n"
     "Modes:\n"
     "  --train  reproduce the model from scratch (writes a *_retrained checkpoint)\n"

@@ -114,7 +114,7 @@ PASSTHROUGH=()
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        A-to-B|C-to-B|A-to-C)
+        A-to-A|A-to-B|C-to-B|A-to-C)
             CONFIGS+=("$1"); PASSTHROUGH+=("$1") ;;
         --pretrained|--retrained)
             PASSTHROUGH+=("$1") ;;

@@ -146,7 +146,7 @@ SWEEP_SEED="0"
 # argument that follows them.
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        A-to-B|C-to-B|A-to-C) CONFIG="$1" ;;
+        A-to-A|A-to-B|C-to-B|A-to-C) CONFIG="$1" ;;
         --pretrained|--retrained) WEIGHTS="$1" ;;
         --sweep)
             shift

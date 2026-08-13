@@ -174,24 +174,49 @@ number as the real result. And unlike AUROC and AP, IoU **depends on the decisio
 (`DECISION_THRESHOLD`, 0.5), so it carries every caveat about that choice; it is reported
 because it is the intuitive quantity, not because it is the most trustworthy one.
 
-#### The in-domain (simulation → simulation) reference
+#### A→A: the in-domain (simulation → simulation) reference
 
-A `--train` run of a simulation-trained configuration also scores the model on the **held-out
-15% of the simulated dataset** — same distribution as its training data, never seen during
-training. The gap between that and the cross-domain number **is the sim-to-real transfer cost**:
+**A→A is a configuration in its own right**, alongside the three transfers — train on dataset A,
+test on a disjoint part of dataset A:
 
 ```bash
-./run_pipeline.sh A-to-B --train    # prints both, in-domain then cross-domain
+./run_pipeline.sh A-to-A            # evaluate the published checkpoint (default)
+./run_pipeline.sh A-to-A --train    # retrain and evaluate
+./score_all_scenarios.sh A-to-A     # into the results table
 ```
 
-Measured over three seeds, A→B scores AUROC **0.9170 ± 0.0024** in-domain against
-**0.7740 ± 0.0088** on real silicone — the drop is the thing worth reporting, and the sweep
-tabulates both.
+It is the ceiling the transfers are measured against: the gap between A→A and A→B **is the
+sim-to-real transfer cost**. On the published checkpoint that is AUROC **0.9369 → 0.7314**.
+
+It scores the *same* published checkpoint as A→B and A→C — the three differ only in which
+dataset they are tested on. The simulated test split comes straight out of the test-loader
+pickle rather than being re-derived, so it is guaranteed to be the split the checkpoint was
+actually held out from.
 
 This is the simulated **test** split, not the validation split. Validation drives early stopping
 and checkpoint selection, so a number read off it is optimistic by construction; the test split
-is untouched by both. Only A→B and A→C have such a reference — C→B trains on meat and has no
-same-distribution held-out split.
+is untouched by both.
+
+> A `--train` run of A→B or A→C *also* prints an in-domain reference before its cross-domain
+> result, since training already holds out that split. A→A is the standalone way to get the same
+> number without retraining.
+
+#### How dataset A is split
+
+**The split is mechanical, not stratified.** `create_splits_single_dataset_scheme()` sorts the
+trajectory filenames and cuts at 70% / 85% — 350 train, 75 validation, 75 test of the 500
+trajectories. Nothing balances the splits by vein count, depth or any other property.
+
+That turns out not to matter here, because **every trajectory in the shipped dataset contains
+exactly one vein** (`vein_polyline` has shape `(frames, 1, 50, 2)` in all 500 files). So a
+concern like "the test set contains two vessels but training only ever saw one" cannot arise —
+there is no such variation to stratify over. The label balance confirms the split is
+unremarkable: the fraction of vein-present frames is 0.5019 / 0.5029 / 0.5017 across
+train / val / test, and each trajectory is ~317 frames.
+
+Splitting **by trajectory** (not by clip) is the part that matters, and it is done correctly:
+all clips cut from one trajectory land in the same split, so overlapping sliding windows cannot
+leak between train and test.
 
 #### Why AUROC *and* average precision
 

@@ -66,7 +66,7 @@ METRICS_MARKER = "###SEED_SWEEP_METRICS###"
 # Configurations a sweep is meaningful for - i.e. those that train. Evaluation-only
 # runs load a fixed published checkpoint, so their metrics do not depend on a seed
 # at all and sweeping them would produce N identical rows.
-SWEEPABLE = ("A-to-B", "C-to-B", "A-to-C")
+SWEEPABLE = ("A-to-A", "A-to-B", "C-to-B", "A-to-C")
 
 # Root for the per-sweep timestamped directories. Gitignored.
 SWEEP_ROOT = "saved_models_sweeps"

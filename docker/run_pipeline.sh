@@ -13,12 +13,15 @@
 #   check              Verify GPU, Taichi, torch and the restored data bundle.
 #   sim-short          Simulator data collection, 1 loop (8 trials, ~3 min).
 #   sim-full           Simulator data collection, full run (800 trials, ~2h45m measured).
+#   A-to-A             Train on simulation, test on HELD-OUT SIMULATION - the
+#                      in-domain reference the transfers are measured against
+#                      (default: evaluate the published checkpoint).
 #   A-to-B             Train on simulation, test on silicone (default: evaluate
 #                      the published checkpoint and write the ROC curve).
 #   C-to-B             Train on the real meat trials, test on silicone.
 #   A-to-C             Train on simulation, test on meat (default: evaluate the
 #                      published checkpoint, no retraining).
-#   all-scenarios      Run the three configurations above in order. Training
+#   all-scenarios      Run the four configurations above in order. Training
 #                      writes *_retrained artifacts, so the published
 #                      checkpoints the evaluations read are never overwritten.
 #
@@ -137,11 +140,12 @@ case "${1:-}" in
     sim-full)          stage_sim "" ;;
     # Paper notation, plus the pre-rename aliases. The Python dispatcher
     # resolves the aliases itself, so they are simply passed through.
-    A-to-B|C-to-B|A-to-C|sim-to-silicone|sim-to-meat|silicone-to-meat|meat-to-silicone)
+    A-to-A|A-to-B|C-to-B|A-to-C|sim-to-silicone|sim-to-meat|silicone-to-meat|meat-to-silicone)
         config="$1"; shift
         stage_scenario "${config}" "$@"
         ;;
     all-scenarios)
+        stage_scenario A-to-A
         stage_scenario A-to-B
         stage_scenario A-to-C
         stage_scenario C-to-B

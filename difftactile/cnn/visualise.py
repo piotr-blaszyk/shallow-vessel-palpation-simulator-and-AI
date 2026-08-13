@@ -59,6 +59,13 @@ def has_flat_stats_dict(all_stats):
 #   stats_key     : test-loader pickle holding the normalisation statistics
 #   test_dataset  : which dataset the predictions are shown on
 VIEWER_SCENARIOS = {
+    "A-to-A": {
+        "description": "train on simulation (A), view predictions on held-out simulation (A)",
+        "arch": "large",
+        "ckpt_key": "final_segmentation_model_gnn_sim",
+        "stats_key": "test_loader_gnn_sim",
+        "test_dataset": "sim",
+    },
     "A-to-B": {
         "description": "train on simulation (A), view predictions on silicone (B)",
         "arch": "large",
@@ -503,7 +510,15 @@ class Visualisation:
             difficulty = 1.0 if 1.0 in all_stats else next(iter(all_stats))
             stats = all_stats[difficulty]
 
-        if cfg["test_dataset"] == "silicone":
+        if cfg["test_dataset"] == "sim":
+            # A-to-A views the held-out SIMULATED split, taken from the pickle
+            # rather than re-derived so it is the split the checkpoint was
+            # actually held out from.
+            with open(self.test_loader, "rb") as f:
+                test_dataset = pickle.load(f)["dataset"]
+            if difficulty is not None:
+                test_dataset.set_difficulty_level(difficulty)
+        elif cfg["test_dataset"] == "silicone":
             full_dataset = MyDataset(
                 scheme="single_dataset",
                 sim_exp="exp",

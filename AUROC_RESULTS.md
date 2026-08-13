@@ -45,6 +45,7 @@ PR curves:  `difftactile/output/pr_curves/pr_curve_<config>_<weights>.pdf`
 
 | Scenario | Train -> Test | Weights | AUROC | AP | IoU fg | IoU bg | Chance | Lift | Nodes | Positive |
 |---|---|---|---|---|---|---|---|---|---|---|
+| A-to-A [pretrained] | train on simulation (A), test on held-out simulation (A) | pretrained | **0.9371** | **0.6179** | **0.2644** | 0.7645 | 0.0828 | 7.46x | 66675 | 5524 (8.3%) |
 | A-to-B [pretrained] | train on simulation (A), test on silicone (B) | pretrained | **0.7314** | **0.2553** | **0.2059** | 0.7562 | 0.1143 | 2.23x | 12700 | 1452 (11.4%) |
 | C-to-B [pretrained] | train on meat (C), test on silicone (B) | pretrained | **0.6786** | **0.2871** | **0.1531** | 0.6066 | 0.1143 | 2.51x | 12700 | 1452 (11.4%) |
 | A-to-C [pretrained] | train on simulation (A), test on meat (C) | pretrained | **0.8171** | **0.2208** | **0.1982** | 0.8119 | 0.0716 | 3.09x | 25273 | 1809 (7.2%) |
