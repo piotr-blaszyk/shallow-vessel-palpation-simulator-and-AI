@@ -28,7 +28,7 @@ they are never waited on: `show_plots()` returns False, `wait_key()` returns
 instead of asking for a keystroke.
 
 Note that this module is the policy for the project's **OpenCV** windows. The
-two interactive annotation viewers behind `docker/annotate_data.sh` were moved
+two interactive annotation viewers behind `docker/annotate_data_bare_metal.sh` were moved
 to Qt (`difftactile/main/qt_viewer.py`) so they are native Wayland clients; they
 still honour `is_interactive()` for the "should this open at all" decision, but
 their event loop, frame scaling and key handling live there. The frame-browser

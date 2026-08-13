@@ -28,8 +28,8 @@
 # The script activates that env itself, so just run it directly:
 #
 # Usage:
-#   ./docker/annotate_data.sh --silicone [--source DIR]
-#   ./docker/annotate_data.sh --meat
+#   ./docker/annotate_data_bare_metal.sh --silicone [--source DIR]
+#   ./docker/annotate_data_bare_metal.sh --meat
 #
 # Datasets:
 #   --silicone   ViTacTip videos of the silicone vascular phantom. Click to place
@@ -126,7 +126,7 @@ export DIFFTACTILE_INTERACTIVE=1
 # Xwayland here.
 #
 # Nothing is forced, so QT_QPA_PLATFORM is still honoured if it is already set:
-# `QT_QPA_PLATFORM=xcb ./docker/annotate_data.sh --silicone` falls back to X11,
+# `QT_QPA_PLATFORM=xcb ./docker/annotate_data_bare_metal.sh --silicone` falls back to X11,
 # which is what to use inside the container or over X forwarding.
 if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -z "${XDG_RUNTIME_DIR:-}" ]; then
     # Qt's Wayland plugin locates the compositor socket relative to
@@ -254,7 +254,7 @@ The dilated videos and their annotation pickles are excluded from the published
 Zenodo bundle (data/MANIFEST.md) because they are intermediate preprocessing
 artifacts. Point --source at a tree that has them:
 
-    ./docker/annotate_data.sh --silicone --source /path/to/manual_or_experimental_data/endgame
+    ./docker/annotate_data_bare_metal.sh --silicone --source /path/to/manual_or_experimental_data/endgame
 
 Note that inside the container the host path must be mounted to be visible.
 EOF

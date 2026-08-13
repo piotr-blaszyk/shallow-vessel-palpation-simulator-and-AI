@@ -1,4 +1,4 @@
-# Micromamba environment for the annotation viewer (docker/annotate_data.sh).
+# Micromamba environment for the annotation viewer (docker/annotate_data_bare_metal.sh).
 #
 # This env exists for exactly one job: running the two interactive annotation
 # browsers on bare metal, outside Docker. That matters because the browsers are
@@ -17,7 +17,7 @@
 #
 #     micromamba env create -f requirements/annotator-env.yml
 #
-# `docker/annotate_data.sh` activates this env automatically when it is present.
+# `docker/annotate_data_bare_metal.sh` activates this env automatically when it is present.
 #
 # THE GUI IS Qt, NOT OPENCV. The viewers' windows are PySide6 (see
 # difftactile/main/qt_viewer.py), which is what makes them native Wayland

@@ -2,14 +2,14 @@
 #
 # Manual annotation and annotation review, IN THE DOCKER CONTAINER.
 #
-# This is the in-container twin of ./docker/annotate_data.sh. Both drive exactly
+# This is the in-container twin of ./docker/annotate_data_bare_metal.sh. Both drive exactly
 # the same two viewers, through the same modules, against the same library
 # versions (PySide6 6.9.1 for the windows, PyAV 15.1.0 for decoding) - the only
 # difference is where the process runs. Keeping the two side by side is the
 # point: run one, run the other, and any difference in responsiveness or
 # behaviour is attributable to the container rather than to the code.
 #
-# See annotate_data.sh for what the two viewers do, their keybindings, and the
+# See annotate_data_bare_metal.sh for what the two viewers do, their keybindings, and the
 # note on which data each needs. That file is the reference; this one documents
 # only what is different about running inside Docker.
 #
@@ -18,10 +18,10 @@
 #   ./docker/annotate_data_docker.sh --meat
 #
 # Options:
-#   --silicone / --meat   Which dataset. Same meaning as in annotate_data.sh.
+#   --silicone / --meat   Which dataset. Same meaning as in annotate_data_bare_metal.sh.
 #   --source DIR          Staging source for the silicone videos, as a path
 #                         INSIDE the container. Defaults to the same location
-#                         annotate_data.sh uses, which only resolves if you have
+#                         annotate_data_bare_metal.sh uses, which only resolves if you have
 #                         mounted it (see "Data" below).
 #   --x11                 Force the X11/Xwayland backend instead of Wayland.
 #                         This is the A/B switch for isolating a Wayland-specific
@@ -73,7 +73,7 @@
 # any silicone videos already staged into the working tree just work. The
 # silicone staging *source* is a path on the author's host that is NOT mounted
 # into the container - so if the silicone videos are not already in the tree,
-# either stage them once on bare metal with ./docker/annotate_data.sh --silicone
+# either stage them once on bare metal with ./docker/annotate_data_bare_metal.sh --silicone
 # (they land in the repo, which the container sees), or pass --source with a path
 # you have mounted yourself.
 #
@@ -247,4 +247,4 @@ echo "Qt platform: ${QT_QPA_PLATFORM}  (DISPLAY=${DISPLAY:-<unset>}, WAYLAND_DIS
 # module entrypoints. It already has an "inside the container" branch that keeps
 # the current interpreter, and the environment set above survives into it, so the
 # viewer logic genuinely is shared rather than duplicated.
-exec ./docker/annotate_data.sh "--${DATASET}" "${SOURCE_ARGS[@]}"
+exec ./docker/annotate_data_bare_metal.sh "--${DATASET}" "${SOURCE_ARGS[@]}"

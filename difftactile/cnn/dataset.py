@@ -24,20 +24,63 @@ from difftactile.sensor_model.fisheye_model_no_taichi import *
 MEAT_CLEAN_DATA_DIR = data_path(
     "difftactile/manual_or_experimental_data/meat_training_data/clean/"
 )
+# Trial directory names are `<description>-<timestamp>`. The timestamp is the
+# identifier the recording rig produced and is what makes the name unique; the
+# description prefix was added so the dataset is readable without cross-checking
+# meat_experiment_spec.md, and is what the prediction viewer shows as the trial
+# caption (see `meat_trial_description()`).
+#
+# Only these 10 trials exist. The experiment recorded 23, but the other 13 were
+# repeats at intermediate sensor heights that no split ever referenced, so they
+# were dropped rather than shipped in the Zenodo bundle to be puzzled over.
+# meat_experiment_spec.md still lists all 23 as the record of what was recorded.
 MEAT_TRAIN_TRIALS = [
-    "20260228-230937",
-    "20260228-232013",
-    "20260228-232632",
-    "20260228-233031",
-    "20260228-233454",
-    "20260228-234824",
-    "20260228-235749",
+    "1-metal-straw-on-top-20260228-230937",
+    "1-metal-straw-beneath-1-steak-20260228-232013",
+    "1-metal-straw-beneath-2-steaks-20260228-232632",
+    "1-metal-straw-beneath-3-steaks-20260228-233031",
+    "1-metal-straw-beneath-4-steaks-20260228-233454",
+    "no-straw-20260228-234824",
+    "2-metal-straws-beneath-2-steaks-20260228-235749",
 ]
 MEAT_VALIDATION_TRIALS = [
-    "20260228-234337",
-    "20260301-000849",
-    "20260301-001457",
+    "1-metal-straw-beneath-6-steaks-20260228-234337",
+    "3-metal-straws-beneath-2-steaks-20260301-000849",
+    "1-silicone-straw-beneath-2-steaks-20260301-001457",
 ]
+
+
+def meat_trial_description(trial_id):
+    """Human-readable description of a meat trial, from its directory name.
+
+    Trial directories are named `<description>-<timestamp>`, e.g.
+    `2-metal-straws-beneath-2-steaks-20260228-235749`, so the description is
+    recoverable by stripping the trailing `YYYYMMDD-HHMMSS` and unhyphenating:
+    "2 metal straws beneath 2 steaks".
+
+    Returns the name unchanged if it does not carry a timestamp, which keeps
+    this safe for any trial directory a user drops in by hand.
+    """
+    parts = trial_id.rsplit("-", 2)
+    # A timestamp is the last two hyphen-separated fields: 8 digits then 6.
+    if (len(parts) == 3 and len(parts[1]) == 8 and parts[1].isdigit()
+            and len(parts[2]) == 6 and parts[2].isdigit()):
+        return parts[0].replace("-", " ")
+    return trial_id
+
+
+def meat_trial_timestamp(trial_id):
+    """The `YYYYMMDD-HHMMSS` identifier of a meat trial, or the name as given.
+
+    The timestamp is the stable identity of a recording - the description
+    prefix is only a label - so anything keying on a specific trial should use
+    this rather than the full directory name.
+    """
+    parts = trial_id.rsplit("-", 2)
+    if (len(parts) == 3 and len(parts[1]) == 8 and parts[1].isdigit()
+            and len(parts[2]) == 6 and parts[2].isdigit()):
+        return f"{parts[1]}-{parts[2]}"
+    return trial_id
 
 
 class MyDataset(torch.utils.data.Dataset):

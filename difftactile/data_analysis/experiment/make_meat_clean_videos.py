@@ -76,7 +76,10 @@ def main():
             print(f"[{trial_id}] no pose .npz alongside the video; skipping.")
             continue
 
-        out_dir = processor.output_dir / trial_id
+        # The raw recordings are named by bare timestamp but the clean/
+        # directories carry a descriptive prefix, so resolve rather than
+        # concatenate. `_trial_out_dir()` matches on the timestamp the two share.
+        out_dir = processor._trial_out_dir(trial_id)
         if not out_dir.is_dir():
             print(f"[{trial_id}] no clean/ directory; skipping (run preprocessing first).")
             continue

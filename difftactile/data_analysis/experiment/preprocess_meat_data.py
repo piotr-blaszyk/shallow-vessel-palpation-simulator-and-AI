@@ -15,6 +15,64 @@ from difftactile.main.display import (
 from difftactile.sensor_model.fisheye_model_no_taichi import FisheyeModelNoTaichi
 
 
+def _trial_timestamp(trial_id):
+    """The `YYYYMMDD-HHMMSS` part of a trial directory name, or the name itself.
+
+    The timestamp is a trial's stable identity: the raw recordings are named by
+    it, `meat_experiment_spec.md` is keyed by it, and the descriptive prefix on
+    the output directories is only a label. So anything matching a directory
+    against the spec or the raw archive keys on this, not on the full name.
+    """
+    parts = trial_id.rsplit("-", 2)
+    if (len(parts) == 3 and len(parts[1]) == 8 and parts[1].isdigit()
+            and len(parts[2]) == 6 and parts[2].isdigit()):
+        return f"{parts[1]}-{parts[2]}"
+    return trial_id
+
+
+def _trial_dir_name(timestamp, description):
+    """Directory name for a trial: `<slugified description>-<timestamp>`.
+
+    Turns the spec's "2 straws beneath 2 steaks" into
+    `2-metal-straws-beneath-2-steaks-20260228-235749`. Bare straws are metal;
+    the spec only says "silicone" explicitly, so "metal" is inserted to make
+    the distinction visible in the name rather than implied by its absence.
+    """
+    text = description.strip().lower()
+    if "no straw" not in text:
+        # "no straw" names neither a count nor a material. Everything else gets
+        # both made explicit, because the spec leaves them implicit: it writes
+        # a bare "straw" for one metal straw, and only ever says "silicone"
+        # (never "metal") when it means the silicone one.
+        if "metal" not in text and "silicone" not in text:
+            text = re.sub(r"\bstraws?\b", lambda m: f"metal {m.group(0)}",
+                          text, count=1)
+        if not re.match(r"\s*\d", text):
+            text = f"1 {text}"
+    slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    return f"{slug}-{timestamp}"
+
+
+def _trial_description(trial_id):
+    """Human-readable description of a meat trial, from its directory name.
+
+    Trial directories are named `<description>-<timestamp>`, e.g.
+    `2-metal-straws-beneath-2-steaks-20260228-235749` -> "2 metal straws beneath
+    2 steaks". Returns the name unchanged if it carries no timestamp.
+
+    Deliberately duplicated from `cnn/dataset.py::meat_trial_description()`
+    rather than imported: importing that module would pull torch and
+    torch-geometric onto the annotator's critical path, and the whole point of
+    the `vessel-palpation-annotator` env is that it has neither. This is four
+    lines of string handling, so a copy is cheaper than the coupling.
+    """
+    parts = trial_id.rsplit("-", 2)
+    if (len(parts) == 3 and len(parts[1]) == 8 and parts[1].isdigit()
+            and len(parts[2]) == 6 and parts[2].isdigit()):
+        return parts[0].replace("-", " ")
+    return trial_id
+
+
 @dataclass
 class TrialConfig:
     trial_id: str
@@ -404,6 +462,39 @@ class MeatPreprocessData:
         cap.release()
         writer.release()
 
+    def _trial_out_dir(self, trial_id: str) -> Path:
+        """Output directory for a trial, found by timestamp.
+
+        Callers may pass either a bare `YYYYMMDD-HHMMSS` (which is how the raw
+        recordings and `meat_experiment_spec.md` name a trial) or a full
+        `<description>-<timestamp>` directory name. Both resolve to the same
+        directory: an existing one is matched by timestamp, so a directory that
+        was named before the descriptive prefixes existed is still found, and
+        otherwise the descriptive name is built from the spec.
+        """
+        timestamp = _trial_timestamp(trial_id)
+        if self.output_dir.is_dir():
+            for d in self.output_dir.iterdir():
+                if d.is_dir() and _trial_timestamp(d.name) == timestamp:
+                    return d
+        description = self._spec_descriptions().get(timestamp)
+        if description is None:
+            return self.output_dir / trial_id
+        return self.output_dir / _trial_dir_name(timestamp, description)
+
+    def _spec_descriptions(self) -> Dict[str, str]:
+        """`{timestamp: description}` from meat_experiment_spec.md, cached."""
+        if getattr(self, "_spec_desc_cache", None) is None:
+            cache = {}
+            if self.spec_path.exists():
+                for line in self.spec_path.read_text().splitlines():
+                    m = re.match(r"-\s*(\d{8}-\d{6}):\s*(.+)$", line.strip())
+                    if m:
+                        desc = m.group(2).split("(")[0].split(" - ")[0].strip()
+                        cache[m.group(1)] = desc
+            self._spec_desc_cache = cache
+        return self._spec_desc_cache
+
     def _bundled_trial_inputs(self, trial_id: str):
         """The shipped decimated video and poses for a trial, if present.
 
@@ -416,7 +507,7 @@ class MeatPreprocessData:
 
         Returns (video_path, poses) or None when the trial is not shipped.
         """
-        trial_dir = self.output_dir / trial_id
+        trial_dir = self._trial_out_dir(trial_id)
         video = trial_dir / "frames.mp4"
         poses_npz = trial_dir / "frames_poses.npz"
         if not video.exists() or not poses_npz.exists():
@@ -435,7 +526,8 @@ class MeatPreprocessData:
 
         NOTE ON EXACTNESS. `frames.mp4` is H.264 (CRF 26), so marker detection
         sees very slightly different pixels than it did on the lossless raw
-        recording. Measured over all 23 trials, the recomputed marker positions
+        recording. Measured over all 23 trials as originally recorded (the
+        dataset now ships the 10 the model uses), the recomputed marker positions
         move by a median of 0.03 px and a 99th percentile of 0.47 px against an
         inter-marker spacing of ~55 px, and 20 of 23 trials come out with
         bit-identical labels; the other three differ in 1, 3 and 12 labels out of
@@ -453,10 +545,13 @@ class MeatPreprocessData:
         spec_cfg = self._load_spec()
 
         # Trials reachable without the raw archive.
+        # Keyed by timestamp, not by directory name: the directories carry a
+        # descriptive prefix but the spec and the raw archive do not, so the
+        # timestamp is the only identifier all three share.
         bundled_ids = set()
         if prefer_bundled and self.output_dir.is_dir():
             bundled_ids = {
-                t.name for t in self.output_dir.iterdir()
+                _trial_timestamp(t.name) for t in self.output_dir.iterdir()
                 if t.is_dir() and self._bundled_trial_inputs(t.name) is not None
             }
 
@@ -514,7 +609,10 @@ class MeatPreprocessData:
 
             labels = self._labels_from_markers_and_masks(markers_xy, coarse_masks)
 
-            trial_out_dir = self.output_dir / trial_id
+            # Descriptive directory name (`<description>-<timestamp>`), so a
+            # rebuild from raw reproduces the shipped layout rather than
+            # reverting to bare timestamps.
+            trial_out_dir = self._trial_out_dir(trial_id)
             trial_out_dir.mkdir(parents=True, exist_ok=True)
 
             np.savez(
@@ -680,8 +778,12 @@ class MeatPreprocessData:
             frames, _, vessel_counts = get_trial(trial_dir)
             frame_idx = state["frame"]
             count = vessel_counts[frame_idx] if frame_idx < len(vessel_counts) else 0
+            # The directory name is `<description>-<timestamp>`; show the
+            # description (what the trial *is*) rather than the whole
+            # directory name, which is long enough to push the counters off.
             return [
-                f"[{trial_dir.name}] Trial {state['trial'] + 1}/{len(trials)} | "
+                f"Trial {state['trial'] + 1}/{len(trials)}: "
+                f"{_trial_description(trial_dir.name)} | "
                 f"Frame {frame_idx + 1}/{len(frames)} | vessel markers {count}",
                 "red = vessel present, green = absent   "
                 "(m/n trial, k/j frame, q quit)",

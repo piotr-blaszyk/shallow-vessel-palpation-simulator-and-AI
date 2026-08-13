@@ -134,11 +134,38 @@ configuration selects **both** the model weights and the test dataset, so all si
 reachable by name:
 
 ```bash
-docker exec -it vessel-palpation ./docker/view_predictions.sh A-to-B              # published checkpoint
-docker exec -it vessel-palpation ./docker/view_predictions.sh A-to-C --retrained  # locally trained
+./docker/view_predictions.sh A-to-B              # published checkpoint
+./docker/view_predictions.sh A-to-C --retrained  # locally trained
+./docker/view_predictions.sh A-to-B --x11        # force X11 instead of Wayland
 ```
 
-Needs a display (the container forwards the host X session). Press `q` to quit.
+Run it from the **host** — like `annotate_data_docker.sh` it `docker exec`s into the running
+container for you (start it with `./docker/docker-run.sh` first). It still runs *inside* the
+container, because it needs torch and CUDA for inference; there is no bare-metal variant.
+
+**Step through it with the keyboard**, one key per action across the three nested levels the
+data actually has — a trial holds several clips, and a clip holds `clip_len` frames:
+
+| Key | Action |
+|---|---|
+| `i` / `o` | previous / next **trial** |
+| `j` / `k` | previous / next **clip**, within the trial |
+| `n` / `m` | previous / next **frame**, within the clip |
+| `q` | quit |
+
+Changing trial or clip lands on that unit's first frame, and every move clamps at the ends
+rather than wrapping. Nothing advances on its own.
+
+The **Metadata** panel reports exactly where you are: the trial number and what that trial is
+(e.g. "1 silicone straw beneath 2 steaks"), the clip number, the frames the clip covers as a
+closed interval `[first, last]`, and the frame within the clip.
+
+The five panels (Ground Truth, Hard Prediction, Confusion Matrix, Soft Prediction, Metadata)
+are tiled into **one** Qt window rather than five OpenCV ones. That window is a native Wayland
+client by default, so it is smooth; `--x11` forces the Xwayland path and is choppy for the same
+reason the annotators' is. Five separate windows were not viable under Wayland anyway: a
+Wayland client cannot position itself, so `cv2.moveWindow()` silently did nothing and the
+panels landed on top of each other.
 
 ### Bird's-eye vessel localisation map
 
@@ -167,8 +194,8 @@ stack (no Taichi, no CUDA, no torch), just a small dedicated environment created
 ```bash
 micromamba env create -f requirements/annotator-env.yml   # once, ~500 MB, about a minute
 
-./docker/annotate_data.sh --silicone   # click annotator
-./docker/annotate_data.sh --meat       # marker-label review
+./docker/annotate_data_bare_metal.sh --silicone   # click annotator
+./docker/annotate_data_bare_metal.sh --meat       # marker-label review
 ```
 
 The script activates that environment itself. If you would rather use your own interpreter,
@@ -535,6 +562,16 @@ which catalogues the meat trials (straw depth vs. number of 5 mm steaks above it
 per trial, `clean/<trial_id>/marker_positions.npz` `(T, 127, 2)` and `marker_labels.npz`
 `(T, 127)`.
 
+**Ten trials ship, named descriptively.** The experiment recorded 23 runs, but 13 were repeats
+of the same condition at different sensor heights that no split ever referenced; only the 10
+the model actually uses are in the bundle. Trial directories are
+`<description>-<timestamp>` — e.g. `2-metal-straws-beneath-2-steaks-20260228-235749` — so a
+trial's condition is readable from its name. The timestamp remains the trial's identity: the
+raw recordings and `meat_experiment_spec.md` are keyed by it, and the pipeline matches
+directories on it, so reprocessing from raw rebuilds the same descriptive layout rather than
+reverting to bare timestamps. The spec file still lists all 23 as the record of what was
+recorded, marking which ten ship.
+
 **It runs from the data bundle.** Each trial ships as `clean/<trial_id>/frames.mp4` (the 26
 decimated frames) plus `frames_poses.npz` (their robot poses), so preprocessing starts from
 those rather than needing the 1.6 GB raw archive. If `meat_training_data/raw/` is present, any
@@ -570,7 +607,7 @@ DIFFTACTILE_INTERACTIVE=1 python -m difftactile.scripts.script_browse_meat_annot
 ```
 
 Both load whatever annotations already exist and redraw them, so the same window reviews the
-shipped annotations and creates new ones. `docker/annotate_data.sh --silicone|--meat` wraps them,
+shipped annotations and creates new ones. `docker/annotate_data_bare_metal.sh --silicone|--meat` wraps them,
 selects the dedicated bare-metal environment and handles staging the silicone videos, which the
 bundle excludes; it is the recommended way to run these two — see
 [Annotate or review the real-world datasets](#annotate-or-review-the-real-world-datasets). Note the meat labels are
@@ -719,7 +756,7 @@ Two environment variables change this:
 | `DIFFTACTILE_HEADLESS=1` | Stronger: do not create windows at all. Implied automatically when neither `DISPLAY` nor `WAYLAND_DISPLAY` is set. |
 | `DIFFTACTILE_MAX_FRAMES=N` | How many frames a viewer loop steps through before returning when non-interactive. |
 | `QT_QPA_PLATFORM=xcb` | Force the Qt annotation viewers onto X11 instead of letting Qt pick Wayland. Use inside the container or over X forwarding. |
-| `DIFFTACTILE_ANNOTATOR_PYTHON` | Interpreter `docker/annotate_data.sh` should use, instead of the `vessel-palpation-annotator` micromamba env. |
+| `DIFFTACTILE_ANNOTATOR_PYTHON` | Interpreter `docker/annotate_data_bare_metal.sh` should use, instead of the `vessel-palpation-annotator` micromamba env. |
 
 Two tools exist *only* to collect manual input — the Qt click-annotator in
 `preprocess_silicone_data.py::annotate()` and the tkinter labeller in

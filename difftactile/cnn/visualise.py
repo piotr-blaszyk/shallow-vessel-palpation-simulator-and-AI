@@ -6,8 +6,7 @@ import time
 import cv2
 import matplotlib
 from difftactile.main.display import (
-    destroy_windows, imshow, is_headless, iteration_limit, move_window, prompt,
-    wait_key,
+    destroy_windows, imshow, is_headless, iteration_limit, prompt, wait_key,
 )
 # Non-interactive backend before pyplot is imported, so plt.figure() does not
 # try to open a Tk window on a display-less machine.
@@ -93,6 +92,140 @@ def _retrained_variant(rel, config):
     return f"{base}_retrained_{config}{ext}"
 
 
+class _MeatNavigator:
+    """Three-level cursor over the viewer's flat list of rendered frames.
+
+    The viewer renders one flat sequence of frames, but they are really nested:
+    a trial holds several clips, and a clip holds `clip_len` frames. This maps
+    one onto the other so each key pair moves exactly one level, with no key
+    doing two jobs:
+
+        i / o   previous / next trial
+        j / k   previous / next clip, within the current trial
+        n / m   previous / next frame, within the current clip
+
+    Movement is clamped rather than wrapping, and changing trial or clip lands
+    on that unit's first frame - so `o` always means "start of the next trial",
+    never "wherever I happened to be in the last one".
+
+    `frame_index` is the parallel list of `(clip_ix, frame_in_clip)` built while
+    the panels were rendered; `dataset` is the meat dataset, used only to name
+    the trials. On the simulated and silicone datasets there is no trial
+    structure, so every clip is reported as its own trial - the arithmetic still
+    works, the trial line is just not meaningful there.
+    """
+
+    def __init__(self, frame_index, dataset):
+        self.frame_index = frame_index
+        self.clip_len = max((f for _, f in frame_index), default=0) + 1
+
+        meat_clips = getattr(dataset, "meat_data", None) or []
+        # Trial id per clip index, in clip order. Falls back to a synthetic id
+        # per clip when there is no meat structure to read.
+        clip_ids = sorted({c for c, _ in frame_index})
+        self.clip_trial = []
+        for clip_ix in clip_ids:
+            if clip_ix < len(meat_clips):
+                self.clip_trial.append(os.path.basename(meat_clips[clip_ix][0]))
+            else:
+                self.clip_trial.append(f"clip-{clip_ix}")
+
+        # Trials in first-appearance order, so the numbering follows playback
+        # order rather than alphabetical order.
+        self.trials = []
+        for t in self.clip_trial:
+            if t not in self.trials:
+                self.trials.append(t)
+        # Clip indices belonging to each trial, in order.
+        self.clips_of = {
+            t: [i for i, ct in enumerate(self.clip_trial) if ct == t]
+            for t in self.trials
+        }
+        # Frame range each clip covers in the source video, for the metadata
+        # panel. Reported as a closed interval [first, last].
+        self.clip_frames = {}
+        for clip_ix in clip_ids:
+            if clip_ix < len(meat_clips):
+                video_frame_indices = meat_clips[clip_ix][2]
+                self.clip_frames[clip_ix] = (
+                    video_frame_indices[0], video_frame_indices[-1]
+                )
+
+        self.trial_ix = 0
+        self.clip_in_trial = 0
+        self.frame_in_clip = 0
+
+    # --- position ---------------------------------------------------------
+
+    @property
+    def clip_ix(self):
+        """Index into the flat clip list of the clip currently shown."""
+        trial = self.trials[self.trial_ix]
+        return self.clips_of[trial][self.clip_in_trial]
+
+    @property
+    def position(self):
+        """Index into the flat frame list of the frame currently shown."""
+        target = (self.clip_ix, self.frame_in_clip)
+        try:
+            return self.frame_index.index(target)
+        except ValueError:
+            return 0
+
+    # --- movement ---------------------------------------------------------
+
+    def handle_key(self, key):
+        """Apply one keypress. Returns True if the position actually changed."""
+        before = (self.trial_ix, self.clip_in_trial, self.frame_in_clip)
+        if key == ord('i'):
+            self._go_trial(self.trial_ix - 1)
+        elif key == ord('o'):
+            self._go_trial(self.trial_ix + 1)
+        elif key == ord('j'):
+            self._go_clip(self.clip_in_trial - 1)
+        elif key == ord('k'):
+            self._go_clip(self.clip_in_trial + 1)
+        elif key == ord('n'):
+            self.frame_in_clip = max(0, self.frame_in_clip - 1)
+        elif key == ord('m'):
+            self.frame_in_clip = min(self.clip_len - 1, self.frame_in_clip + 1)
+        else:
+            return False
+        return (self.trial_ix, self.clip_in_trial, self.frame_in_clip) != before
+
+    def _go_trial(self, ix):
+        self.trial_ix = max(0, min(ix, len(self.trials) - 1))
+        # Land at the start of the trial, not at whatever offset we held before.
+        self.clip_in_trial = 0
+        self.frame_in_clip = 0
+
+    def _go_clip(self, ix):
+        n_clips = len(self.clips_of[self.trials[self.trial_ix]])
+        self.clip_in_trial = max(0, min(ix, n_clips - 1))
+        self.frame_in_clip = 0
+
+    # --- reporting --------------------------------------------------------
+
+    def metadata_lines(self):
+        """The five lines shown in the Metadata panel."""
+        trial = self.trials[self.trial_ix]
+        n_clips = len(self.clips_of[trial])
+        first_last = self.clip_frames.get(self.clip_ix)
+        if first_last is not None:
+            # Closed interval on both ends: these are the first and last frames
+            # the clip actually covers, not a half-open range.
+            frames_covered = f"[{first_last[0]}, {first_last[1]}]"
+        else:
+            frames_covered = "n/a"
+        return [
+            f"trial: {self.trial_ix + 1}/{len(self.trials)}",
+            meat_trial_description(trial),
+            f"clip: {self.clip_in_trial + 1}/{n_clips}",
+            f"frames covered by clip: {frames_covered}",
+            f"frame in clip: {self.frame_in_clip + 1}/{self.clip_len}",
+        ]
+
+
 class Visualisation:
     def __init__(self, scenario=None, weights="pretrained"):
         """Interactive viewer for per-frame predictions.
@@ -175,46 +308,6 @@ class Visualisation:
         test_dataset.set_stats(stats)
         test_dataset.eval()
         return test_dataset
-
-    def clip_labels(self, sequence_idx, num_clips):
-        """The three metadata lines overlaid on the current clip.
-
-        For the meat dataset (C) the clip's identity is read from the dataset
-        itself: which trial it came from and which clip within that trial. The
-        previous code derived all three lines from `sequence_idx` alone, using a
-        "5 trajectories x 2 directions x 10 frames" layout that only ever
-        described the simulated dataset. On dataset C - 10 trials cut into a
-        variable number of clips each - that produced counts like "trajectory
-        9/5", and the direction and frame lines were meaningless.
-
-        The sim layout keeps its original arithmetic.
-        """
-        dataset = getattr(self, "viewer_dataset", None)
-        meat_clips = getattr(dataset, "meat_data", None)
-        if meat_clips and sequence_idx < len(meat_clips):
-            trial_folder_path, _, video_frame_indices = meat_clips[sequence_idx]
-            trial_id = os.path.basename(trial_folder_path)
-            # Clips are ordered, so the trial's position and its clip count come
-            # from grouping the clip list by trial folder.
-            trial_ids = [os.path.basename(c[0]) for c in meat_clips]
-            unique_trials = sorted(set(trial_ids))
-            trial_no = unique_trials.index(trial_id) + 1
-            clips_this_trial = [i for i, t in enumerate(trial_ids) if t == trial_id]
-            clip_no = clips_this_trial.index(sequence_idx) + 1
-            first, last = video_frame_indices[0], video_frame_indices[-1] + 1
-            return (
-                f"trial: {trial_no}/{len(unique_trials)} ({trial_id})",
-                f"clip: {clip_no}/{len(clips_this_trial)}  frames [{first}, {last})",
-                f"clip {sequence_idx + 1}/{num_clips} overall",
-            )
-        traj_ix = sequence_idx // 20
-        direction = 'right' if (sequence_idx % 20) // 10 == 0 else 'left'
-        small_frame_ix = sequence_idx % 10
-        return (
-            f"trajectory: {traj_ix+1}/5",
-            f"direction: {direction}",
-            f"frame number: {small_frame_ix+1}/10",
-        )
 
     @staticmethod
     def calculate_iou(ground_truth, prediction):
@@ -640,7 +733,8 @@ class Visualisation:
             # hardcoded if True/if False toggle below.
             if self.scenario_cfg is not None:
                 test_dataset = self._build_scenario_dataset(all_stats)
-                # Kept so clip_labels() can name the trial each clip came from.
+                # Kept so _MeatNavigator can recover the trial each clip came
+                # from, and the frame range it covers.
                 self.viewer_dataset = test_dataset
                 data_loader = DataLoader(
                     test_dataset,
@@ -711,6 +805,10 @@ class Visualisation:
         hp = []
         co = []
         meta = []
+        # Parallel to the five stacks above: (clip index, frame index in clip)
+        # for every entry, which is what the trial/clip/frame navigation and the
+        # metadata panel are built from.
+        frame_index = []
 
         for sequence_idx in range(len(data_list)):  # Main loop for continuous data loading
             try:
@@ -956,150 +1054,184 @@ class Visualisation:
                     # Keep the black image for labels_stack when no ground truth is present
                     pass
 
-            # Display loop
-            current_frame = SYSTEM_PARAMS.gnn.clip_len // 2
+            # Keep EVERY frame of the clip, not just its centre.
+            #
+            # The old code kept only `clip_len // 2` and threw the rest away,
+            # which is why the viewer could only step clip-to-clip. Retaining
+            # all of them is what makes "frame within the clip" (the n/m keys) a
+            # real axis. The panels are already rendered for every frame just
+            # above, so this costs nothing but the references.
+            #
+            # The metadata panel is left BLANK here and drawn at display time
+            # instead: its text depends on the frame you are looking at, which
+            # is not known until you navigate there.
+            for frame_in_clip in range(num_frames):
+                gt.append(ground_truth_stack[frame_in_clip])
+                sp.append(soft_prediction_stack[frame_in_clip])
+                hp.append(prediction_stack[frame_in_clip])
+                co.append(confusion_matrix_stack[frame_in_clip])
+                meta.append(metadata_stack[frame_in_clip])
+                # (clip index, frame index within that clip) for each entry, so
+                # the navigation and the metadata panel can recover both.
+                frame_index.append((sequence_idx, frame_in_clip))
 
-            meta_cur = metadata_stack[current_frame]
+        # NOTE: the old `filter_left()` decimation is gone. It kept 10 of every
+        # 20 clips on the assumption of the simulated dataset's "5 trajectories
+        # x 2 directions x 10 frames" layout, which does not describe dataset C
+        # at all - on meat it silently hid half the clips of every trial. The
+        # viewer now shows every clip the loader produced.
 
-            text1, text2, text3 = self.clip_labels(sequence_idx, len(data_list))
-            org1 = (10, 50)
-            org2 = (10, 100)
-            org3 = (10, 150)
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 1
-            color = (255, 255, 255)
-            thickness = 3
+        # --- display: one Qt window, stepped by hand ---------------------------
+        #
+        # This used to be five OpenCV windows auto-playing on timed wait_key()
+        # delays, which had two problems. The delays meant the frame you wanted
+        # to look at had already gone by the time you registered it, and the
+        # five windows were placed with cv2.moveWindow(), which does nothing on
+        # Wayland - a Wayland client cannot position itself, by design. So the
+        # panels landed wherever the compositor put them, overlapping.
+        #
+        # Both are fixed by compositing the panels into a single image and
+        # handing that to the shared Qt browser: one window the compositor is
+        # free to place, laid out deterministically by us, advancing only when
+        # the user presses a key. Same FrameBrowser the annotation viewers use,
+        # so this is a native Wayland client for the same reason they are.
+        if not meta:
+            print("Nothing to display: the loader produced no clips.")
+            return
 
-            cv2.putText(meta_cur, text1, org1, font, font_scale, color, thickness, cv2.LINE_AA)
-            cv2.putText(meta_cur, text2, org2, font, font_scale, color, thickness, cv2.LINE_AA)
-            cv2.putText(meta_cur, text3, org3, font, font_scale, color, thickness, cv2.LINE_AA)
+        # Navigation is over three nested levels - trial, clip within trial,
+        # frame within clip - with one key pair per level and no key doing two
+        # jobs. `_MeatNavigator` owns the index arithmetic; the callbacks below
+        # only translate keys into its moves.
+        nav = _MeatNavigator(frame_index, getattr(self, "viewer_dataset", None))
+        panels_for = self._prediction_panels(mode, gt, hp, co, sp, meta)
 
-            meta.append(meta_cur)
-            gt.append(ground_truth_stack[current_frame])
-            sp.append(soft_prediction_stack[current_frame])
-            hp.append(prediction_stack[current_frame])
-            co.append(confusion_matrix_stack[current_frame])
+        def render():
+            panels = panels_for(nav.position)
+            # The Metadata panel is drawn here rather than baked in during
+            # collection, because its text depends on where you have navigated
+            # to. `panels` is rebuilt each call, so this never accumulates.
+            return self._compose_panels(
+                [(c, self._metadata_panel(img, nav.metadata_lines())
+                     if c == "Metadata" else img)
+                 for c, img in panels]
+            )
 
-        def filter_right(arr):
-            return [x for i in range(0, len(arr), 20) for x in arr[i:i+10]]
+        def status():
+            # Deliberately no frame counter here: all the positional detail now
+            # lives in the Metadata panel, and duplicating it made the two
+            # disagree about what "frame" meant (clip-index vs frame-in-clip).
+            return [
+                f"[{self.scenario} {self.weights}]",
+                "i/o trial   j/k clip   n/m frame   q quit",
+            ]
 
-        def filter_left(arr):
-            return [x for i in range(0, len(arr), 20) for x in arr[i+10:i+20]]
-        
-        meta = filter_left(meta)
-        gt = filter_left(gt)
-        sp = filter_left(sp)
-        hp = filter_left(hp)
-        co = filter_left(co)
+        def on_key(key):
+            if key == ord('q'):
+                return "quit"
+            moved = nav.handle_key(key)
+            return "redraw" if moved else None
 
-        need_to_wait_3 = True
-        for sequence_idx_3 in range(len(meta)):
-            imshow(cv2, 'Ground Truth', gt[sequence_idx_3])
+        # Imported lazily, exactly as the annotation viewers do it, for two
+        # separate reasons - do NOT hoist this to module scope:
+        #   1. It keeps this module importable by the non-GUI analysis paths on
+        #      an interpreter that has no PySide6.
+        #   2. On Python 3.10, importing PySide6 BEFORE torch breaks torch:
+        #      PySide6 ships a typing_extensions that shadows the one torch
+        #      needs, and `import torch._dynamo` then dies with
+        #      "TypeError: Plain typing.Self is not valid as type argument".
+        #      Importing here means torch is always in first, which is fine.
+        from difftactile.main.qt_viewer import run_browser
+
+        run_browser(
+            title=f"Predictions - {self.scenario} ({self.weights})",
+            render=render,
+            on_key=on_key,
+            status=status,
+        )
+
+    @staticmethod
+    def _metadata_panel(base, lines):
+        """Draw the metadata lines onto a copy of the (blank) metadata frame.
+
+        A copy, because the underlying array is one slice of a per-clip stack
+        that gets revisited every time you navigate back to this frame - drawing
+        in place would stack text on text until it was unreadable.
+        """
+        img = base.copy()
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        y = 40
+        for line in lines:
+            cv2.putText(img, line, (12, y), font, 0.62, (255, 255, 255), 1,
+                        cv2.LINE_AA)
+            y += 34
+        return img
+
+    @staticmethod
+    def _prediction_panels(mode, gt, hp, co, sp, meta):
+        """Return `idx -> [(caption, image), ...]`, the panels for one frame.
+
+        In `predictions` mode all five are shown; otherwise only the ground
+        truth, which is what the old five-window code did via its `if mode ==
+        'predictions'` guards.
+        """
+        def panels(idx):
+            out = [("Ground Truth", gt[idx])]
             if mode == 'predictions':
-                imshow(cv2, 'Hard Prediction', hp[sequence_idx_3])
-                imshow(cv2, 'Confusion Matrix', co[sequence_idx_3])
-                imshow(cv2, 'Soft Prediction', sp[sequence_idx_3])
-                imshow(cv2, 'Metadata', meta[sequence_idx_3])
-            
-            sep_w = 20
-            sep_h = 130
-            move_window(cv2, 'Ground Truth', 0, 0)
-            if mode == 'predictions':
-                move_window(cv2, 'Hard Prediction', w + sep_w, 0)
-                move_window(cv2, 'Confusion Matrix', 0, h + sep_h)
-                move_window(cv2, 'Soft Prediction', w + sep_w, h + sep_h)
-                move_window(cv2, 'Metadata', 2 * (w + sep_w), 0)
-            
-            if need_to_wait_3:
-                # first frame delay
-                wait_key(cv2, 4000)
-                need_to_wait_3 = False
+                out += [
+                    ("Hard Prediction", hp[idx]),
+                    ("Confusion Matrix", co[idx]),
+                    ("Soft Prediction", sp[idx]),
+                    ("Metadata", meta[idx]),
+                ]
+            return out
+        return panels
 
-            # delay between frames. wait_key() caps these when non-interactive,
-            # so an unattended run does not spend minutes sleeping on playback.
-            if sequence_idx_3 % 10 == 9:
-                foo = 2_000
-            else:
-                foo = 500
-            if wait_key(cv2, foo) & 0xFF == ord('q'):  # wait 0.5s, press 'q' to quit
-                break
+    @staticmethod
+    def _compose_panels(panels, columns=3, pad=12, caption_h=34):
+        """Tile captioned panels into one BGR image on a neutral background.
 
-        wait_key(cv2, 4000)
-        destroy_windows(cv2)
-        return
+        Replaces the cv2.moveWindow() grid, which silently did nothing under
+        Wayland. Doing the layout ourselves means the arrangement is identical
+        on every backend and the whole thing is one window to manage.
 
-        sequence_idx_2 = 0
-        need_to_wait = True
-        # Bounded when non-interactive: there is no 'q' key press to end it.
-        limit = iteration_limit("DIFFTACTILE_MAX_FRAMES", len(meta))
-        shown = 0
-        while limit is None or shown < limit:
-            shown += 1
-            # Show images from pre-computed stacks
-            # title_prefix = f'Frame {current_frame}/{num_frames-1} '
-            # title_prefix += '(Central Frame) ' if current_frame == central_frame else ''
-            
-            imshow(cv2, f'Ground Truth', gt[sequence_idx_2])
-            if mode == 'predictions':
-                imshow(cv2, f'Hard Prediction', hp[sequence_idx_2])
-                imshow(cv2, f'Confusion Matrix', co[sequence_idx_2])
-                imshow(cv2, f'Soft Prediction', sp[sequence_idx_2])
-                imshow(cv2, f'Metadata', meta[sequence_idx_2])
-                # imshow(cv2, f'Frame Statistics', stats_stack[current_frame])
-            # imshow(cv2, f'Labels Image', labels_stack[current_frame])
-            # imshow(cv2, f'Graph Connectivity', graph_stack[current_frame])
+        Panels are padded (never scaled) into a uniform cell, so pixels stay
+        1:1 with the arrays and nothing is resampled on the way to the screen.
+        """
+        cells = []
+        for caption, img in panels:
+            if img is None:
+                continue
+            if img.ndim == 2:                      # grayscale -> BGR
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            cells.append((caption, img))
+        if not cells:
+            return np.zeros((120, 480, 3), dtype=np.uint8)
 
-            # Position windows side by side
-            sep_w = 20
-            sep_h = 130
-            cv2.moveWindow(f'Ground Truth', 0, 0)
-            if mode == 'predictions':
-                cv2.moveWindow(f'Hard Prediction', w + sep_w, 0)
-                cv2.moveWindow(f'Confusion Matrix', 0, h + sep_h)
-                cv2.moveWindow(f'Soft Prediction', w + sep_w, h + sep_h)
-                cv2.moveWindow(f'Metadata', 2*(w + sep_w), 0)
-                # cv2.moveWindow(f'Labels Image', 2 * (w + sep_w), h + sep_h)
-                # cv2.moveWindow(f'Graph Connectivity', 3 * (w + sep_w), 0)
-                # cv2.moveWindow(f'Frame Statistics', 0, h + sep_h)
-            else:
-                # cv2.moveWindow(f'Labels Image', w + sep_w, 0)
-                # cv2.moveWindow(f'Graph Connectivity', w + sep_w, labels_h + sep_h)
-                pass
-                
-            if need_to_wait:
-                # Only worth pausing for a human who is looking at the window.
-                if is_interactive():
-                    time.sleep(10)
-                need_to_wait = False
+        cell_w = max(img.shape[1] for _, img in cells)
+        cell_h = max(img.shape[0] for _, img in cells)
+        rows = (len(cells) + columns - 1) // columns
 
-            # Handle keyboard input
-            key = wait_key(cv2, 0) & 0xFF
+        sheet_w = columns * cell_w + (columns + 1) * pad
+        sheet_h = rows * (cell_h + caption_h) + (rows + 1) * pad
+        # Mid-grey: keeps both the black metadata panel and the bright overlays
+        # legible against it, in either desktop theme.
+        sheet = np.full((sheet_h, sheet_w, 3), 40, dtype=np.uint8)
 
-            if key == ord('q'):  # Quit visualization
-                destroy_windows(cv2)
-                return
-            elif key == ord('x'):
-                sequence_idx_2 -= 1
-                sequence_idx_2 = max(min(sequence_idx_2, len(meta)-1), 0)
-                # destroy_windows(cv2)
-
-            elif key == ord('c'):  # Close current sequence and load next
-                sequence_idx_2 += 1
-                sequence_idx_2 = max(min(sequence_idx_2, len(meta)-1), 0)
-                # destroy_windows(cv2)
-                # break
-            # elif key == ord('j'):  # Previous frame
-            #     current_frame = max(0, current_frame - 1)
-            # elif key == ord('k'):  # Next frame
-            #     current_frame = min(num_frames - 1, current_frame + 1)
-            elif key == ord('d'):
-                foo = 7
-            else:
-                # No key press (non-interactive): step forward so the bounded
-                # loop walks the sequence instead of redrawing frame 0.
-                sequence_idx_2 = min(sequence_idx_2 + 1, len(meta) - 1)
-
-        destroy_windows(cv2)
+        for i, (caption, img) in enumerate(cells):
+            r, c = divmod(i, columns)
+            x0 = pad + c * (cell_w + pad)
+            y0 = pad + r * (cell_h + caption_h + pad)
+            cv2.putText(sheet, caption, (x0, y0 + 22),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (235, 235, 235), 1,
+                        cv2.LINE_AA)
+            # Top-left within the cell rather than centred: the panels are all
+            # the same size in practice, and this keeps them aligned when one
+            # of them is not.
+            h_i, w_i = img.shape[:2]
+            y1 = y0 + caption_h
+            sheet[y1:y1 + h_i, x0:x0 + w_i] = img
+        return sheet
 
     def test_data_loader(self):
         BATCH_SIZE = 16

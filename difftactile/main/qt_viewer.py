@@ -1,9 +1,11 @@
-"""Qt 6 (PySide6) frame browser shared by the two annotation viewers.
+"""Qt 6 (PySide6) frame browser shared by the project's hand-driven viewers.
 
-This is the display layer for `docker/annotate_data.sh` and nothing else. The
-rest of the project still draws its windows with OpenCV; only the two
-hand-driven annotation tools were moved, because they are the only ones whose
-responsiveness a human actually feels.
+This is the display layer for three entrypoints: the two annotation viewers
+(`docker/annotate_data_bare_metal.sh` and its container twin
+`docker/annotate_data_docker.sh`) and the prediction viewer
+(`docker/view_predictions.sh`). The rest of the project still draws its windows
+with OpenCV; these were moved because they are the ones a human steps through
+frame by frame, so their responsiveness is actually felt.
 
 Why Qt rather than OpenCV
 -------------------------

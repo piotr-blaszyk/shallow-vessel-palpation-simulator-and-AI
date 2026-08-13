@@ -48,7 +48,7 @@ env only if the container fails or is too much hassle — note it has **no Taich
 simulator cannot run there and `run_pipeline.sh check` will fail partway through. That env
 installs `opencv-python-headless` on purpose; leave it that way.
 
-**The one exception is `docker/annotate_data.sh`, which runs on bare metal by design.** It
+**The one exception is `docker/annotate_data_bare_metal.sh`, which runs on bare metal by design.** It
 drives the two interactive annotation viewers, which are hand-operated frame by frame, and
 X-socket forwarding out of the container makes them choppy enough to be useless as a debugging
 tool. `docker/annotate_data_docker.sh` is its **in-container twin** — same viewers, same
@@ -56,11 +56,11 @@ modules, same PySide6/PyAV versions, so the two can be run side by side and any 
 attributed to the container rather than the code. It is a comparison and debugging aid; bare
 metal remains the normal way to annotate. It defaults to a **native Wayland** window (no
 Xwayland), which is what makes the comparison fair; `--x11` forces the xcb path instead. See
-"Both display transports in the container" below. `annotate_data.sh` itself is unchanged, and
+"Both display transports in the container" below. `annotate_data_bare_metal.sh` itself is unchanged, and
 the docker twin `exec`s into it for everything that is not display-related, so the viewer logic
 lives in exactly one place.
 
-`annotate_data.sh` uses its own dedicated micromamba env, `vessel-palpation-annotator`, defined by
+`annotate_data_bare_metal.sh` uses its own dedicated micromamba env, `vessel-palpation-annotator`, defined by
 `requirements/annotator-env.yml` and created with
 `micromamba env create -f requirements/annotator-env.yml`. That env is deliberately minimal —
 numpy, scipy, tqdm, **PySide6**, **av** and headless OpenCV, with no torch, no torch-geometric
@@ -71,8 +71,9 @@ back on the annotator's critical path and break the small env. `qt_viewer` and `
 are imported lazily inside `annotate()` / `browse_annotations()` for the mirror-image reason —
 so the batch preprocessing in those same modules stays importable without PySide6 or PyAV.
 
-**These two viewers are the only Qt windows in the project; everything else uses OpenCV.**
-They were moved to PySide6 because the `opencv-python` wheel ships only the `xcb` Qt platform
+**Three viewers are Qt; everything else uses OpenCV.** The two annotation viewers, plus the
+prediction viewer behind `docker/view_predictions.sh` (`cnn/visualise.py::visualise_gnn`). They
+were moved to PySide6 because the `opencv-python` wheel ships only the `xcb` Qt platform
 plugin, so every cv2 window on a Wayland desktop is an Xwayland client. PySide6 bundles the
 Wayland plugins, so these run natively. Consequences worth knowing:
 
@@ -99,16 +100,64 @@ nothing had to be traded off:
 - **X11 stays the container-wide default.** `DISPLAY` is still set on `docker run`, because
   Taichi GGUI, Gmsh's FLTK viewer, the cv2 windows and matplotlib are X clients with no Wayland
   backend. On a Wayland desktop they reach the session's own Xwayland via `/tmp/.X11-unix`.
-- **Wayland is opt-in, and only `annotate_data_docker.sh` takes it.** That script `unset`s
-  `DISPLAY` in its own process and sets `QT_QPA_PLATFORM=wayland` with **no `;xcb` fallback**,
-  so a broken setup fails loudly rather than silently degrading onto Xwayland — which would
-  quietly invalidate the whole bare-metal-vs-container comparison. A stray inherited `DISPLAY`
-  is the usual cause of that silent downgrade, hence the explicit unset.
+- **Wayland is opt-in**, taken by the two Qt entrypoints — `annotate_data_docker.sh` and
+  `view_predictions.sh`. Each `unset`s `DISPLAY` in its own process and sets
+  `QT_QPA_PLATFORM=wayland` with **no `;xcb` fallback**, so a broken setup fails loudly rather
+  than silently degrading onto Xwayland — which would quietly invalidate the whole
+  bare-metal-vs-container comparison. A stray inherited `DISPLAY` is the usual cause of that
+  silent downgrade, hence the explicit unset. Both take `--x11` to force the other path.
 
 Measured outcome on Ubuntu 24.04 / GNOME Wayland: the containerised viewer under **Wayland is
 indistinguishable from bare metal**, while **`--x11` is visibly choppy** (an extra copy per
 repaint through Xwayland). That is a known, accepted limitation — do not try to "fix" the X11
 path; it is a fallback and a debugging switch, not the route anyone should annotate through.
+
+### The prediction viewer (`view_predictions.sh`)
+
+Structured like `annotate_data_docker.sh` — launched from the host, `exec`s into the container,
+native Wayland by default, `--x11` and `--shell` available. Unlike the annotators there is **no
+bare-metal twin**: it runs GNN inference, so it needs torch and CUDA.
+
+`visualise_gnn()` was reworked in three ways, all in `cnn/visualise.py`:
+
+- **One Qt window, not five OpenCV ones.** The five panels (Ground Truth, Hard Prediction,
+  Confusion Matrix, Soft Prediction, Metadata) are composited by `_compose_panels()` and shown
+  through the same `qt_viewer.FrameBrowser` the annotators use. The old code placed five
+  separate cv2 windows with `cv2.moveWindow()`, which **does nothing under Wayland** — a
+  Wayland client cannot position itself, by design — so they piled up wherever the compositor
+  put them. Doing the layout ourselves makes it backend-independent.
+- **Stepped, not auto-played**, over the three levels the data actually has. `_MeatNavigator`
+  owns the index arithmetic; one key pair per level, no key doing two jobs: `i`/`o` trial,
+  `j`/`k` clip within trial, `n`/`m` frame within clip, `q` quit. Changing trial or clip lands
+  on that unit's first frame; all moves clamp rather than wrap. (`g`/`G` are gone — they were a
+  flat first/last on a flat list, which the nested structure made meaningless.)
+- **All frames kept.** Collection used to discard everything but each clip's centre frame
+  (`clip_len // 2`), which is why only clip-level stepping was possible; the per-frame axis
+  needed them retained. The old `filter_left()` decimation is gone too — it kept 10 of every 20
+  clips on the simulated dataset's "5 trajectories × 2 directions × 10 frames" assumption, and
+  on meat that silently hid half the clips of every trial.
+- **The Metadata panel is drawn at display time**, not baked in during collection, because its
+  text depends on where you have navigated to. It reports trial `x/y`, the trial's description,
+  clip `x/y`, the frames the clip covers as a **closed** interval `[first, last]`, and frame
+  `x/y` within the clip. `_metadata_panel()` draws onto a `.copy()` — the underlying array is a
+  slice of a per-clip stack that is revisited on every navigation, so drawing in place would
+  stack text on text. The status bar deliberately carries **no** frame counter: it duplicated
+  this and the two disagreed about what "frame" meant.
+- **Dead code removed.** Everything after the `return` in the old display block — a second,
+  abandoned stepping loop — is gone. It referenced `is_interactive()`, which was never
+  imported, so it would have raised `NameError` had it ever run.
+
+No PyAV here, deliberately: this path decodes no video. It renders from precomputed `.npz`
+stacks and pickles, so there is nothing for a decoder to do. (The one `cv2.VideoCapture` left in
+the file is in `visualize_experiment()`, a separate method not reachable from this entrypoint —
+it also references the deleted `SegmentationModel`.)
+
+**Import-order trap:** `run_browser` is imported *lazily inside the method*, and must stay
+there. On Python 3.10 importing **PySide6 before torch** breaks torch — PySide6 ships a
+`typing_extensions` that shadows the one torch needs, and `import torch._dynamo` then dies with
+`TypeError: Plain typing.Self is not valid as type argument`. Importing at module scope would
+put PySide6 first. The same lazy-import rule already applies to the annotation viewers, for the
+separate reason that their small env has no torch.
 
 Why containerised Wayland is fast: the entire client/compositor interface is that one Unix
 socket, so a bind-mount puts the container on the identical IPC path a host-native client uses
@@ -196,7 +245,7 @@ Re-running the *same* configuration still overwrites in place.
 | `DIFFTACTILE_INTERACTIVE=1` | Opt back in to **blocking** GUI windows (`plt.show()`, `cv2.waitKey(0)`, Gmsh FLTK, the tkinter labeller). Off by default: no script waits on user input, so unattended runs always terminate. See `difftactile/main/display.py`. |
 | `DIFFTACTILE_MAX_FRAMES` | Frames a non-interactive viewer loop steps through before returning (per-loop defaults apply otherwise). |
 | `QT_QPA_PLATFORM` | Force the Qt annotation viewers onto a platform plugin (`xcb` for X11). Unset, Qt picks `wayland` natively. `annotate_data_docker.sh` sets it itself (`wayland`, or `xcb` under `--x11`), so pass `--x11` there rather than this. |
-| `DIFFTACTILE_ANNOTATOR_PYTHON` | Interpreter for `docker/annotate_data.sh`, instead of the `vessel-palpation-annotator` env. |
+| `DIFFTACTILE_ANNOTATOR_PYTHON` | Interpreter for `docker/annotate_data_bare_metal.sh`, instead of the `vessel-palpation-annotator` env. |
 | `DIFFTACTILE_TRAJECTORIES` | Comma-separated trajectory types to collect (0 press, 1 slide-vein, 2 twist-y, 3 twist-z). Default all four. **The published dataset is entirely type 3** — use `3` to reproduce it. |
 | `DIFFTACTILE_VEIN_PAIR=1` | Enable the sensor↔vein contact pair on the first of each loop's two substeps, so a trajectory runs once **with** a subsurface vein and once **without**. The vein half is hard-disabled in the committed default (`if False and j < 1` in `main()`), so every substep otherwise runs vein-free. |
 | `DIFFTACTILE_SCENARIO` | Configuration name (`A-to-B`, `C-to-B`, `A-to-C`, or a legacy alias), if not passed as an argument. |
@@ -316,6 +365,33 @@ Consequences worth knowing when editing:
 
 The Docker image passes X through, so the interactive opt-in works there when a display is
 actually reachable.
+
+## The meat dataset: 10 trials, descriptively named
+
+The experiment recorded **23** runs; the dataset ships **10**. The other 13 were repeats of the
+same condition at different sensor heights that no split ever referenced — `populate_clips_meat`
+already filtered to `MEAT_TRAIN_TRIALS | MEAT_VALIDATION_TRIALS` — so they were removed rather
+than shipped for an end user to puzzle over. `meat_experiment_spec.md` still lists all 23 as the
+record of what was recorded, marking the ten that ship.
+
+Trial directories are **`<description>-<timestamp>`**, e.g.
+`2-metal-straws-beneath-2-steaks-20260228-235749`. Rules that matter when touching this:
+
+- **The timestamp is the identity; the prefix is only a label.** The raw recordings are named by
+  bare timestamp and `meat_experiment_spec.md` is keyed by it, so anything matching a directory
+  against either keys on the timestamp — `_trial_timestamp()` /
+  `dataset.py::meat_trial_timestamp()`. Never concatenate `output_dir / trial_id`; use
+  `MeatPreprocessData._trial_out_dir()`, which resolves by timestamp and so also finds a
+  directory named before the prefixes existed.
+- **Reprocessing rebuilds the same names.** `_trial_dir_name()` derives the prefix from the
+  spec's description, so a rebuild from raw reproduces the shipped layout instead of reverting
+  to bare timestamps. The spec writes a bare "straw" for one metal straw and only ever says
+  "silicone" explicitly, so the slug inserts both the count and "metal" to make them visible.
+- **`meat_trial_description()` is duplicated on purpose.** `cnn/dataset.py` has it for the
+  prediction viewer and `preprocess_meat_data.py` has its own copy (`_trial_description()`),
+  because importing the former would drag torch onto the annotator's critical path and break the
+  small `vessel-palpation-annotator` env. Four lines of string handling is cheaper than that
+  coupling — do not "deduplicate" them.
 
 ## Data availability — the main gotcha
 

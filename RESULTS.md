@@ -248,8 +248,8 @@ metal-straw vessel placed on the phantom."
 **Producing tools — both interactive.** See §4 below; wrapper:
 
 ```bash
-./docker/annotate_data.sh --silicone   # (b): click annotator, also replays existing points
-./docker/annotate_data.sh --meat       # (d): marker-label review
+./docker/annotate_data_bare_metal.sh --silicone   # (b): click annotator, also replays existing points
+./docker/annotate_data_bare_metal.sh --meat       # (d): marker-label review
 ```
 
 ---
@@ -337,8 +337,8 @@ method — opening it on already-annotated data replays what is on disk.
 | Meat (C) | `MeatPreprocessData.browse_annotations()` — per-marker label review | `script_browse_meat_annotations` |
 
 ```bash
-./docker/annotate_data.sh --silicone
-./docker/annotate_data.sh --meat
+./docker/annotate_data_bare_metal.sh --silicone
+./docker/annotate_data_bare_metal.sh --meat
 ```
 
 **Data availability.**
@@ -387,6 +387,6 @@ python -m difftactile.scripts.script_segmentation_gnn A-to-B --eval
 ./docker/view_predictions.sh A-to-B
 
 # interactive: annotation / annotation review
-./docker/annotate_data.sh --silicone
-./docker/annotate_data.sh --meat
+./docker/annotate_data_bare_metal.sh --silicone
+./docker/annotate_data_bare_metal.sh --meat
 ```

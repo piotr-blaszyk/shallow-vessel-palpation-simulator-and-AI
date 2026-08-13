@@ -189,7 +189,7 @@ RUN echo "PS1='[docker \W] '" >> /etc/bash.bashrc
 # 9. The annotation viewers: PySide6 (Qt 6) + PyAV, and a Qt 6 runtime that can
 #    drive BOTH backends.
 #
-#    Why this is here at all. `docker/annotate_data.sh` runs the two interactive
+#    Why this is here at all. `docker/annotate_data_bare_metal.sh` runs the two interactive
 #    annotation viewers on bare metal, in the tiny `vessel-palpation-annotator`
 #    micromamba env, because a hand-driven frame stepper is the one tool whose
 #    latency a human actually feels. `docker/annotate_data_docker.sh` is its
