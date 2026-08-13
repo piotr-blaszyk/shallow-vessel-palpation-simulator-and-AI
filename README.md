@@ -139,18 +139,25 @@ marker distance for each:
 | `da_overlay_twist_x.png` | (c) twist about the *x*-axis |
 | `da_overlay_slide.png` | (d) slide |
 
-> ⏱ **Expect hours, not minutes.** This is not a forward-only render: it is a
-> differentiable-simulation optimisation loop, doing a forward pass, a **backward pass through
-> every timestep**, and an optimiser step, for each of the four interactions, twice
-> (`num_opt_steps`). The backward pass costs more than the forward one and `slide` alone runs
-> 327 timesteps. It needs Taichi and a GPU, and is the only figure script with no bare-metal
-> path.
+> ⚠️ **Known broken as shipped — this does not currently reproduce Fig. 5.** The entrypoint and
+> wiring are correct, but `Contact.domain_adaptation()` has two independent pre-existing faults:
 >
-> The panels appear **progressively** — each is written when its own trajectory finishes, so
-> `da_overlay_press.png` exists long before the run does. And because `update_params()` is
-> guarded by `if opts > 0`, the first optimisation step changes no parameters: the PNGs it
-> writes are already the "after domain adaptation" figures. Once all four exist, you have Fig. 5
-> and can stop the run.
+> 1. **The PID controller never converges.** Its position error sits at a constant **0.0982**
+>    against a 0.005 tolerance and is byte-identical after 120 timesteps — the sensor never moves
+>    toward the waypoint. This is *not* specific to domain adaptation: the training trajectories
+>    show the same 0.0982. Data collection survives it only because it loops
+>    `for ts in range(...)` and treats "target reached" as an early exit; the DA loop was
+>    `while last_target_reached != 1`, which therefore spun forever (measured: 50 minutes at
+>    ~11 timesteps/second, producing nothing). It is now bounded by
+>    `DIFFTACTILE_DA_MAX_TIMESTEPS` (default 400) so the script terminates — which makes it safe
+>    to run, not correct.
+> 2. **The backward pass cannot run.** `meta.enable_grad = 0` in `system-params.json`, so the
+>    `.grad` fields the optimiser clears are never allocated and it dies with
+>    `'NoneType' object has no attribute 'num_active_indices'`.
+>
+> Reproducing Fig. 5 needs the controller fixed and `enable_grad` enabled. The published figure
+> predates this repository state. The simulator itself is **not** the bottleneck: the forward
+> pass runs at 0.09 s/timestep.
 
 ### Reproduce the published results
 

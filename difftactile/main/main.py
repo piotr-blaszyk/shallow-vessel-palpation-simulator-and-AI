@@ -2482,8 +2482,15 @@ class Contact:
                 self.set_dt(verbose=True)
                 self.fp()
                 print("forward")
+                # Bounded, unlike the original `while last_target_reached != 1`.
+                # That flag never flips (see domain_adaptation_main's docstring:
+                # the PID position error is a constant 0.0982 against a 0.005
+                # tolerance, on the training trajectories too), so the loop ran
+                # forever at ~11 timesteps/second. A cap makes the entrypoint
+                # terminate; it does NOT make the figure correct.
+                da_max_ts = int(os.environ.get("DIFFTACTILE_DA_MAX_TIMESTEPS", 400))
                 ts = 0
-                while self.last_target_reached[None] != 1:
+                while self.last_target_reached[None] != 1 and ts < da_max_ts:
                     self.pid_controller_1()
                     self.pid_controller_2(ts)
                     self.pid_controller_3()
@@ -2730,6 +2737,26 @@ def domain_adaptation_main():
     `Contact.domain_adaptation()` has always existed but was reachable only by
     editing `main()`, which is why it had no entrypoint. The setup below mirrors
     `main()`'s, minus the training-data collection.
+
+    KNOWN BROKEN - see the note in README/CLAUDE.md before debugging this.
+    `domain_adaptation()`'s forward loop is `while last_target_reached != 1`,
+    and that flag never flips: the PID's position error sits at a constant
+    0.0982 against a 0.005 tolerance, because the sensor tip vertex it measures
+    is offset from the pose that `set_up_pose()` sets. The sensor does not move
+    toward the waypoint at all - the error is byte-identical after 120 timesteps.
+
+    This is NOT specific to the DA trajectories: the training trajectories show
+    exactly the same 0.0982 and also never reach their target. Data collection
+    survives it only because `collect_training_data()` loops
+    `for ts in range(max_timesteps_per_trajectory)` and treats the flag as an
+    early exit, so it never depends on it. DA's unbounded `while` is what turns
+    the same condition into a hang.
+
+    DIFFTACTILE_DA_MAX_TIMESTEPS therefore bounds the forward loop, so this
+    entrypoint terminates instead of spinning at ~11 timesteps/second forever.
+    That makes it safe to run, but it does not make the figure correct: with the
+    controller not converging, the overlay would compare a real photograph
+    against a sensor that never deformed. Fix the controller first.
     """
     if RUN_ON_LAB_MACHINE:
         ti.init(

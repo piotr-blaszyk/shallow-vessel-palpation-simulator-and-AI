@@ -28,26 +28,50 @@
 # Also prints the mean absolute marker distance for each interaction, which is
 # the number the alignment is optimised against.
 #
-# EXPECT THIS TO TAKE HOURS, not minutes. It is not a forward-only render: the
-# underlying Contact.domain_adaptation() is a differentiable-simulation
-# optimisation loop, and per trajectory it does
+# ############################################################################
+# KNOWN BROKEN AS SHIPPED - this script does NOT currently reproduce Fig. 5.
+# ############################################################################
 #
-#     forward pass  (step to the target pose, caching every timestep)
-#   + backward pass (replay every timestep in reverse, computing gradients)
-#   + optimiser step per mini-batch
+# The entrypoint and the wiring are correct and committed; the underlying
+# Contact.domain_adaptation() has two independent pre-existing faults, both
+# measured rather than inferred:
 #
-# for each of the 4 interactions, repeated num_opt_steps (2) times. The backward
-# pass through the FEM sim costs more than the forward one, and `slide` alone
-# runs 327 timesteps. It is also the one figure script that cannot run without
-# Taichi and a GPU.
+#   1. THE CONTROLLER NEVER CONVERGES. The forward loop was
+#      `while last_target_reached != 1`, and that flag never flips: the PID's
+#      position error sits at a CONSTANT 0.0982 against a 0.005 tolerance, and
+#      is byte-identical after 120 timesteps - the sensor never moves toward the
+#      waypoint. The tip vertex the PID measures is offset from the pose
+#      set_up_pose() sets. This is NOT specific to domain adaptation: the
+#      TRAINING trajectories show exactly the same 0.0982 and also never reach
+#      their target. Data collection survives it only because
+#      collect_training_data() loops `for ts in range(...)` and treats the flag
+#      as an early exit, so it never depends on it. DA's unbounded `while` is
+#      what turned the same condition into an infinite loop (measured: 50 min at
+#      ~11 timesteps/second, producing nothing).
 #
-# THE OVERLAYS APPEAR PROGRESSIVELY - each is written at the end of its own
-# trajectory's forward pass, so da_overlay_press.png exists long before the run
-# finishes. And note update_params() is guarded by `if opts > 0`, so the FIRST
-# optimisation step changes no parameters: the panels it writes are already the
-# "after domain adaptation" figures, using the committed parameters. The second
-# step refines parameters that this script does not re-export, so you may stop
-# once all four PNGs exist.
+#      The loop is now bounded by DIFFTACTILE_DA_MAX_TIMESTEPS (default 400) so
+#      this script terminates. That makes it safe to run; it does not make the
+#      figure correct, since a sensor that never deformed would be overlaid on a
+#      real photograph.
+#
+#   2. THE BACKWARD PASS CANNOT RUN. Past the forward loop, clear_grad_helper()
+#      dies with "'NoneType' object has no attribute 'num_active_indices'":
+#      system-params.json sets meta.enable_grad = 0, so the .grad fields it
+#      fills are never allocated. domain_adaptation() is a differentiable-
+#      optimisation loop and needs them.
+#
+# So reproducing Fig. 5 needs the PID fixed and enable_grad turned on (which in
+# turn needs the memory budget checked - gradient fields roughly double it).
+# The published figure predates this repository state.
+#
+# For reference, the shape of a working run: per trajectory a forward pass, a
+# backward pass replaying every timestep, and an optimiser step per mini-batch,
+# for each of the 4 interactions, repeated num_opt_steps (2) times. The forward
+# pass itself is fast - 0.09 s/timestep measured - so the simulator is not the
+# bottleneck the runtime suggests. Overlays are written PROGRESSIVELY, each at
+# the end of its own trajectory, and update_params() is guarded by
+# `if opts > 0`, so the first optimisation step changes no parameters: its
+# panels are already the "after domain adaptation" figures.
 #
 set -euo pipefail
 

@@ -370,6 +370,25 @@ now provides one. Note it calls `generate_trajectories()`, which REPLACES the fo
 trajectory types with the four DA interactions (press / twist_z / twist_x / slide) — the two
 sets are different and share the `trajectory_names` attribute.
 
+**It does NOT currently reproduce Fig. 5 — two pre-existing faults, both measured.** Do not
+re-diagnose from scratch:
+
+1. **The PID never converges.** Position error is a constant **0.0982** against a 0.005
+   tolerance, byte-identical after 120 timesteps; the sensor never moves toward the waypoint.
+   The tip vertex the PID reads is offset from the pose `set_up_pose()` sets. **This is not
+   DA-specific** — the *training* trajectories show the same 0.0982 and also never reach their
+   target. `collect_training_data()` survives it because it loops `for ts in range(...)` and
+   treats the flag as an early exit; `domain_adaptation()`'s `while last_target_reached != 1`
+   turned it into an infinite loop (50 min at ~11 ts/s, no output). Now bounded by
+   `DIFFTACTILE_DA_MAX_TIMESTEPS` (default 400) so it terminates — safe, not correct.
+2. **The backward pass cannot run.** `meta.enable_grad = 0`, so the `.grad` fields
+   `clear_grad_helper()` fills are never allocated: `'NoneType' object has no attribute
+   'num_active_indices'`.
+
+The simulator is *not* the bottleneck — the forward pass measures 0.09 s/timestep. Fixing Fig. 5
+means fixing the controller and enabling `enable_grad` (check the memory budget: gradient fields
+roughly double it).
+
 Running it also fixed a latent bug: `maybe_save_tactile_sensor_mesh_to_pickle()` wrote into
 `difftactile/output/mesh_snapshots/` without creating it, so it raised `FileNotFoundError` on any
 clean checkout. It now `makedirs` first.
