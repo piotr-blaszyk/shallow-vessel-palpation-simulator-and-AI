@@ -18,6 +18,7 @@ import torch
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
+from difftactile.cnn.curve_plots import DECISION_THRESHOLD, MAP_DECISION_THRESHOLD
 from difftactile.cnn.dataset import *
 from difftactile.cnn.gnn import *
 from difftactile.main.paths import repo_path
@@ -592,7 +593,7 @@ class Visualisation:
                 clip_input = clip.to(device)
                 logits = model(clip_input)
                 probs = torch.sigmoid(logits)
-                pred = (probs > 0.5).float()
+                pred = (probs > DECISION_THRESHOLD).float()
                 pred = pred.cpu()
             
             # Convert tensors to numpy arrays
@@ -760,7 +761,7 @@ class Visualisation:
                     image_input = image.to(device)
                     logits = model(image_input)
                     probs = torch.sigmoid(logits)
-                    pred = (probs > 0.5).float()
+                    pred = (probs > DECISION_THRESHOLD).float()
                     pred = pred.cpu()
 
             # Convert tensors to numpy arrays
@@ -1073,7 +1074,12 @@ class Visualisation:
                     # mask = data.mask
                     # out = out[mask]
                     probs = torch.sigmoid(out)
-                    pred = (probs > 0.58).float()
+                    # Display only: this cut drives the Hard Prediction and
+                    # Confusion Matrix panels. It matches the vessel map's
+                    # threshold so the two qualitative views agree with each
+                    # other; the Soft Prediction panel beside them shows the
+                    # underlying probabilities with no cut at all.
+                    pred = (probs > MAP_DECISION_THRESHOLD).float()
 
                     assert batch.num_graphs == 1
                     

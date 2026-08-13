@@ -17,6 +17,7 @@ from tqdm import tqdm
 from scipy.spatial.distance import pdist
 
 from difftactile.cnn.common import Common
+from difftactile.cnn.curve_plots import MAP_DECISION_THRESHOLD
 from difftactile.cnn.dataset import *
 from difftactile.cnn.gnn import *
 from difftactile.cnn.visualise import *
@@ -199,7 +200,12 @@ class PredictExp:
             pos = batch.pos[mask]
 
             probs = torch.sigmoid(out)
-            preds = (probs > 0.58).float()
+            # The map is a qualitative figure, so it keeps its own empirically
+            # chosen cut rather than the conventional 0.5 - see
+            # MAP_DECISION_THRESHOLD for why that is confined to figures and
+            # touches nothing that is scored. Override with
+            # DIFFTACTILE_MAP_THRESHOLD.
+            preds = (probs > MAP_DECISION_THRESHOLD).float()
             probs = probs.cpu().numpy().astype(np.float32)
             preds = preds.cpu().numpy().astype(np.float32)
         points = pos.cpu().numpy().astype(np.float32)

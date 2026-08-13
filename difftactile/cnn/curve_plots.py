@@ -57,6 +57,45 @@ from matplotlib.colors import Normalize
 
 from difftactile.main.display import finish_plot
 
+# =============================================================================
+# The decision thresholds
+# =============================================================================
+#
+# THE HEADLINE METRICS USE NO THRESHOLD AT ALL. AUROC and AP are ranking-based
+# (see the module docstring), which is why they are what the paper reports. The
+# constants below exist only for the places that must commit to a hard yes/no:
+# the IoU logged during training, the viewer's hard-prediction panel, and the
+# bird's-eye vessel map. Do not read them as tuned hyperparameters.
+
+# Threshold used when a probability must become a label.
+#
+# 0.5 is the conventional cut, and it is deliberately NOT tuned. On a heavily
+# imbalanced problem trained with focal loss it is an arbitrary choice rather
+# than a principled one - but every alternative worth having (Youden's J, the
+# F1-optimal point) must be *fitted*, and fitting it on the test set is the one
+# thing that would actually invalidate the reported numbers. Picking it on
+# training-domain validation data and freezing it is the defensible route; until
+# that is done, the honest position is an untuned conventional default plus the
+# threshold-free metrics beside it.
+#
+# Consequence worth knowing: this is a display and monitoring choice. Changing it
+# moves every IoU in the logs and repaints the vessel map, but moves NO reported
+# metric, because AUROC and AP never see it.
+DECISION_THRESHOLD = 0.5
+
+# The vessel map and the viewer's hard-prediction panel historically used 0.58
+# rather than 0.5, hardcoded in two places that had drifted apart from the four
+# using 0.5. It is kept as its own named constant rather than silently
+# normalised to DECISION_THRESHOLD, because doing so would change the published
+# vessel-map figure - a real change to a paper artifact, not a refactor.
+#
+# It is an empirical pick: it looked best on the silicone map. That is exactly
+# the "tune until the picture is nice" move that does not generalise, so it is
+# confined to the qualitative figures and touches nothing that is scored. Anyone
+# reproducing the map gets the published one; anyone wanting the conventional
+# cut can set DIFFTACTILE_MAP_THRESHOLD=0.5.
+MAP_DECISION_THRESHOLD = float(os.environ.get("DIFFTACTILE_MAP_THRESHOLD", 0.58))
+
 # Decision thresholds annotated as discrete markers on every ROC curve.
 MARKED_THRESHOLDS = np.array([0.40, 0.50, 0.60])
 

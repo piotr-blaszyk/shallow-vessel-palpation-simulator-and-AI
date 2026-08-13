@@ -250,6 +250,13 @@ reason the annotators' is. Five separate windows were not viable under Wayland a
 Wayland client cannot position itself, so `cv2.moveWindow()` silently did nothing and the
 panels landed on top of each other.
 
+The **Hard Prediction** and **Confusion Matrix** panels have to turn a probability into a
+yes/no, and use `MAP_DECISION_THRESHOLD` (0.58) from `cnn/curve_plots.py` to do it — the same
+cut as the vessel map, so the two qualitative views agree. Override it with
+`DIFFTACTILE_MAP_THRESHOLD`. The **Soft Prediction** panel beside them shows the underlying
+probabilities with no cut at all, and the reported metrics (AUROC, AP) never apply one, so this
+is purely a display choice.
+
 ### Bird's-eye vessel localisation map
 
 Projects the per-marker predictions through the sensor pose onto the phantom surface at
@@ -294,6 +301,12 @@ Also writes `segmentation_mask_predicted_aggregated.png` (the predicted mask alo
 `exp_overlay_downscaled.pdf` (the multi-panel comparison). **Silicone only** — the workspace
 bounds and sensor offsets are specific to that rig. Add `--cached` to reuse the probabilities
 from a previous run instead of re-running inference.
+
+> **The map is a qualitative figure and applies a decision threshold**, unlike the reported
+> AUROC/AP which apply none. It is `MAP_DECISION_THRESHOLD` (0.58) in `cnn/curve_plots.py`, an
+> empirical pick rather than a fitted one; set `DIFFTACTILE_MAP_THRESHOLD=0.5` for the
+> conventional cut. Because the choice was made by eye on this phantom it should not be assumed
+> to transfer, which is why it is confined to figures and touches nothing that is scored.
 
 ### Annotate or review the real-world datasets
 

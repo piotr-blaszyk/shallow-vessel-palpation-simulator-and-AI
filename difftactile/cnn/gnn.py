@@ -23,6 +23,7 @@ if is_headless():
 import matplotlib.pyplot as plt
 
 from difftactile.cnn.common import *
+from difftactile.cnn.curve_plots import DECISION_THRESHOLD
 from difftactile.cnn.dataset import *
 from difftactile.main.paths import repo_path
 
@@ -297,7 +298,9 @@ class GNN(pl.LightningModule):
         self.focal_loss_acc[stage] += focal_loss.detach()
         self.total_loss_acc[stage] += loss.detach()
         self.num_batches[stage] += 1
-        preds_masked = (probs_masked > 0.5).to(y_masked)
+        # Only the logged IoU depends on this cut; the reported AUROC and AP are
+        # threshold-free, so nothing in the paper moves if it changes.
+        preds_masked = (probs_masked > DECISION_THRESHOLD).to(y_masked)
 
         self.update_iou_acc(
             preds_masked,

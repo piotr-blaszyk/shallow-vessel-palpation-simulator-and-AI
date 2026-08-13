@@ -206,6 +206,27 @@ two **disagree in rank**: C→B is worse than A→B on AUROC (0.679 vs 0.731) bu
 `docker/score_all_scenarios.sh` wraps `script_auroc_all_scenarios` so users need not type the
 module path. ROC PDFs go to `difftactile/output/roc_curves/`, PR PDFs to `pr_curves/`.
 
+**The decision thresholds are two named constants in `curve_plots.py`** — there are no
+hardcoded probability cuts left anywhere in the project:
+
+- **`DECISION_THRESHOLD = 0.5`** — the conventional, deliberately *untuned* cut. Used by the IoU
+  logged in `shared_step()` (both `segmentation_gnn.py` and `gnn.py`) and by the two dead U-Net
+  paths in `visualise.py`. Nothing reported depends on it, because AUROC and AP never see a
+  threshold.
+- **`MAP_DECISION_THRESHOLD = 0.58`** — the empirical cut behind the bird's-eye vessel map
+  (`predict_exp.py`) and the viewer's Hard Prediction / Confusion Matrix panels
+  (`visualise.py`). Overridable with `DIFFTACTILE_MAP_THRESHOLD`.
+
+**Do not "tidy" the 0.58 into 0.5.** The two values had drifted apart across six hardcoded
+sites; they are kept distinct on purpose, because normalising them would repaint the published
+vessel-map figure — a change to a paper artifact, not a refactor. Verified: re-running
+`vessel_map.sh` after this change produces **byte-identical** PNGs (matching md5sums).
+
+0.58 is an empirical "it looked best on silicone" pick, which is exactly the move that does not
+generalise, so it is confined to the qualitative figures and touches nothing that is scored. If
+a principled threshold is ever wanted, fit it (Youden's J or F1-optimal) on *training-domain
+validation* data and freeze it — never on the test set.
+
 ### The vessel map (`vessel_map.sh`) and the confusion colour scheme
 
 `predict_exp.py::evaluate_downscaled()` writes **two** confusion maps, each as a raw `.png` and
