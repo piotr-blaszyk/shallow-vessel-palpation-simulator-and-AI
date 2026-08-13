@@ -104,6 +104,20 @@ fi
 # than the project default of never waiting on a GUI.
 export DIFFTACTILE_INTERACTIVE=1
 
+# Force the X11 path rather than letting the toolkits pick a backend.
+#
+# The opencv-python wheel ships exactly one Qt platform plugin - xcb - so on a
+# Wayland session it goes through Xwayland regardless; naming it explicitly just
+# makes that deterministic instead of leaving it to Qt's autodetection, which
+# prints "Ignoring XDG_SESSION_TYPE=wayland on Gnome" and can abort outright if
+# it guesses a plugin that is not present. GDK_BACKEND covers the GTK side for
+# builds of OpenCV compiled against GTK instead of Qt.
+#
+# Both are overridable, so a user on a build with a real Wayland plugin can opt
+# back out with QT_QPA_PLATFORM=wayland.
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
+export GDK_BACKEND="${GDK_BACKEND:-x11}"
+
 # --- pick the interpreter -----------------------------------------------------
 #
 # Prefer the dedicated `vessel-palpation-annotator` micromamba env. It is the
