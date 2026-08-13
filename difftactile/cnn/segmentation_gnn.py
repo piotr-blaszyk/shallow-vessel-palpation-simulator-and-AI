@@ -34,6 +34,7 @@ import matplotlib.pyplot as plt
 from difftactile.cnn.common import *
 from difftactile.cnn.dataset import *
 from difftactile.cnn.curve_plots import DECISION_THRESHOLD, plot_pr, plot_roc
+from difftactile.main.seeding import resolve_seed, seed_everything, seed_worker
 from difftactile.main.paths import repo_path
 
 
@@ -667,7 +668,7 @@ class MyDataModule(pl.LightningDataModule):
         val_subset_size,
         batch_size,
         num_workers,
-        seed=42,
+        seed=None,
     ):
         super().__init__()
         self.train_dataset = train_dataset
@@ -677,7 +678,11 @@ class MyDataModule(pl.LightningDataModule):
         self.val_subset_size = val_subset_size
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.seed = seed
+        # `None` means "resolve centrally", so DIFFTACTILE_SEED reaches the
+        # batch-order generator too. The resolved default is still 42, which is
+        # what this argument was hardcoded to before.
+        self.seed = resolve_seed(seed)
+        seed = self.seed
         self.generator = torch.Generator()
         self.generator.manual_seed(seed)
         self.current_train_indices = None
@@ -716,6 +721,12 @@ class MyDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=False,
             persistent_workers=False,
+            # Augmentation runs in the worker processes, and each forked worker
+            # inherits a COPY of NP_RNG - so without this they would all draw the
+            # identical rotation sequence. seed_worker gives each a distinct but
+            # reproducible stream. See difftactile/main/seeding.py.
+            worker_init_fn=seed_worker,
+            generator=self.generator,
         )
 
     def val_dataloader(self):
@@ -732,6 +743,8 @@ class MyDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=False,
             persistent_workers=False,
+            worker_init_fn=seed_worker,
+            generator=self.generator,
         )
 
     def test_dataloader(self):
@@ -756,6 +769,11 @@ def main():
     been replaced by the explicit scenario dispatcher in `run_scenario()`, so the
     behaviour is now selected by name rather than by editing the source.
     """
+    # Before any dataset or model is built: the weights are drawn at
+    # construction time, so seeding afterwards would not reach them.
+    seed = seed_everything()
+    print(f"seed: {seed} (override with DIFFTACTILE_SEED)")
+
     BATCH_SIZE = SYSTEM_PARAMS.gnn.batch_size
     NUM_EPOCHS = SYSTEM_PARAMS.gnn.num_epochs
     NUM_WORKERS = SYSTEM_PARAMS.gnn.num_workers
@@ -1084,6 +1102,11 @@ def train_on_sim(test_on="silicone"):
     on every branch, so the simulation-trained models could not be reproduced
     without editing source.
     """
+    # Before any dataset or model is built: the weights are drawn at
+    # construction time, so seeding afterwards would not reach them.
+    seed = seed_everything()
+    print(f"seed: {seed} (override with DIFFTACTILE_SEED)")
+
     BATCH_SIZE = getattr(SYSTEM_PARAMS.gnn, "batch_size_large", SYSTEM_PARAMS.gnn.batch_size)
     NUM_EPOCHS = getattr(SYSTEM_PARAMS.gnn, "num_epochs_large", SYSTEM_PARAMS.gnn.num_epochs)
     NUM_WORKERS = getattr(SYSTEM_PARAMS.gnn, "num_workers_large", SYSTEM_PARAMS.gnn.num_workers)

@@ -227,6 +227,42 @@ generalise, so it is confined to the qualitative figures and touches nothing tha
 a principled threshold is ever wanted, fit it (Youden's J or F1-optimal) on *training-domain
 validation* data and freeze it — never on the test set.
 
+### Training is seeded and reproducible (`main/seeding.py`)
+
+`seed_everything()` is called at the top of both training entrypoints
+(`segmentation_gnn.main()` for C→B and `train_on_sim()` for A→B / A→C), **before** any dataset
+or model is constructed — the weights are drawn at construction time, so seeding later would
+not reach them. Default seed 42; override with `DIFFTACTILE_SEED`.
+
+Getting this right needed four things, not one. Seeding alone did **not** make training
+reproducible, and a run that fixes only the obvious RNG will still drift:
+
+1. **`torch` / `random` / `np.random`** — model init and misc.
+2. **`NP_RNG`** (`main/constants.py`) — augmentation, dataset shuffles, per-epoch subset choice.
+   Reseeded **in place** via `bit_generator.state`, *not* by rebinding `constants.NP_RNG`:
+   `dataset.py` does `from ...constants import *`, so it holds its own reference and a
+   rebinding would leave it drawing from the original unseeded stream. Do not "simplify" this.
+3. **DataLoader workers** — `worker_init_fn=seed_worker` on every train/val loader. Forked
+   workers inherit a *copy* of `NP_RNG`; without this they would all draw identical
+   augmentations (16-fold repetition within a batch), which is worse than nondeterminism.
+4. **Deterministic CUDA kernels** — the one that actually closed the gap. `GINEConv` and
+   `global_add_pool` scatter with CUDA atomics, and atomic float addition is not associative,
+   so identical inputs gave different gradients. Needs `cudnn.deterministic`,
+   `use_deterministic_algorithms(True, warn_only=True)` **and** `CUBLAS_WORKSPACE_CONFIG`
+   (cuBLAS raises at the first matmul without it). `warn_only` because some torch-geometric
+   scatter paths have no deterministic CUDA implementation — raising there would make training
+   impossible rather than reproducible.
+
+Verified: two consecutive `run_pipeline.sh C-to-B` runs are **bit-identical** (IoU to 16 s.f.,
+AUROC 0.6043, AP 0.2425), and A→B `--train` likewise. Different seeds still differ, so the
+seeding is live rather than frozen.
+
+**Measured seed sensitivity is large — quote it before quoting a single run.** Seven seeds on
+C→B gave AUROC **0.604–0.779** and AP **0.239–0.342**, a spread wider than any gap the paper
+claims between configurations. The meat training set is 139 clips, so which subset a run favours
+dominates. A single-seed number is not a result here; report a mean and spread, and never select
+the best-scoring seed.
+
 ### The vessel map (`vessel_map.sh`) and the confusion colour scheme
 
 `predict_exp.py::evaluate_downscaled()` writes **two** confusion maps, each as a raw `.png` and
@@ -345,6 +381,8 @@ Re-running the *same* configuration still overwrites in place.
 | `DIFFTACTILE_SCENARIO` | Configuration name (`A-to-B`, `C-to-B`, `A-to-C`, or a legacy alias), if not passed as an argument. |
 | `DIFFTACTILE_MODE` | `train` or `eval`, if not passed as `--train` / `--eval`. |
 | `DIFFTACTILE_OVERWRITE_PUBLISHED` | `1` lets a training run overwrite the published checkpoints instead of writing `*_retrained` copies. |
+| `DIFFTACTILE_SEED` | Seed for every RNG a training run touches (default 42). See `main/seeding.py`; seed sensitivity on C→B is large, so sweep rather than trusting one run. |
+| `DIFFTACTILE_MAP_THRESHOLD` | Decision threshold for the vessel map and the viewer's hard-prediction panels (default 0.58). Affects no reported metric. |
 
 ## Configuration model — read this before changing behaviour
 

@@ -828,6 +828,39 @@ part of the suffix because A→B and A→C share `train_on_sim()` and therefore 
 artifact names; tagging them keeps a later run from silently replacing an earlier one's
 checkpoint. Re-running the same configuration overwrites in place.
 
+#### Training is deterministic
+
+Every training run is seeded, so re-running the same configuration on the same machine
+reproduces it exactly — verified bit-identical, down to the last decimal of the IoU. The seed
+defaults to **42** and is printed at the top of each run:
+
+```bash
+DIFFTACTILE_SEED=7 ./run_pipeline.sh C-to-B    # a different, equally reproducible run
+```
+
+`difftactile/main/seeding.py` covers all four sources of randomness — torch and numpy, the
+project's shared `NP_RNG` (augmentation, shuffles, per-epoch subset choice), the DataLoader
+worker processes, and the CUDA kernels themselves. That last one is what actually closed the
+gap: the GNN's `GINEConv` / `global_add_pool` scatter with atomics, and atomic float addition is
+not associative, so identical inputs still produced different gradients until deterministic
+algorithms were requested. Expect a modest slowdown as a result.
+
+Reproducibility is *same machine, same code, same seed*. Different GPU models, CUDA versions or
+worker counts change floating-point reduction order, so cross-machine agreement is not promised.
+
+> ⚠️ **The seed matters a lot here — do not report a single run.** Measured on C→B, seven seeds
+> gave **AUROC 0.604–0.779** and **AP 0.239–0.342**. That spread is wider than any difference
+> the three configurations claim between one another, because the meat training set is small
+> (139 clips) and which subset a run happens to favour dominates the outcome.
+>
+> So: report a mean and spread over several seeds rather than one number, compare
+> configurations as distributions rather than single runs, and **never pick the seed that scores
+> best** — that is fitting to the test set as surely as tuning a threshold on it would be.
+>
+> ```bash
+> for s in 0 1 2 3 4; do DIFFTACTILE_SEED=$s ./run_pipeline.sh C-to-B; done
+> ```
+
 The legacy `python -m difftactile.scripts.script_gnn` entrypoint (large model) still exists.
 
 > ⚠️ **A CUDA GPU is required to even construct the model**, not just to train quickly:

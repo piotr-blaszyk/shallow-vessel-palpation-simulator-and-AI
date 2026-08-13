@@ -45,6 +45,20 @@
 #   DIFFTACTILE_HEADLESS=1   Skip GUI windows (default inside this script for the
 #                            sim stages when no DISPLAY is set).
 #   DIFFTACTILE_NUM_LOOPS=N  Override the simulator loop count.
+#   DIFFTACTILE_SEED=N       Seed for every RNG a training run touches (default
+#                            42, printed at the start of each run). Training is
+#                            deterministic: same machine, same code, same seed
+#                            reproduces a run exactly.
+#
+#                            BUT THE SPREAD ACROSS SEEDS IS LARGE. Seven seeds on
+#                            C-to-B gave AUROC 0.604-0.779 - wider than the gaps
+#                            between the configurations themselves, because the
+#                            meat training set is only 139 clips. Report a mean
+#                            and spread over several seeds, never one run, and
+#                            never the best-scoring seed:
+#                              for s in 0 1 2 3 4; do
+#                                  DIFFTACTILE_SEED=$s ./run_pipeline.sh C-to-B
+#                              done
 #
 set -euo pipefail
 

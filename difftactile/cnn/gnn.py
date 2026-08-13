@@ -26,6 +26,7 @@ from difftactile.cnn.common import *
 from difftactile.cnn.curve_plots import DECISION_THRESHOLD
 from difftactile.cnn.dataset import *
 from difftactile.main.paths import repo_path
+from difftactile.main.seeding import resolve_seed, seed_worker
 
 
 class CurriculumCallback(pl.Callback):
@@ -611,7 +612,10 @@ class MyDataModule(pl.LightningDataModule):
         self.val_subset_size = val_subset_size
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.seed = seed
+        # `None` means "resolve centrally", so DIFFTACTILE_SEED reaches the
+        # batch-order generator too. The resolved default is still 42.
+        self.seed = resolve_seed(seed)
+        seed = self.seed
         self.generator = torch.Generator()
         self.generator.manual_seed(seed)
         self.current_train_indices = None
@@ -650,6 +654,10 @@ class MyDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=False,
             persistent_workers=False,
+            # Forked workers inherit a COPY of NP_RNG, so each needs its own
+            # derived stream or they all draw identical augmentations.
+            worker_init_fn=seed_worker,
+            generator=self.generator,
         )
 
     def val_dataloader(self):
@@ -666,6 +674,10 @@ class MyDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=False,
             persistent_workers=False,
+            # Forked workers inherit a COPY of NP_RNG, so each needs its own
+            # derived stream or they all draw identical augmentations.
+            worker_init_fn=seed_worker,
+            generator=self.generator,
         )
 
     def test_dataloader(self):
