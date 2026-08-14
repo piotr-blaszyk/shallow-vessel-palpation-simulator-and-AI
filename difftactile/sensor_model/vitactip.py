@@ -925,6 +925,18 @@ class ViTacTip:
             for j in range(self.vertices_deformed_A.shape[1]):
                 self.vertices_deformed_A[i, j] = ti.Vector([0.0, 0.0, 0.0])
                 self.vertex_velocities[i, j] = ti.Vector([0.0, 0.0, 0.0])
+        # Frame 0 too, for the VELOCITIES only.
+        #
+        # vertices_deformed_A[0] is deliberately preserved - it holds the current
+        # pose, which set_up_pose_helper() rebuilds and copy_frame() carries
+        # forward. But the velocities at frame 0 are pure leftover state: set_vel(0)
+        # overwrites them each timestep for the controlled (fixed-layer) vertices,
+        # while every other vertex keeps whatever it had. After a solve blows up
+        # that is NaN, and it survived every reset - which is how ONE diverged
+        # Bayesian-optimisation iteration poisoned all the iterations after it
+        # (measured: 7182 non-finite entries persisting through a full reset).
+        for j in range(self.vertex_velocities.shape[1]):
+            self.vertex_velocities[0, j] = ti.Vector([0.0, 0.0, 0.0])
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):

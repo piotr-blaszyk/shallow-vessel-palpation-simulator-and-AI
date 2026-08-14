@@ -754,6 +754,12 @@ class Phantom:
         self.grid_node_external_impulse.fill(0.0)
         self.grid_occupy.fill(0.0)
         self.total_surface_external_force.fill(0.0)
+        # Per-particle state that initialise_point_cloud() does NOT rebuild. If a
+        # parameter set makes the solve blow up, NaN lands here and survives into
+        # the next simulation, which is how one diverged Bayesian-optimisation
+        # iteration used to poison every iteration after it.
+        self.affine_velocity_field.fill(0.0)
+        self.trial_deformation_gradient.fill(0.0)
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):

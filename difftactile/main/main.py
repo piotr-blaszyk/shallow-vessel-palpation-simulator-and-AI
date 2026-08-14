@@ -2400,7 +2400,28 @@ class Contact:
             for i in range(self.trajectories.shape[0]):
                 name = self.trajectory_names[i]
                 self.trajectory_ix[None] = i
+                # Full state reset between parameter sets.
+                #
+                # A diverged set leaves NaN throughout the sensor state. The
+                # stubborn carrier was vertex_velocities[0]: reset_state() used to
+                # clear frames 1..N only, but frame 0 is what set_vel(0) writes and
+                # the next simulation reads, so 7182 non-finite entries survived
+                # every reset. ONE bad parameter set therefore poisoned every
+                # iteration after it - 17 of 20 were recorded as "diverged" though
+                # each scored normally when re-run in a fresh process.
+                #
+                # reset_state() now clears frame 0's velocities too (see
+                # vitactip.reset_state), and the order below matters:
+                # set_up_initial_positions_state_and_trajectory() rebuilds the mesh
+                # from the rest pose, then the second reset clears the markers and
+                # accumulators derived from the OLD pose. extract_markers()
+                # accumulates with `+=`, so a NaN left in those projections would
+                # never wash out.
+                self.vitactip.reset_state()
+                self.phantom.reset_state()
                 self.set_up_initial_positions_state_and_trajectory()
+                self.vitactip.reset_state()
+                self.phantom.reset_state()
                 self.reset_pid_controller()
                 self.visualisation_reset_scene()
                 self.reset_exp_sim_traj()
