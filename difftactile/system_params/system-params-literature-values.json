@@ -28,7 +28,7 @@
         }
     },
     "contact": {
-        "dt": "s",
+        "dt_override": "s",
         "normal_stiffness": "mean value: 1.0e6; plausible range: 5.0e5-5.0e6",
         "normal_damping": "mean value: 5.0e2; plausible range: 1.0e2-2.0e3",
         "tangential_stiffness": "mean value: 7.0e5; plausible range: 3.5e5-3.5e6",

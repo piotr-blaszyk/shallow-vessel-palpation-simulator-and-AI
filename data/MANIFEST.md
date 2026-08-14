@@ -42,9 +42,15 @@ history if you ever need to read a pre-rename bundle again.
 | `difftactile/output/test_loader_gnn_meat.pickle` | ~4 KB | As above, for the meat-trained checkpoint. |
 | `difftactile/output/` sensor-geometry set (16 files) | ~5.5 MB | Sensor mesh, marker layout and graph connectivity: `base-graph-connectivity.npz`, `marker_locations_ordered.npz`, `init-marker-positions.{npz,pkl}`, `gmsh_mesh_{vitactip,vein}.pkl`, `vitactip_mesh.npz`, `edge_lengths.pkl`, `tactile_sensor.f2v.pkl`, `phantom_points.npz`, `vein_points.npz`, `is_fixed_layer.npz`, `grid_node_v0_mask.npz`, `initial_vertex_positions_undeformed.pkl`, `vitactip_points_E.pkl`. Regenerable (Gmsh + marker detection) but tiny, fixed, and required before the simulator will start. |
 | `difftactile/output/marker_tracker/domain-adaptation-vascular-markers/` | ~1.3 MB | System-identification marker tracks (`traj_0..3_out.pkl`), loaded at simulator start-up to align the contact model against the real sensor. |
+| `difftactile/output/domain_adaptation_published/` | ~250 KB | The published domain-adaptation BO run behind the adopted simulator parameters. `joint_bo/` is the 10-iteration joint search over sensor Young's modulus and sensor↔vein contact stiffness: `bo_joint_results.json` (every iteration, both reward terms and the best configuration), `iteration_log.csv` (the same, written live one line per iteration), `final_joint_validation.json` (all four trajectories at the winning configuration), the `da_overlay_*.png` alignment figures and the per-iteration `vein_iterNNN_overlay_slide.png`. |
 
 **Total: roughly 310 MB uncompressed / ~242 MB as a `.tar.gz`**, dominated by the
 simulated dataset and the meat camera frames.
+
+Note the BO runs' `snapshots/` subdirectories are **excluded** — ~16 MB of rendered
+PNGs per run, regenerable from the recorded parameters, and a debugging aid rather
+than an artifact. The JSON histories and the overlay figures are what the reported
+results rest on.
 
 ## What is NOT in the bundle (and why)
 

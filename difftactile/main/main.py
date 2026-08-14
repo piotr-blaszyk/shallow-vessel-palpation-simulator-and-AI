@@ -28,6 +28,7 @@ from difftactile.main.apply_scaling import ScientificNotationEncoder
 from difftactile.main.cfl_and_contact_params_estimation import *
 from difftactile.main.constants import *
 from difftactile.main.paths import repo_path
+from difftactile.main.seeding import seed_everything
 from difftactile.main.constants_bo_gp import *
 from difftactile.main.synthetic_image_generator import *
 from difftactile.object_model.phantom import Phantom
@@ -78,17 +79,198 @@ HEADLESS = is_headless()
 # to 0 to preserve that committed behaviour; set to 1 to collect the pair.
 COLLECT_VEIN_PAIR = os.environ.get("DIFFTACTILE_VEIN_PAIR", "0") == "1"
 
-# Marker-distance conversion for reporting. The sensor's markers sit on a grid
-# with ~55 px spacing at 1920x1080, and that spacing is 2 mm on the real sensor,
-# so a pixel error converts to millimetres by this factor. Used only for display -
-# every stored MAE is in pixels.
-PX_TO_MM = 2.0 / 55.0
+# Spacing between neighbouring markers on the undeformed sensor, in pixels at
+# 1920x1080. This is the sensor's natural length scale: an error of one marker
+# spacing means a marker has moved as far as the distance to its neighbour.
+INTER_MARKER_SPACING_PX = 55.0
+
+# Marker-distance conversion for reporting. The marker grid's ~55 px spacing is
+# 2 mm on the real sensor, so a pixel error converts to millimetres by this
+# factor. Used only for display - every stored MAE is in pixels.
+PX_TO_MM = 2.0 / INTER_MARKER_SPACING_PX
 
 # Score given to a parameter set whose FEM solve blows up (markers come back
 # NaN). In the same pixel units as every other MAE, so no rescaling is involved -
 # it simply has to sit far above any usable configuration, which in practice
 # means anything over ~300 px.
 DIVERGENCE_PENALTY_PX = 1000.0
+
+# Per-trajectory timestep caps. These are safety bounds on the forward pass, not
+# targets: the PID normally reaches its goal well before them, except on `slide`,
+# where the cap is what stops the sensor sliding off the edge of the phantom.
+#
+# The two paths get DIFFERENT caps because they measure at different moments:
+#
+#   VESSEL-ABSENT scores at the trajectory's APEX, so the run must get there.
+#     Back at 400 (it was briefly halved to 200): in the joint loop this run is
+#     stopped at the VESSEL-PRESENT trigger timestep anyway, and that trigger has
+#     been observed as late as ts=234 - a 200 cap would silently truncate the
+#     comparison run before it reached the moment being compared.
+#   VESSEL-PRESENT scores when the vessel passes under the sensor centre and
+#     then SHORT-CIRCUITS, so its cap is only a backstop for the case where the
+#     vessel never arrives. Left at 400 so that a late-arriving vessel is still
+#     caught rather than silently scored 0.
+DA_MAX_TIMESTEPS_NO_VEIN = 400
+DA_MAX_TIMESTEPS_VEIN = 400
+
+# How often to check that the sensor's FEM state is still physical. Every
+# timestep would be wasteful (the check pulls the whole mesh back from the GPU);
+# every 20 catches a divergence within a fraction of a trajectory, since once a
+# solve blows up it never recovers.
+HEALTH_CHECK_EVERY_TS = 20
+
+# What a diverged run reports as its VESSEL-ABSENT mean marker error. Only used
+# for the log and the record - a diverged iteration is scored -1 outright, so
+# this value never enters the objective. 100 px sits well above the ~10-15 px of
+# a usable configuration without distorting a plot.
+DIVERGED_MEAN_MARKER_ERROR_PX = 100.0
+
+# Ceiling for the fidelity term `van`: the vessel-absent mean marker error is
+# clamped to [0, this] and divided by it, giving a value on [0, 1].
+#
+# NOT A GATE - nothing is rejected for exceeding it. It is the error at which
+# the fidelity penalty saturates, so everything worse is treated as equally
+# unfaithful.
+#
+# THREE inter-marker spacings, not one. At 55 px the term saturated too readily
+# to be useful: every configuration with real vessel contact measured 96-160 px
+# and so scored van = 1.0 identically, which flattened exactly the region the
+# search needs to discriminate within. 165 px keeps those distinguishable while
+# still treating a marker field displaced by three whole spacings as maximally
+# unfaithful.
+VAN_CLAMP_PX = 3.0 * INTER_MARKER_SPACING_PX
+
+# Headroom above the vein's top in the penetration scale: a sensor sitting this
+# far clear of the vein scores vpn = 0, and one pressed down to its rest-pose
+# floor scores vpn = 1. 10 mm is the vein's own diameter, so the scale spans
+# "one vessel-width clear" to "as deep as the sensor geometry allows".
+# Weight on the penetration term of the joint objective. Both `vpn` and `van`
+# therefore span [0, 1] and the objective ranges over [-1, +1], with a unit of
+# vessel response worth exactly a unit of fidelity - no thumb on either scale.
+VPN_WEIGHT = 1.0
+
+
+def phantom_contact_enabled():
+    """Is the sensor<->phantom contact pair (index 0) active?
+
+    THE SEAM for pair 0. It is off by default: the phantom's particles are
+    pinned, so it does not deform and resolving this pair changes nothing any
+    objective measures - which is why its four coefficients were dropped from
+    the BO search space.
+
+    Turning it ON is a SANITY CHECK, not a modelling choice: if the sensor
+    visibly deforms against the phantom when this is enabled, contact resolution
+    works and a null vessel response has to be explained some other way. If it
+    does not, the contact machinery itself is suspect.
+
+    Reads `contact.enable_phantom_contact_pair` from system-params.json, with
+    DIFFTACTILE_PHANTOM_CONTACT overriding it (1/0) so a script can flip it
+    without editing the config.
+    """
+    override = os.environ.get("DIFFTACTILE_PHANTOM_CONTACT")
+    if override is not None:
+        return override == "1"
+    return bool(getattr(
+        SYSTEM_PARAMS.contact, "enable_phantom_contact_pair", False
+    ))
+
+
+def active_collision_pairs(with_vein):
+    """The contact pairs to resolve: [0] if enabled, plus [2] when `with_vein`.
+
+    Single source of truth for `collision_ixs`, so the pair-0 seam does not have
+    to be re-checked at each of the several places a trajectory is set up.
+    """
+    pairs = [0] if phantom_contact_enabled() else []
+    if with_vein:
+        pairs.append(2)
+    return pairs
+
+
+class IterationLog:
+    """Append-one-line-per-iteration CSV, flushed as the run proceeds.
+
+    Written for watching a run LIVE - `tail -f` on the file shows each iteration
+    as it completes, rather than after the whole search finishes. That matters
+    because a 10-iteration run takes ~30 minutes and the JSON results are only
+    written at the end, so a run that is stopped or crashes leaves nothing
+    behind without this.
+
+    Every write is flushed and fsync'd. Buffering would defeat the purpose: the
+    lines would sit in the OS cache until the process exited, which is exactly
+    when they are no longer needed.
+
+    One file per run, named for the run's timestamp, all under the same folder
+    (`difftactile/output/bo_logs/`) so runs can be compared without hunting
+    through per-run directories.
+    """
+
+    def __init__(self, path, columns):
+        self.path = path
+        self.columns = list(columns)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(self.path, "w") as f:
+            f.write(",".join(self.columns) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+
+    def append(self, row):
+        """Write one iteration's values, in `columns` order. Missing -> empty."""
+        cells = []
+        for key in self.columns:
+            value = row.get(key, "")
+            if value is None:
+                cells.append("")
+            elif isinstance(value, float):
+                cells.append(f"{value:.6g}")
+            else:
+                cells.append(str(value))
+        with open(self.path, "a") as f:
+            f.write(",".join(cells) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+
+
+def normalised_penetration(q_z, z_reference, z_vein_max):
+    """Map a vessel-present depth onto [0, 1] against its vessel-free reference.
+
+        vpn = VPN_WEIGHT * (clamp(q_z, lo, hi) - lo) / (hi - lo)
+        lo  = z_reference     the vessel-FREE depth
+        hi  = z_vein_max      the vessel's own apex height
+
+    vpn = VPN_WEIGHT (its maximum) as soon as the sensor is held at the vessel's
+    apex height OR ABOVE - the clamp saturates there, so being stopped early
+    earns full credit and no more. vpn = 0 means the sensor sank all the way to
+    where it would have gone with no vessel present, i.e. the vessel did nothing.
+
+    The scale therefore runs from "the vessel had no effect" to "the vessel
+    stopped the sensor at its surface", which is the full range of what a rigid
+    inclusion can physically do. An earlier version extended `hi` 10 mm ABOVE the
+    apex, which meant a sensor resting exactly on the vessel scored only ~0.4 of
+    the available reward - the remaining 60% could only be earned by hovering
+    above the vessel without touching it, which is not a better outcome.
+
+    THE REFERENCE IS THE VESSEL-FREE DEPTH, NOT THE REST POSE. A soft sensor
+    compresses under the phantom press and sits higher than its rest floor even
+    with no vessel there; referencing the rest pose would read that as the vessel
+    stopping it. Differencing against the vessel-free run at the SAME timestep
+    removes that confound, leaving only what the vessel contributed.
+
+    A pure function of three numbers, deliberately: both depths come from
+    different simulation runs, and the mesh only ever holds one of them at a
+    time, so taking them as arguments prevents measuring the wrong pose.
+
+    Returns 0.0 for a non-finite input or a degenerate range - "no penetration
+    demonstrated" rather than an exception or a spurious pass.
+    """
+    if not (np.isfinite(q_z) and np.isfinite(z_reference)):
+        return 0.0
+    lo = float(z_reference)
+    hi = float(z_vein_max)
+    if hi <= lo:
+        return 0.0
+    clamped = min(max(float(q_z), lo), hi)
+    return float(VPN_WEIGHT * (clamped - lo) / (hi - lo))
 
 
 def _trajectory_indices():
@@ -174,7 +356,8 @@ class Contact:
         exp_points = data['points']
         a = sim_points_reordered
         b = exp_points
-        mae = np.linalg.norm(a-b, axis=1).mean()
+        distances = np.linalg.norm(a-b, axis=1)
+        mae = distances.mean()
         if out_dir is None:
             img_out = self.da_overlay.format(trajectory_name)
         else:
@@ -184,8 +367,337 @@ class Contact:
             img_in=self.default_photo,
             img_out=img_out,
         )
+        # CACHE THE RAW POSITIONS, not just the rendered overlay. The overlay
+        # bakes the markers into a photograph at one particular style; the
+        # coordinates let a figure be re-drawn later - different colours, a white
+        # background, connector lines - WITHOUT re-running the simulation, which
+        # is minutes per trajectory. `alignment_figures.sh` reads exactly this.
+        if out_dir is not None:
+            np.savez_compressed(
+                os.path.join(out_dir, f"markers_{trajectory_name}.npz"),
+                sim=a, real=b, distances=distances, mae_px=float(mae),
+            )
         self.da_losses.append(mae)
+        # The PER-MARKER distances behind that mean, kept so a caller can also
+        # use their maximum (the worst-aligned marker) without recomputing the
+        # projection. `da_losses` stays a list of means, so nothing that reads it
+        # changes.
+        self.da_last_distances = distances
+        # The reordered simulated marker POSITIONS, so two runs can be compared
+        # against each other rather than each against the photograph. Reordered
+        # by `get_graph_connectivity`, so index i is the same physical marker in
+        # every snapshot - which is what makes a sim-vs-sim difference
+        # meaningful.
+        self.da_last_sim_points = sim_points_reordered
+        return distances
     
+    def sensor_rest_min_z(self):
+        """The sensor's lowest dome-surface z in its REST pose, cached.
+
+        The floor of the penetration scale: the sensor cannot be higher than
+        this when undeformed and undisplaced, so it anchors the normalisation at
+        "no penetration at all". Measured once, on first use, before any
+        trajectory has moved the mesh - hence the cache, since later calls would
+        see a deformed pose.
+        """
+        if getattr(self, "_sensor_rest_min_z", None) is None:
+            v = self.vitactip.vertices_deformed_A.to_numpy()[0]
+            surface = v[self.vitactip.dome_surface_node_tags_npy]
+            self._sensor_rest_min_z = float(np.min(surface[:, 2]))
+        return self._sensor_rest_min_z
+
+    def node_nearest_vein_apex(self, node_index=None):
+        """z of the dome-surface node closest to the vessel's apex point p.
+
+        Returns (q_z, num_nodes, node_index).
+
+        With `node_index=None` it searches. Candidates are the surface nodes
+        whose xy projection falls inside the vein's xy rectangle, and the winner
+        is the one at minimum 3D distance to p - the top of the curved wall at
+        the cylinder's mid-length (see `Vein.apex_point`).
+
+        NEAREST-TO-APEX RATHER THAN LOWEST-Z. Taking the lowest node picks
+        whichever part of the dome happens to hang furthest down, which need not
+        be the part facing the vessel at all - it drifts around the footprint as
+        the sensor slides and tilts, so consecutive measurements are not of the
+        same region. Distance to a FIXED analytical point selects the node
+        actually over the vessel's high point, which is where any contact would
+        occur.
+
+        p is computed from the pose, radius and length alone; no vein particles
+        are consulted.
+
+        With `node_index` given it does NOT search - it reports that specific
+        node's z. This is what makes a vessel-present/vessel-free comparison
+        meaningful: an independent search picks whichever node wins in EACH run,
+        so comparing two independent winners compares two DIFFERENT physical
+        points on the sensor. The measured difference was then mostly "which node
+        won", not "what the vessel did" - and it came out with the wrong sign,
+        the sensor appearing to sink 1-10 mm FURTHER when a rigid inclusion was
+        present. Pinning the index turns it into a per-node displacement of one
+        identified point, and doing so reversed the sign to a physical one.
+
+        `num_nodes` is 0 and `q_z` NaN when nothing lies over the vein (searching
+        mode only; a pinned index is always reported).
+        """
+        v = self.vitactip.vertices_deformed_A.to_numpy()[0]
+        surface = v[self.vitactip.dome_surface_node_tags_npy]
+        if node_index is not None:
+            return float(surface[node_index, 2]), 1, int(node_index)
+        x_min, x_max, y_min, y_max = self.vein.xy_footprint()
+        inside = (
+            (surface[:, 0] >= x_min) & (surface[:, 0] <= x_max)
+            & (surface[:, 1] >= y_min) & (surface[:, 1] <= y_max)
+        )
+        num_nodes = int(inside.sum())
+        if num_nodes == 0:
+            return float("nan"), 0, None
+        # Index into the full surface array, not into the filtered subset.
+        candidates = np.flatnonzero(inside)
+        apex = self.vein.apex_point()
+        distances = np.linalg.norm(surface[candidates] - apex, axis=1)
+        winner = int(candidates[np.argmin(distances)])
+        return float(surface[winner, 2]), num_nodes, winner
+
+    def vein_penetration_normalised(self, z_reference=None):
+        """How far the sensor has pressed toward/into the vein, on [0, 1].
+
+        Returns (vpn, q_z, num_nodes). `q_z` is the z of point q - the LOWEST
+        dome-surface node lying inside the vein's xy rectangle - and `vpn` is
+        that mapped onto [0, 1] by clamping to
+
+            [z_reference, z_v]
+
+        where z_v is the vein's analytical top.
+
+        `z_reference` IS THE VESSEL-FREE q_z, NOT THE REST POSE. It is the depth
+        the sensor reaches at this same moment with no vessel present - i.e. how
+        far down it would go if the vessel did nothing - so the scale measures
+        the VESSEL'S contribution alone. Referencing the rest pose instead
+        confounds two effects: a very soft sensor compresses under the phantom
+        press and so sits higher than its rest floor even with no vessel there,
+        which would read as "the vessel stopped it".
+
+        Falls back to the rest-pose floor when no reference is supplied, which
+        only happens outside the joint loop.
+
+        THE SCALE REWARDS THE SENSOR STOPPING AT THE VESSEL, NOT PASSING THROUGH
+        IT. z increases upwards, so `vpn` is a direct min-max map of q_z:
+
+            vpn = (clamp(q_z) - z_min) / (hi - z_min)
+
+        giving vpn = 1 when the sensor's lowest point over the vein is still
+        clear of it (a gap remains, at the top of the range) and vpn = 0 when it
+        has sunk to the rest-pose floor - i.e. ghosted straight through the
+        inclusion as though it were not there.
+
+        That direction is the physically meaningful one HERE because the vein is
+        RIGID: a real rigid inclusion stops the sensor, so a simulation in which
+        the sensor passes through it is one where the sensor<->vein contact is
+        not doing its job. Rewarding a large q_z therefore rewards contact
+        actually being resolved, which is the precondition for any marker signal.
+
+        A sensor not over the vein at all has no q. It returns vpn = 0 rather
+        than 1: "not over the vessel" is not evidence of contact being resolved,
+        and scoring it top would let the search win by avoiding the vessel
+        entirely.
+        """
+        z_min = (
+            self.sensor_rest_min_z() if z_reference is None
+            else float(z_reference)
+        )
+        q_z, num_nodes, _ = self.node_nearest_vein_apex()
+        if num_nodes == 0:
+            return 0.0, q_z, num_nodes
+        vpn = normalised_penetration(q_z, z_min, self.vein.max_z())
+        return vpn, q_z, num_nodes
+
+    def sensor_reaches_vein_depth(self):
+        """Has the part of the sensor ABOVE the vein pressed down to the vein?
+
+        Returns (reaches, z_s, z_v, num_nodes), where
+
+            z_s = the MINIMUM z over the sensor's dome-surface nodes that lie
+                  INSIDE the vein's xy footprint
+            z_v = the MAXIMUM z over the vein's particles
+
+        and `reaches` is `z_s <= z_v`.
+
+        WHY THE XY RESTRICTION IS THE WHOLE POINT. z increases upwards: the vein
+        spans z [0.050, 0.070] and the sensor's dome spans [0.060, 0.085] in the
+        rest pose, so a GLOBAL minimum over the sensor surface is already below
+        the vein's top before the trajectory even starts - the test would return
+        True for every configuration and the objective would be constant. The
+        sensor and the vein are ~0.15 m apart in xy at rest; only once the slide
+        brings the sensor over the vein does any of its surface sit within the
+        footprint, and only then does "how far down does it reach" mean anything.
+
+        The footprint is the vein's analytical xy rectangle (see
+        `Vein.xy_footprint`): the vein is a cylinder lying flat along +x, so seen
+        from above it is x in [x0, x0+h] by y in [y0-r, y0+r].
+
+        `num_nodes` is how many surface nodes fell inside. When it is zero the
+        sensor is not over the vein at all, and the function reports
+        `reaches=False` with z_s = NaN - "not reaching" rather than an accidental
+        pass from an empty minimum.
+        """
+        v = self.vitactip.vertices_deformed_A.to_numpy()[0]
+        surface = v[self.vitactip.dome_surface_node_tags_npy]
+        vein = self.vein.particles_A.to_numpy()
+        if surface.size == 0 or vein.size == 0:
+            return False, float("nan"), float("nan"), 0
+        x_min, x_max, y_min, y_max = self.vein.xy_footprint()
+        inside = (
+            (surface[:, 0] >= x_min) & (surface[:, 0] <= x_max)
+            & (surface[:, 1] >= y_min) & (surface[:, 1] <= y_max)
+        )
+        z_v = float(np.max(vein[:, 2]))
+        num_nodes = int(inside.sum())
+        if num_nodes == 0:
+            return False, float("nan"), z_v, 0
+        z_s = float(np.min(surface[inside, 2]))
+        return z_s <= z_v, z_s, z_v, num_nodes
+
+    def sensor_state_is_healthy(self):
+        """Is the sensor's FEM state still physical? Returns (healthy, reason).
+
+        A blown-up solve is visually obvious - the green sensor particles vanish
+        from the GGUI view, because their coordinates are NaN or so large that
+        they fall outside the camera frustum. It is much less obvious in the
+        numbers, and that is the dangerous part for a MAXIMISING objective: a
+        diverged sensor produces enormous marker errors, so `3A - B` rewards it
+        far above any real configuration. Iterations 1 and 5 of the first joint
+        run scored 432 and 397 with mean marker errors of 123 and 115 px, an
+        order of magnitude above a sane ~10 px - the search was being led by
+        divergence, not by vessel sensitivity.
+
+        Three checks, cheapest first:
+
+          1. NON-FINITE vertices - NaN or inf anywhere in the deformed mesh.
+             This is the definitive symptom; everything else is a leading
+             indicator.
+          2. RUNAWAY coordinates - the sensor is ~0.09 m across and lives inside
+             a domain of order 0.2 m, so any vertex beyond 10 m has escaped,
+             whatever the solver thinks.
+          3. INVERTED elements - a tetrahedron with a non-positive Jacobian has
+             turned inside out. Measured on `twist_x`, a healthy run keeps
+             min J ~= 0.96 and a badly-conditioned but stable one ~= 0.45, so a
+             J <= 0 element means the deformation gradient is degenerate and the
+             stress is meaningless.
+
+        Deliberately does NOT flag a merely large deformation: soft sensors
+        legitimately compress a long way (min J 0.449 at E=1e4), and treating
+        that as a failure would silently exclude a whole region of the search
+        space rather than the broken part of it.
+        """
+        v = self.vitactip.vertices_deformed_A.to_numpy()[0]
+        if not np.isfinite(v).all():
+            return False, "non-finite vertex coordinates (NaN/inf)"
+        max_abs = float(np.max(np.abs(v)))
+        if max_abs > 10.0:
+            return False, f"runaway vertex coordinate (max |x| = {max_abs:.3g} m)"
+
+        # Element inversion, computed exactly as update_internal_forces() forms
+        # the deformation gradient: F = Dm @ Dm_inv, J = det(F).
+        tets = self.vitactip.tetrahedra_npy
+        dm_inv = self.vitactip.initial_deformation_gradient_inverse.to_numpy()
+        dm = np.stack(
+            [v[tets[:, 0]] - v[tets[:, 3]],
+             v[tets[:, 1]] - v[tets[:, 3]],
+             v[tets[:, 2]] - v[tets[:, 3]]],
+            axis=2,
+        )
+        jac = np.linalg.det(dm @ dm_inv)
+        if not np.isfinite(jac).all():
+            return False, "non-finite element Jacobian"
+        num_inverted = int((jac <= 0).sum())
+        if num_inverted:
+            return False, (
+                f"{num_inverted} inverted element(s), min J = {jac.min():.4f}"
+            )
+        return True, ""
+
+    def vein_over_sensor_centre(self, radius_px=None):
+        """Is any projected vein point within `radius_px` of the sensor centre?
+
+        The trigger for the vessel-present objective: it marks the moment the
+        sliding sensor is directly ABOVE the subsurface vessel, which is where
+        the vessel's effect on the marker field is largest.
+
+        "Centre" is the centroid of the DEFORMED simulated markers, not the
+        sensor's rest pose - the sensor translates during a slide, so a fixed
+        reference would drift out from under it and the trigger would fire at
+        the wrong time (or never).
+
+        MIND THE UNITS. These two fields are NOT in the same space:
+          * `vein_2d_projection`      RAW PIXELS
+          * `sim_markers_deformed`    NORMALISED to [0, 1], because
+            visualisation_prepare_tactile_readout_data_fp() divides by
+            `tactile_image_resolution`
+        (`vein_2d_projection_flat` is the normalised twin of the first.)
+        Comparing them directly measures a pixel-scale coordinate against a
+        ~0.5 centroid, giving a large distance that does not vary with the
+        simulation - it produced a constant 805.7 px across every parameter set,
+        so the trigger never fired and every iteration scored 0. The markers are
+        therefore scaled back to pixels here before the comparison.
+
+        Vein points that were never filled are sentinel -1 and are dropped.
+
+        Returns (triggered, distance_px). `distance_px` is the closest vein
+        point's distance to the centre, or inf when the vein has no valid
+        projection - which is the case whenever the vein pair is disabled.
+        """
+        radius_px = radius_px if radius_px is not None else _env_int(
+            "DIFFTACTILE_VEIN_TRIGGER_RADIUS_PX", INTER_MARKER_SPACING_PX
+        )
+        vein = self.vein_2d_projection.to_numpy().reshape(-1, 2)
+        # -1 is the fill value for "not projected"; a real projection is >= 0.
+        valid = vein[(vein[:, 0] >= 0) & (vein[:, 1] >= 0)]
+        if valid.size == 0:
+            return False, float("inf")
+        resolution = self.tactile_image_resolution[None]
+        scale = np.array([resolution[0], resolution[1]], dtype=float)
+        centre = self.sim_markers_deformed.to_numpy().mean(axis=0) * scale
+        d = float(np.min(np.linalg.norm(valid - centre, axis=1)))
+        return d <= radius_px, d
+
+    def compute_vein_da_loss(self, out_dir=None, tag="vein"):
+        """MAE between the CURRENT deformed markers and the real-photo markers.
+
+        Same measurement as `compute_da_loss`, but taken at the moment the vein
+        passes under the sensor centre rather than at the trajectory's apex, and
+        written under a different name so it cannot overwrite the vessel-absent
+        overlays.
+
+        The vessel-present objective MAXIMISES this: a large disagreement with a
+        photograph of a VESSEL-FREE phantom means the subsurface vessel is
+        visibly deforming the marker field, which is the signal the GNN has to
+        detect. Note this is the same real-world photograph the vessel-absent
+        model is scored against - deliberately, since the whole quantity of
+        interest is "how far does the vessel push the sensor away from its
+        vessel-free appearance".
+        """
+        h = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
+        self.visualisation_prepare_tactile_readout_data_fp()
+        self.move_og_resolution()
+        sim_points = self.sim_markers_deformed.to_numpy()
+        self.move_ti_resolution()
+        sim_points[:, 1] = h - sim_points[:, 1]
+        _, sim_points_reordered, _ = Adjacency.get_graph_connectivity(sim_points)
+        trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
+        data = np.load(self.da_npz_paths[trajectory_name])
+        exp_points = data['points']
+        distances = np.linalg.norm(sim_points_reordered - exp_points, axis=1)
+        if out_dir is not None:
+            self.generate_validation_img(
+                sim_points_reordered, exp_points,
+                img_in=self.default_photo,
+                img_out=os.path.join(out_dir, f"{tag}_overlay_{trajectory_name}.png"),
+            )
+        self.da_last_distances = distances
+        self.da_last_sim_points = sim_points_reordered
+        return float(distances.mean())
+
     def generate_validation_img(self, points1, points2, img_in, img_out):
         img = cv2.imread(img_in)
         points1 = points1.astype(np.int32)
@@ -241,7 +753,19 @@ class Contact:
             needs_grad=False,
         )
         self.all_points = []
-        self.collision_ixs = [0, 2]
+        # CONTACT PAIR 0 (sensor<->phantom) IS DISABLED PROJECT-WIDE.
+        #
+        # The phantom's particles are pinned in place, so it does not deform and
+        # the sensor effectively ghosts through it: resolving pair-0 contact
+        # changes nothing that any objective measures, and its four coefficients
+        # are unidentifiable. They are set to -1 in system-params.json (a
+        # physically impossible negative stiffness) so the file itself shows they
+        # are inert, and set_contact_params() re-asserts that in code.
+        #
+        # Only pair 2 (sensor<->vein) is live. Re-enable pair 0 here, restore
+        # real coefficients in system-params.json, and put its parameters back
+        # into the BO search space if the phantom is ever made deformable.
+        self.collision_ixs = active_collision_pairs(True)
         self.collision_resolvers = [
             self.collision0,
             self.collision1,
@@ -2238,8 +2762,18 @@ class Contact:
             # works offscreen, which window.show() would not.
             if ts % self.snapshot_every == 0:
                 name = self.trajectory_names[self.trajectory_ix[None]]
+                # One subdirectory per BO iteration. The filename carries only
+                # trajectory and timestep, so without this every iteration would
+                # overwrite the previous one's frames and a 10-iteration run
+                # would leave only the last. `snapshot_subdir` is set by
+                # domain_adaptation(); paths with no iteration (training-data
+                # collection) fall back to the flat directory.
+                out_dir = os.path.join(
+                    self.snapshot_dir, getattr(self, "snapshot_subdir", "") or ""
+                )
+                os.makedirs(out_dir, exist_ok=True)
                 self.window.save_image(
-                    os.path.join(self.snapshot_dir, f"{name}_ts{ts:04d}.png")
+                    os.path.join(out_dir, f"{name}_ts{ts:04d}.png")
                 )
         if not HEADLESS:
             self.window.show()
@@ -2258,19 +2792,88 @@ class Contact:
         self.normal_stiffness[2] = NP_RNG.uniform(5e3, 5e4)
         self.normal_damping[2] = NP_RNG.uniform(0, 100)
     
+    # Sensor<->vein contact coefficients that are FIXED, not searched. Only
+    # normal_stiffness[2] is free (it is the vessel-present model's single
+    # parameter); the rest are pinned at the values already in
+    # system-params.json, which apply_scaling.py does not touch.
+    #
+    # tangential_stiffness and coulomb_friction_coeff are BOTH 0, so the
+    # tangential branch of calculate_contact_force() contributes nothing:
+    # min(k_t * v_t, mu * |F_n|) is identically zero. The vessel therefore acts
+    # on the sensor purely NORMALLY - it pushes, it never drags. That is the
+    # intended model of a smooth subsurface inclusion under a lubricated
+    # interface, and it keeps the vessel-present objective a function of one
+    # parameter rather than confounding normal and tangential effects.
+    VEIN_NORMAL_DAMPING = 100.0        # system-params.json contact.normal_damping[2]
+    VEIN_TANGENTIAL_STIFFNESS = 0.0
+    VEIN_COULOMB_FRICTION = 0.0
+
+    def set_contact_params(self):
+        """Write the contact coefficients the simulator actually uses.
+
+PAIR 0 (sensor<->phantom) depends on the seam (see
+        `phantom_contact_enabled`). Disabled - the default - its coefficients are
+        forced to -1, a deliberately impossible value so a reader who finds them
+        in a dump knows they are inert rather than fitted; nothing consumes them,
+        since pair 0 is then absent from `collision_ixs`. Enabled, they are
+        restored from system-params.json.
+
+        PAIR 2 (sensor<->vein) takes its damping/tangential/friction constants
+        from the class attributes above; `normal_stiffness[2]` is left alone,
+        because that is the one quantity the vessel-present BO fits.
+        """
+        if phantom_contact_enabled():
+            # Pair 0 is ON (sanity-check mode): restore its real coefficients
+            # from the config, which are the values the project used before the
+            # pair was disabled.
+            self.normal_stiffness[0] = SYSTEM_PARAMS.contact.normal_stiffness[0]
+            self.normal_damping[0] = SYSTEM_PARAMS.contact.normal_damping[0]
+            self.tangential_stiffness[0] = (
+                SYSTEM_PARAMS.contact.tangential_stiffness[0]
+            )
+            self.coulomb_friction_coeff[0] = (
+                SYSTEM_PARAMS.contact.coulomb_friction_coeff[0]
+            )
+        else:
+            # Pair 0 is OFF and not resolved at all, so these values are never
+            # read. -1 is written anyway - a physically impossible negative
+            # stiffness - so that anyone who dumps the fields sees they are
+            # inert rather than mistaking them for tuned parameters.
+            for field in (self.normal_stiffness, self.normal_damping,
+                          self.tangential_stiffness,
+                          self.coulomb_friction_coeff):
+                field[0] = -1.0
+        self.normal_damping[2] = self.VEIN_NORMAL_DAMPING
+        self.tangential_stiffness[2] = self.VEIN_TANGENTIAL_STIFFNESS
+        self.coulomb_friction_coeff[2] = self.VEIN_COULOMB_FRICTION
+
     def set_contact_params_from_bo(self):
-        self.normal_stiffness[0] = self.bo.params['normal_stiffness']
-        self.normal_damping[0] = self.bo.params['normal_damping']
-        self.tangential_stiffness[0] = self.bo.params['tangential_stiffness']
-        self.coulomb_friction_coeff[0] = self.bo.params['coulomb_friction_coeff']
+        """Apply the current BO proposal, whichever stage produced it.
 
-        self.vitactip.youngs_modulus[None] = self.bo.params['vitactip_youngs_modulus']
-        self.vitactip.poissons_ratio[None] = self.bo.params['vitactip_poissons_ratio']
-        self.vitactip.set_up_system_params_2()
+        The two stages fit DISJOINT parameter sets, so each key is applied only
+        if the proposal contains it:
 
-        # self.phantom.youngs_modulus[0] = self.bo.params['phantom_youngs_modulus']
-        # self.phantom.poissons_ratio[0] = self.bo.params['phantom_poissons_ratio']
-        # self.phantom.set_stiffness()
+          vessel-absent  vitactip_youngs_modulus, vitactip_poissons_ratio
+          vessel-present normal_stiffness  (of the sensor<->vein pair)
+
+        Pair-0 contact parameters are deliberately absent from both - that pair
+        is disabled (see set_contact_params), so fitting its coefficients would
+        be fitting noise.
+        """
+        p = self.bo.params
+        if 'vitactip_youngs_modulus' in p:
+            self.vitactip.youngs_modulus[None] = p['vitactip_youngs_modulus']
+        if 'vitactip_poissons_ratio' in p:
+            self.vitactip.poissons_ratio[None] = p['vitactip_poissons_ratio']
+        if 'vitactip_youngs_modulus' in p or 'vitactip_poissons_ratio' in p:
+            self.vitactip.set_up_system_params_2()
+        # The vessel-present model's only free parameter: the sensor<->vein
+        # normal stiffness. Note this is pair index 2, NOT 0.
+        if 'normal_stiffness' in p:
+            self.normal_stiffness[2] = p['normal_stiffness']
+        # Re-assert the fixed constants every time, so a stale value cannot
+        # survive from a previous stage or a previous iteration.
+        self.set_contact_params()
     
     def print_contact_params(self):
         ns = SYSTEM_PARAMS.contact.normal_stiffness
@@ -2345,7 +2948,233 @@ class Contact:
         if self.interpolation_valid[None] == 1:
             print(0)
 
-    def domain_adaptation(self, num_iterations=None, run_dir=None):
+    def record_da_trajectories(self, run_dir, fps=None, video_scope=None):
+        """Run each of the four DA interactions ONCE and record them to video.
+
+        This is NOT calibration - there is no Bayesian optimisation, no parameter
+        proposal and no scoring loop. Every trajectory runs at the parameters
+        already in `system-params.json` (Young's modulus, Poisson's ratio, the
+        contact coefficients), exactly as loaded by `Contact.__init__` and
+        `Vitactip.set_up_system_params()`. `set_contact_params_from_bo()` is
+        deliberately never called, so nothing here overrides the JSON.
+
+        Frames are the DEFAULT SIMULATOR CAMERA's view, grabbed straight from the
+        GGUI colour buffer with `get_image_buffer_as_numpy()` - the same image the
+        window shows, with no separate render pass and no PNG round-trip.
+
+        Writes, under `run_dir`:
+            <name>.mp4              one video per trajectory
+            all_trajectories.mp4    the four concatenated, in panel order
+            recording.json          frame counts, fps and the parameters used
+
+        Args:
+            run_dir: output directory (already timestamped by the caller).
+            fps: output frame rate; defaults to $DIFFTACTILE_VIDEO_FPS or 30.
+            video_scope: "both" (default), "per-trajectory" or "combined".
+        """
+        import cv2 as _cv2
+
+        fps = fps or _env_int("DIFFTACTILE_VIDEO_FPS", 30)
+        video_scope = video_scope or os.environ.get(
+            "DIFFTACTILE_VIDEO_SCOPE", "both"
+        )
+        if video_scope not in ("both", "per-trajectory", "combined"):
+            raise ValueError(
+                f"video_scope must be both/per-trajectory/combined, got {video_scope!r}"
+            )
+        want_each = video_scope in ("both", "per-trajectory")
+        want_combined = video_scope in ("both", "combined")
+
+        if self.window is None:
+            # Nothing to capture: the frames come from the GGUI colour buffer, so
+            # a run with no window has no video to record. Fail loudly rather
+            # than writing four empty files.
+            raise RuntimeError(
+                "record_da_trajectories() needs a Taichi GGUI window, but none "
+                "was created (headless). Run with a DISPLAY set."
+            )
+
+        os.makedirs(run_dir, exist_ok=True)
+        # mp4v over H.264: it is the codec always present in an OpenCV build,
+        # whereas 'avc1' depends on how the wheel was compiled and fails by
+        # writing a 0-byte file rather than raising.
+        fourcc = _cv2.VideoWriter_fourcc(*"mp4v")
+        da_max_ts = _env_int(
+            "DIFFTACTILE_DA_MAX_TIMESTEPS", DA_MAX_TIMESTEPS_VEIN
+        )
+
+        print(
+            f"\nRecording {self.trajectories.shape[0]} trajectories at "
+            f"{fps} fps -> {run_dir}\n"
+        )
+
+        manifest = {"fps": fps, "trajectories": [], "params": {
+            "vitactip_youngs_modulus": float(self.vitactip.youngs_modulus[None]),
+            "vitactip_poissons_ratio": float(self.vitactip.poissons_ratio[None]),
+            "normal_stiffness": float(self.normal_stiffness[0]),
+            "tangential_stiffness": float(self.tangential_stiffness[0]),
+            "normal_damping": float(self.normal_damping[0]),
+            "coulomb_friction_coeff": float(self.coulomb_friction_coeff[0]),
+        }}
+        combined_writer = None
+
+        for i in range(self.trajectories.shape[0]):
+            name = self.trajectory_names[i]
+            self.trajectory_ix[None] = i
+
+            # Same reset sequence as domain_adaptation(): rebuild from the rest
+            # pose, then clear the markers/accumulators derived from the old one.
+            # extract_markers() accumulates with `+=`, so stale projections would
+            # otherwise persist across trajectories.
+            self.vitactip.reset_state()
+            self.phantom.reset_state()
+            self.set_up_initial_positions_state_and_trajectory()
+            self.vitactip.reset_state()
+            self.phantom.reset_state()
+            self.reset_pid_controller()
+            self.visualisation_reset_scene()
+            self.reset_exp_sim_traj()
+            self.vitactip.extract_markers(0)
+            self.compute_mapping_between_experimental_and_sim_markers()
+            self.set_dt()
+
+            writer = None
+            ts = 0
+            while self.last_target_reached[None] != 1 and ts < da_max_ts:
+                self.pid_controller_1()
+                self.pid_controller_2(ts)
+                self.pid_controller_3()
+                self.vitactip.set_pose_control_1()
+                self.vitactip.set_pose_control_2()
+                self.vitactip.set_pose_control_3()
+                self.forward_pass_common_part(ts)
+                self.copy_frame()
+                self.vitactip.extract_markers(
+                    SYSTEM_PARAMS.contact.num_sub_frames - 1
+                )
+                self.visualisation_update_gui(ts)
+
+                frame = self._grab_gui_frame()
+                if writer is None and want_each:
+                    h, w = frame.shape[:2]
+                    writer = _cv2.VideoWriter(
+                        os.path.join(run_dir, f"{name}.mp4"), fourcc, fps, (w, h)
+                    )
+                if combined_writer is None and want_combined:
+                    h, w = frame.shape[:2]
+                    combined_writer = _cv2.VideoWriter(
+                        os.path.join(run_dir, "all_trajectories.mp4"),
+                        fourcc, fps, (w, h),
+                    )
+                if writer is not None:
+                    writer.write(frame)
+                if combined_writer is not None:
+                    combined_writer.write(frame)
+                ts += 1
+
+            if writer is not None:
+                writer.release()
+            print(f"    {name:9s} {ts:4d} frames "
+                  f"({ts / fps:.1f} s at {fps} fps)")
+            manifest["trajectories"].append({"name": name, "frames": ts})
+
+        if combined_writer is not None:
+            combined_writer.release()
+
+        with open(os.path.join(run_dir, "recording.json"), "w") as f:
+            json.dump(manifest, f, indent=4)
+
+        total = sum(t["frames"] for t in manifest["trajectories"])
+        print(f"\n    total {total} frames ({total / fps:.1f} s)")
+        return manifest
+
+    def _grab_gui_frame(self):
+        """One BGR frame of the default camera view, ready for cv2.VideoWriter.
+
+        Taichi hands back a float RGBA buffer indexed [x, y] with the origin at
+        the BOTTOM-left, which is three conventions away from what OpenCV wants:
+        transpose to [row, col], flip the rows so the origin is top-left, drop
+        alpha, scale to 0-255, and reverse RGB to BGR. Getting any one of these
+        wrong yields a video that is silently sideways, upside down or colour
+        swapped - and on this scene a red/blue swap would be especially
+        misleading, since blue is the phantom and the overlays use red.
+        """
+        buf = self.window.get_image_buffer_as_numpy()
+        rgb = buf[:, :, :3]
+        rgb = np.transpose(rgb, (1, 0, 2))
+        rgb = np.flipud(rgb)
+        rgb = np.clip(rgb * 255.0, 0, 255).astype(np.uint8)
+        return rgb[:, :, ::-1]
+
+    def build_da_schedule(self, iters_per_model=None):
+        """Which trajectory each BO iteration scores against.
+
+        FOUR INDEPENDENT SURROGATES, one per trajectory, each getting
+        `iters_per_model` iterations (default 10 = 4 random + 6
+        acquisition-driven), run BLOCK BY BLOCK: all of slide's iterations, then
+        all of press's, and so on. Default schedule is 4 * 10 = 40 iterations.
+
+        Returns a list with one entry per iteration, each a single-element list
+        of trajectory NAMES. One trajectory per iteration is the point: each
+        iteration then costs ONE forward simulation instead of four, and the
+        model for that trajectory gets 100% of the signal from it - no averaging
+        across objectives on different scales.
+
+        THE ORDER OF THE BLOCKS DOES NOT AFFECT THE RESULT. The four models are
+        fitted independently - no model sees another's observations - so running
+        them consecutively or interleaved gives each the same data and the same
+        posterior. Blocks are simply the clearer arrangement: the log reads as
+        four self-contained searches, and each model's 4 random draws are
+        immediately followed by its own 6 acquisition-driven ones instead of
+        being spread across the whole run.
+
+        `slide` leads only by convention (it is the most informative interaction
+        and dominates the summed objective); nothing depends on it.
+
+        NOTE THE SCORES ACROSS ITERATIONS ARE NOT COMPARABLE: a press MAE and a
+        slide MAE are different quantities and differ by ~10x. Each is only
+        comparable within its own model. The recommendation step
+        (`BoGp.recommend`) is what combines them.
+
+        Overridable with DIFFTACTILE_BO_ITERS_PER_MODEL.
+        """
+        iters_per_model = (
+            iters_per_model if iters_per_model is not None
+            else _env_int("DIFFTACTILE_BO_ITERS_PER_MODEL", 10)
+        )
+        # Deliberately NOT self.trajectory_names order (press, twist_z, twist_x,
+        # slide): slide's block runs first.
+        #
+        # DIFFTACTILE_BO_MODELS restricts the run to a subset, e.g.
+        # DIFFTACTILE_BO_MODELS=slide fits only the slide surrogate. Useful for
+        # iterating on one trajectory without paying for the other three - each
+        # model is independent, so a subset run produces exactly the same
+        # surrogate for the models it does include. Note the recommendation is
+        # then a single-objective one: `recommend()` sums over whichever models
+        # have observations, so with one model enabled it minimises that
+        # trajectory's predicted MAE alone.
+        models = ["slide", "press", "twist_x", "twist_z"]
+        selected = os.environ.get("DIFFTACTILE_BO_MODELS")
+        if selected:
+            wanted = [s.strip() for s in selected.split(",") if s.strip()]
+            unknown = [w for w in wanted if w not in models]
+            if unknown:
+                raise ValueError(
+                    f"DIFFTACTILE_BO_MODELS: unknown {unknown}; choose from {models}"
+                )
+            models = [m for m in models if m in wanted]
+        missing = [n for n in models if n not in self.trajectory_names]
+        if missing:
+            raise ValueError(
+                f"schedule names not in trajectory_names: {missing}. "
+                f"Available: {self.trajectory_names}"
+            )
+        schedule = []
+        for name in models:
+            schedule.extend([[name] for _ in range(iters_per_model)])
+        return schedule
+
+    def domain_adaptation(self, num_iterations=None, run_dir=None, schedule=None):
         """Bayesian-optimisation calibration of the simulator's material/contact
         parameters against the real sensor.
 
@@ -2367,9 +3196,27 @@ class Contact:
             bo_convergence.png                         MAE vs iteration
             da_overlay_<name>.png                      alignment, best config
         """
-        num_iterations = num_iterations or _env_int(
-            "DIFFTACTILE_BO_ITERATIONS", SYSTEM_PARAMS.contact.num_opt_steps
-        )
+        # The schedule decides how many iterations there are, and which
+        # trajectories each one scores - see build_da_schedule(). An explicit
+        # num_iterations still wins, truncating or (by repeating the last entry)
+        # extending it, so existing callers and DIFFTACTILE_BO_ITERATIONS behave
+        # as before.
+        schedule = schedule if schedule is not None else self.build_da_schedule()
+        if num_iterations is None:
+            num_iterations = _env_int("DIFFTACTILE_BO_ITERATIONS", len(schedule))
+        if num_iterations <= len(schedule):
+            schedule = schedule[:num_iterations]
+        else:
+            schedule = schedule + [schedule[-1]] * (num_iterations - len(schedule))
+        # RANDOM EXPLORATION IS ONLY THE FIRST 4 ITERATIONS, so with the stock
+        # schedule phase 1 is 4 random slide runs followed by 6 acquisition-driven
+        # slide runs, and every fine-tuning iteration is acquisition-driven too.
+        #
+        # The random draws exist ONLY to give the GP something to fit before its
+        # acquisition function means anything - a GP with no observations proposes
+        # arbitrarily. Four is enough for that, and every iteration beyond it is
+        # better spent on a proposal that uses what has been learned: a fully
+        # random phase 1 would be a plain random search, improving only by luck.
         num_random = min(
             _env_int("DIFFTACTILE_BO_RANDOM", 4), max(num_iterations - 1, 1)
         )
@@ -2377,34 +3224,60 @@ class Contact:
         os.makedirs(run_dir, exist_ok=True)
         self.bo.set_run_dir(run_dir)
 
+        phases = []
+        for names in schedule:
+            label = "+".join(names)
+            if phases and phases[-1][0] == label:
+                phases[-1][1] += 1
+            else:
+                phases.append([label, 1])
         print(
             f"\nBayesian optimisation: {num_iterations} iterations "
-            f"({num_random} random, then acquisition-driven), "
-            f"4 trajectories each.\n"
+            f"({num_random} random, then acquisition-driven).\n"
+            f"Schedule: " + ", ".join(f"{n}x {lbl}" for lbl, n in phases) + "\n"
         )
 
         history = []
-        best = None
+        # Best record per `scored_on` scope - see the note where it is updated.
+        best_by_scope = {}
         for it in range(num_iterations):
-            # Propose the next parameter set. Random first, to give the GP
-            # something to fit before it starts exploiting.
-            if it < num_random:
-                self.bo.my_suggest_random()
+            # Propose the next parameter set. Random during the exploration
+            # phase, to give the GP something to fit before it starts exploiting.
+            # The surrogate this iteration proposes from and reports to. One
+            # model per trajectory, so "the first 4 iterations are random" is
+            # counted PER MODEL, not globally - each model needs its own seed
+            # observations before its acquisition function means anything.
+            model_name = schedule[it][0]
+            seen = len(self.bo.observations.get(model_name, []))
+            if seen < num_random:
+                self.bo.my_suggest_random(model_name)
                 how = "random"
             else:
-                self.bo.my_suggest_optimise()
+                self.bo.my_suggest_optimise(model_name)
                 how = "acquisition"
             self.set_contact_params_from_bo()
 
-            print(f"=== iteration {it + 1}/{num_iterations} ({how}) ===")
+            # Trajectories this iteration scores against, per the schedule.
+            iteration_names = schedule[it]
+            print(
+                f"=== iteration {it + 1}/{num_iterations} ({how}) "
+                f"[{'+'.join(iteration_names)}] ==="
+            )
             for key, value in self.bo.params.items():
                 print(f"    {key:26s} {value:.6g}")
+
+            # Keep this iteration's rendered frames separate from the others'.
+            # Read by visualisation_update_gui(), which writes
+            # <snapshot_dir>/iterNNN/<trajectory>_ts<NNNN>.png - matching the
+            # iterNNN_<name>.npz convention the trajectories/ directory uses, so
+            # a frame and the raw markers behind it are easy to line up.
+            self.snapshot_subdir = f"iter{it:03d}"
 
             per_trajectory = {}
             self.da_losses = []
             diverged = False
-            for i in range(self.trajectories.shape[0]):
-                name = self.trajectory_names[i]
+            for name in iteration_names:
+                i = self.trajectory_names.index(name)
                 self.trajectory_ix[None] = i
                 # Full state reset between parameter sets.
                 #
@@ -2438,7 +3311,9 @@ class Contact:
                 # Forward simulation to the trajectory's apex. Bounded so a
                 # controller regression cannot spin forever; the PID normally
                 # terminates this well before the cap.
-                da_max_ts = _env_int("DIFFTACTILE_DA_MAX_TIMESTEPS", 400)
+                da_max_ts = _env_int(
+                    "DIFFTACTILE_DA_MAX_TIMESTEPS_NO_VEIN", DA_MAX_TIMESTEPS_NO_VEIN
+                )
                 ts = 0
                 while self.last_target_reached[None] != 1 and ts < da_max_ts:
                     self.pid_controller_1()
@@ -2510,10 +3385,15 @@ class Contact:
                 print(f"    diverged -> scored as {aggregated:.0f} px (penalty)")
             else:
                 aggregated = float(np.mean(self.da_losses))
-            self.bo.my_register(aggregated)
+            self.bo.my_register(aggregated, model_name)
+            scored_on = "+".join(iteration_names)
             record = {
                 "iteration": it,
                 "proposed_by": how,
+                # WHICH trajectories this score came from. Load-bearing under a
+                # schedule: without it the history is a column of MAEs measured
+                # against different objectives with no way to tell them apart.
+                "scored_on": scored_on,
                 "params": dict(self.bo.params),
                 "mae_px": aggregated,
                 "mae_mm": aggregated * PX_TO_MM,
@@ -2521,44 +3401,1070 @@ class Contact:
             }
             history.append(record)
             print(
-                f"    aggregated MAE = {aggregated:.2f} px "
-                f"({aggregated * PX_TO_MM:.2f} mm)"
+                f"    MAE = {aggregated:.2f} px "
+                f"({aggregated * PX_TO_MM:.2f} mm)  [{scored_on}]"
             )
 
-            if not diverged and (best is None or aggregated < best["mae_px"]):
-                best = record
+            # "Best" is only meaningful AMONG ITERATIONS SCORED THE SAME WAY -
+            # a press MAE and a slide MAE are different quantities and routinely
+            # differ by ~10x, so comparing them across the whole history would
+            # just pick whichever trajectory happens to score lowest. Best is
+            # therefore tracked per `scored_on`, and the headline `best` is the
+            # best on the LAST entry in the schedule (slide by default), which is
+            # the objective the run finishes on.
+            prev = best_by_scope.get(scored_on)
+            if not diverged and (prev is None or aggregated < prev["mae_px"]):
+                best_by_scope[scored_on] = record
                 # Keep the overlays produced by the best configuration so far.
                 # Later iterations overwrite da_overlay_*.png, so the winning set
-                # is preserved under its own names.
-                for name in self.trajectory_names:
+                # is preserved under its own names. Only the trajectories this
+                # iteration actually ran have a fresh overlay to copy.
+                for name in iteration_names:
                     src = os.path.join(run_dir, f"da_overlay_{name}.png")
                     if os.path.exists(src):
                         shutil.copyfile(
                             src, os.path.join(run_dir, f"best_da_overlay_{name}.png")
                         )
-                print(f"    ^ best so far")
+                print(f"    ^ best so far for [{scored_on}]")
             print()
 
         self.bo.write_to_file()
-        self._report_bo_results(history, best, run_dir)
+        # The headline single-trajectory result is the best `slide` observation -
+        # the interaction taken to be most informative, and the one that
+        # dominates the summed objective. Pinned to slide by NAME rather than to
+        # whichever scope the schedule happens to end on, so reordering the cycle
+        # cannot silently change which trajectory the headline refers to.
+        # Falling back to the global minimum only matters if slide never produced
+        # a usable (non-diverged) score.
+        best = best_by_scope.get("slide")
+        if best is None and best_by_scope:
+            best = min(best_by_scope.values(), key=lambda r: r["mae_px"])
+
+        # The multi-model posterior combination (`bo.recommend()`) is NOT run
+        # here. With the project relying exclusively on the slide model there is
+        # nothing to combine: the best measured slide configuration IS the
+        # answer, and a one-model "composite" would only restate it through a
+        # surrogate, adding the GP's extrapolation error to a number that is
+        # otherwise measured. `recommend()` is kept in bo_gp.py for whoever
+        # re-enables the other three trajectory models.
+        recommendation = None
+
+        self._report_bo_results(history, best, run_dir, best_by_scope)
+        return history, best, recommendation
+
+    def domain_adaptation_vein(self, num_iterations=None, run_dir=None,
+                               sensor_name="slide", model_name="slide_vein"):
+        """Stage 2: BO on the slide trajectory WITH the subsurface vessel present.
+
+        Objective: MAXIMISE the MAE between the simulated markers and the
+        vessel-FREE reference photograph, measured at the moment the projected
+        vessel passes under the sensor centre.
+
+        The reasoning, and why the two stages point in opposite directions:
+
+          * stage 1 (vessel-absent, MINIMISE MAE) asks "does the simulator
+            reproduce the real sensor?" - low error means high fidelity.
+          * stage 2 (vessel-present, MAXIMISE the same MAE) asks "does a
+            subsurface vessel actually show up in the markers?" - a large
+            departure from the vessel-free appearance means the signal the GNN
+            must detect is present at all.
+
+        ONE FREE PARAMETER: the sensor<->vein normal stiffness. Everything else
+        about that contact pair is fixed (Contact.VEIN_*: damping at the repo's
+        100, tangential stiffness and friction at 0), and the sensor material -
+        Young's modulus and Poisson's ratio - is INHERITED from the vessel-absent
+        model's best result rather than re-fitted.
+
+        NO FIDELITY CONSTRAINT IS NEEDED, and none is applied. The two stages fit
+        disjoint parameters, and a sensor<->vein contact coefficient cannot
+        change how the sensor behaves on a phantom with no vein in it. The
+        vessel-absent fidelity established in stage 1 is therefore preserved by
+        construction, not by policing the search. (An earlier design shared one
+        6-D space between the stages and needed rejection sampling to keep stage
+        2 faithful; splitting the spaces removed the problem rather than
+        managing it.)
+
+        Because the contact force is F_n = -(k_n + c_n*v_n)*d*n_hat, raising the
+        vein's normal stiffness raises the force the vessel exerts without
+        touching the sensor's own stiffness - which is what allows a stiff sensor
+        to still show a pronounced local indentation over the vessel.
+        """
+        # 4 random + 6 acquisition by default.
+        num_iterations = num_iterations or _env_int(
+            "DIFFTACTILE_BO_VEIN_ITERATIONS", 10
+        )
+        num_random = min(_env_int("DIFFTACTILE_BO_RANDOM", 4), num_iterations)
+        run_dir = run_dir or repo_path("difftactile/output")
+        os.makedirs(run_dir, exist_ok=True)
+
+        # Sensor material from stage 1's best, held fixed for the whole stage.
+        sensor_params, sensor_mae = self.bo.best_observed(sensor_name)
+        self.vitactip.youngs_modulus[None] = sensor_params[
+            "vitactip_youngs_modulus"
+        ]
+        self.vitactip.poissons_ratio[None] = sensor_params[
+            "vitactip_poissons_ratio"
+        ]
+        self.vitactip.set_up_system_params_2()
+
+        print("\n" + "=" * 70)
+        print(" Stage 2: vessel-present slide (MAXIMISING marker disagreement)")
+        print("=" * 70)
+        print(
+            f"\n{num_iterations} iterations ({num_random} random, then "
+            f"acquisition-driven).\n"
+            f"Free parameter: normal_stiffness of the sensor<->vein pair "
+            f"{self.bo.pbounds_vein['normal_stiffness']}\n"
+            f"Fixed: sensor E={sensor_params['vitactip_youngs_modulus']:.6g}, "
+            f"nu={sensor_params['vitactip_poissons_ratio']:.4g} "
+            f"(stage-1 best, {sensor_mae:.2f} px); vein damping="
+            f"{self.VEIN_NORMAL_DAMPING:g}, tangential stiffness="
+            f"{self.VEIN_TANGENTIAL_STIFFNESS:g}, friction="
+            f"{self.VEIN_COULOMB_FRICTION:g}\n"
+        )
+
+        # The vessel is what this stage is about, so switch the contact pair on.
+        previous_collision_ixs = list(self.collision_ixs)
+        self.collision_ixs = active_collision_pairs(True)
+        history, best = [], None
+        completed = 0
+        try:
+            for it in range(num_iterations):
+                how = "random" if it < num_random else "acquisition"
+                self.bo.suggest_for(model_name, force_random=(it < num_random))
+                self.set_contact_params_from_bo()
+                self.snapshot_subdir = f"vein_iter{it:03d}"
+
+                print(f"=== vein iteration {it + 1}/{num_iterations} ({how}) ===")
+                print(f"    normal_stiffness (vein)    "
+                      f"{self.bo.params['normal_stiffness']:.6g}")
+
+                mae, triggered, closest, diverged, _ = self._run_vein_slide(
+                    run_dir, it
+                )
+                if diverged:
+                    # An unusable configuration earns nothing, the same as one
+                    # that is faithful but shows no vessel. Zero rather than a
+                    # negative score: a blown-up solve is not "worse than
+                    # useless", it is simply useless.
+                    score = 0.0
+                    print(f"    diverged -> scored {score:.0f}")
+                elif mae is None:
+                    print("    vessel never reached the sensor centre "
+                          f"(closest {closest:.1f} px) -> scored 0")
+                    score = 0.0
+                else:
+                    score = mae
+                    print(f"    vessel-present MAE = {mae:.2f} px "
+                          f"({mae * PX_TO_MM:.2f} mm)  [vessel {closest:.1f} px "
+                          f"from centre]")
+
+                # maximise=True: a LARGER disagreement is better here.
+                self.bo.my_register(score, model_name, maximise=True)
+                record = {
+                    "iteration": it,
+                    "proposed_by": how,
+                    "params": dict(self.bo.params),
+                    "sensor_params": dict(sensor_params),
+                    "vein_mae_px": score,
+                    "vein_mae_mm": score * PX_TO_MM,
+                    "triggered": bool(triggered),
+                    "diverged": bool(diverged),
+                    "closest_vein_px": None if closest == float("inf") else closest,
+                }
+                history.append(record)
+                completed = it + 1
+                # A diverged iteration can never be "best", whatever its score.
+                if (not diverged and score > 0
+                        and (best is None or score > best["vein_mae_px"])):
+                    best = record
+                    print("    ^ best so far")
+                print()
+        except BaseException as exc:
+            # A crash here is almost always the simulator blowing up at a high
+            # vein stiffness. Report how far the search got and what to do about
+            # it BEFORE re-raising, so the message is not buried under a
+            # traceback the user has to scroll past.
+            self._report_vein_crash(exc, completed, num_iterations,
+                                    sensor_params, history, run_dir)
+            raise
+        finally:
+            self.collision_ixs = previous_collision_ixs
+
+        path = os.path.join(run_dir, "bo_vein_results.json")
+        with open(path, "w") as f:
+            json.dump({"best": best, "history": history,
+                       "sensor_params": sensor_params,
+                       "stage1_best_mae_px": sensor_mae}, f, indent=4)
+        print(f"Stage-2 history: {path}")
+        if best is not None:
+            print(f"\nBest vessel-present configuration (iteration "
+                  f"{best['iteration']}): {best['vein_mae_px']:.2f} px")
+            print(f"    normal_stiffness (vein)    "
+                  f"{best['params']['normal_stiffness']:.6g}")
         return history, best
 
-    def _report_bo_results(self, history, best, run_dir):
+    def _report_vein_crash(self, exc, completed, num_iterations, sensor_params,
+                           history, run_dir):
+        """Explain a stage-2 crash and what the operator should do next.
+
+        The expected cause is an over-stiff CONTACT: the vein's penalty force is
+        (k_n + c_n*v_n)*d, and a large k_n at a fixed dt drives the explicit
+        solve unstable. The sensor's own stiffness sets how hard it resists that
+        force, so halving the sensor's Young's modulus makes the pair solvable
+        again at the same vein stiffness.
+
+        Deliberately NOT automatic: halving E changes the sensor the whole
+        project is calibrated around, so it is the operator's decision, and the
+        halved value should be recorded wherever the adopted parameters live.
+        """
+        # Salvage whatever was collected before the crash - those iterations are
+        # valid observations and re-running them costs simulation time.
+        partial = os.path.join(run_dir, "bo_vein_results_partial.json")
+        try:
+            with open(partial, "w") as f:
+                json.dump({"history": history, "sensor_params": sensor_params,
+                           "crashed_after": completed}, f, indent=4)
+        except Exception:
+            partial = None
+
+        e = sensor_params.get("vitactip_youngs_modulus")
+        print("\n" + "!" * 70)
+        print(" STAGE 2 CRASHED")
+        print("!" * 70)
+        print(f"\n  {completed}/{num_iterations} iterations completed "
+              f"successfully before the failure.")
+        print(f"  Error: {type(exc).__name__}: {exc}")
+        if partial:
+            print(f"  Partial results saved: {partial}")
+
+        # A CODE error is not a simulation failure, and the stiffness advice
+        # below would be actively misleading for one - it would send the
+        # operator to change a physical parameter over what is a bug. Only
+        # numerical failures (or a hard interpreter-level abort) point at the
+        # contact being too stiff.
+        code_errors = (NameError, AttributeError, TypeError, ImportError,
+                       KeyError, IndexError, SyntaxError)
+        if isinstance(exc, code_errors):
+            print(
+                "\n  This is a CODE error, not a simulation failure. The "
+                "parameters are not\n  at fault - fix the traceback above and "
+                "re-run. Do NOT change the sensor\n  stiffness on account of "
+                "this."
+            )
+            print("!" * 70 + "\n")
+            return
+
+        print(
+            "\n  Most likely cause: the sensor<->vein contact became too stiff "
+            "for the\n  fixed timestep (contact.dt_override = 1e-5 s). The "
+            "contact force is\n  (k_n + c_n*v_n) * d, so a large vein "
+            "normal_stiffness destabilises the\n  explicit solve."
+        )
+        if e is not None:
+            print(
+                f"\n  SUGGESTED MANUAL ACTION: halve the sensor Young's modulus "
+                f"assigned by\n  the vessel-absent model, then re-run stage 2:"
+                f"\n\n      {e:.6g}  ->  {e / 2:.6g}\n"
+                f"\n  A softer sensor absorbs the same contact force with less "
+                f"violent\n  acceleration, which is what restores stability. "
+                f"Set it in\n  system-params.json (vitactip.single_material."
+                f"youngs_modulus) or in the\n  stage-1 observations this stage "
+                f"reads, and run domain_adaptation.sh again."
+            )
+        print("!" * 70 + "\n")
+
+    def domain_adaptation_joint(self, num_iterations=None, run_dir=None,
+                                model_name="joint"):
+        """ONE BO fitting sensor stiffness and vein contact stiffness together.
+
+        Every iteration runs BOTH trajectories at the same parameter set:
+
+            vessel-ABSENT slide   -> fidelity to the real sensor
+            vessel-PRESENT slide  -> how visibly the vessel deforms the sensor
+
+        and scores them with a single objective, so the search can trade a
+        little fidelity for a lot of vessel contrast. The two-stage design
+        structurally could not do that: stage 1 fixed the sensor before stage 2
+        ever saw a vessel, so a sensor that was slightly worse in isolation but
+        far more sensitive was unreachable.
+
+        THE OBJECTIVE - penetration minus infidelity, both normalised:
+
+            opt_obj = vpn - van        maximised, on [-1, +1]
+
+            vpn  how far the vessel held the sensor up, on [0, 1]: 1 once
+                 the sensor is stopped at the vessel's apex height or above,
+                 0 if it sank exactly as far as it would have with no vessel
+                 there.
+            van  vessel-absent mean marker error / 165 px, 0 = perfect match
+
+        with a single hard rejection: a run whose sensor DIVERGED (NaN or
+        otherwise invisible points) scores -1 regardless. There is no fidelity
+        gate - `van` already penalises a poor match continuously, so a threshold
+        would double-count it and discard the ordering among unfaithful
+        configurations.
+
+        The vessel-present marker delta is still measured and logged (see
+        SIM-VS-SIM below) but no longer scored: it proved to be ~0.06-0.09 px
+        against a 55 px marker spacing, too small to optimise.
+
+        SIM-VS-SIM, NOT SIM-VS-PHOTO. That delta is the effect of the vessel and
+        nothing else: the two snapshots differ only by the presence of the
+        inclusion, so their difference isolates exactly the deformation the GNN
+        has to detect. Measuring the vessel-present markers against the real
+        PHOTOGRAPH instead
+        (the earlier formulation) conflated two things - how much the vessel
+        deforms the sensor, and how badly the simulator already disagrees with
+        reality - and the second term is both larger and irrelevant here, since
+        the photograph shows a phantom with no vessel in it. Fidelity to the
+        photograph is the gate's job; A measures sensitivity alone.
+
+        The comparison is index-wise, which is meaningful because
+        `get_graph_connectivity` reorders both snapshots into the same canonical
+        marker ordering.
+
+        BOTH SNAPSHOTS ARE TAKEN AT THE SAME TIMESTEP. The vessel-present run
+        short-circuits when the vessel passes under the sensor centre, so the
+        vessel-free comparison run is stopped at that same timestep rather than
+        at its own apex. Comparing a trigger-time snapshot against an apex
+        snapshot would measure how far the sensor travelled between the two
+        moments - a difference dominated by the slide itself, which has nothing
+        to do with the vessel.
+
+        Why a gate rather than a weighted sum. The two quantities are not
+        commensurable - fidelity is a constraint to be satisfied, sensitivity a
+        quantity to be maximised - and any fixed weighting between them lets a
+        big enough sensitivity score buy its way out of being realistic. The
+        gate makes that impossible: below the threshold nothing is earned at all,
+        so the search cannot trade fidelity away, and above it the score depends
+        only on how strongly the vessel shows.
+
+        THE THRESHOLD IS ONE INTER-MARKER SPACING (55 px). That is the sensor's
+        own length scale: a mean error of one full spacing means the average
+        marker has moved as far as the distance to its neighbour, at which point
+        the simulated marker field no longer corresponds to the real one in any
+        useful way. It also comfortably admits every realistic configuration
+        seen so far (~10-15 px) while excluding the diverged ones (115-380 px).
+
+        A rather than the mean, on the vessel-present side, because a subsurface
+        vessel deforms a SMALL PATCH rather than the whole field: the maximum
+        captures the local excursion the GNN has to detect, whereas a mean over
+        127 markers dilutes it with the many markers the vessel never reaches.
+
+        The vessel-absent run therefore serves as the gate rather than as a
+        reported aside; both numbers are still logged.
+        """
+        num_iterations = num_iterations or _env_int(
+            "DIFFTACTILE_BO_JOINT_ITERATIONS", 10
+        )
+        num_random = min(_env_int("DIFFTACTILE_BO_JOINT_RANDOM", 5),
+                         num_iterations)
+        run_dir = run_dir or repo_path("difftactile/output")
+        os.makedirs(run_dir, exist_ok=True)
+
+        print("\n" + "=" * 70)
+        print(" Joint BO: sensor stiffness + vein contact, both trajectories")
+        print("=" * 70)
+        print(
+            f"\n{num_iterations} iterations ({num_random} random, then "
+            f"acquisition-driven).\n"
+            f"Free: vitactip_youngs_modulus "
+            f"{self.bo.pbounds_joint['vitactip_youngs_modulus']}, "
+            f"normal_stiffness (vein) "
+            f"{self.bo.pbounds_joint['normal_stiffness']}\n"
+            f"Objective: MAXIMISE 3*A - B, A = max marker error, "
+            f"B = mean marker error (vessel-present)\n"
+        )
+
+        # Live per-iteration log. Written to a shared folder under a
+        # run-timestamped name, so `tail -f` follows the search in real time and
+        # runs sit side by side for comparison afterwards.
+        log_path = os.path.join(
+            repo_path("difftactile/output/bo_logs"),
+            f"joint_{time.strftime('%Y%m%d-%H%M%S')}.csv",
+        )
+        iteration_log = IterationLog(log_path, [
+            "iteration", "proposed_by",
+            "vitactip_youngs_modulus", "normal_stiffness",
+            "vpn", "van", "objective",
+            "q_z_vessel_present", "q_z_vessel_free", "z_vein_max",
+            "vessel_absent_mae_px", "sensor_nodes_over_vein",
+            "marker_delta_max_px", "marker_delta_mean_px",
+            "trigger_ts", "diverged",
+        ])
+        print(f"Live iteration log: {log_path}\n")
+
+        history, best = [], None
+        completed = 0
+        previous_collision_ixs = list(self.collision_ixs)
+        try:
+            for it in range(num_iterations):
+                how = "random" if it < num_random else "acquisition"
+                self.bo.suggest_for(model_name, force_random=(it < num_random))
+                self.set_contact_params_from_bo()
+                self.snapshot_subdir = f"joint_iter{it:03d}"
+
+                print(f"=== joint iteration {it + 1}/{num_iterations} ({how}) ===")
+                for key, value in self.bo.params.items():
+                    print(f"    {key:26s} {value:.6g}")
+
+                # 1. VESSEL-PRESENT first, to learn WHEN the vessel passes
+                #    under the sensor. That timestep is what the vessel-free
+                #    comparison run has to be stopped at, so it must be known
+                #    before the second run starts.
+                self.collision_ixs = active_collision_pairs(True)
+                vein_mae, triggered, closest, vein_diverged, trigger_ts = (
+                    self._run_vein_slide(run_dir, it)
+                )
+                vein_points = (
+                    None if vein_diverged or vein_mae is None
+                    else self.da_last_sim_points.copy()
+                )
+                # Which surface node the vessel-present run measured; the
+                # vessel-free run must report that SAME node.
+                _, _, vein_node_index = getattr(
+                    self, "da_last_q_z", (float("nan"), 0, None)
+                )
+
+                # 2. VESSEL-FREE, stopped at the SAME timestep. Three jobs:
+                #    the fidelity term `van` (against the photograph), the
+                #    comparison markers (against the vessel-present ones), and
+                #    the REFERENCE DEPTH the penetration scale is measured from.
+                self.collision_ixs = active_collision_pairs(False)
+                no_vein_mae = None
+                no_vein_diverged = False
+                no_vein_points = None
+                no_vein_q_z = float("nan")
+                try:
+                    self.da_losses = []
+                    _, no_vein_diverged = self._run_plain_slide(
+                        stop_at_ts=trigger_ts
+                    )
+                    # Depth WITHOUT the vessel, at the same moment AND on the
+                    # SAME NODE the vessel-present run measured. Pinning the
+                    # index is essential: an independent argmin would pick a
+                    # different physical point, and the difference would then be
+                    # mostly "which node won" rather than the vessel's effect.
+                    if vein_node_index is None:
+                        # The vessel-present run found no node over the vein, so
+                        # there is nothing to compare against; leave the
+                        # reference undefined and let vpn fall back to 0.
+                        no_vein_q_z = float("nan")
+                    else:
+                        no_vein_q_z, _, _ = self.node_nearest_vein_apex(
+                            node_index=vein_node_index
+                        )
+                    if no_vein_diverged:
+                        no_vein_mae = DIVERGED_MEAN_MARKER_ERROR_PX
+                    else:
+                        self.compute_da_loss(out_dir=run_dir)
+                        no_vein_mae = float(self.da_losses[-1])
+                        no_vein_points = self.da_last_sim_points.copy()
+                except (ValueError, IndexError) as exc:
+                    no_vein_diverged = True
+                    no_vein_mae = DIVERGED_MEAN_MARKER_ERROR_PX
+                    print(f"    vessel-absent run failed: {exc}")
+
+                diverged = vein_diverged or no_vein_diverged
+                print(f"    vessel-absent mean    = {no_vein_mae:6.2f} px")
+
+                # 3. SCORE - two normalised terms, differenced:
+                #
+                #        opt_obj = vpn - van
+                #
+                #    vpn in [0, 1]  penetration: how far the sensor pressed
+                #                   toward the vein, 1 = deepest
+                #    van in [0, 1]  infidelity: vessel-absent MAE clamped to
+                #                   [0, 55] px and scaled, 0 = perfect match
+                #
+                #    So the objective rewards pressing into the vessel and
+                #    penalises disagreeing with the real sensor, on a common
+                #    scale where one unit of each is worth the same. Range is
+                #    [-1, +1].
+                #
+                #    CONTINUOUS, unlike the binary predecessor. That test asked
+                #    only "does the sensor reach the vein's depth", which every
+                #    gate-passing configuration satisfied identically (q_z
+                #    0.06031-0.06037 across a 1.7x range of Young's modulus), so
+                #    the objective was constant and BO had nothing to optimise.
+                #    A graded penetration gives the GP a gradient to follow.
+                #
+                #    THE ONLY HARD REJECTION IS DIVERGENCE. There is no
+                #    fidelity gate: `van` already penalises a poor match to the
+                #    real sensor, continuously and in proportion, so a threshold
+                #    on top of it would double-count the same quantity and throw
+                #    away the ordering among unfaithful configurations. A
+                #    diverged run is different in kind - its numbers are not
+                #    measurements of anything - so it is rejected outright at -1.
+                a_px = b_px = 0.0
+                # Penetration measured against the VESSEL-FREE depth at the same
+                # timestep, so it reports the vessel's own contribution rather
+                # than how far a soft sensor happened to compress.
+                #
+                # Both depths are STORED values, not re-measured here: the mesh
+                # currently holds the vessel-FREE pose (that run came second), so
+                # asking the sensor for its geometry now would compare the
+                # vessel-free run against itself and give vpn = 0 always.
+                q_z, n_nodes, _ = getattr(
+                    self, "da_last_q_z", (float("nan"), 0, None)
+                )
+                vpn = normalised_penetration(
+                    q_z, no_vein_q_z, self.vein.max_z()
+                )
+                van = min(max(no_vein_mae, 0.0), VAN_CLAMP_PX) / VAN_CLAMP_PX
+                if diverged:
+                    score = -1.0
+                    print(f"    objective             = {score:+.4f} "
+                          f"(sensor diverged - NaN/invisible points)")
+                else:
+                    if vein_points is not None and no_vein_points is not None:
+                        d = np.linalg.norm(vein_points - no_vein_points, axis=1)
+                        a_px = float(np.max(d))
+                        b_px = float(np.mean(d))
+                        print(f"    marker delta (sim-vs-sim): max {a_px:.3f} px, "
+                              f"mean {b_px:.3f} px")
+                    score = vpn - van
+                    print(f"    sensor nodes over vein   = {n_nodes}")
+                    print(f"    q_z vessel-present       = {q_z:.5f}")
+                    print(f"    q_z vessel-FREE (ref)    = {no_vein_q_z:.5f} "
+                          f"-> vpn = {vpn:.4f}")
+                    print(f"    vessel-absent {no_vein_mae:6.2f} px "
+                          f"-> van = {van:.4f}")
+                    print(f"    objective (vpn - van) = {score:+.4f}")
+
+                self.bo.my_register(score, model_name, maximise=True)
+                record = {
+                    "iteration": it,
+                    "proposed_by": how,
+                    "params": dict(self.bo.params),
+                    "max_marker_error_px": a_px,
+                    "mean_marker_error_px": b_px,
+                    "objective": score,
+                    "vessel_absent_mae_px": no_vein_mae,
+                    "van_clamp_px": VAN_CLAMP_PX,
+                    "z_vein_max": self.vein.max_z(),
+                    "sensor_nodes_over_vein": n_nodes,
+                    "q_z": None if not np.isfinite(q_z) else q_z,
+                    "q_z_vessel_free": (
+                        None if not np.isfinite(no_vein_q_z) else no_vein_q_z
+                    ),
+                    "q_z_node_index": vein_node_index,
+                    "vpn": vpn,
+                    "van": van,
+                    "triggered": bool(triggered),
+                    "diverged": bool(vein_diverged),
+                    "closest_vein_px": None if closest == float("inf") else closest,
+                }
+                history.append(record)
+                completed = it + 1
+                # Flushed immediately, so the file is complete up to this
+                # iteration even if the run is stopped or crashes next.
+                iteration_log.append({
+                    "iteration": it,
+                    "proposed_by": how,
+                    "vitactip_youngs_modulus": self.bo.params.get(
+                        "vitactip_youngs_modulus"
+                    ),
+                    "normal_stiffness": self.bo.params.get("normal_stiffness"),
+                    "vpn": vpn,
+                    "van": van,
+                    "objective": score,
+                    "q_z_vessel_present": None if not np.isfinite(q_z) else q_z,
+                    "q_z_vessel_free": (
+                        None if not np.isfinite(no_vein_q_z) else no_vein_q_z
+                    ),
+                    "z_vein_max": self.vein.max_z(),
+                    "vessel_absent_mae_px": no_vein_mae,
+                    "sensor_nodes_over_vein": n_nodes,
+                    "marker_delta_max_px": a_px,
+                    "marker_delta_mean_px": b_px,
+                    "trigger_ts": trigger_ts,
+                    "diverged": int(bool(diverged)),
+                })
+                # A diverged iteration can never be "best", whatever its score.
+                # `score > 0` is NOT a validity test: vpn - van is signed, so
+                # a genuinely usable configuration can score negative (poor
+                # fidelity outweighing shallow penetration). The only invalid
+                # outcome is divergence; among the rest the largest score wins.
+                if (not diverged
+                        and (best is None or score > best["objective"])):
+                    best = record
+                    print("    ^ best so far")
+                print()
+        except BaseException as exc:
+            self._report_vein_crash(exc, completed, num_iterations,
+                                    dict(self.bo.params), history, run_dir)
+            raise
+        finally:
+            self.collision_ixs = previous_collision_ixs
+
+        path = os.path.join(run_dir, "bo_joint_results.json")
+        with open(path, "w") as f:
+            json.dump({"best": best, "history": history}, f, indent=4)
+        print(f"Joint history: {path}")
+        if best is not None:
+            print(f"\nBest joint configuration (iteration {best['iteration']}): "
+                  f"objective {best['objective']:.2f}")
+            print(f"    A = {best['max_marker_error_px']:.2f} px, "
+                  f"B = {best['mean_marker_error_px']:.2f} px, "
+                  f"vessel-absent = {best['vessel_absent_mae_px']}")
+            for key, value in best["params"].items():
+                print(f"    {key:26s} {value:.6g}")
+        return history, best
+
+    def _run_plain_slide(self, stop_at_ts=None):
+        """Run the slide trajectory with the CURRENT parameters, vessel-free.
+
+        No scoring - the caller decides what to measure afterwards.
+
+        `stop_at_ts` stops the run after that many timesteps instead of at the
+        trajectory's apex, so a snapshot can be taken at the SAME moment as a
+        vessel-present run's trigger. Without it the two snapshots would be at
+        different poses and their difference would be dominated by the sensor's
+        travel rather than by the vessel.
+
+        Returns (timesteps, diverged). Health-checked every
+        HEALTH_CHECK_EVERY_TS timesteps, and short-circuits on failure: an apex
+        reached by a blown-up solve is not an apex.
+        """
+        self.trajectory_ix[None] = self.trajectory_names.index("slide")
+        self.vitactip.reset_state()
+        self.phantom.reset_state()
+        self.set_up_initial_positions_state_and_trajectory()
+        self.vitactip.reset_state()
+        self.phantom.reset_state()
+        self.reset_pid_controller()
+        self.visualisation_reset_scene()
+        self.reset_exp_sim_traj()
+        self.vitactip.extract_markers(0)
+        self.compute_mapping_between_experimental_and_sim_markers()
+        self.set_dt()
+        da_max_ts = _env_int(
+            "DIFFTACTILE_DA_MAX_TIMESTEPS_NO_VEIN", DA_MAX_TIMESTEPS_NO_VEIN
+        )
+        if stop_at_ts is not None:
+            da_max_ts = min(da_max_ts, stop_at_ts)
+        ts = 0
+        while self.last_target_reached[None] != 1 and ts < da_max_ts:
+            self.pid_controller_1()
+            self.pid_controller_2(ts)
+            self.pid_controller_3()
+            self.vitactip.set_pose_control_1()
+            self.vitactip.set_pose_control_2()
+            self.vitactip.set_pose_control_3()
+            self.forward_pass_common_part(ts)
+            self.copy_frame()
+            self.vitactip.extract_markers(SYSTEM_PARAMS.contact.num_sub_frames - 1)
+            self.visualisation_update_gui(ts)
+            if ts % HEALTH_CHECK_EVERY_TS == 0:
+                healthy, reason = self.sensor_state_is_healthy()
+                if not healthy:
+                    print(f"    SENSOR DIVERGED at ts={ts}: {reason}")
+                    return ts, True
+            ts += 1
+        return ts, False
+
+    def validate_final_params(self, params, run_dir, label="final"):
+        """Run all four trajectories ONCE at `params` and report the alignment.
+
+        The confirmation step: everything before this is a model-based claim
+        about parameters, and this is the only part that MEASURES the chosen
+        configuration on every interaction. Runs the vessel-FREE phantom, since
+        that is what the four reference photographs show.
+
+        Writes one alignment overlay per trajectory (`da_overlay_<name>.png`,
+        simulated markers RED against real markers GREEN - manuscript Fig. 5)
+        plus a JSON of the per-trajectory MAEs.
+        """
+        print("\n" + "=" * 70)
+        print(f" Final validation: 4 trajectories at the {label} parameters")
+        print("=" * 70)
+        print("\n  parameters:")
+        for key, value in params.items():
+            print(f"    {key:26s} {value:.6g}")
+        print()
+
+        # Adopt the configuration, then run vessel-free to match the
+        # photographs. An EMPTY collision list, not [0]: pair 0 is disabled
+        # project-wide (the phantom is pinned, so it never resisted anyway), so
+        # "vessel-free" means no contact pairs resolved at all.
+        self.bo.params = dict(params)
+        self.set_contact_params_from_bo()
+        previous_collision_ixs = list(self.collision_ixs)
+        self.collision_ixs = active_collision_pairs(False)
+        results = {}
+        try:
+            for i in range(self.trajectories.shape[0]):
+                name = self.trajectory_names[i]
+                self.trajectory_ix[None] = i
+                self.snapshot_subdir = f"{label}_{name}"
+                self.vitactip.reset_state()
+                self.phantom.reset_state()
+                self.set_up_initial_positions_state_and_trajectory()
+                self.vitactip.reset_state()
+                self.phantom.reset_state()
+                self.reset_pid_controller()
+                self.visualisation_reset_scene()
+                self.reset_exp_sim_traj()
+                self.vitactip.extract_markers(0)
+                self.compute_mapping_between_experimental_and_sim_markers()
+                self.set_dt()
+
+                da_max_ts = _env_int(
+                    "DIFFTACTILE_DA_MAX_TIMESTEPS_NO_VEIN", DA_MAX_TIMESTEPS_NO_VEIN
+                )
+                ts = 0
+                diverged = None
+                while self.last_target_reached[None] != 1 and ts < da_max_ts:
+                    self.pid_controller_1()
+                    self.pid_controller_2(ts)
+                    self.pid_controller_3()
+                    self.vitactip.set_pose_control_1()
+                    self.vitactip.set_pose_control_2()
+                    self.vitactip.set_pose_control_3()
+                    self.forward_pass_common_part(ts)
+                    self.copy_frame()
+                    self.vitactip.extract_markers(
+                        SYSTEM_PARAMS.contact.num_sub_frames - 1
+                    )
+                    self.visualisation_update_gui(ts)
+                    if ts % HEALTH_CHECK_EVERY_TS == 0:
+                        healthy, reason = self.sensor_state_is_healthy()
+                        if not healthy:
+                            diverged = reason
+                            break
+                    ts += 1
+                if diverged:
+                    # Reported as a failure rather than scored: a validation
+                    # number from a blown-up solve would be meaningless, and
+                    # silently recording it would misrepresent the parameters.
+                    print(f"    {name:9s} DIVERGED at ts={ts} ({diverged})")
+                    results[name] = None
+                    continue
+
+                self.da_losses = []
+                try:
+                    self.compute_da_loss(out_dir=run_dir)
+                    mae = self.da_losses[-1]
+                except (ValueError, IndexError) as exc:
+                    print(f"    {name:9s} FAILED ({exc})")
+                    results[name] = None
+                    continue
+                results[name] = float(mae)
+                print(f"    {name:9s} MAE = {mae:6.2f} px "
+                      f"({mae * PX_TO_MM:.2f} mm)  [{ts} timesteps]")
+        finally:
+            self.collision_ixs = previous_collision_ixs
+
+        usable = [v for v in results.values() if v is not None]
+        summary = {
+            "label": label,
+            "params": dict(params),
+            "per_trajectory_mae_px": results,
+            "per_trajectory_mae_mm": {
+                k: (v * PX_TO_MM if v is not None else None)
+                for k, v in results.items()
+            },
+            "mean_mae_px": float(np.mean(usable)) if usable else None,
+            "total_mae_px": float(np.sum(usable)) if usable else None,
+        }
+        if usable:
+            print(f"\n    {'mean':9s} {np.mean(usable):6.2f} px "
+                  f"({np.mean(usable) * PX_TO_MM:.2f} mm)")
+            print(f"    {'total':9s} {np.sum(usable):6.2f} px "
+                  f"({np.sum(usable) * PX_TO_MM:.2f} mm)")
+        path = os.path.join(run_dir, f"{label}_validation.json")
+        with open(path, "w") as f:
+            json.dump(summary, f, indent=4)
+        print(f"\n  Statistics: {path}")
+        print(f"  Alignment figures (Fig. 5 panels): "
+              f"{os.path.join(run_dir, 'da_overlay_<name>.png')}")
+        return summary
+
+    def score_current_configuration(self, run_dir=None):
+        """One joint-objective evaluation of the CURRENT parameters.
+
+        The same measurement `domain_adaptation_joint` performs per iteration -
+        vessel-present slide, then vessel-free slide at the matched timestep and
+        node - but with no proposal step, so it scores whatever is already
+        loaded. Shares `_run_vein_slide`, `compute_da_loss` and
+        `normalised_penetration` with the search, which is what makes the number
+        comparable to a BO iteration's rather than merely similar.
+
+        Writes `score.json` and returns the same dict.
+        """
+        run_dir = run_dir or repo_path("difftactile/output")
+        os.makedirs(run_dir, exist_ok=True)
+        previous_collision_ixs = list(self.collision_ixs)
+        try:
+            # 1. VESSEL-PRESENT.
+            self.collision_ixs = active_collision_pairs(True)
+            self.snapshot_subdir = "score_vein"
+            vein_mae, triggered, closest, vein_diverged, trigger_ts = (
+                self._run_vein_slide(run_dir, 0)
+            )
+            vein_points = (
+                None if vein_diverged or vein_mae is None
+                else self.da_last_sim_points.copy()
+            )
+            q_z, n_nodes, vein_node_index = getattr(
+                self, "da_last_q_z", (float("nan"), 0, None)
+            )
+
+            # 2. VESSEL-FREE, matched timestep and node.
+            self.collision_ixs = active_collision_pairs(False)
+            self.snapshot_subdir = "score_no_vein"
+            no_vein_mae, no_vein_diverged = None, False
+            no_vein_points, no_vein_q_z = None, float("nan")
+            try:
+                self.da_losses = []
+                _, no_vein_diverged = self._run_plain_slide(
+                    stop_at_ts=trigger_ts
+                )
+                if vein_node_index is not None:
+                    no_vein_q_z, _, _ = self.node_nearest_vein_apex(
+                        node_index=vein_node_index
+                    )
+                if no_vein_diverged:
+                    no_vein_mae = DIVERGED_MEAN_MARKER_ERROR_PX
+                else:
+                    self.compute_da_loss(out_dir=run_dir)
+                    no_vein_mae = float(self.da_losses[-1])
+                    no_vein_points = self.da_last_sim_points.copy()
+            except (ValueError, IndexError) as exc:
+                no_vein_diverged = True
+                no_vein_mae = DIVERGED_MEAN_MARKER_ERROR_PX
+                print(f"    vessel-absent run failed: {exc}")
+
+            diverged = vein_diverged or no_vein_diverged
+            van = min(max(no_vein_mae, 0.0), VAN_CLAMP_PX) / VAN_CLAMP_PX
+            vpn = normalised_penetration(q_z, no_vein_q_z, self.vein.max_z())
+            a_px = b_px = 0.0
+            if vein_points is not None and no_vein_points is not None:
+                d = np.linalg.norm(vein_points - no_vein_points, axis=1)
+                a_px, b_px = float(np.max(d)), float(np.mean(d))
+            score = -1.0 if diverged else vpn - van
+
+            print("\n" + "-" * 70)
+            print(" Result")
+            print("-" * 70)
+            if diverged:
+                print(f"\n  SENSOR DIVERGED -> objective {score:+.4f}")
+            else:
+                print(f"\n  sensor nodes over vein   = {n_nodes}")
+                print(f"  q_z vessel-present       = {q_z:.5f}")
+                print(f"  q_z vessel-FREE (ref)    = {no_vein_q_z:.5f}")
+                print(f"  z_vein_max (apex)        = {self.vein.max_z():.5f}")
+                print(f"  marker delta (sim-vs-sim): max {a_px:.3f} px, "
+                      f"mean {b_px:.3f} px")
+                print(f"\n  vpn (penetration)        = {vpn:.4f}  "
+                      f"[0, {VPN_WEIGHT}]")
+                print(f"  van (infidelity)         = {van:.4f}  "
+                      f"(vessel-absent MAE {no_vein_mae:.2f} px / "
+                      f"{VAN_CLAMP_PX:.0f})")
+                print(f"  objective (vpn - van)    = {score:+.4f}")
+
+            result = {
+                "phantom_contact_enabled": phantom_contact_enabled(),
+                "collision_pairs_with_vein": active_collision_pairs(True),
+                "params": {
+                    "vitactip_youngs_modulus": float(
+                        self.vitactip.youngs_modulus[None]
+                    ),
+                    "vitactip_poissons_ratio": float(
+                        self.vitactip.poissons_ratio[None]
+                    ),
+                    "normal_stiffness_vein": float(self.normal_stiffness[2]),
+                    "normal_damping_vein": float(self.normal_damping[2]),
+                },
+                "vpn": vpn,
+                "van": van,
+                "objective": score,
+                "q_z_vessel_present": None if not np.isfinite(q_z) else q_z,
+                "q_z_vessel_free": (
+                    None if not np.isfinite(no_vein_q_z) else no_vein_q_z
+                ),
+                "z_vein_max": self.vein.max_z(),
+                "vessel_absent_mae_px": no_vein_mae,
+                "sensor_nodes_over_vein": n_nodes,
+                "marker_delta_max_px": a_px,
+                "marker_delta_mean_px": b_px,
+                "trigger_ts": trigger_ts,
+                "diverged": bool(diverged),
+            }
+            path = os.path.join(run_dir, "score.json")
+            with open(path, "w") as f:
+                json.dump(result, f, indent=4)
+            print(f"\n  Written to: {path}")
+            return result
+        finally:
+            self.collision_ixs = previous_collision_ixs
+
+    def _run_vein_slide(self, run_dir, it):
+        """One vessel-present slide, scored when the vessel reaches the centre.
+
+        Returns (mae, triggered, closest_px, diverged, trigger_ts). `mae` is
+        None if the vessel never came within the trigger radius; `diverged` is
+        True if the sensor's FEM state failed a health check, which the caller
+        must score separately - a diverged sensor produces huge marker errors
+        that would otherwise LOOK like excellent vessel sensitivity.
+        `trigger_ts` is the timestep the snapshot was taken at, so a vessel-free
+        run can be stopped at the same pose for comparison.
+
+        The state is checked every HEALTH_CHECK_EVERY_TS timesteps and the
+        trajectory short-circuits on failure: once a solve blows up it does not
+        recover, so the remaining timesteps only waste compute.
+
+        SHORT-CIRCUITS at the first trigger: once the snapshot is taken there is
+        nothing left to measure, so the remaining timesteps are pure cost. The
+        vessel typically passes under the sensor early in the slide, so this cuts
+        most of a ~398-timestep trajectory - the dominant expense of the whole
+        stage.
+
+        Nothing downstream depends on the trajectory finishing: the score is the
+        MAE at the trigger instant, and `last_target_reached` is only used to end
+        the loop. (This differs from the vessel-ABSENT objective, which is
+        measured at the trajectory's apex and therefore must run to the end.)
+        """
+        name = "slide"
+        self.trajectory_ix[None] = self.trajectory_names.index(name)
+        self.vitactip.reset_state()
+        self.phantom.reset_state()
+        self.set_up_initial_positions_state_and_trajectory()
+        self.vitactip.reset_state()
+        self.phantom.reset_state()
+        self.reset_pid_controller()
+        self.visualisation_reset_scene()
+        self.reset_exp_sim_traj()
+        self.vitactip.extract_markers(0)
+        self.compute_mapping_between_experimental_and_sim_markers()
+        self.set_dt()
+
+        da_max_ts = _env_int(
+            "DIFFTACTILE_DA_MAX_TIMESTEPS_VEIN", DA_MAX_TIMESTEPS_VEIN
+        )
+        mae, closest, trigger_ts = None, float("inf"), None
+        # Depth geometry at the trigger; (reaches, z_s, z_v). NaN until a
+        # snapshot is actually taken.
+        self.da_last_depth = (False, float("nan"), float("nan"), 0)
+        self.da_last_q_z = (float("nan"), 0, None)
+        ts = 0
+        while self.last_target_reached[None] != 1 and ts < da_max_ts:
+            self.pid_controller_1()
+            self.pid_controller_2(ts)
+            self.pid_controller_3()
+            self.vitactip.set_pose_control_1()
+            self.vitactip.set_pose_control_2()
+            self.vitactip.set_pose_control_3()
+            self.forward_pass_common_part(ts)
+            self.copy_frame()
+            self.vitactip.extract_markers(SYSTEM_PARAMS.contact.num_sub_frames - 1)
+            self.visualisation_update_gui(ts)
+            if ts % HEALTH_CHECK_EVERY_TS == 0:
+                healthy, reason = self.sensor_state_is_healthy()
+                if not healthy:
+                    print(f"    SENSOR DIVERGED at ts={ts}: {reason}")
+                    return None, False, closest, True, ts
+            # The projection must be refreshed before the proximity test:
+            # visualisation_update_gui() only fills it when a window is drawn.
+            self.visualisation_project_vein_2d()
+            self.visualisation_prepare_tactile_readout_data_fp()
+            triggered, d = self.vein_over_sensor_centre()
+            closest = min(closest, d)
+            if triggered and mae is None:
+                try:
+                    mae = self.compute_vein_da_loss(out_dir=run_dir,
+                                                    tag=f"vein_iter{it:03d}")
+                except (ValueError, IndexError) as exc:
+                    print(f"    scoring failed at ts={ts}: {exc}")
+                    return None, True, closest, False, ts
+                # Depth geometry AT THE TRIGGER, while the vessel-present state
+                # is still live. Reading it after the vessel-free comparison run
+                # would report that run's geometry instead - the mesh fields are
+                # overwritten in place.
+                self.da_last_depth = self.sensor_reaches_vein_depth()
+                # Raw depth only. `vpn` cannot be formed yet: its reference is
+                # the VESSEL-FREE q_z at this same moment, which has not been
+                # simulated at this point in the iteration.
+                self.da_last_q_z = self.node_nearest_vein_apex()
+                # Snapshot taken - stop here rather than simulating the rest of
+                # the slide for a measurement that has already been made.
+                trigger_ts = ts
+                ts += 1
+                break
+            ts += 1
+        return mae, mae is not None, closest, False, trigger_ts
+
+    def _report_recommendation(self, rec, run_dir):
+        """Print the combined recommendation and write it beside the history."""
+        print("\n" + "=" * 70)
+        print(" Combined recommendation (all four models)")
+        print("=" * 70)
+        print(
+            "\nMinimises the SUM of the four models' predicted pixel errors, "
+            "unscaled -\nNOT an average of the four best-observed points.\n"
+        )
+        print("  parameters:")
+        for key, value in rec["params"].items():
+            print(f"    {key:26s} {value:.6g}")
+        total = rec["predicted_total_mae_px"]
+        print("\n  predicted MAE at this configuration (px):")
+        for name, mae in sorted(rec["predicted_mae_px"].items()):
+            sigma = rec["predicted_sigma_px"][name]
+            print(f"    {name:9s} {mae:7.2f} +/- {sigma:.2f}")
+        print(f"    {'TOTAL':9s} {total:7.2f} px ({total * PX_TO_MM:.2f} mm)")
+        print("\n  each model's own best OBSERVED point, for comparison:")
+        for name, d in sorted(rec["per_model_best_observed"].items()):
+            print(f"    {name:9s} {d['mae_px']:7.2f} px")
+        spread = rec["argmin_spread"]
+        print(f"\n  argmin spread across models: {spread:.3f}")
+        print(
+            "    (0 = the four models agree on where the optimum is; ~0.29 is "
+            "as\n     scattered as random points. A large value means the "
+            "objectives\n     genuinely conflict and a single recommendation is "
+            "hiding a trade-off.)"
+        )
+        print(
+            "\n  NOT YET MEASURED: this is a model prediction. Confirm it by "
+            "running\n  all four trajectories at these parameters before "
+            "adopting them."
+        )
+        path = os.path.join(run_dir, "bo_recommendation.json")
+        with open(path, "w") as f:
+            json.dump(rec, f, indent=4)
+        print(f"\n  Written to: {path}")
+
+    def _report_bo_results(self, history, best, run_dir, best_by_scope=None):
         """Print the BO outcome and write it to JSON and a convergence figure."""
         print("=" * 70)
         print(" Bayesian optimisation results")
         print("=" * 70)
         print(f"\nEvery configuration tried ({len(history)} total), worst to best:\n")
-        print(f"  {'iter':>4}  {'MAE px':>8}  {'MAE mm':>7}  {'by':>12}")
+        print(f"  {'iter':>4}  {'MAE px':>8}  {'MAE mm':>7}  {'by':>12}  {'scored on':>10}")
         for r in sorted(history, key=lambda r: -r["mae_px"]):
             print(
                 f"  {r['iteration']:>4}  {r['mae_px']:>8.2f}  "
-                f"{r['mae_mm']:>7.3f}  {r['proposed_by']:>12}"
+                f"{r['mae_mm']:>7.3f}  {r['proposed_by']:>12}  "
+                f"{r.get('scored_on', '?'):>10}"
             )
 
+        # Under a schedule the MAEs above are NOT mutually comparable - each is
+        # measured against whichever trajectories that iteration ran. Report the
+        # best within each scope so the ranking means something.
+        if best_by_scope:
+            print("\nBest per trajectory scope (these ARE comparable within a row):\n")
+            print(f"  {'scored on':>10}  {'iter':>4}  {'MAE px':>8}  {'MAE mm':>7}")
+            for scope, r in sorted(best_by_scope.items()):
+                print(
+                    f"  {scope:>10}  {r['iteration']:>4}  {r['mae_px']:>8.2f}  "
+                    f"{r['mae_mm']:>7.3f}"
+                )
+
         if best is not None:
-            print(f"\nBest configuration (iteration {best['iteration']}):")
-            print(f"  aggregated MAE = {best['mae_px']:.2f} px "
+            print(f"\nBest configuration (iteration {best['iteration']}, "
+                  f"scored on {best.get('scored_on', '?')}):")
+            print(f"  MAE = {best['mae_px']:.2f} px "
                   f"({best['mae_mm']:.3f} mm)")
             for name, mae in best["per_trajectory_px"].items():
                 print(f"    {name:9s} {mae:6.2f} px ({mae * PX_TO_MM:.2f} mm)")
@@ -2572,22 +4478,44 @@ class Contact:
 
         results_path = os.path.join(run_dir, "bo_results.json")
         with open(results_path, "w") as f:
-            json.dump({"best": best, "history": history}, f, indent=4)
+            json.dump(
+                {
+                    "best": best,
+                    "best_by_scope": best_by_scope or {},
+                    "history": history,
+                },
+                f,
+                indent=4,
+            )
         print(f"\nFull history: {results_path}")
 
-        # Convergence: MAE per iteration, with the running best. A flat running
-        # best means the search is not improving, which is the thing to see.
-        maes = [r["mae_px"] for r in history]
-        running_best = np.minimum.accumulate(maes) if maes else []
+        # Convergence, PLOTTED PER SCOPE. A single running minimum over the whole
+        # history would be meaningless under a schedule: it would step down every
+        # time the objective changed to a trajectory that simply scores lower,
+        # which reads as progress but is not. One series per `scored_on` keeps
+        # each curve a like-for-like comparison, and the running best is taken
+        # within a series.
         plt.figure(figsize=(10, 6))
-        plt.plot(range(len(maes)), maes, "o-", label="MAE this iteration")
-        plt.plot(range(len(maes)), running_best, "-", linewidth=3,
-                 label="best so far")
+        scopes = []
+        for r in history:
+            s = r.get("scored_on", "?")
+            if s not in scopes:
+                scopes.append(s)
+        for scope in scopes:
+            pts = [(r["iteration"], r["mae_px"]) for r in history
+                   if r.get("scored_on", "?") == scope]
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            line, = plt.plot(xs, ys, "o-", label=f"{scope}")
+            if len(ys) > 1:
+                plt.plot(xs, np.minimum.accumulate(ys), "--", linewidth=2,
+                         color=line.get_color(), alpha=0.6,
+                         label=f"{scope} (best so far)")
         plt.xlabel("Bayesian optimisation iteration")
-        plt.ylabel("aggregated MAE (px)")
-        plt.title("Domain adaptation: marker alignment error")
+        plt.ylabel("MAE (px)")
+        plt.title("Domain adaptation: marker alignment error, by trajectory scope")
         plt.grid(True, alpha=0.3)
-        plt.legend()
+        plt.legend(fontsize=8)
         finish_plot(plt, os.path.join(run_dir, "bo_convergence.png"))
         print(f"Convergence figure: {os.path.join(run_dir, 'bo_convergence.png')}")
         print(f"Alignment overlays (best config): "
@@ -2612,10 +4540,12 @@ class Contact:
             for j in range(2):
                 print(f"training trajectory: {i}/{num_loops - 1}; substep: {j}/5")
                 self.generate_trajectories()
+                # Pair 0 is disabled project-wide (see __init__), so a
+                # "vein-absent" substep resolves NO contact pairs at all.
                 if COLLECT_VEIN_PAIR and j < 1:
-                    self.collision_ixs = [0, 2]
+                    self.collision_ixs = active_collision_pairs(True)
                 else:
-                    self.collision_ixs = [0]
+                    self.collision_ixs = active_collision_pairs(False)
                 print(
                     f"  substep {j}: collision_ixs={self.collision_ixs} "
                     f"({'WITH vein' if 2 in self.collision_ixs else 'no vein'})"
@@ -2683,6 +4613,166 @@ class Contact:
         print("all done")
 
 
+def alignment_figures_main():
+    """Entrypoint: the four alignment panels for the CURRENT configuration.
+
+    Runs each of press / twist_z / twist_x / slide ONCE at the parameters in
+    system-params.json, caches the marker positions, and draws the manuscript
+    figures - simulated markers red, real green, a blue segment joining each
+    corresponding pair, on white.
+
+    USES THE CACHE WHEN IT EXISTS. Each trajectory is minutes of simulation and
+    the figures are pure styling on top of two point sets, so re-simulating to
+    change a colour would be wasted time. DIFFTACTILE_ALIGNMENT_SOURCE points at
+    an existing `markers_*.npz` set (e.g. a published BO run's directory);
+    DIFFTACTILE_ALIGNMENT_FORCE=1 re-simulates even when a cache is present.
+    """
+    from difftactile.data_analysis.experiment.alignment_figures import (
+        TRAJECTORY_ORDER, generate_alignment_figures,
+    )
+
+    source = os.environ.get("DIFFTACTILE_ALIGNMENT_SOURCE")
+    force = os.environ.get("DIFFTACTILE_ALIGNMENT_FORCE", "0") == "1"
+    if source and not force:
+        cached = all(
+            os.path.exists(os.path.join(source, f"markers_{n}.npz"))
+            for n in TRAJECTORY_ORDER
+        )
+        if cached:
+            print(f"Using cached marker positions from {source}")
+            generate_alignment_figures(source)
+            return
+
+    run_dir = repo_path(
+        f"difftactile/output/alignment_figures/{time.strftime('%Y%m%d-%H%M%S')}"
+    )
+    os.makedirs(run_dir, exist_ok=True)
+    print(f"Run directory: {run_dir}")
+    print("No usable cache - running the four trajectories.")
+
+    seed = seed_everything(deterministic_torch=False)
+    print(f"Seed: {seed} (override with DIFFTACTILE_SEED)")
+    if RUN_ON_LAB_MACHINE:
+        ti.init(debug=False, offline_cache=False, log_level=ti.ERROR,
+                arch=ti.cuda,
+                device_memory_GB=float(os.environ.get("TI_DEVICE_MEMORY_GB", 9)))
+    else:
+        ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)
+
+    from difftactile.data_analysis.experiment.domain_adaptation import (
+        extract_real_marker_positions,
+    )
+    extract_real_marker_positions()
+
+    contact_model = Contact()
+    contact_model.visualisation_set_up_gui()
+    contact_model.generate_trajectories()
+    contact_model.trajectory_ix[None] = 0
+    contact_model.set_up_initial_positions_state_and_trajectory()
+    contact_model.reset_pid_controller()
+    contact_model.reset_exp_sim_traj()
+    contact_model.get_keypoint_indices_and_validate()
+
+    params = {
+        "vitactip_youngs_modulus": float(
+            contact_model.vitactip.youngs_modulus[None]
+        ),
+        "vitactip_poissons_ratio": float(
+            contact_model.vitactip.poissons_ratio[None]
+        ),
+    }
+    print("\n  configuration under test:")
+    for key, value in params.items():
+        print(f"    {key:26s} {value:.6g}")
+    print(f"    {'normal_stiffness (vein)':26s} "
+          f"{contact_model.normal_stiffness[2]:.6g}")
+
+    # validate_final_params runs all four vessel-free and, via compute_da_loss,
+    # writes both the photo overlays and the markers_*.npz this needs.
+    contact_model.validate_final_params(params, run_dir, label="alignment")
+
+    print("\nDrawing the manuscript panels:")
+    generate_alignment_figures(run_dir)
+    print(f"\nAll artifacts: {run_dir}")
+
+
+def score_current_params_main():
+    """Entrypoint: score the CONFIG AS IT STANDS, with no optimisation.
+
+    Runs exactly one iteration of the joint objective - the vessel-present slide
+    and the vessel-free slide - at whatever parameters system-params.json
+    currently holds, and reports vpn, van and vpn - van.
+
+    A SANITY CHECK, not a search. `domain_adaptation.sh` proposes parameters and
+    hunts for good ones; this one proposes nothing, so the number it prints is
+    attributable entirely to the configuration on disk. That makes it the tool
+    for questions like "does contact resolve at all with the phantom pair
+    switched on", where a search would confound the answer with its own
+    exploration.
+
+    Honours the pair-0 seam, so `DIFFTACTILE_PHANTOM_CONTACT=1` scores the same
+    configuration with sensor<->phantom contact enabled.
+    """
+    run_dir = repo_path(
+        f"difftactile/output/score_params/{time.strftime('%Y%m%d-%H%M%S')}"
+    )
+    os.makedirs(run_dir, exist_ok=True)
+    print(f"Run directory: {run_dir}")
+
+    if is_headless():
+        print("Headless: no GGUI window will be created.")
+    seed = seed_everything(deterministic_torch=False)
+    print(f"Seed: {seed} (override with DIFFTACTILE_SEED)")
+
+    if RUN_ON_LAB_MACHINE:
+        ti.init(debug=False, offline_cache=False, log_level=ti.ERROR,
+                arch=ti.cuda,
+                device_memory_GB=float(os.environ.get("TI_DEVICE_MEMORY_GB", 9)))
+    else:
+        ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)
+
+    from difftactile.data_analysis.experiment.domain_adaptation import (
+        extract_real_marker_positions,
+    )
+    extract_real_marker_positions()
+
+    contact_model = Contact()
+    contact_model.visualisation_set_up_gui()
+    contact_model.generate_trajectories()
+    contact_model.trajectory_ix[None] = 0
+    contact_model.set_up_initial_positions_state_and_trajectory()
+    contact_model.reset_pid_controller()
+    contact_model.reset_exp_sim_traj()
+    contact_model.get_keypoint_indices_and_validate()
+
+    print("\n" + "=" * 70)
+    print(" Scoring the configuration in system-params.json (no optimisation)")
+    print("=" * 70)
+    on = phantom_contact_enabled()
+    print(f"\n  sensor<->phantom contact pair: "
+          f"{'ENABLED' if on else 'disabled'}")
+    if on:
+        c = SYSTEM_PARAMS.contact
+        print(f"    normal_stiffness       {c.normal_stiffness[0]}")
+        print(f"    tangential_stiffness   {c.tangential_stiffness[0]}")
+        print(f"    normal_damping         {c.normal_damping[0]}")
+        print(f"    coulomb_friction_coeff {c.coulomb_friction_coeff[0]}")
+    print(f"  sensor<->vein contact pair:    ENABLED")
+    print(f"    normal_stiffness       {SYSTEM_PARAMS.contact.normal_stiffness[2]}")
+    print(f"    normal_damping         {SYSTEM_PARAMS.contact.normal_damping[2]}")
+    print(f"\n  sensor material (as loaded):")
+    print(f"    youngs_modulus         "
+          f"{contact_model.vitactip.youngs_modulus[None]:.6g}")
+    print(f"    poissons_ratio         "
+          f"{contact_model.vitactip.poissons_ratio[None]:.6g}")
+
+    start = time.perf_counter()
+    result = contact_model.score_current_configuration(run_dir=run_dir)
+    print(f"\nScoring took {time.perf_counter() - start:.2f} s")
+    print(f"All artifacts: {run_dir}")
+    return result
+
+
 def domain_adaptation_main():
     """Entrypoint: calibrate the simulator against the real sensor, via BO.
 
@@ -2707,6 +4797,60 @@ def domain_adaptation_main():
     os.makedirs(run_dir, exist_ok=True)
     print(f"Run directory: {run_dir}")
 
+    # SNAPSHOTS ARE ALWAYS ON for domain adaptation, written inside this run's
+    # own timestamped directory (snapshots/iterNNN/<trajectory>_ts<NNNN>.png).
+    # A DA run is a calibration whose whole output is "how well do simulated and
+    # real markers line up", and the rendered frames are the only way to see
+    # WHY a configuration scored as it did - a numeric MAE cannot show that a
+    # trajectory slid the wrong way or that an inclusion was present. They were
+    # previously opt-in via DIFFTACTILE_SNAPSHOT_DIR, so the frames existed only
+    # for runs where someone had thought to ask in advance, which is exactly
+    # when they are least likely to be needed.
+    #
+    # setdefault, not assignment: an explicit DIFFTACTILE_SNAPSHOT_DIR still
+    # wins, so a caller can redirect them elsewhere.
+    #
+    # ONLY WHEN A DISPLAY IS AVAILABLE. Taichi GGUI's offscreen path
+    # (show_window=False) SEGFAULTS in this image - it dies partway through the
+    # first trajectory with a core dump, which is why snapshots were opt-in in
+    # the first place. Defaulting them on unconditionally would therefore turn
+    # every headless DA run into a crash. With a real display GGUI has a window
+    # and save_image() is reliable, so the frames come for free alongside the
+    # live view.
+    #
+    # A headless run consequently still produces no snapshots. That is a known
+    # limitation of the Taichi build, not something to work around here; run DA
+    # with a display when the frames are wanted.
+    if not is_headless():
+        os.environ.setdefault(
+            "DIFFTACTILE_SNAPSHOT_DIR", os.path.join(run_dir, "snapshots")
+        )
+    else:
+        print(
+            "Headless: skipping snapshots (Taichi GGUI segfaults offscreen in "
+            "this image). Run with a DISPLAY to capture them."
+        )
+
+    # Seed BEFORE anything stochastic runs, so a DA run is reproducible.
+    #
+    # `NP_RNG` (main/constants.py) is `default_rng()` with no seed, and this path
+    # draws from it in three places: the random phase of the BO search
+    # (`BoGp.my_suggest_random`), the tangential_stiffness fraction drawn every
+    # iteration, and generate_trajectories(), which randomises the four DA
+    # interactions themselves. Without this call each run explored a different
+    # search space AND scored it against differently-randomised trajectories, so
+    # two runs of the same code were not comparable.
+    #
+    # `deterministic_torch=False`: there is no torch in this path (the simulator
+    # is Taichi), so the deterministic-kernel switches would only cost the
+    # startup work and set CUBLAS_WORKSPACE_CONFIG for no reason. Taichi's own
+    # kernels are unaffected by torch's determinism flags either way.
+    #
+    # The GP is separately deterministic already - BayesianOptimization is
+    # constructed with random_state=1 in bo_gp.py.
+    seed = seed_everything(deterministic_torch=False)
+    print(f"Seed: {seed} (override with DIFFTACTILE_SEED)")
+
     if RUN_ON_LAB_MACHINE:
         ti.init(
             debug=False,
@@ -2729,6 +4873,27 @@ def domain_adaptation_main():
     extract_real_marker_positions()
 
     contact_model = Contact()
+
+    # NO SUBSURFACE VEIN during domain adaptation.
+    #
+    # `Contact.__init__` defaults to `[0, 2]` - pair 0 is sensor<->phantom and
+    # pair 2 is sensor<->vein - and `collect_training_data()` overrides it per
+    # substep, but this path never did, so every DA simulation ran with a vein
+    # embedded in the phantom. The REAL sensor photographs these are scored
+    # against were taken on a plain phantom with no inclusion, so the simulation
+    # was being fitted to a physically different object: the vein stiffens the
+    # region under the sensor, so the BO absorbed that mismatch into the
+    # material and contact parameters it was calibrating.
+    #
+    # This is deliberately NOT a change to `collect_training_data()`, which must
+    # keep collecting both kinds of trial - dataset A needs vein-present and
+    # vein-absent trajectories, since the GNN's whole task is telling them apart.
+    # That path's per-substep choice (DIFFTACTILE_VEIN_PAIR) is untouched.
+    #
+    # Empty, not [0]: pair 0 (sensor<->phantom) is disabled project-wide, so
+    # "vessel-free" here means no contact pairs are resolved at all.
+    contact_model.collision_ixs = active_collision_pairs(False)
+
     contact_model.visualisation_set_up_gui()
     # The four DA interactions, which are NOT the four training trajectory types
     # set up in set_up_trajectories_and_phantom_states(). This call replaces
@@ -2742,12 +4907,191 @@ def domain_adaptation_main():
     contact_model.get_keypoint_indices_and_validate()
 
     start = time.perf_counter()
-    contact_model.domain_adaptation(run_dir=run_dir)
+
+    # TWO MODES, selected by DIFFTACTILE_DA_MODE:
+    #
+    #   joint (default)  ONE BO over sensor E + vein contact stiffness, running
+    #                    BOTH trajectories per iteration and scoring 3A - B.
+    #                    Fidelity and vessel sensitivity are traded off inside a
+    #                    single search.
+    #   staged           the older sequential design: vessel-absent BO first,
+    #                    then vessel-present BO at the sensor it chose. Kept
+    #                    because it is what the published slide_only_bo run used.
+    #
+    # Both finish with the same validation: all four trajectories once, at the
+    # chosen configuration, vessel-free (which is what the reference
+    # photographs show).
+    mode = os.environ.get("DIFFTACTILE_DA_MODE", "joint")
+    final_params, label = None, None
+
+    if mode == "joint":
+        _, joint_best = contact_model.domain_adaptation_joint(run_dir=run_dir)
+        if joint_best is not None:
+            final_params, label = dict(joint_best["params"]), "final_joint"
+    elif mode == "staged":
+        # STAGE 1 IS LOADED FROM DISK when a completed run is available, rather
+        # than re-simulated. Its search is seeded and deterministic, so
+        # re-running it reproduces the same observations at a cost of ~30 minutes
+        # of simulation; replaying the saved ones gives the same surrogate.
+        # DIFFTACTILE_STAGE1_OBSERVATIONS points elsewhere, or "" forces a fresh
+        # run.
+        stage1_default = repo_path(
+            "difftactile/output/domain_adaptation_published/slide_only_bo/"
+            "bo_observations.json"
+        )
+        stage1_path = os.environ.get(
+            "DIFFTACTILE_STAGE1_OBSERVATIONS", stage1_default
+        )
+        if stage1_path and os.path.exists(stage1_path):
+            loaded = contact_model.bo.load_observations(
+                stage1_path, names={"slide"}
+            )
+            print(f"\nStage 1 loaded from {stage1_path}: {loaded} "
+                  f"(not re-simulated - the search is seeded and deterministic)")
+            _, best_mae = contact_model.bo.best_observed("slide")
+            print(f"  best vessel-absent MAE: {best_mae:.2f} px")
+        else:
+            contact_model.domain_adaptation(run_dir=run_dir)
+
+        sensor_params, _ = contact_model.bo.best_observed("slide")
+        if os.environ.get("DIFFTACTILE_SKIP_VEIN_BO", "0") != "1":
+            _, vein_best = contact_model.domain_adaptation_vein(run_dir=run_dir)
+            if vein_best is not None:
+                # MERGE, do not replace. The vein stage fits only the contact
+                # stiffness, so its parameter dict alone does not describe the
+                # configuration that ran - the sensor material came from stage 1.
+                # Validating the vein dict by itself recorded a provenance that
+                # could not be reproduced from the JSON.
+                final_params = dict(sensor_params)
+                final_params.update(vein_best["params"])
+                label = "final_vein"
+        if final_params is None:
+            final_params, label = dict(sensor_params), "final_slide"
+    else:
+        raise SystemExit(
+            f"DIFFTACTILE_DA_MODE={mode!r} is not recognised; "
+            f"use 'joint' or 'staged'."
+        )
+
+    if final_params is None:
+        print("\nNo usable configuration was found - skipping validation.")
+    else:
+        contact_model.validate_final_params(final_params, run_dir, label=label)
+
     print(f"\nDomain adaptation took {time.perf_counter() - start:.2f} s")
     print(f"All artifacts: {run_dir}")
 
 
+def record_da_trajectories_main():
+    """Entrypoint: run the four DA interactions once each and record them.
+
+    A VISUALISATION entrypoint, not a calibration one. It runs press / twist_z /
+    twist_x / slide a single time at the parameters already in
+    `system-params.json` and records the default camera's view to .mp4 - use it
+    to see what the simulator is actually doing. `domain_adaptation_main()` is
+    the one that searches for parameters.
+
+    Every run writes to its OWN timestamped directory under
+    difftactile/output/da_recordings/<YYYYmmdd-HHMMSS>/, so runs accumulate
+    rather than overwrite - the same convention the BO runs use.
+
+    NEEDS A DISPLAY. Frames are read from the GGUI colour buffer, and Taichi's
+    offscreen path segfaults in this image, so there is no headless route.
+
+    Environment:
+        DIFFTACTILE_VIDEO_FPS    output frame rate (default 30)
+        DIFFTACTILE_VIDEO_SCOPE  both (default) / per-trajectory / combined
+        DIFFTACTILE_DA_MAX_TIMESTEPS  per-trajectory cap (default 400)
+        DIFFTACTILE_VEIN         1 to embed the subsurface vein (default off,
+                                 matching domain adaptation - the reference
+                                 photographs are of a plain phantom)
+    """
+    run_dir = repo_path(
+        f"difftactile/output/da_recordings/{time.strftime('%Y%m%d-%H%M%S')}"
+    )
+    os.makedirs(run_dir, exist_ok=True)
+    print(f"Run directory: {run_dir}")
+
+    if is_headless():
+        raise SystemExit(
+            "This entrypoint records the GGUI window, which needs a display.\n"
+            "DISPLAY is unset (or DIFFTACTILE_HEADLESS=1), and Taichi GGUI "
+            "segfaults offscreen in this image, so there is no headless route."
+        )
+
+    # Reproducible: generate_trajectories() randomises the interactions.
+    seed = seed_everything(deterministic_torch=False)
+    print(f"Seed: {seed} (override with DIFFTACTILE_SEED)")
+
+    if RUN_ON_LAB_MACHINE:
+        ti.init(
+            debug=False,
+            offline_cache=False,
+            log_level=ti.ERROR,
+            arch=ti.cuda,
+            device_memory_GB=float(os.environ.get("TI_DEVICE_MEMORY_GB", 9)),
+        )
+    else:
+        ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)
+
+    contact_model = Contact()
+
+    # No vein by default, matching domain_adaptation_main(): these are the same
+    # four interactions, and the real sensor photographs they correspond to were
+    # taken on a plain phantom. DIFFTACTILE_VEIN=1 puts it back, which is useful
+    # for SEEING what the inclusion does to the deformation - it is drawn yellow.
+    if os.environ.get("DIFFTACTILE_VEIN", "0") == "1":
+        contact_model.collision_ixs = active_collision_pairs(True)
+        print("Vein ENABLED (drawn yellow)")
+    else:
+        contact_model.collision_ixs = active_collision_pairs(False)
+
+    contact_model.visualisation_set_up_gui()
+    # Replaces the four TRAINING trajectory types with the four DA interactions,
+    # in the order the manuscript's panels (a)-(d) expect.
+    contact_model.generate_trajectories()
+    contact_model.trajectory_ix[None] = 0
+    contact_model.set_up_initial_positions_state_and_trajectory()
+    contact_model.reset_pid_controller()
+    contact_model.reset_exp_sim_traj()
+    contact_model.get_keypoint_indices_and_validate()
+
+    start = time.perf_counter()
+    contact_model.record_da_trajectories(run_dir=run_dir)
+    print(f"\nRecording took {time.perf_counter() - start:.2f} s")
+    print(f"All artifacts: {run_dir}")
+
+
 def main():
+    # Seed BEFORE anything stochastic runs, so a collected dataset is reproducible.
+    #
+    # Training-data collection is heavily randomised by design - that randomness
+    # IS the dataset's variety - but it was drawn from an unseeded `NP_RNG`
+    # (main/constants.py), so two runs of the same command produced different
+    # trajectories and neither could be regenerated. What this reaches:
+    #
+    #   * generate_trajectories() / generate_random_state_dicts() - the sensor
+    #     poses, press depths, slide directions and rotations of every trial.
+    #   * randomise_contact_params() - the per-trial sensor<->vein contact
+    #     stiffness and damping (pair index 2).
+    #   * the NP_RNG.permutation() over collision_ixs in the contact loop.
+    #
+    # Collection takes ~2 h 45 m for the full 800 trials, so being unable to
+    # reproduce a dataset was expensive: any question about a published trial
+    # ("which parameters produced this?") could only be answered by keeping the
+    # .npz files forever. With a fixed seed the run itself is the record.
+    #
+    # NOTE this changes which dataset a default run produces - it is a different
+    # draw, not the previously-shipped one. The PUBLISHED dataset predates this
+    # and cannot be regenerated by any seed; restore it from the Zenodo bundle
+    # rather than expecting `DIFFTACTILE_SEED=42` to rebuild it.
+    #
+    # `deterministic_torch=False`: no torch in this path (the simulator is
+    # Taichi), so the deterministic-kernel switches would cost startup work and
+    # set CUBLAS_WORKSPACE_CONFIG for nothing.
+    seed = seed_everything(deterministic_torch=False)
+    print(f"Seed: {seed} (override with DIFFTACTILE_SEED)")
+
     if RUN_ON_LAB_MACHINE:
         ti.init(
             debug=False,

@@ -13,6 +13,18 @@
 # machinery supporting it has been removed from the codebase. BO treats the
 # simulator as a black box, so only forward simulation is needed.
 #
+# THE SEARCH SPACE IS LOG-SCALED for the parameters that span decades - Young's
+# modulus and the three contact stiffness/damping coefficients. Each is mapped
+# "log-transform then min-max" into [0, 1] (difftactile/data_analysis/experiment/
+# bo_gp.py, BoGp.LOG_SCALED), so every decade gets an equal share of the range
+# the GP searches and a fixed MULTIPLICATIVE change means the same thing
+# anywhere in it. Poisson's ratio and the friction coefficient are bounded
+# ratios on a natural additive scale, so they stay linear. Because a log needs a
+# strictly positive lower bound, the three contact coefficients are floored at
+# 5e-2 rather than 0 - zero contact stiffness is a degenerate configuration
+# anyway. Their upper bounds were raised 5e1 -> 5e2 at the same time, since the
+# adopted configuration sat hard against the old ceiling.
+#
 # Run this INSIDE the container (see docker/docker-run.sh + docker/docker-connect.sh).
 # It needs Taichi and a GPU, so there is no bare-metal path. Everything is
 # written to disk, so a display is optional.
@@ -46,7 +58,18 @@
 #                                 acquisition function takes over (default 4).
 #                                 The GP needs a few samples before it can
 #                                 propose usefully.
-#   DIFFTACTILE_DA_MAX_TIMESTEPS  safety cap on each forward pass (default 400).
+#   DIFFTACTILE_DA_MAX_TIMESTEPS_NO_VEIN
+#                                 safety cap on a VESSEL-ABSENT forward pass
+#                                 (default 200). That objective is measured at
+#                                 the trajectory's apex, so the run has to reach
+#                                 it; `slide` is the only trajectory that hits
+#                                 the cap at all.
+#   DIFFTACTILE_DA_MAX_TIMESTEPS_VEIN
+#                                 safety cap on a VESSEL-PRESENT forward pass
+#                                 (default 400). That objective short-circuits
+#                                 as soon as the vessel passes under the sensor
+#                                 centre, so this is only a backstop for a
+#                                 vessel that never arrives.
 #   DIFFTACTILE_SNAPSHOT_DIR      render the 3D scene periodically to PNGs, to
 #                                 check a trajectory by eye. Needs a DISPLAY:
 #                                 Taichi GGUI segfaults offscreen in this image.

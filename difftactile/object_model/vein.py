@@ -103,6 +103,63 @@ class Vein:
                 ]
             )
     
+    def xy_footprint(self):
+        """The vein's projection onto the xy plane: (x_min, x_max, y_min, y_max).
+
+        ANALYTICAL, not derived from the particle cloud. The vein is a cylinder
+        of radius `r` and length `h` whose pose rotates its local axis onto world
+        +x (the quaternion in `vein_pose` is a 90-degree rotation about y), so
+        the centreline runs from `pose[:3]` to `pose[:3] + [h, 0, 0]` - exactly
+        as `initialise_centerline_particles` constructs it. Projected onto xy a
+        cylinder lying flat along x is a rectangle:
+
+            x in [x0, x0 + h]        the length of the cylinder
+            y in [y0 - r, y0 + r]    its diameter, seen from above
+
+        Verified against the mesh: the particle cloud spans x [0.095, 0.295],
+        y [0.185, 0.205], z [0.050, 0.070], which is exactly this rectangle for
+        r = 0.01 m, h = 0.2 m at pose [0.095, 0.195, 0.06].
+
+        Using the analytical form rather than the particles' bounding box keeps
+        the region fixed and exact - the cloud's extent depends on mesh
+        resolution, and the vein does not deform, so there is nothing to gain
+        from re-measuring it.
+        """
+        x0, y0 = float(self.pose[0]), float(self.pose[1])
+        return (x0, x0 + self.h, y0 - self.r, y0 + self.r)
+
+    def apex_point(self):
+        """Point p: the top of the curved wall, at the cylinder's mid-length.
+
+        Derived analytically from the pose, radius and length - no particles are
+        consulted, so the answer does not depend on mesh resolution.
+
+        Construction, following the definition:
+          * the cylinder lies flat along +x from `pose[:3]`, so its xy projection
+            is the rectangle x in [x0, x0+h], y in [y0-r, y0+r];
+          * that rectangle's centre is (x0 + h/2, y0);
+          * the CURVED wall (not the two flat end caps) has exactly two points
+            projecting there - directly above and below the axis, at z0 + r and
+            z0 - r;
+          * the one with the larger z is the apex.
+
+        So p = (x0 + h/2, y0, z0 + r) = (0.195, 0.195, 0.070) for the shipped
+        geometry - the highest point of the vessel, half way along it, which is
+        where a sensor sliding across would first meet it.
+        """
+        x0, y0, z0 = (float(self.pose[0]), float(self.pose[1]),
+                      float(self.pose[2]))
+        return np.array([x0 + self.h / 2.0, y0, z0 + self.r], dtype=float)
+
+    def max_z(self):
+        """The vein's highest z, analytically: the axis height plus the radius.
+
+        The cylinder lies flat along +x at height `pose[2]`, so its topmost
+        surface is one radius above the axis. Verified against the mesh: the
+        particle cloud's max z is 0.07000 for pose z = 0.06 and r = 0.01.
+        """
+        return float(self.pose[2]) + self.r
+
     def compute_yz_centre(self):
         centre_B = np.array([0, 0, 0], dtype=float)
         centre_B_h = np.append(centre_B, 1.0)

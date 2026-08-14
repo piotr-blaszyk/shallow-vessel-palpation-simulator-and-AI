@@ -13,7 +13,7 @@
         "single_material": {
             "density": 1.100e+03,
             "poissons_ratio": 4.970e-01,
-            "youngs_modulus": 1.393e+05
+            "youngs_modulus": 8.813592e+05
         },
         "collision_search_distance": 5.000e+00,
         "keypoint_search_z_threshold": 5.000e-03,
@@ -51,12 +51,14 @@
         "particle_spacing": 5.000e-03
     },
     "contact": {
-        "dt": 1.270e-06,
         "dt_override": 1.000e-05,
+        "_contact_pair_index": "0 = sensor<->phantom, 1 = unused, 2 = sensor<->vein",
+        "_pair_0_note": "The sensor<->phantom pair is OFF BY DEFAULT because the phantom's particles are pinned, so it does not deform and the sensor effectively ghosts through it. The coefficients below are the real, pre-existing values and are used only when the pair is enabled - set enable_phantom_contact_pair below, or DIFFTACTILE_PHANTOM_CONTACT=1, to turn it on (e.g. as a sanity check that contact resolution works at all).",
+        "enable_phantom_contact_pair": false,
         "normal_stiffness": [
             44.8,
             0,
-            50000.0
+            94908.30700981515
         ],
         "tangential_stiffness": [
             3.9,

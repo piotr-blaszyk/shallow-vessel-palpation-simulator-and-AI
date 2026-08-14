@@ -1305,6 +1305,42 @@ interpreting the simulator's output correctly. The remainder are known rough edg
 
 ---
 
+## Domain-adaptation reference photographs
+
+The four domain-adaptation interactions are calibrated against **single photographs** of the
+real ViTacTip sensor pressed into the silicone phantom — one per interaction, not videos. Each
+captures the sensor at that interaction's **apex**, which is why `domain_adaptation.sh` scores
+by apex MAE rather than over a whole trajectory: one frame per interaction is all the ground
+truth there is.
+
+All five live in `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/` and
+are wired up in the `files` block of `difftactile/system_params/system-params.json`.
+
+| Config key | Path (relative to repository root) |
+|---|---|
+| `da_press` | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/press_press_depth=4_angle=10_slide_length=50_timestamp=2025-08-30-21-23-31.jpg` |
+| `da_twist_z` | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/twist_z_press_depth=4_angle=90_slide_length=50_timestamp=2025-08-30-21-26-57.jpg` |
+| `da_twist_x` | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/twist_x_press_depth=2_angle=20_slide_length=50_timestamp=2025-08-30-21-34-40.jpg` |
+| `da_slide` | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/slide_press_depth=3_angle=10_slide_length=50_timestamp=2025-08-30-21-49-26.png` |
+| `flat_sensor_default_state` | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/press_press_depth=0_angle=10_slide_length=50_timestamp=2025-08-30-21-23-00.jpg` |
+
+The filename encodes the capture settings — `press_depth`, `angle` and `slide_length` — and the
+timestamp. The last row is the **undeformed** reference (press depth 0), not an interaction.
+Note `da_slide` is the only `.png`; the rest are `.jpg`.
+
+`extract_real_marker_positions()` turns these into `difftactile/output/da_<name>.npz`, which
+holds the marker positions the MAE is actually computed against; `domain_adaptation_main()`
+calls it automatically and skips any that already exist. The red/green alignment overlays a run
+writes (`da_overlay_<name>.png`, manuscript Fig. 5) compare the simulated markers against
+exactly these photographs.
+
+**These are not the GNN training data.** The silicone dataset under
+`difftactile/manual_or_experimental_data/silicone_training_data/` is a separate experiment — a
+raster scan of the phantom, stored as `.avi` videos plus `.npz` metadata — and is unrelated to
+these four calibration images.
+
+---
+
 ## Citation
 
 This work builds on DiffTactile. If you use this code, please cite the original simulator:

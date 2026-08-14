@@ -157,6 +157,23 @@ copy_file "difftactile/output/vitactip_points_E.pkl"
 # align its contact model against the real sensor (main.py load_system_identification_data).
 copy_tree "difftactile/output/marker_tracker/domain-adaptation-vascular-markers"
 
+# Published domain-adaptation BO runs. These are the fitted searches behind the
+# adopted simulator parameters: the per-iteration history, the GP observations
+# (enough to refit the surrogates without re-simulating), the convergence figure
+# and the alignment overlays.
+#
+# Deliberately EXCLUDES the `snapshots/` subdirectory, which is ~16 MB of
+# rendered PNGs per run and is regenerable from the recorded parameters - it is
+# a debugging aid, not an artifact. The JSON and the overlays are what the
+# results depend on, and they are tens of KB.
+#
+# The filter uses `! -path` rather than `-prune ... -print`: copy_tree appends
+# its own `-print0` for tar, and an inner `-print` would make find emit
+# newline-separated names into a `tar --null` reader, which mangles every path.
+copy_tree "difftactile/output/domain_adaptation_published" \
+    '(' -name '*.json' -o -name '*.png' -o -name '*.npz' -o -name '*.csv' ')' \
+    -a ! -path '*/snapshots/*'
+
 # Ship the manifest and the restore script inside the archive too, so the
 # download is self-describing even if separated from the repository.
 cp "${SCRIPT_DIR}/MANIFEST.md" "${BUNDLE}/MANIFEST.md" 2>/dev/null || true

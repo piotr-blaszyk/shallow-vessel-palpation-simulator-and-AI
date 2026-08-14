@@ -28,7 +28,7 @@
         }
     },
     "contact": {
-        "dt": "s",
+        "dt_override": "s",
         "normal_stiffness": "N/m",
         "normal_damping": "N*s/m",
         "tangential_stiffness": "N/m",
