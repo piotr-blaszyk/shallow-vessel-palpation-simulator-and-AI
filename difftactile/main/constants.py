@@ -57,20 +57,4 @@ def _absolutise_file_paths(files):
 
 _absolutise_file_paths(SYSTEM_PARAMS.files)
 
-
-# Taichi allocates a field's .grad buffers at construction time, from
-# `meta.enable_grad`, so whether gradients exist is fixed before any simulation
-# runs and cannot be toggled later. The shipped value is 0: training-data
-# collection never differentiates, and the gradient buffers roughly double the
-# GPU memory the simulator needs.
-#
-# Domain adaptation DOES differentiate - it optimises contact parameters against
-# real marker positions - so it needs them. Rather than flipping the shared JSON
-# (which would make every `script_main` collection run pay for buffers it never
-# reads), DIFFTACTILE_ENABLE_GRAD=1 turns them on for the one process that
-# wants them. `domain_adaptation.sh` sets it; nothing else does.
-_enable_grad_override = os.environ.get("DIFFTACTILE_ENABLE_GRAD")
-if _enable_grad_override is not None:
-    SYSTEM_PARAMS.meta.enable_grad = int(_enable_grad_override)
-
 NP_RNG = np.random.default_rng()

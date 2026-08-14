@@ -45,10 +45,10 @@ class ViTacTip:
         )
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.vitactip.rayleigh_damping_beta
         self.mass_density = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
-        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.mu = ti.field(dtype=ti.f32, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.lam = ti.field(dtype=ti.f32, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.mu = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
+        self.lam = ti.field(dtype=ti.f32, shape=(), needs_grad=False)
         self.mass_density[None] += SYSTEM_PARAMS.vitactip.single_material.density
         self.youngs_modulus[None] = (
             SYSTEM_PARAMS.vitactip.single_material.youngs_modulus
@@ -152,13 +152,13 @@ class ViTacTip:
         )
         self.triangles.from_numpy(surface_triangles.astype(np.int32))
         self.projection_2d_dome_surface_nodes_deformed = ti.Vector.field(
-            2, float, self.dome_surface_node_tags.shape[0], needs_grad=SYSTEM_PARAMS.meta.enable_grad
+            2, float, self.dome_surface_node_tags.shape[0], needs_grad=False
         )
         self.projection_2d_dome_surface_nodes_undeformed = ti.Vector.field(
             2, float, self.dome_surface_node_tags.shape[0], needs_grad=False
         )
         self.projection_2d_dome_surface_nodes_deformed_z = ti.field(
-            float, self.dome_surface_node_tags.shape[0], needs_grad=SYSTEM_PARAMS.meta.enable_grad
+            float, self.dome_surface_node_tags.shape[0], needs_grad=False
         )
         self.clock_arms_node_idxs = ti.field(int, (2,), needs_grad=False)
         self.tip_ix = ti.field(
@@ -282,7 +282,7 @@ class ViTacTip:
         )
         self.num_markers = len(interpolated_marker_positions_2d)
         self.deformed_markers = ti.Vector.field(
-            2, float, self.num_markers, needs_grad=SYSTEM_PARAMS.meta.enable_grad
+            2, float, self.num_markers, needs_grad=False
         )
         self.undeformed_markers = ti.Vector.field(
             2, float, self.num_markers, needs_grad=False
@@ -332,13 +332,13 @@ class ViTacTip:
             3,
             float,
             shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices),
-            needs_grad=SYSTEM_PARAMS.meta.enable_grad,
+            needs_grad=False,
         )
         self.vertex_velocities = ti.Vector.field(
             3,
             float,
             shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices),
-            needs_grad=SYSTEM_PARAMS.meta.enable_grad,
+            needs_grad=False,
         )
         self.initial_deformation_gradient_inverse = ti.Matrix.field(
             3, 3, float, self.num_tetrahedra, needs_grad=False
@@ -347,7 +347,7 @@ class ViTacTip:
             3,
             dtype=ti.f32,
             shape=(SYSTEM_PARAMS.contact.num_sub_frames, self.num_vertices),
-            needs_grad=SYSTEM_PARAMS.meta.enable_grad,
+            needs_grad=False,
         )
         self.total_surface_force = ti.Vector.field(
             3, float, shape=(SYSTEM_PARAMS.contact.num_sub_frames), needs_grad=False
@@ -925,17 +925,6 @@ class ViTacTip:
             for j in range(self.vertices_deformed_A.shape[1]):
                 self.vertices_deformed_A[i, j] = ti.Vector([0.0, 0.0, 0.0])
                 self.vertex_velocities[i, j] = ti.Vector([0.0, 0.0, 0.0])
-
-    @ti.kernel
-    def clear_grad(self):
-        self.deformed_markers.grad.fill(0.0)
-        self.vertices_deformed_A.grad.fill(0.0)
-        self.vertex_velocities.grad.fill(0.0)
-        self.contact_forces_on_vertices.grad.fill(0.0)
-        self.mu.grad.fill(0.0)
-        self.lam.grad.fill(0.0)
-        self.youngs_modulus.grad.fill(0.0)
-        self.poissons_ratio.grad.fill(0.0)
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):

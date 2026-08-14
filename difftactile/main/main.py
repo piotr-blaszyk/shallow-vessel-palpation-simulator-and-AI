@@ -3,6 +3,7 @@ import json
 import math
 import os
 import pickle
+import shutil
 import time
 from pathlib import Path
 import time
@@ -26,6 +27,7 @@ from difftactile.data_analysis.experiment.bo_gp import *
 from difftactile.main.apply_scaling import ScientificNotationEncoder
 from difftactile.main.cfl_and_contact_params_estimation import *
 from difftactile.main.constants import *
+from difftactile.main.paths import repo_path
 from difftactile.main.constants_bo_gp import *
 from difftactile.main.synthetic_image_generator import *
 from difftactile.object_model.phantom import Phantom
@@ -76,6 +78,12 @@ HEADLESS = is_headless()
 # to 0 to preserve that committed behaviour; set to 1 to collect the pair.
 COLLECT_VEIN_PAIR = os.environ.get("DIFFTACTILE_VEIN_PAIR", "0") == "1"
 
+# Marker-distance conversion for reporting. The sensor's markers sit on a grid
+# with ~55 px spacing at 1920x1080, and that spacing is 2 mm on the real sensor,
+# so a pixel error converts to millimetres by this factor. Used only for display -
+# every stored MAE is in pixels.
+PX_TO_MM = 2.0 / 55.0
+
 
 def _trajectory_indices():
     """Which trajectory types training-data collection should execute.
@@ -119,7 +127,6 @@ class Contact:
         self.set_up_collision_detection()
         self.set_up_pid()
         self.set_up_snapshot()
-        self.set_up_loss_computation()
         self.visualisation_initialise()
         self.training_data_collection_initialise()
         self.foo()
@@ -133,22 +140,22 @@ class Contact:
     #         json.dump(target_data, f, indent=4)
     #     self.da_losses = []
     
-    def handle_da_loss(self, ts):
-        trajectory_ix = self.trajectory_ix[None]
-        trajectory_name = self.trajectory_names[trajectory_ix]
-        if trajectory_name == 'slide':
-            target_timestep = self.photo_timesteps[trajectory_name]
-            act_now = ts == target_timestep
-            if act_now:
-                self.compute_da_loss()
-        else:
-            act_now = self.last_target_reached[None] == 1
-            if act_now:
-                self.compute_da_loss()
-        return act_now
-    
-    def compute_da_loss(self):
+    def compute_da_loss(self, out_dir=None):
+        """MAE between simulated and real markers at the current pose.
+
+        Appends the value (in pixels) to `self.da_losses` and writes the
+        red/green alignment overlay. `out_dir` redirects that overlay, so a
+        timestamped run keeps its own copy instead of overwriting the shared one.
+        """
         h = int(SYSTEM_PARAMS.fisheye_model.target_image_height)
+        # Projects the deformed markers into image space and fills
+        # `sim_markers_deformed`, which the MAE below reads. Despite the name it
+        # is NOT optional here: it is the projection step, and the tactile-readout
+        # rendering merely happens to reuse it. Calling it explicitly is what
+        # keeps the measurement independent of whether a window is being drawn -
+        # headless runs used to score against an all-zero array, giving a
+        # constant ~1169 px MAE that no parameter change could move.
+        self.visualisation_prepare_tactile_readout_data_fp()
         self.move_og_resolution()
         sim_points = self.sim_markers_deformed.to_numpy()
         self.move_ti_resolution()
@@ -162,10 +169,14 @@ class Contact:
         a = sim_points_reordered
         b = exp_points
         mae = np.linalg.norm(a-b, axis=1).mean()
+        if out_dir is None:
+            img_out = self.da_overlay.format(trajectory_name)
+        else:
+            img_out = os.path.join(out_dir, f"da_overlay_{trajectory_name}.png")
         self.generate_validation_img(
             a, b,
             img_in=self.default_photo,
-            img_out=self.da_overlay.format(trajectory_name),
+            img_out=img_out,
         )
         self.da_losses.append(mae)
     
@@ -633,22 +644,6 @@ class Contact:
         point_A = self.vitactip.project_E_to_A(point_E)
         self.validation_point_3d_A[None] = point_A
 
-    def set_up_loss_computation(self):
-        self.prev_loss = ti.field(float, (), needs_grad=False)
-        self.loss = ti.field(float, (), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.loss_1 = ti.field(float, (), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.loss_2 = ti.field(float, (), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.trajectory_loss = ti.field(float, (), needs_grad=False)
-        self.batch_loss = ti.field(float, (), needs_grad=False)
-        self.batch_loss_1 = ti.field(float, (), needs_grad=False)
-        self.batch_loss_2 = ti.field(float, (), needs_grad=False)
-        self.squared_error_sum_1 = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.squared_error_sum_2 = ti.field(dtype=float, shape=(), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.error_sum_1 = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.error_sum_2 = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.mean_error_1 = ti.field(dtype=float, shape=(), needs_grad=False)
-        self.mean_error_2 = ti.field(dtype=float, shape=(), needs_grad=False)
-
     def set_up_collision_detection(self):
         self.triangle_ix_contact_0 = ti.field(
             dtype=int,
@@ -683,7 +678,6 @@ class Contact:
         self.timestamp = time.strftime('%Y%m%d_%H%M%S')
         self.collision2_contact_flat = ti.field(dtype=int, shape=(), needs_grad=False)
         self.target_path = SYSTEM_PARAMS.files.bo_gp_target_json
-        self.use_bo = SYSTEM_PARAMS.meta.load_params_from_bo == 1
         self.da_overlay = SYSTEM_PARAMS.files.da_overlay
         self.photo_timesteps = {
             # 'press': 35,
@@ -701,10 +695,10 @@ class Contact:
         self.trajectory_ix = ti.field(dtype=int, shape=(), needs_grad=False)
         self.dt = ti.field(dtype=float, shape=(), needs_grad=False)
         self.dt[None] = SYSTEM_PARAMS.contact.dt_override
-        self.normal_stiffness = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.normal_damping = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.tangential_stiffness = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.coulomb_friction_coeff = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.normal_stiffness = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=False)
+        self.normal_damping = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=False)
+        self.tangential_stiffness = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=False)
+        self.coulomb_friction_coeff = ti.field(dtype=float, shape=(self.num_contact_pairs,), needs_grad=False)
         self.normal_stiffness.from_numpy(np.array(SYSTEM_PARAMS.contact.normal_stiffness))
         self.normal_damping.from_numpy(np.array(SYSTEM_PARAMS.contact.normal_damping))
         self.tangential_stiffness.from_numpy(np.array(SYSTEM_PARAMS.contact.tangential_stiffness))
@@ -1305,84 +1299,6 @@ class Contact:
         self.phantom.g2p(f)
         self.vitactip.update_external_forces(f)
 
-    def update_grad(self, f):
-        self.vitactip.update_external_forces.grad(f)
-        self.phantom.g2p.grad(f)
-        self.phantom.grid_op.grad(f)
-        self.clamp_grid(f)
-        self.collision0.grad(f)
-        self.vitactip.update_internal_forces.grad(f)
-        self.phantom.p2g.grad(f)
-        # self.phantom.svd_of_trial_deformation_gradient_grad(f)
-        self.phantom.compute_trial_deformation_gradient.grad(f)
-
-    @ti.kernel
-    def clamp_grid(self, f: ti.i32):
-        for i in range(self.vitactip.num_vertices):
-            self.vitactip.vertices_deformed_A.grad[f, i] = ti.math.clamp(
-                self.vitactip.vertices_deformed_A.grad[f, i], -1000.0, 1000.0
-            )
-            self.vitactip.vertex_velocities.grad[f, i] = ti.math.clamp(
-                self.vitactip.vertex_velocities.grad[f, i], -1000.0, 1000.0
-            )
-        return
-        for i, j, k in ti.ndrange(
-            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_x,
-            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_y,
-            SYSTEM_PARAMS_COMPUTED.phantom.n_grid_z,
-        ):
-            self.phantom.grid_node_mass.grad[f, i, j, k] = ti.math.clamp(
-                self.phantom.grid_node_mass.grad[f, i, j, k], -1000.0, 1000.0
-            )
-        
-    @ti.kernel
-    def clear_grad_helper(self):
-        self.loss_1.grad.fill(0.0)
-        self.loss_2.grad.fill(0.0)
-        self.squared_error_sum_1.grad.fill(0.0)
-        self.squared_error_sum_2.grad.fill(0.0)
-        self.normal_stiffness.grad.fill(0.0)
-        self.normal_damping.grad.fill(0.0)
-        self.tangential_stiffness.grad.fill(0.0)
-        self.coulomb_friction_coeff.grad.fill(0.0)
-        self.vitactip_youngs_modulus_log.grad.fill(0)
-        self.phantom_youngs_modulus_0_log.grad.fill(0)
-        self.phantom_youngs_modulus_1_log.grad.fill(0)
-        self.vitactip_poissons_ratio_log.grad.fill(0)
-        self.phantom_poissons_ratio_0_log.grad.fill(0)
-        self.phantom_poissons_ratio_1_log.grad.fill(0)
-        self.coulomb_friction_coeff_log.grad.fill(0)
-        self.normal_stiffness_log.grad.fill(0)
-        self.tangential_stiffness_log.grad.fill(0)
-        self.normal_damping_log.grad.fill(0)
-
-    def clear_grad(self):
-        self.clear_grad_helper()
-        self.vitactip.clear_grad()
-        self.phantom.clear_grad()
-    
-    @ti.kernel
-    def reset_loss(self):
-        self.batch_loss[None] += self.loss[None]
-        self.batch_loss_1[None] += self.loss_1[None]
-        self.batch_loss_2[None] += self.loss_2[None]
-        self.loss.fill(0.0)
-        self.loss_1.fill(0.0)
-        self.loss_2.fill(0.0)
-        self.squared_error_sum_1.fill(0.0)
-        self.squared_error_sum_2.fill(0.0)
-        self.error_sum_1.fill(0.0)
-        self.error_sum_2.fill(0.0)
-        self.mean_error_1.fill(0.0)
-        self.mean_error_2.fill(0.0)
-    
-    @ti.kernel
-    def reset_batch_loss(self):
-        self.trajectory_loss[None] += self.batch_loss[None]
-        self.batch_loss[None] = 0
-        self.batch_loss_1[None] = 0
-        self.batch_loss_2[None] = 0
-
     def reset_state(self):
         self.vitactip.reset_state()
         self.phantom.reset_state()
@@ -1404,69 +1320,6 @@ class Contact:
         dy /= SYSTEM_PARAMS.fisheye_model.target_image_height
         squared_error = dx * dx + dy * dy
         return ti.sqrt(squared_error)
-
-    @ti.kernel
-    def compute_marker_loss_1(self):
-        for i in range(self.vitactip.num_markers):
-            if self.interpolation_valid[None] == 1:
-                exp_ix = self.sim_to_exp_markers[i]
-                if exp_ix != -1:
-                    sim_marker = self.vitactip.deformed_markers[i]
-                    exp_marker = self.marker_position_exp[exp_ix]
-                    self.squared_error_sum_1[None] += self.dist(sim_marker, exp_marker) ** 2
-                    self.error_sum_1[None] += self.dist(sim_marker, exp_marker)
-
-    @ti.kernel
-    def compute_marker_loss_2(self):
-        if self.interpolation_valid[None] == 1:
-            rmse = ti.sqrt(self.squared_error_sum_1[None] / self.marker_position_exp.shape[0])
-            self.loss_1[None] += SYSTEM_PARAMS.optimisation.loss_1_weight * rmse
-            self.mean_error_1[None] += self.error_sum_1[None] / self.marker_position_exp.shape[0]
-    
-    @ti.kernel
-    def compute_marker_loss_3(self):
-        if (
-            self.interpolation_valid[None] == 1
-            and self.trajectory_ix[None] == 1
-            and self.cur_exp_frame[None] >= self.traj_1_critical_frames_exp[0]
-            and self.cur_exp_frame[None] < self.traj_1_critical_frames_exp[1]
-        ):
-            for i in range(self.traj_1_exp_marker_pairs.shape[0]):
-                a_exp_ix = self.traj_1_exp_marker_pairs[i][0]
-                b_exp_ix = self.traj_1_exp_marker_pairs[i][1]
-                a_sim_ix = self.exp_to_sim_markers[a_exp_ix]
-                b_sim_ix = self.exp_to_sim_markers[b_exp_ix]
-
-                a_exp = self.marker_position_exp[a_exp_ix]
-                b_exp = self.marker_position_exp[b_exp_ix]
-                a_sim = self.vitactip.deformed_markers[a_sim_ix]
-                b_sim = self.vitactip.deformed_markers[b_sim_ix]
-
-                dist_exp = self.dist(a_exp, b_exp)
-                dist_sim = self.dist(a_sim, b_sim)
-
-                self.squared_error_sum_2[None] += (dist_exp - dist_sim) ** 2
-                self.error_sum_2[None] += abs(dist_exp - dist_sim)
-
-    @ti.kernel
-    def compute_marker_loss_4(self):
-        if (
-            self.interpolation_valid[None] == 1
-            and self.trajectory_ix[None] == 1
-            and self.cur_exp_frame[None] >= self.traj_1_critical_frames_exp[0]
-            and self.cur_exp_frame[None] < self.traj_1_critical_frames_exp[1]
-        ):
-            rmse = ti.sqrt(self.squared_error_sum_2[None] / self.traj_1_exp_marker_pairs.shape[0])
-            self.loss_2[None] += SYSTEM_PARAMS.optimisation.loss_2_weight * rmse
-            self.mean_error_2[None] += self.error_sum_2[None] / self.traj_1_exp_marker_pairs.shape[0]
-    
-    @ti.kernel
-    def compute_marker_loss_5(self):
-        if (
-            self.interpolation_valid[None] == 1
-        ):
-            self.loss[None] += -self.loss_1[None]
-            self.loss[None] += -self.loss_2[None]
 
     @ti.func
     def calculate_contact_force(
@@ -2395,13 +2248,6 @@ class Contact:
         for ss in range(SYSTEM_PARAMS.contact.num_sub_frames - 1):
             self.update(ss)
 
-    def backward_pass_common_part(self):
-        for ss in range(SYSTEM_PARAMS.contact.num_sub_frames - 2, -1, -1):
-            self.update_grad(ss)
-        # self.phantom.set_stiffness.grad()
-        # self.vitactip.set_up_system_params_2.grad()
-        # self.set_optimisation_params_from_log.grad()
-    
     def randomise_contact_params(self):
         self.normal_stiffness[2] = NP_RNG.uniform(5e3, 5e4)
         self.normal_damping[2] = NP_RNG.uniform(0, 100)
@@ -2493,13 +2339,66 @@ class Contact:
         if self.interpolation_valid[None] == 1:
             print(0)
 
-    def domain_adaptation(self):
-        losses_per_trajectory = []
-        for opts in range(SYSTEM_PARAMS.contact.num_opt_steps):
-            print(f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1}")
+    def domain_adaptation(self, num_iterations=None, run_dir=None):
+        """Bayesian-optimisation calibration of the simulator's material/contact
+        parameters against the real sensor.
+
+        One ITERATION = propose a parameter set, replay all four canonical
+        trajectories (press, twist_z, twist_x, slide) with it, and score it by the
+        aggregated MAE between simulated and real marker positions at each apex.
+        The first `num_random` iterations sample the space at random to seed the
+        Gaussian process; the rest are proposed by the acquisition function.
+
+        NO DIFFERENTIABLE SIMULATION. This used to run a Taichi backward pass and
+        a gradient-based optimiser over the same objective; that approach was
+        abandoned, and everything supporting it has been removed. The objective
+        is evaluated by forward simulation only, and BO treats it as a black box -
+        which is why it needs no gradients through the simulator at all.
+
+        Writes, under `run_dir`:
+            bo_all_params.json / bo_all_targets.json   every configuration tried
+            bo_results.json                            best config + full history
+            bo_convergence.png                         MAE vs iteration
+            da_overlay_<name>.png                      alignment, best config
+        """
+        num_iterations = num_iterations or _env_int(
+            "DIFFTACTILE_BO_ITERATIONS", SYSTEM_PARAMS.contact.num_opt_steps
+        )
+        num_random = min(
+            _env_int("DIFFTACTILE_BO_RANDOM", 4), max(num_iterations - 1, 1)
+        )
+        run_dir = run_dir or repo_path("difftactile/output")
+        os.makedirs(run_dir, exist_ok=True)
+        self.bo.set_run_dir(run_dir)
+
+        print(
+            f"\nBayesian optimisation: {num_iterations} iterations "
+            f"({num_random} random, then acquisition-driven), "
+            f"4 trajectories each.\n"
+        )
+
+        history = []
+        best = None
+        for it in range(num_iterations):
+            # Propose the next parameter set. Random first, to give the GP
+            # something to fit before it starts exploiting.
+            if it < num_random:
+                self.bo.my_suggest_random()
+                how = "random"
+            else:
+                self.bo.my_suggest_optimise()
+                how = "acquisition"
+            self.set_contact_params_from_bo()
+
+            print(f"=== iteration {it + 1}/{num_iterations} ({how}) ===")
+            for key, value in self.bo.params.items():
+                print(f"    {key:26s} {value:.6g}")
+
+            per_trajectory = {}
+            self.da_losses = []
+            diverged = False
             for i in range(self.trajectories.shape[0]):
-            # for i in range(1, 2):
-                print(f'trajectory {i}: {self.trajectory_names[i]}')
+                name = self.trajectory_names[i]
                 self.trajectory_ix[None] = i
                 self.set_up_initial_positions_state_and_trajectory()
                 self.reset_pid_controller()
@@ -2507,16 +2406,12 @@ class Contact:
                 self.reset_exp_sim_traj()
                 self.vitactip.extract_markers(0)
                 self.compute_mapping_between_experimental_and_sim_markers()
-                self.set_dt(verbose=True)
-                self.fp()
-                print("forward")
-                # Bounded, unlike the original `while last_target_reached != 1`.
-                # A safety cap, not the fix. The real cause of the old infinite
-                # loop was the missing copy_frame() below; with that in place the
-                # PID converges and the flag flips normally (press reaches its
-                # last target at ts 189). The cap only stops a future regression
-                # from spinning forever.
-                da_max_ts = int(os.environ.get("DIFFTACTILE_DA_MAX_TIMESTEPS", 400))
+                self.set_dt()
+
+                # Forward simulation to the trajectory's apex. Bounded so a
+                # controller regression cannot spin forever; the PID normally
+                # terminates this well before the cap.
+                da_max_ts = _env_int("DIFFTACTILE_DA_MAX_TIMESTEPS", 400)
                 ts = 0
                 while self.last_target_reached[None] != 1 and ts < da_max_ts:
                     self.pid_controller_1()
@@ -2526,185 +2421,149 @@ class Contact:
                     self.vitactip.set_pose_control_2()
                     self.vitactip.set_pose_control_3()
                     self.forward_pass_common_part(ts)
-                    # THE FIX that makes domain adaptation move the sensor at all.
-                    #
-                    # update() advances vertices_undeformed_A[frame] -> [frame+1]
-                    # across the sub-frames of one timestep, so the pose reached
-                    # at the end lives in frame num_sub_frames-1. copy_frame()
-                    # copies it back to frame 0, which is where the next
-                    # timestep's set_control_vel() and the PID both read from.
-                    # Without it every timestep restarts from the initial pose:
-                    # the measured position error was a CONSTANT 0.0982 forever.
-                    #
-                    # collect_training_data() has always called this; the DA loop
-                    # relied on memory_to_cache() instead, which was disabled
-                    # with a bare `return` in vitactip.memory_to_cache() (kept
-                    # that way - it is a memory optimisation for collection, and
-                    # the cache is only read by the backward pass).
+                    # Carries the pose reached at the end of this timestep back to
+                    # frame 0, which is where the next timestep reads from.
+                    # Without it every timestep restarts from the initial pose.
                     self.copy_frame()
-                    self.memory_to_cache(ts)
                     self.vitactip.extract_markers(
                         SYSTEM_PARAMS.contact.num_sub_frames - 1
                     )
                     self.visualisation_update_gui(ts)
-                    self.maybe_save_tactile_sensor_mesh_to_pickle(ts)
                     ts += 1
-                
-                total_ts = ts
 
-                # The overlay, at the APEX of the trajectory - the configuration
-                # the manuscript compares, and the pose the forward pass has just
-                # finished in. compute_da_loss() writes
-                # difftactile/output/da_overlay_<name>.png and appends the MAE
-                # between simulated and real marker positions.
+                # MAE at the apex, and the alignment overlay for this trajectory.
                 #
-                # Called here rather than through handle_da_loss(), which is the
-                # data-collection path: that only fires when `use_bo` is set and
-                # keys off a hardcoded photo timestep, neither of which applies
-                # to a standalone figure run.
-                self.compute_da_loss()
-                # compute_da_loss() appends the MAE it just measured. This is
-                # the number the manuscript reports (px at 1920x1080, and mm via
-                # the ~55 px inter-marker spacing = 2 mm), so print it rather
-                # than leaving it in a list nothing reads on this path.
+                # An extreme parameter set can make the FEM solve blow up, and
+                # the marker positions come back NaN - which the Hungarian
+                # reordering rejects with "matrix contains invalid numeric
+                # entries". That is a legitimate answer from the objective ("this
+                # configuration is unusable"), not a crash, so it is scored as a
+                # divergence and the search continues.
+                try:
+                    self.compute_da_loss(out_dir=run_dir)
+                except (ValueError, IndexError) as exc:
+                    print(f"    {name:9s} DIVERGED ({exc})")
+                    diverged = True
+                    break
                 mae_px = self.da_losses[-1]
-                px_to_mm = 2.0 / 55.0
+                if not np.isfinite(mae_px):
+                    print(f"    {name:9s} DIVERGED (non-finite MAE)")
+                    diverged = True
+                    break
+
+                # The collected trajectory itself: simulated marker positions at
+                # the apex, beside the real ones they are scored against. Saved
+                # per (iteration, trajectory) so a run's raw data survives for
+                # re-analysis without re-simulating - and because the run
+                # directory is timestamped, repeated runs accumulate rather than
+                # overwrite.
+                traj_dir = os.path.join(run_dir, "trajectories")
+                os.makedirs(traj_dir, exist_ok=True)
+                np.savez_compressed(
+                    os.path.join(traj_dir, f"iter{it:03d}_{name}.npz"),
+                    sim_markers=self.sim_markers_deformed.to_numpy(),
+                    exp_markers=np.load(self.da_npz_paths[name])["points"],
+                    mae_px=mae_px,
+                    timesteps=ts,
+                    params=json.dumps(dict(self.bo.params)),
+                )
+                per_trajectory[name] = mae_px
                 print(
-                    f"  {self.trajectory_names[i]}: MAE = {mae_px:.2f} px "
-                    f"({mae_px * px_to_mm:.2f} mm) over {total_ts} timesteps"
+                    f"    {name:9s} MAE = {mae_px:6.2f} px "
+                    f"({mae_px * PX_TO_MM:.2f} mm)  [{ts} timesteps]"
                 )
 
-                # FORWARD-ONLY MODE, and the default.
-                #
-                # Everything below this point is the parameter-OPTIMISATION half:
-                # backward pass, gradient accumulation, optimiser step. It cannot
-                # run in this repository - set_up_torch_params(), update_params(),
-                # set_optimisation_params_from_log() and
-                # save_gradients_for_calibration() were all deleted from main.py
-                # along with the optimiser and scheduler, though
-                # domain_adaptation() still calls them. They survive on the
-                # archival branch `domain-adaptation-vascular-multiple-trajectories`
-                # (~150 lines); porting them back is a separate job.
-                #
-                # The FIGURE does not need any of it. compute_da_loss() writes the
-                # sim-vs-real overlay during the forward pass above, and
-                # update_params() was already guarded by `if opts > 0`, so the
-                # first optimisation step never changed a parameter anyway. The
-                # published parameters are already in system-params.json - this
-                # run measures the alignment they produce, it does not re-derive
-                # them.
-                #
-                # So: skip the backward half unless someone deliberately asks for
-                # it. DIFFTACTILE_DA_OPTIMISE=1 opts in, and will fail on the
-                # missing methods until they are ported back.
-                if os.environ.get("DIFFTACTILE_DA_OPTIMISE", "0") != "1":
-                    continue
-
-                self.bp()
-                self.reset_loss()
-                self.batch_loss.fill(0.0)
-                self.clear_grad()
-                self.prev_loss[None] = 0.0
-                self.trajectory_loss[None] = 0.0
-                # continue
-                print("backward")
-                passes = 0
-                ts = total_ts-1
-                while ts >= 0:
-                    self.reset_loss()
-                    self.memory_from_cache(ts)
-                    self.forward_pass_common_part(ts)
-                    self.vitactip.extract_markers(
-                        SYSTEM_PARAMS.contact.num_sub_frames - 1
-                    )
-                    self.interpolate_experimental_frame(ts)
-                    self.compute_marker_loss_1()
-                    self.compute_marker_loss_2()
-                    if SYSTEM_PARAMS.optimisation.enable_loss_2 == 1:
-                        self.compute_marker_loss_3()
-                        self.compute_marker_loss_4()
-                    self.compute_marker_loss_5()
-                    self.visualisation_update_gui(ts)
-                    if False:
-                        print(f"mean error 1: {self.mean_error_1[None]}")
-                        print(f"mean error 2: {self.mean_error_2[None]}")
-                        print(f"exp frame: {self.cur_exp_frame[None]}")
-                        print(f"sim frame: {ts}")
-                    self.loss.grad[None] = 1.0
-                    self.compute_marker_loss_5.grad()
-                    if SYSTEM_PARAMS.optimisation.enable_loss_2 == 1:
-                        self.compute_marker_loss_4.grad()
-                        self.compute_marker_loss_3.grad()
-                    self.compute_marker_loss_2.grad()
-                    self.compute_marker_loss_1.grad()
-                    self.vitactip.extract_markers.grad(
-                        SYSTEM_PARAMS.contact.num_sub_frames - 1
-                    )
-                    self.backward_pass_common_part()
-                    passes += 1
-                    if (
-                        passes % SYSTEM_PARAMS.optimisation.mini_batch_size == 0
-                        or (SYSTEM_PARAMS.optimisation.mini_batch_size > total_ts and ts == 0)
-                    ):
-                        if SYSTEM_PARAMS.optimisation.calibrate_learning_rates == 1:
-                            self.save_gradients_for_calibration()
-                        print(f'mini batch loss: {self.batch_loss[None]:0.3e}')
-                        print(f'mini batch loss 1: {self.batch_loss_1[None]:0.3e}')
-                        print(f'mini batch loss 2: {self.batch_loss_2[None]:0.3e}')
-                        if opts > 0:
-                            self.update_params(ts)
-                        if self.retry:
-                            break
-                        self.reset_state()
-                        # self.set_optimisation_params_from_log()
-                        # self.print_params_short()
-                        self.set_dt(verbose=True)
-                        self.clear_grad()
-                        self.reset_batch_loss()
-                    if False:
-                        print()
-                    if not self.retry:
-                        ts -= 1
-                    else:
-                        self.retry = False
-                losses_per_trajectory.append(float(self.trajectory_loss[None]))
-            # Optimiser/scheduler exist only when the optimisation half runs;
-            # both were deleted from this repository (see the note above).
-            if os.environ.get("DIFFTACTILE_DA_OPTIMISE", "0") == "1":
-                previous_lr = self.optimiser.param_groups[-1]['lr']
-                if opts > 0:
-                    self.scheduler.step()
-                current_lr = self.optimiser.param_groups[-1]['lr']
-                print(f"lr: {previous_lr:0.3e} -> {current_lr:0.3e}")
+            if diverged:
+                # Penalise rather than drop it: the GP learns to avoid this
+                # region only if it is told the region is bad. The penalty is the
+                # top of the target normalisation range, so it maps to the worst
+                # possible score without distorting the scale.
+                aggregated = float(self.bo.target_min_max[1])
+                print(f"    diverged -> scored as {aggregated:.0f} px (penalty)")
+            else:
+                aggregated = float(np.mean(self.da_losses))
+            self.bo.my_register(aggregated)
+            record = {
+                "iteration": it,
+                "proposed_by": how,
+                "params": dict(self.bo.params),
+                "mae_px": aggregated,
+                "mae_mm": aggregated * PX_TO_MM,
+                "per_trajectory_px": per_trajectory,
+            }
+            history.append(record)
             print(
-                f"optimisation step: {opts} / {SYSTEM_PARAMS.contact.num_opt_steps - 1} done"
+                f"    aggregated MAE = {aggregated:.2f} px "
+                f"({aggregated * PX_TO_MM:.2f} mm)"
             )
-        print("optimisation loop done")
-        print(f"courant_number: {self.courant_number}")
-        losses_per_trajectory = np.array(losses_per_trajectory)
-        losses_per_opt_step = losses_per_trajectory.reshape(-1, 4).sum(axis=1)
-        xs = [
-            losses_per_opt_step,
-            losses_per_trajectory
-        ]
-        names = [
-            "per_opt_step",
-            "per_trajectory"
-        ]
-        for i in range(len(xs)):
-            x = xs[i]
-            plt.figure(figsize=(10, 6))
-            plt.plot(list(range(len(x))), x)
-            plt.gca().xaxis.set_major_locator(plt.MultipleLocator(1))
-            plt.grid(True)
-            plt.xlabel('batch index')
-            plt.ylabel('batch loss')
-            plt.title('batch loss over time')
-            # Written to disk unconditionally; the window is opt-in via
-            # DIFFTACTILE_INTERACTIVE=1 so a batch run never stops here.
-            finish_plot(plt, SYSTEM_PARAMS.files.losses.format(names[i]))
-        # self.save_final_params()
-        print("all done")
+
+            if not diverged and (best is None or aggregated < best["mae_px"]):
+                best = record
+                # Keep the overlays produced by the best configuration so far.
+                # Later iterations overwrite da_overlay_*.png, so the winning set
+                # is preserved under its own names.
+                for name in self.trajectory_names:
+                    src = os.path.join(run_dir, f"da_overlay_{name}.png")
+                    if os.path.exists(src):
+                        shutil.copyfile(
+                            src, os.path.join(run_dir, f"best_da_overlay_{name}.png")
+                        )
+                print(f"    ^ best so far")
+            print()
+
+        self.bo.write_to_file()
+        self._report_bo_results(history, best, run_dir)
+        return history, best
+
+    def _report_bo_results(self, history, best, run_dir):
+        """Print the BO outcome and write it to JSON and a convergence figure."""
+        print("=" * 70)
+        print(" Bayesian optimisation results")
+        print("=" * 70)
+        print(f"\nEvery configuration tried ({len(history)} total), worst to best:\n")
+        print(f"  {'iter':>4}  {'MAE px':>8}  {'MAE mm':>7}  {'by':>12}")
+        for r in sorted(history, key=lambda r: -r["mae_px"]):
+            print(
+                f"  {r['iteration']:>4}  {r['mae_px']:>8.2f}  "
+                f"{r['mae_mm']:>7.3f}  {r['proposed_by']:>12}"
+            )
+
+        if best is not None:
+            print(f"\nBest configuration (iteration {best['iteration']}):")
+            print(f"  aggregated MAE = {best['mae_px']:.2f} px "
+                  f"({best['mae_mm']:.3f} mm)")
+            for name, mae in best["per_trajectory_px"].items():
+                print(f"    {name:9s} {mae:6.2f} px ({mae * PX_TO_MM:.2f} mm)")
+            print("\n  parameters:")
+            for key, value in best["params"].items():
+                print(f"    {key:26s} {value:.6g}")
+            print(
+                "\n  To adopt these, copy them into system-params.json "
+                "(contact.* and the Young's modulus / Poisson's ratio entries)."
+            )
+
+        results_path = os.path.join(run_dir, "bo_results.json")
+        with open(results_path, "w") as f:
+            json.dump({"best": best, "history": history}, f, indent=4)
+        print(f"\nFull history: {results_path}")
+
+        # Convergence: MAE per iteration, with the running best. A flat running
+        # best means the search is not improving, which is the thing to see.
+        maes = [r["mae_px"] for r in history]
+        running_best = np.minimum.accumulate(maes) if maes else []
+        plt.figure(figsize=(10, 6))
+        plt.plot(range(len(maes)), maes, "o-", label="MAE this iteration")
+        plt.plot(range(len(maes)), running_best, "-", linewidth=3,
+                 label="best so far")
+        plt.xlabel("Bayesian optimisation iteration")
+        plt.ylabel("aggregated MAE (px)")
+        plt.title("Domain adaptation: marker alignment error")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        finish_plot(plt, os.path.join(run_dir, "bo_convergence.png"))
+        print(f"Convergence figure: {os.path.join(run_dir, 'bo_convergence.png')}")
+        print(f"Alignment overlays (best config): "
+              f"{os.path.join(run_dir, 'best_da_overlay_<name>.png')}")
 
     def collect_training_data(self):
         # self.clear_temp_images()
@@ -2722,12 +2581,6 @@ class Contact:
                 f"expecting {num_loops * 8} trials"
             )
         for i in range(num_loops):
-            if self.use_bo:
-                if i < 4:
-                    self.bo.my_suggest_random()
-                else:
-                    self.bo.my_suggest_optimise()
-                self.set_contact_params_from_bo()
             for j in range(2):
                 print(f"training trajectory: {i}/{num_loops - 1}; substep: {j}/5")
                 self.generate_trajectories()
@@ -2787,10 +2640,6 @@ class Contact:
                             ts > 80
                         ):
                             self.record_training_data_point()
-                        if self.use_bo:
-                            should_break = self.handle_da_loss(ts)
-                            if should_break:
-                                break
                         # if ts % 100 == 0:
                         #     self.save_sensor_mesh_to_npz()
                             # print(f"ts={ts}; sensor mesh saved")
@@ -2799,61 +2648,37 @@ class Contact:
                     self.write_training_data_to_file(file_num)
                     file_num += 1
                     self.write_vitactip_mesh_to_file()
-                    
-                    self.reset_loss()
-                    self.batch_loss.fill(0.0)
-                    # self.clear_grad()
-                    self.prev_loss[None] = 0.0
-                    self.trajectory_loss[None] = 0.0 
                     print(
                         f"training trajectory: {i}/{num_loops - 1}; substep: {j}/5 done"
                     )
-                if self.use_bo:
-                    print(f'domain adaptation losses: {self.da_losses}')
-                    print(f'domain adaptation loss sum: {sum(self.da_losses)}')
-                    # self.write_da_total_loss_to_file()
-                    self.bo.my_register(
-                        sum(self.da_losses)
-                    )
-                    self.da_losses = []
-                    self.bo.write_to_file()
         print("training data collection done")
         print("all done")
 
 
 def domain_adaptation_main():
-    """Entrypoint for the domain-adaptation alignment figure (manuscript Fig. 5).
+    """Entrypoint: calibrate the simulator against the real sensor, via BO.
 
-    Runs the four canonical interactions - press, twist about z, twist about x,
-    and slide - through the simulator, and at the moment each one reaches its
-    target pose overlays the SIMULATED marker positions (red) on the REAL ones
-    (green) photographed from the physical sensor in the same configuration.
-    One PNG per interaction, plus the mean absolute marker distance for each.
+    Runs Bayesian optimisation over the material and contact parameters. Each
+    iteration proposes a parameter set, replays the four canonical interactions
+    (press, twist about z, twist about x, slide) with it, and scores it by the
+    MAE between simulated and real marker positions at each apex - exactly the
+    procedure the manuscript describes.
 
-    `Contact.domain_adaptation()` has always existed but was reachable only by
-    editing `main()`, which is why it had no entrypoint. The setup below mirrors
-    `main()`'s, minus the training-data collection.
+    NOT DIFFERENTIABLE. An earlier design backpropagated through the Taichi
+    simulation; that was abandoned, and all of the machinery supporting it has
+    been removed. BO treats the simulator as a black box, so only forward
+    simulation is needed.
 
-    KNOWN BROKEN - see the note in README/CLAUDE.md before debugging this.
-    `domain_adaptation()`'s forward loop is `while last_target_reached != 1`,
-    and that flag never flips: the PID's position error sits at a constant
-    0.0982 against a 0.005 tolerance, because the sensor tip vertex it measures
-    is offset from the pose that `set_up_pose()` sets. The sensor does not move
-    toward the waypoint at all - the error is byte-identical after 120 timesteps.
-
-    This is NOT specific to the DA trajectories: the training trajectories show
-    exactly the same 0.0982 and also never reach their target. Data collection
-    survives it only because `collect_training_data()` loops
-    `for ts in range(max_timesteps_per_trajectory)` and treats the flag as an
-    early exit, so it never depends on it. DA's unbounded `while` is what turns
-    the same condition into a hang.
-
-    DIFFTACTILE_DA_MAX_TIMESTEPS therefore bounds the forward loop, so this
-    entrypoint terminates instead of spinning at ~11 timesteps/second forever.
-    That makes it safe to run, but it does not make the figure correct: with the
-    controller not converging, the overlay would compare a real photograph
-    against a sensor that never deformed. Fix the controller first.
+    Every run writes into its OWN timestamped directory under
+    difftactile/output/domain_adaptation/, so repeated runs accumulate instead
+    of overwriting - the same convention the training pipeline uses.
     """
+    run_dir = repo_path(
+        f"difftactile/output/domain_adaptation/{time.strftime('%Y%m%d-%H%M%S')}"
+    )
+    os.makedirs(run_dir, exist_ok=True)
+    print(f"Run directory: {run_dir}")
+
     if RUN_ON_LAB_MACHINE:
         ti.init(
             debug=False,
@@ -2889,15 +2714,9 @@ def domain_adaptation_main():
     contact_model.get_keypoint_indices_and_validate()
 
     start = time.perf_counter()
-    contact_model.domain_adaptation()
+    contact_model.domain_adaptation(run_dir=run_dir)
     print(f"\nDomain adaptation took {time.perf_counter() - start:.2f} s")
-
-    overlay = SYSTEM_PARAMS.files.da_overlay
-    print("\nAlignment overlays (simulated = red, real = green):")
-    for name in ("press", "twist_z", "twist_x", "slide"):
-        path = overlay.format(name)
-        if os.path.exists(path):
-            print(f"  {path}")
+    print(f"All artifacts: {run_dir}")
 
 
 def main():

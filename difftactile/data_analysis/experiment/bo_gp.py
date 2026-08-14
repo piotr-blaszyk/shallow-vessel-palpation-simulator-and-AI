@@ -45,6 +45,19 @@ class BoGp:
         self.all_targets = []
         self.target_min_max = (0, 700)
     
+    def set_run_dir(self, run_dir):
+        """Redirect the per-run outputs into `run_dir`.
+
+        `bo_gp_json` deliberately stays where it is: it is the handoff file the
+        simulator reads back for the CURRENT proposal, not a record of the run.
+        The two history files are records, so a timestamped run keeps its own
+        rather than overwriting the last one's.
+        """
+        import os
+        os.makedirs(run_dir, exist_ok=True)
+        self.all_params_path = os.path.join(run_dir, "bo_all_params.json")
+        self.all_targets_path = os.path.join(run_dir, "bo_all_targets.json")
+
     def normalise_dict(self, input_dict):
         normalized = {}
         for key, value in input_dict.items():

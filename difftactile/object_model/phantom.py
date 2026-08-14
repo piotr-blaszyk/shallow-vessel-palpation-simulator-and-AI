@@ -80,10 +80,10 @@ class Phantom:
         self.rayleigh_damping_alpha[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_alpha
         self.rayleigh_damping_beta[None] = SYSTEM_PARAMS.phantom.rayleigh_damping_beta
         self.inverse_grid_node_spacing = 1 / self.grid_node_spacing
-        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.lam = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
-        self.mu = ti.field(dtype=ti.f32, shape=(2,), needs_grad=SYSTEM_PARAMS.meta.enable_grad)
+        self.youngs_modulus = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.poissons_ratio = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.lam = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
+        self.mu = ti.field(dtype=ti.f32, shape=(2,), needs_grad=False)
         self.youngs_modulus[0] = SYSTEM_PARAMS.phantom.silicone.youngs_modulus
         self.poissons_ratio[0] = SYSTEM_PARAMS.phantom.silicone.poissons_ratio
         self.youngs_modulus[1] = SYSTEM_PARAMS.phantom.hard_plastic.youngs_modulus
@@ -262,7 +262,7 @@ class Phantom:
                 self.num_grid_nodes[1],
                 self.num_grid_nodes[2],
             ),
-            needs_grad=SYSTEM_PARAMS.meta.enable_grad,
+            needs_grad=False,
         )
         self.grid_node_velocity_out = ti.Vector.field(
             3,
@@ -531,11 +531,6 @@ class Phantom:
                 self.trial_deformation_gradient[f, p]
             )
 
-    @ti.kernel
-    def svd_of_trial_deformation_gradient_grad(self, f: ti.i32):
-        for p in range(self.num_particles):
-            self.trial_deformation_gradient.grad[f, p] += self.single_svd_grad(f, p)
-
     @ti.func
     def clamp(self, a: ti.f32):
         if a >= 0:
@@ -543,53 +538,6 @@ class Phantom:
         else:
             a = ti.min(a, -1e-8)
         return a
-
-    @ti.func
-    def single_svd_grad(self, f: ti.i32, p: ti.i32):
-        vt = self.V_svd[f, p].transpose()
-        ut = self.U_svd[f, p].transpose()
-        s_term = self.U_svd[f, p] @ self.S_svd.grad[f, p] @ vt
-        s = ti.Vector.zero(ti.f32, 3)
-        s = (
-            ti.Vector(
-                [self.S_svd[f, p][0, 0], self.S_svd[f, p][1, 1], self.S_svd[f, p][2, 2]]
-            )
-            ** 2
-        )
-        ff = ti.Matrix.zero(ti.f32, 3, 3)
-        for i, j in ti.static(ti.ndrange(3, 3)):
-            if i == j:
-                ff[i, j] = 0
-            else:
-                ff[i, j] = 1.0 / self.clamp(s[j] - s[i])
-        u_term = (
-            self.U_svd[f, p]
-            @ (
-                (
-                    ff
-                    * (
-                        ut @ self.U_svd.grad[f, p]
-                        - self.U_svd.grad[f, p].transpose() @ self.U_svd[f, p]
-                    )
-                )
-                @ self.S_svd[f, p]
-            )
-            @ vt
-        )
-        v_term = self.U_svd[f, p] @ (
-            self.S_svd[f, p]
-            @ (
-                (
-                    ff
-                    * (
-                        vt @ self.V_svd.grad[f, p]
-                        - self.V_svd.grad[f, p].transpose() @ self.V_svd[f, p]
-                    )
-                )
-                @ vt
-            )
-        )
-        return u_term + v_term + s_term
 
     @ti.kernel
     def p2g(self, frame: ti.i32):
@@ -806,14 +754,6 @@ class Phantom:
         self.grid_node_external_impulse.fill(0.0)
         self.grid_occupy.fill(0.0)
         self.total_surface_external_force.fill(0.0)
-
-    @ti.kernel
-    def clear_grad(self):
-        self.grid_node_momentum_in.grad.fill(0.0)
-        self.mu.grad.fill(0.0)
-        self.lam.grad.fill(0.0)
-        self.youngs_modulus.grad.fill(0.0)
-        self.poissons_ratio.grad.fill(0.0)
 
     @ti.kernel
     def copy_frame(self, source: ti.i32, target: ti.i32):

@@ -114,55 +114,55 @@ variance band across seeds — beyond what the manuscript currently shows, and w
 for Fig. 6, since a single-seed curve understates the spread (see
 [Training is deterministic](#training-is-deterministic)).
 
-### Domain adaptation: simulated vs real marker alignment
+### Domain adaptation: calibrating the simulator
 
-> 📄 **Manuscript: Fig. 5.**
+> 📄 **Manuscript: Fig. 5**, and the MAE figures quoted beside it.
 
-The premise of the whole project is that a model trained purely in simulation transfers to a
-real sensor — which only holds if the simulator's markers move like the real ones. This drives
-the four canonical interactions through the simulator and overlays the **simulated** marker
-positions (red) on the **real** ones (green), photographed from the physical sensor in the same
-configuration:
+The premise of the project is that a model trained purely in simulation transfers to a real
+sensor — which only holds if the simulator's markers move like the real ones. This calibrates
+the material and contact parameters against the physical sensor by **Bayesian optimisation**:
+each iteration proposes a parameter set, replays the four canonical interactions with it, and
+scores it by the MAE between simulated and real marker positions at each apex.
 
 ```bash
 # (inside the container, from the docker/ directory)
-./domain_adaptation.sh
+./domain_adaptation.sh                          # uses contact.num_opt_steps iterations
+DIFFTACTILE_BO_ITERATIONS=20 ./domain_adaptation.sh   # a longer search (~35 s/iteration)
 ```
 
-Writes one PNG per panel of Fig. 5 to `difftactile/output/`, and prints the mean absolute
-marker distance for each:
+**Not differentiable.** An earlier design backpropagated through the Taichi simulation to fit
+these parameters; that was abandoned, and all the machinery supporting it has been removed. BO
+treats the simulator as a black box, so only forward simulation is needed.
 
-| Output | Fig. 5 panel |
+**Every run gets its own timestamped directory** under
+`difftactile/output/domain_adaptation/<YYYYmmdd-HHMMSS>/`, so repeated runs accumulate rather
+than overwrite — the same convention the training pipeline uses:
+
+| File | Contents |
 |---|---|
-| `da_overlay_press.png` | (a) press |
-| `da_overlay_twist_z.png` | (b) twist about the *z*-axis |
-| `da_overlay_twist_x.png` | (c) twist about the *x*-axis |
-| `da_overlay_slide.png` | (d) slide |
+| `bo_results.json` | best configuration, and every iteration tried |
+| `bo_all_params.json` / `bo_all_targets.json` | each parameter set and the MAE it scored |
+| `bo_convergence.png` | MAE per iteration, with the running best |
+| `best_da_overlay_<name>.png` | **Fig. 5 panels**, from the best configuration |
+| `trajectories/iterNNN_<name>.npz` | the collected trajectory: simulated and real markers, MAE, and the parameters that produced it |
 
-Measured MAE between simulated and real markers at each apex (1920×1080, where the ~55 px
-inter-marker spacing is 2 mm) — about 160 s for all four:
+Fig. 5 panels are (a) press, (b) twist about *z*, (c) twist about *x*, (d) slide — simulated
+markers **red**, real markers **green**.
 
-| Interaction | MAE |
-|---|---|
-| press | 6.3 px (0.23 mm) |
-| twist about *z* | 10.7 px (0.39 mm) |
-| twist about *x* | 14.9 px (0.54 mm) |
-| slide | 10.5 px (0.38 mm) |
+Measured over 5 iterations: aggregated MAE improved **13.88 px (0.50 mm) → 11.40 px (0.41 mm)**,
+with the best set found by the acquisition function. The manuscript reports 14 → 13.5 px over a
+longer run. The inter-marker spacing is ~55 px (2 mm), so all of these align to a small fraction
+of one grid step.
 
-All sit well inside one inter-marker spacing, which is the accuracy the downstream GNN needs.
+A diverged parameter set — the FEM solve blows up and markers come back NaN — is scored as the
+worst possible value and the search continues, rather than aborting the run.
 
-> **Forward pass only.** `domain_adaptation()` also contains a parameter-*optimisation* half
-> (backward pass, gradients, optimiser step) that cannot run here: `set_up_torch_params()`,
-> `update_params()` and friends were deleted from `main.py` along with the optimiser and
-> scheduler, though the function still calls them. They survive on the archival branch
-> `domain-adaptation-vascular-multiple-trajectories` if anyone wants to port them back
-> (`DIFFTACTILE_DA_OPTIMISE=1` opts in and will fail until they are).
->
-> The figure needs none of it — the calibrated parameters are already in `system-params.json`,
-> so this run **measures** the alignment they produce rather than re-deriving it.
+> **Adopting the result is manual, deliberately.** The best configuration is printed and stored
+> in `bo_results.json`, but nothing writes it back into `system-params.json`. Copy it across
+> yourself once you are satisfied.
 
-To check a trajectory by eye, set `DIFFTACTILE_SNAPSHOT_DIR` to render the 3D scene
-periodically (needs a `DISPLAY`; Taichi GGUI segfaults offscreen in this image):
+To check a trajectory by eye, set `DIFFTACTILE_SNAPSHOT_DIR` to render the 3D scene periodically
+(needs a `DISPLAY`; Taichi GGUI segfaults offscreen in this image):
 
 ```bash
 DIFFTACTILE_SNAPSHOT_DIR=difftactile/output/da_snapshots ./domain_adaptation.sh

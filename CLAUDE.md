@@ -370,49 +370,46 @@ now provides one. Note it calls `generate_trajectories()`, which REPLACES the fo
 trajectory types with the four DA interactions (press / twist_z / twist_x / slide) — the two
 sets are different and share the `trajectory_names` attribute.
 
-**It works, and the fix is one line — do not remove it.** `domain_adaptation()` used to hang
-forever, and the cause was subtle:
+**Domain adaptation is Bayesian optimisation, not differentiable simulation.** An earlier design
+backpropagated through Taichi to fit the contact/material parameters; that was abandoned, and
+**all** the machinery supporting it has been deleted — `clear_grad`, `update_grad`, `clamp_grid`,
+`backward_pass_common_part`, `compute_marker_loss_1..5`, the phantom's `single_svd_grad` /
+`svd_of_trial_deformation_gradient_grad`, every `needs_grad=True` field, the loss/batch-loss
+fields, and the `meta.enable_grad` config key. Do not reintroduce any of it: BO treats the
+simulator as a black box and needs only forward simulation.
 
-- `update()` advances `vertices_undeformed_A[frame] -> [frame+1]` across the sub-frames of **one**
-  timestep. **`copy_frame()`** copies the result back to frame 0, which is where the next
-  timestep's `set_control_vel()` and the PID both read from.
-- `collect_training_data()` had always called it. The DA loop never did — it relied on
-  `memory_to_cache()`, which is a **no-op** (`vitactip.memory_to_cache()` starts with a bare
-  `return`, a memory optimisation for collection). So every DA timestep restarted from the
-  initial pose and the PID position error sat at a constant **0.0982** against a 0.005 tolerance.
-- Adding `self.copy_frame()` to the DA forward loop fixes it: press now reaches its last target
-  at ts 189 rather than never.
+`domain_adaptation()` is now a clean BO loop — propose parameters, replay the four interactions,
+score by apex MAE, register with the GP. Two fixes were needed to make it work at all:
 
-Note the earlier diagnosis in this file was wrong: this is *not* a broken controller, and the
-training trajectories are not affected (they never depend on the flag, since
-`collect_training_data()` loops `for ts in range(...)` and treats it as an early exit).
+1. **`copy_frame()` in the forward loop.** `update()` advances
+   `vertices_undeformed_A[frame] -> [frame+1]` across the sub-frames of one timestep;
+   `copy_frame()` copies the result back to frame 0, where the next timestep reads from.
+   `collect_training_data()` always called it, the DA loop never did (it relied on
+   `memory_to_cache()`, which is a no-op — bare `return`). Without it every timestep restarted
+   from the initial pose and the PID error froze at 0.0982.
+2. **`visualisation_prepare_tactile_readout_data_fp()` in `compute_da_loss()`.** Despite the
+   name this is the *projection* step that fills `sim_markers_deformed`; the tactile-readout
+   rendering merely reuses it. Headless runs skipped it, so the MAE scored against an all-zero
+   array — a constant **1169 px** that no parameter change could move, which silently made BO
+   meaningless. Calling it explicitly decouples the measurement from rendering.
 
-Three smaller gaps closed at the same time:
+Other things worth knowing:
 
-- **`da_*.npz` were never generated.** `compute_da_loss()` loads the real marker positions from
-  them, but only the photographs shipped. `domain_adaptation.extract_real_marker_positions()`
-  now extracts them, and is called from the entrypoint. `twist_x` needs
-  `da_twist_x_add_manual_markers()` — the blob detector finds 121 of 127 markers there, and the
-  grid reordering raises `IndexError` on a short list.
-- **`compute_da_loss()` was never called** on this path; it only fired through `handle_da_loss()`,
-  which needs `use_bo`. Now called at the apex, where the manuscript compares.
-- **The optimisation half cannot run.** `set_up_torch_params()`, `update_params()`,
-  `set_optimisation_params_from_log()`, `save_gradients_for_calibration()`, the optimiser and the
-  scheduler were all deleted from `main.py`, though `domain_adaptation()` still calls them. It is
-  skipped unless `DIFFTACTILE_DA_OPTIMISE=1`. They survive on the archival branch
-  `domain-adaptation-vascular-multiple-trajectories` (~150 lines).
+- **Diverged parameter sets are scored, not fatal.** An extreme set makes the FEM solve blow up
+  and markers return NaN (`linear_sum_assignment` then raises "matrix contains invalid numeric
+  entries"). That is caught, penalised with the top of the target range so the GP learns to
+  avoid the region, and the search continues.
+- **Each run is timestamped** under `difftactile/output/domain_adaptation/<stamp>/`, holding the
+  BO history, convergence figure, Fig. 5 overlays for the best config, and
+  `trajectories/iterNNN_<name>.npz` with the raw simulated/real markers per iteration.
+- **Nothing writes results back into `system-params.json`.** Adopting a configuration is manual
+  and should stay that way.
+- `DIFFTACTILE_BO_ITERATIONS` / `DIFFTACTILE_BO_RANDOM` control the search; ~35 s per iteration.
 
-**`enable_grad` is an env override, deliberately.** Taichi allocates `.grad` buffers at
-field-construction time, so it cannot be toggled later; the shipped JSON keeps it 0 because
-collection never differentiates and the buffers roughly double GPU memory.
-`DIFFTACTILE_ENABLE_GRAD=1` (set by `domain_adaptation.sh`) turns them on for that process only.
-**Do not flip the JSON** — that is the collection/DA clash that originally forced these onto
-separate branches.
-
-Verified after the fix: MAE 6.3 / 10.7 / 14.9 / 10.5 px for press / twist_z / twist_x / slide
-(manuscript quotes 13.5 px aggregated), all four trajectories confirmed visually via
-`DIFFTACTILE_SNAPSHOT_DIR`, and **no regression** — `sim-short` collection still runs, A→B eval
-is unchanged at 0.7314/0.2553/0.2059, C→B training reproduces 0.6043/0.1313.
+Measured: 5 iterations improved aggregated MAE 13.88 -> 11.40 px, best found by the acquisition
+function (manuscript: 14 -> 13.5 px over a longer run). No regression from the grad removal —
+`sim-short` collection completes, A->B eval is unchanged (0.7314 / 0.2553 / 0.2059), C->B
+training reproduces 0.6043 / 0.1313.
 
 ### The vessel map (`vessel_map.sh`) and the confusion colour scheme
 
