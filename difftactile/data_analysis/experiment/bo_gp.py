@@ -43,7 +43,6 @@ class BoGp:
         self.all_targets_path = SYSTEM_PARAMS.files.bo_all_targets
         self.all_params = []
         self.all_targets = []
-        self.target_min_max = (0, 700)
     
     def set_run_dir(self, run_dir):
         """Redirect the per-run outputs into `run_dir`.
@@ -75,15 +74,7 @@ class BoGp:
             min_val, max_val = self.pbounds[key]
             unnormalized[key] = value * (max_val - min_val) + min_val
         return unnormalized
-    
-    def normalise_target(self, target):
-        min_val, max_val = self.target_min_max
-        return (target - min_val) / (max_val - min_val)
 
-    def unnormalise_target(self, normalized_target):
-        min_val, max_val = self.target_min_max
-        return normalized_target * (max_val - min_val) + min_val
-    
     @staticmethod
     def black_box_function(*args, **kwargs):
         return 0
@@ -110,12 +101,22 @@ class BoGp:
             json.dump(params, f, indent=4)
     
     def my_register(self, target):
-        # with open(self.target_path, "r") as f:
-        #     target_data = json.load(f)
-        # self.target = target_data['target']
+        """Record one evaluated configuration and its MAE.
+
+        The MAE is handed to the GP RAW, only negated - `bayes_opt` maximises,
+        and a lower alignment error is better. There is deliberately no rescaling
+        of the target: it is already in meaningful units (pixels), and mapping it
+        into some other range only obscures what the optimiser is working with.
+
+        Note the PARAMETERS are still normalised to the unit cube by
+        `normalise_dict`. That is a different thing and is load-bearing: Young's
+        modulus spans ~1e5 while the friction coefficient spans ~1, and a GP
+        kernel comparing them on their raw scales would be dominated by the
+        largest-magnitude parameter.
+        """
         self.optimiser.register(
             params=self.normalise_dict(self.params),
-            target=1-self.normalise_target(target),
+            target=-float(target),
         )
         self.all_params.append(self.params)
         self.all_targets.append(target)

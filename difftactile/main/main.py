@@ -84,6 +84,12 @@ COLLECT_VEIN_PAIR = os.environ.get("DIFFTACTILE_VEIN_PAIR", "0") == "1"
 # every stored MAE is in pixels.
 PX_TO_MM = 2.0 / 55.0
 
+# Score given to a parameter set whose FEM solve blows up (markers come back
+# NaN). In the same pixel units as every other MAE, so no rescaling is involved -
+# it simply has to sit far above any usable configuration, which in practice
+# means anything over ~300 px.
+DIVERGENCE_PENALTY_PX = 1000.0
+
 
 def _trajectory_indices():
     """Which trajectory types training-data collection should execute.
@@ -2495,11 +2501,12 @@ class Contact:
                 )
 
             if diverged:
-                # Penalise rather than drop it: the GP learns to avoid this
-                # region only if it is told the region is bad. The penalty is the
-                # top of the target normalisation range, so it maps to the worst
-                # possible score without distorting the scale.
-                aggregated = float(self.bo.target_min_max[1])
+                # Penalise rather than drop it: the GP learns to avoid a region
+                # only if it is told the region is bad. A large MAE in the same
+                # pixel units the objective already uses - no rescaling, so the
+                # penalty reads directly as "far worse than any usable
+                # configuration" (real values land well under 300 px).
+                aggregated = DIVERGENCE_PENALTY_PX
                 print(f"    diverged -> scored as {aggregated:.0f} px (penalty)")
             else:
                 aggregated = float(np.mean(self.da_losses))
