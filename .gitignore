@@ -18,6 +18,7 @@ saved_models/
 *.mp4
 # ...except the README demonstration videos (docker/record_videos.sh)
 !videos/*.mp4
+!docs/videos/*.mp4
 *.avi
 tac_vgnn/
 *.npz
