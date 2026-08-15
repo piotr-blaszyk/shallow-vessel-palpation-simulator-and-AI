@@ -645,6 +645,16 @@ def photo_ground_truth(shape):
     the published pipeline did. Its orientation matches the silicone map's.
     """
     path = SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask
+    if not os.path.exists(path):
+        # Not shipped in the data bundle on purpose: it is regenerated
+        # bit-identically from two git-tracked inputs (the VGG polygon
+        # annotations and the undistorted phantom photo) by
+        # script_annotate. Build it here on first use, so a fresh clone +
+        # bundle can draw the silicone maps without a separate step.
+        from difftactile.data_analysis.experiment.annotate import main as build_mask
+        print(f"photo ground truth not found, building it: {path}")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        build_mask()
     img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
     if img is None:
         raise FileNotFoundError(f"photo ground truth not found: {path}")
