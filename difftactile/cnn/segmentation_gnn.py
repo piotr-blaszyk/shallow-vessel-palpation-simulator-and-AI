@@ -1576,7 +1576,7 @@ def silicone_to_meat():
     # checkpoint was evaluated on UNNORMALISED inputs despite having been
     # trained on normalised ones. Applying the simulation statistics the checkpoint
     # expects raises the vein IoU from 0.034 to 0.198 (background 0.888 ->
-    # 0.809) — measured, see REPRODUCTION_TEST.md. The old path understated the
+    # 0.809) — measured on the pre-2026-08-15 checkpoint. The old path understated the
     # cross-domain result roughly six-fold.
     test_dataset.set_stats(stats)
 

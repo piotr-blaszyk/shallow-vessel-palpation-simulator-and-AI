@@ -977,7 +977,13 @@ There is no pinned lockfile and no `requirements.txt` (it was deleted from upstr
   variant's hyperparameters under the `*_large` keys of the `gnn` config block. Earlier revisions
   used conference names (`iros`, `icra`) and a timeline word (`endgame`) for these; those are
   gone from the code. The only survivors are load-bearing and deliberate: the historical git
-  branch names, the `git clone --branch iros` line in the verbatim transcript in
-  `REPRODUCTION_TEST.md`, and the external snapshot path documented in `make_data_bundle.sh`
-  (a real directory outside this repository — no longer that script's default, but still the
-  literal path to pass when you want it). Do not "clean up" any of those.
+  branch names and the external snapshot path documented in `make_data_bundle.sh` (a real
+  directory outside this repository — no longer that script's default, but still the literal
+  path to pass when you want it). Do not "clean up" either of those.
+
+**Top-level Markdown (pruned 2026-08-15).** Only these live at the root: `README.md`,
+`CLAUDE.md`, and the three current result tables `AUROC_RESULTS.md`, `CLIP_LEN_ABLATION.md`,
+`FRAME_SPACE_METRICS.md` (plus `REPRODUCTION_TEST.md`, the clean-slate reproduction log).
+`RESULTS.md` (old manuscript claims), `AUROC_RESULTS_UNNORMALISED.md` (diagnostic of a fixed
+bug), `DEAD_CODE_ANALYSIS.md` (development notes) and the old `iros`-branch reproduction
+transcript were removed as obsolete — do not recreate development-only notes at the root.
