@@ -18,8 +18,8 @@ core repurposed. The pristine upstream state is preserved at the `upstream-difft
 ### Project repositories and data
 
 The manuscript — *"Toward Trustworthy Robot-Assisted Sliding Palpation for Shallow Vessel
-Localisation with a Calibrated Digital Twin"*, submitted to **ECCV 2026** — is backed by two
-repositories and one data archive:
+Localisation with a Calibrated Digital Twin"* — is backed by two repositories and one data
+archive:
 
 | Artefact | Role |
 |---|---|

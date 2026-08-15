@@ -1,0 +1,74 @@
+# Citation metadata for this repository (read by GitHub's "Cite this repository"
+# and by Zenodo when a release is archived). Keep in step with the manuscript's
+# author list.
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+type: software
+title: "shallow-vessel-palpation-simulator-and-AI: a calibrated digital twin and spatio-temporal GNN for robot-assisted sliding palpation and shallow vessel localisation"
+abstract: >-
+  Simulation-to-real localisation of shallow subsurface vessels from a soft optical
+  tactile sensor (ViTacTip) sliding over a phantom. A differentiable Taichi FEM digital
+  twin of the sensor pressing on a phantom with a stiff inclusion is calibrated against
+  the real sensor by Bayesian optimisation, generates labelled marker trajectories, and a
+  spatio-temporal graph neural network trained only on those is evaluated per marker and
+  as a top-view vessel map on a silicone vascular phantom and a raw-meat phantom. Contains
+  the simulator (a fork of DiffTactile), domain adaptation, dataset generation, training,
+  evaluation and every figure/table script; datasets and trained weights are on Zenodo.
+authors:
+  - family-names: Blaszyk
+    given-names: Piotr
+    orcid: "https://orcid.org/0009-0004-4427-4908"
+    affiliation: "Imperial College London"
+  - family-names: Fan
+    given-names: Wen
+    orcid: "https://orcid.org/0009-0009-4239-1242"
+    affiliation: "Imperial College London"
+  - family-names: Deng
+    given-names: Kaizhong
+    orcid: "https://orcid.org/0009-0007-4206-5282"
+    affiliation: "Imperial College London"
+  - family-names: Elson
+    given-names: Daniel
+    orcid: "https://orcid.org/0000-0002-5578-3941"
+    affiliation: "Imperial College London"
+  - family-names: Zhang
+    given-names: Dandan
+    orcid: "https://orcid.org/0000-0001-7649-7605"
+    affiliation: "Imperial College London"
+repository-code: "https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI"
+license: MIT
+keywords:
+  - tactile sensing
+  - vision-based tactile sensor
+  - sliding palpation
+  - vessel localisation
+  - digital twin
+  - sim-to-real
+  - graph neural network
+  - differentiable simulation
+  - Bayesian optimisation
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.21900934"
+    description: "Zenodo data bundle: datasets, trained checkpoints and manuscript artifacts (shallow-vessel-palpation-dataset)"
+references:
+  - type: software
+    title: "DiffTactile: A Physics-based Differentiable Tactile Simulator for Contact-rich Robotic Manipulation"
+    authors:
+      - family-names: Si
+        given-names: Zilin
+      - family-names: Zhang
+        given-names: Gu
+      - family-names: Ben
+        given-names: Qingwei
+      - family-names: Romero
+        given-names: Branden
+      - family-names: Xian
+        given-names: Zhou
+      - family-names: Liu
+        given-names: Chao
+      - family-names: Gan
+        given-names: Chuang
+    year: 2024
+    url: "https://difftactile.github.io/"
+    notes: "The upstream simulator this repository forks."

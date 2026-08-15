@@ -400,7 +400,7 @@ heat-map would.
 Recorded so a future change knows what it might break. The README quickstart carries the same
 table for end users.
 
-| Script | Manuscript artifact (numbering of the ECCV 2026 submission, 2026-08-15) |
+| Script | Manuscript artifact (numbering of the 2026-08-15 manuscript) |
 |---|---|
 | `annotate_data_bare_metal.sh --silicone/--meat` | **Fig. 4** (`fig:annotation-line`) — annotated Silicone frame, Meat labels |
 | `alignment_figures.sh` | **Fig. 5** (`fig:da-results`) — sim (red) vs real (green) marker alignment, four interactions (50 % opacity, per-trajectory MAE in caption) |
