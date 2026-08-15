@@ -23,8 +23,8 @@ archive:
 
 | Artefact | Role |
 |---|---|
-| **[shallow-vessel-palpation-simulator-and-AI](https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI)** (this one) | **Main repository.** Simulator, domain adaptation, dataset generation, GNN training and evaluation, all figures and tables — everything needed to reproduce the published results. |
-| [shallow-vessel-palpation-robot-control](https://github.com/piotr-blaszyk/shallow-vessel-palpation-robot-control) | Drives the DOBOT Magician E6 arm that collected the real tactile recordings. Needed only to *gather new* data. |
+| **[shallow-vessel-palpation-simulator-and-AI](https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI)** (this one), DOI [10.5281/zenodo.21958186](https://doi.org/10.5281/zenodo.21958186) | **Main repository.** Simulator, domain adaptation, dataset generation, GNN training and evaluation, all figures and tables — everything needed to reproduce the published results. |
+| [shallow-vessel-palpation-robot-control](https://github.com/piotr-blaszyk/shallow-vessel-palpation-robot-control), DOI [10.5281/zenodo.21958190](https://doi.org/10.5281/zenodo.21958190) | Drives the DOBOT Magician E6 arm that collected the real tactile recordings. Needed only to *gather new* data. |
 | Zenodo **shallow-vessel-palpation-dataset**, DOI [10.5281/zenodo.21958107](https://doi.org/10.5281/zenodo.21958107) | Datasets, trained checkpoints and the manuscript's figures/tables (~275 MB). See [Data](#data-the-zenodo-bundle). |
 | Project page: [piotr-blaszyk.github.io/shallow-vessel-palpation-simulator-and-AI](https://piotr-blaszyk.github.io/shallow-vessel-palpation-simulator-and-AI/) | Abstract and all videos in one place (`docs/`). |
 
