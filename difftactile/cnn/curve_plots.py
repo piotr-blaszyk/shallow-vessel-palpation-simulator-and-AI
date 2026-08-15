@@ -50,8 +50,15 @@ Design decisions worth knowing:
 
 import os
 
+import matplotlib
 import numpy as np
 from matplotlib.cm import ScalarMappable
+
+# Embed TrueType (Type 42) fonts in PDF output instead of matplotlib's default
+# Type 3 bitmap-like fonts: publishers reject PDFs containing Type 3 fonts, and
+# every curve here ends up in the manuscript.
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["ps.fonttype"] = 42
 from matplotlib.collections import LineCollection
 from matplotlib.colors import Normalize
 

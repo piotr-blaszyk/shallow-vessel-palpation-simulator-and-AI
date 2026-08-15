@@ -169,9 +169,10 @@ def confusion_counts(gt, pred):
 def confusion_metrics(tp, fp, fn, tn):
     """MCC, F1, precision, recall, accuracy and IoU from the four counts.
 
-    IoU is the vessel-class (foreground) intersection over union,
-    TP / (TP + FP + FN) - the same quantity the marker-level tables call
-    "foreground IoU", here over map pixels.
+    `iou` is the vessel-class (foreground) intersection over union,
+    TP / (TP + FP + FN), and `iou_bg` the background one, TN / (TN + FP + FN) -
+    the two quantities the marker-level tables call foreground / background IoU,
+    here over map pixels.
 
     Undefined ratios (0/0) are reported as NaN rather than 0, so a map with no
     true pixels (the meat control trial) shows "n/a" recall instead of a fake 0.
@@ -185,10 +186,24 @@ def confusion_metrics(tp, fp, fn, tn):
     f1 = ratio(2 * tp, 2 * tp + fp + fn)
     accuracy = ratio(tp + tn, tp + fp + fn + tn)
     iou = ratio(tp, tp + fp + fn)
+    iou_bg = ratio(tn, tn + fp + fn)
     denom = np.sqrt(float(tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
     mcc = (float(tp) * tn - float(fp) * fn) / denom if denom > 0 else 0.0
     return {"mcc": mcc, "f1": f1, "precision": precision, "recall": recall,
-            "accuracy": accuracy, "iou": iou}
+            "accuracy": accuracy, "iou": iou, "iou_bg": iou_bg}
+
+
+def map_average_precision(maxprob, gt):
+    """Average precision of the per-pixel score map against `gt`, over the
+    whole grid. Unvisited pixels carry maxprob -1 (never predicted); they are
+    scored below every visited pixel, which is what "never flagged" means.
+    Threshold-free, so it complements the thresholded confusion counts.
+    """
+    from sklearn.metrics import average_precision_score
+    gt = np.asarray(gt, bool).ravel()
+    if not gt.any():
+        return float("nan")
+    return float(average_precision_score(gt, np.asarray(maxprob, float).ravel()))
 
 
 def grow_l2(mask, radius):
@@ -771,9 +786,9 @@ def score_map(m, gt, pred, out_dir, title):
         "Ground-truth positives grown by an L2 disc of radius r (mm == px); the",
         "prediction is fixed. Distances are from each predicted pixel to the nearest",
         "(grown) true pixel.", "",
-        "| r (mm) | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | IoU | "
+        "| r (mm) | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | FG IoU | BG IoU | AP | "
         "L2 median | L2 mean | n pred |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in GROWTH_RADII_MM:
         gt_r = grow_l2(gt, r)
@@ -787,12 +802,13 @@ def score_map(m, gt, pred, out_dir, title):
         _write_distance_histogram(dists, os.path.join(out_dir, f"l2_distances_r{r:02d}.png"),
                                   f"{title} - r = {r} mm")
         rec = {"radius_mm": r, "tp": tp, "fp": fp, "fn": fn, "tn": tn, **met,
-               "l2": dsum}
+               "ap": map_average_precision(m.maxprob, gt_r), "l2": dsum}
         records.append(rec)
         lines.append(
             f"| {r} | {tp} | {fp} | {fn} | {tn} | {_fmt(met['mcc'])} | {_fmt(met['f1'])} | "
             f"{_fmt(met['precision'])} | {_fmt(met['recall'])} | {_fmt(met['accuracy'], 4)} | "
-            f"{_fmt(met['iou'])} | {_fmt(dsum['median'], 2)} | {_fmt(dsum['mean'], 2)} | {dsum['count']} |"
+            f"{_fmt(met['iou'])} | {_fmt(met['iou_bg'])} | {_fmt(rec['ap'])} | "
+            f"{_fmt(dsum['median'], 2)} | {_fmt(dsum['mean'], 2)} | {dsum['count']} |"
         )
     lines += ["", "L2 deciles (0 %, 10 %, ..., 100 %) at r = 0 mm: " +
               ", ".join(_fmt(v, 2) for v in records[0]["l2"]["deciles"]), ""]
@@ -886,8 +902,8 @@ def run(config, gt_source=None, model_choice="best", threshold=None, seed=None,
         f"Model: {spec['description']}", f"Threshold: {choice['note']}", "",
         "Per-map metrics at every growth radius (full tables in each map's "
         "metrics_by_radius.md):", "",
-        "| map | r | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | IoU | L2 mean |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| map | r | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | FG IoU | BG IoU | AP | L2 mean |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for m, gt in zip(maps, gts):
         pred = m.prediction(choice["threshold"])
@@ -902,31 +918,39 @@ def run(config, gt_source=None, model_choice="best", threshold=None, seed=None,
                     f"| {m.name} | {rec['radius_mm']} | {rec['tp']} | {rec['fp']} | {rec['fn']} | "
                     f"{rec['tn']} | {_fmt(rec['mcc'])} | {_fmt(rec['f1'])} | "
                     f"{_fmt(rec['precision'])} | {_fmt(rec['recall'])} | "
-                    f"{_fmt(rec['accuracy'], 4)} | {_fmt(rec['iou'])} | {_fmt(rec['l2']['mean'], 2)} |")
+                    f"{_fmt(rec['accuracy'], 4)} | {_fmt(rec['iou'])} | {_fmt(rec['iou_bg'])} | "
+                    f"{_fmt(rec['ap'])} | {_fmt(rec['l2']['mean'], 2)} |")
 
     # Pooled over maps (meat: the ten trials together), per radius.
     pooled = []
     for r in GROWTH_RADII_MM:
         tp = fp = fn = tn = 0
-        d_all = []
+        d_all, p_all, g_all = [], [], []
         for m, gt in zip(maps, gts):
             pred = m.prediction(choice["threshold"])
             gt_r = grow_l2(gt, r)
             a, b, c, d = confusion_counts(gt_r, pred)
             tp, fp, fn, tn = tp + a, fp + b, fn + c, tn + d
             d_all.append(distances_to_truth(pred, gt_r))
+            p_all.append(m.maxprob.ravel())
+            g_all.append(gt_r.ravel())
         d_all = np.concatenate(d_all) if d_all else np.zeros(0)
+        # One aggregation over every pixel of every map (never a mean of
+        # per-map values), for the counts, the ratios and the AP alike.
         pooled.append({"radius_mm": r, "tp": tp, "fp": fp, "fn": fn, "tn": tn,
-                       **confusion_metrics(tp, fp, fn, tn), "l2": distance_summary(d_all)})
+                       **confusion_metrics(tp, fp, fn, tn),
+                       "ap": map_average_precision(np.concatenate(p_all), np.concatenate(g_all)),
+                       "l2": distance_summary(d_all)})
     if len(maps) > 1:
         summary_lines += ["", "Pooled over all maps:", "",
-                          "| r | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | IoU | L2 median | L2 mean |",
-                          "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+                          "| r | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | FG IoU | BG IoU | AP | L2 median | L2 mean |",
+                          "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for rec in pooled:
             summary_lines.append(
                 f"| {rec['radius_mm']} | {rec['tp']} | {rec['fp']} | {rec['fn']} | {rec['tn']} | "
                 f"{_fmt(rec['mcc'])} | {_fmt(rec['f1'])} | {_fmt(rec['precision'])} | "
                 f"{_fmt(rec['recall'])} | {_fmt(rec['accuracy'], 4)} | {_fmt(rec['iou'])} | "
+                f"{_fmt(rec['iou_bg'])} | {_fmt(rec['ap'])} | "
                 f"{_fmt(rec['l2']['median'], 2)} | {_fmt(rec['l2']['mean'], 2)} |")
     with open(os.path.join(out_dir, "report.md"), "w") as f:
         f.write("\n".join(summary_lines) + "\n")

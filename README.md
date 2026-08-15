@@ -128,7 +128,8 @@ Every script below maps onto a specific artifact in the manuscript:
 | `./score_all_scenarios.sh --seeds 5` | mean ± std IoU / AUROC / AP over five seeds, mean PR (and ROC) curves with a ±1 std band | **Table 3**, **Fig. 6** |
 | `./ablation_clip_len.sh` | foreground IoU / AUROC / AP per temporal window length | the clip-length ablation table |
 | `./view_predictions.sh` | per-frame prediction panels (best-of-five model) | (interactive; no longer a manuscript figure) |
-| `./vessel_map_all.sh` | bird's-eye vessel maps and per-pixel confusion statistics for every configuration (best-of-five models) | **Fig. 8**, **Table 4** |
+| `./vessel_map_all.sh` | top-view vessel maps and per-pixel statistics (TP/FP/FN/TN, MCC, F1, precision, recall, FG/BG IoU, AP, mean L2) for every configuration (best-of-five models) | **Fig. 8**, **Table 4** (map-space rows) |
+| `python -m difftactile.scripts.script_frame_space_metrics` | the same statistics per marker in video-frame space, pooled once over all frames of all trials, best-of-five models → `FRAME_SPACE_METRICS.md` | **Table 4** (video-frame rows) |
 | `./run_pipeline.sh <config>` | the same IoU / ROC numbers, one configuration at a time | Table 3, Fig. 6 |
 
 The accepted version's Fig. 8 / Table 4 were produced with the **legacy** models
