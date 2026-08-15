@@ -108,8 +108,8 @@ PY
     echo
     ./data/restore_data.sh --verify || {
         echo
-        echo "Data missing. Download the Zenodo bundle (DOI 10.5281/zenodo.21900934) and run:"
-        echo "  wget https://zenodo.org/records/21900934/files/shallow-vessel-palpation-data.tar.gz"
+        echo "Data missing. Download the Zenodo bundle (DOI 10.5281/zenodo.21958107) and run:"
+        echo "  wget https://zenodo.org/records/21958107/files/shallow-vessel-palpation-data.tar.gz"
         echo "  ./data/restore_data.sh shallow-vessel-palpation-data.tar.gz"
         return 1
     }

@@ -858,12 +858,12 @@ Do not "fix" such a failure by inventing data. Restore the published bundle inst
 > bundle also carries stale names inside its pickles that a path rename cannot reach.
 
 The published bundle is the Zenodo record **shallow-vessel-palpation-dataset**, DOI
-**10.5281/zenodo.21900934**. The file attached to that record is named
+**10.5281/zenodo.21958107**. The file attached to that record is named
 `shallow-vessel-palpation-data.tar.gz` — the same name as the local copy and as
 `make_data_bundle.sh`'s default output — so the download URL is:
 
 ```
-https://zenodo.org/records/21900934/files/shallow-vessel-palpation-data.tar.gz
+https://zenodo.org/records/21958107/files/shallow-vessel-palpation-data.tar.gz
 ```
 
 Note the record *title* and the *filename* differ by one word (`-dataset` vs `-data`); the URL

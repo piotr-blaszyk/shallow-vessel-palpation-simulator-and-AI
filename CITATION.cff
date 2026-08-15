@@ -49,7 +49,7 @@ keywords:
   - Bayesian optimisation
 identifiers:
   - type: doi
-    value: "10.5281/zenodo.21900934"
+    value: "10.5281/zenodo.21958107"
     description: "Zenodo data bundle: datasets, trained checkpoints and manuscript artifacts (shallow-vessel-palpation-dataset)"
 references:
   - type: software

@@ -25,7 +25,7 @@ archive:
 |---|---|
 | **[shallow-vessel-palpation-simulator-and-AI](https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI)** (this one) | **Main repository.** Simulator, domain adaptation, dataset generation, GNN training and evaluation, all figures and tables — everything needed to reproduce the published results. |
 | [shallow-vessel-palpation-robot-control](https://github.com/piotr-blaszyk/shallow-vessel-palpation-robot-control) | Drives the DOBOT Magician E6 arm that collected the real tactile recordings. Needed only to *gather new* data. |
-| Zenodo **shallow-vessel-palpation-dataset**, DOI [10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934) | Datasets, trained checkpoints and the manuscript's figures/tables (~275 MB). See [Data](#data-the-zenodo-bundle). |
+| Zenodo **shallow-vessel-palpation-dataset**, DOI [10.5281/zenodo.21958107](https://doi.org/10.5281/zenodo.21958107) | Datasets, trained checkpoints and the manuscript's figures/tables (~275 MB). See [Data](#data-the-zenodo-bundle). |
 | Project page: [piotr-blaszyk.github.io/shallow-vessel-palpation-simulator-and-AI](https://piotr-blaszyk.github.io/shallow-vessel-palpation-simulator-and-AI/) | Abstract and all videos in one place (`docs/`). |
 
 ```
@@ -60,7 +60,7 @@ git clone https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-an
 cd shallow-vessel-palpation-simulator-and-AI
 
 # 2. Fetch the data bundle (~275 MB) and unpack it into place
-wget https://zenodo.org/records/21900934/files/shallow-vessel-palpation-data.tar.gz
+wget https://zenodo.org/records/21958107/files/shallow-vessel-palpation-data.tar.gz
 ./data/restore_data.sh shallow-vessel-palpation-data.tar.gz
 
 # 3. Build the image (~10-30 min), start the container, open a shell inside it
@@ -476,7 +476,7 @@ robot-control repository carries a video of the real data collection.
 
 **No dataset or checkpoint is in git** (`.gitignore` excludes `*.npz`, `*.pkl`, `*.pt`,
 `*.mp4` except `videos/`, `output/`, `saved_models*/`, `logs/`). Everything comes from the
-bundle, DOI [10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934):
+bundle, DOI [10.5281/zenodo.21958107](https://doi.org/10.5281/zenodo.21958107):
 
 ```bash
 ./data/restore_data.sh shallow-vessel-palpation-data.tar.gz   # unpack into place (~275 MB)
@@ -624,4 +624,4 @@ MIT — see [LICENSE](LICENSE). Inherited from upstream DiffTactile.
 ## Contact
 
 Piotr Blaszyk — please open an issue on this repository. Data and weights are on Zenodo at
-[10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934).
+[10.5281/zenodo.21958107](https://doi.org/10.5281/zenodo.21958107).
