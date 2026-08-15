@@ -33,10 +33,13 @@ Because each run is timestamped, sweeping repeatedly accumulates rather than
 overwrites. Nothing prunes these - they are ordinary directories, delete them
 when done. `saved_models_sweeps/` is gitignored.
 
-ONE THING IT DELIBERATELY DOES NOT DO: it does not pick a winner. The
-best-scoring seed is not a result - selecting it is fitting to the test set
-exactly as tuning a threshold there would be. The output is a distribution, and
-that is the thing to report.
+THE REPORTED RESULT IS THE DISTRIBUTION, NOT A WINNER. The best-scoring seed is
+not a result - selecting it is fitting to the test set exactly as tuning a
+threshold there would be - so every table quotes mean +/- std. The sweep does
+record which seed has the highest AP (`best_seed` in sweep.json), but only for
+the artifacts that cannot average over models at all: the frame-by-frame
+prediction viewer and the bird's-eye vessel map both show ONE model, and by
+project convention that is the best-of-N instance (cnn/model_selection.py).
 
 EACH SEED RUNS IN A SUBPROCESS. Within one process the second run would inherit
 CUDA context, cuDNN autotuning state and torch's global RNG from the first, so
@@ -309,6 +312,13 @@ def sweep(config, num_seeds, run_dir, seeds=None):
     if runs:
         # Constant across seeds (same test set), so carried once rather than per row.
         summary["chance"] = runs[0].get("chance")
+        # The one instance that stands in when a single model is needed (the
+        # prediction viewer, the bird's-eye vessel map): highest AP, AUROC as
+        # tie-break. See cnn/model_selection.py for the reasoning. Recorded here
+        # so a sweep directory says which of its seeds that is; the reported
+        # tables never use it.
+        from difftactile.cnn.model_selection import best_run
+        summary["best_seed"] = best_run(runs)["seed"]
     return summary
 
 
@@ -420,7 +430,9 @@ def format_markdown(summaries, run_dir=None):
     for s in summaries:
         if not s["runs"]:
             continue
-        lines += [f"**{s['config']}**", "",
+        best = s.get("best_seed")
+        lines += [f"**{s['config']}**" + (f" (best-of-{len(s['runs'])} by AP: seed {best}, "
+                  "used wherever a single model instance is shown)" if best is not None else ""), "",
                   "| Seed | AUROC | AP | IoU fg | IoU bg | Seconds | Weights |",
                   "|---|---|---|---|---|---|---|"]
         for r in sorted(s["runs"], key=lambda r: r["seed"]):

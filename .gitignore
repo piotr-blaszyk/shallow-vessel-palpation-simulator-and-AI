@@ -37,3 +37,4 @@ shallow-vessel-palpation-data.tar.gz
 # scripts and the write-up are tracked; the captures they produce are not.
 difftactile/manual_or_experimental_data/particle_spacing_study/iteration_*/
 stale_artifacts_pre_new_dataset_20260815/
+saved_models_legacy/**/*.pickle

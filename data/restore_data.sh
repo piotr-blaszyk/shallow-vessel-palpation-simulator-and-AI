@@ -29,6 +29,19 @@ EXPECTED=(
     "saved_models_meat/final_segmentation_model_gnn_meat.pt"
     "difftactile/output/test_loader_gnn_sim.pickle"
     "difftactile/output/test_loader_gnn_meat.pickle"
+    # The published five-seed sweep (every seed's checkpoint + pickle); the
+    # published checkpoints above are its best-of-five instances. Pinned by
+    # files.published_sweep in system-params.json.
+    "saved_models_sweeps/20260815-130143"
+    # Legacy (pre-2026-08-15) models: only behind the accepted manuscript's
+    # Fig. 8 / Table 4. See saved_models_legacy/README.md.
+    "saved_models_legacy/sim/final_segmentation_model_gnn_sim.pt"
+    "saved_models_legacy/sim/test_loader_gnn_sim.pickle"
+    "saved_models_legacy/meat/final_segmentation_model_gnn_meat.pt"
+    "saved_models_legacy/meat/test_loader_gnn_meat.pickle"
+    # The one simulated slide (with poses) behind the Sim->Sim vessel map.
+    "difftactile/output/vessel_map_sim/raw"
+    "difftactile/output/vessel_map_sim/raw_reordered_dense"
     # Sensor geometry / marker layout — prerequisites for the simulator.
     "difftactile/output/base-graph-connectivity.npz"
     "difftactile/output/marker_locations_ordered.npz"

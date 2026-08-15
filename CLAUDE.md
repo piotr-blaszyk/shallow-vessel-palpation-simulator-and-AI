@@ -119,7 +119,7 @@ native Wayland by default, `--x11` and `--shell` available. Unlike the annotator
 bare-metal twin**: it runs GNN inference, so it needs torch and CUDA.
 
 **`--central` is the default; `--all` is the opt-in debugging view.** The model takes a
-`clip_len`-frame window (`clip_len` is 7) and predicts a label for *every* frame in it, but only
+`clip_len`-frame window (`clip_len` is **5** since 2026-08-15; the ablation found 5 > 7) and predicts a label for *every* frame in it, but only
 the **central** frame is ever reported: `dataset.py::get_mask()` marks exactly `clip_len // 2`,
 and `segmentation_gnn.shared_step()` applies that mask in the `val`/`test` stages but **not** in
 `train` (so training gets signal from all 7 frames), as does `evaluate_and_plot_roc()`. The
@@ -214,8 +214,17 @@ it is a reported metric rather than a figure.
 `score_all_scenarios.sh A-to-A`, `view_predictions.sh A-to-A`, and sweepable. `--eval` goes
 through `evaluate_on_sim()`, `--train` through `train_on_sim(test_on="sim")`. It scores the same
 published checkpoint as A→B/A→C; only the test set differs. The gap A→A → A→B is the sim-to-real
-transfer cost: AUROC 0.9563 → 0.7719 on the current published checkpoint (trained 2026-08-15 on
-the regenerated post-BO dataset; the pre-regeneration pair was 0.9369 → 0.7314).
+transfer cost: AUROC 0.958 → 0.779 (5-seed means at clip_len 5, sweep 20260815-130143; the
+clip_len-7 pair was 0.9563 → 0.7719, the pre-regeneration pair 0.9369 → 0.7314).
+
+**Best-of-five convention (2026-08-15).** All tables quote mean ± std over the five seeds of
+`files.published_sweep` (`saved_models_sweeps/20260815-130143`). Wherever ONE model must be shown
+— the prediction viewer, the bird's-eye maps — the best-of-five instance by AP is used
+(`cnn/model_selection.py::best_model`; `sweep.json` records `best_seed`: A-to-A 1, A-to-B 2,
+A-to-C 2, C-to-B 4). The published paths `saved_models_sim/` + `saved_models_meat/` (and their
+pickles) hold the A-to-B and C-to-B best instances. **Legacy models** (`saved_models_legacy/`,
+pre-2026-08-15, clip_len 7) exist only because they made the accepted version's Fig. 8/Table 4;
+`--model legacy` / `--legacy` load them and export `DIFFTACTILE_CLIP_LEN=7`.
 
 The simulated test split is taken from the test-loader **pickle**, never re-derived — the pickle
 stores the actual `MyDataset(mode='test')` the checkpoint was held out from, so rebuilding it
@@ -256,19 +265,18 @@ hardcoded probability cuts left anywhere in the project:
   logged in `shared_step()` (both `segmentation_gnn.py` and `gnn.py`) and by the two dead U-Net
   paths in `visualise.py`. Nothing reported depends on it, because AUROC and AP never see a
   threshold.
-- **`MAP_DECISION_THRESHOLD = 0.58`** — the empirical cut behind the bird's-eye vessel map
-  (`predict_exp.py`) and the viewer's Hard Prediction / Confusion Matrix panels
-  (`visualise.py`). Overridable with `DIFFTACTILE_MAP_THRESHOLD`.
+- **`MAP_DECISION_THRESHOLD = 0.58`** — now used ONLY by the viewer's Hard Prediction /
+  Confusion Matrix panels (`visualise.py`). Overridable with `DIFFTACTILE_MAP_THRESHOLD`. It
+  is an empirical "looked best on the old silicone map" pick, confined to that display.
 
-**Do not "tidy" the 0.58 into 0.5.** The two values had drifted apart across six hardcoded
-sites; they are kept distinct on purpose, because normalising them would repaint the published
-vessel-map figure — a change to a paper artifact, not a refactor. Verified: re-running
-`vessel_map.sh` after this change produces **byte-identical** PNGs (matching md5sums).
-
-0.58 is an empirical "it looked best on silicone" pick, which is exactly the move that does not
-generalise, so it is confined to the qualitative figures and touches nothing that is scored. If
-a principled threshold is ever wanted, fit it (Youden's J or F1-optimal) on *training-domain
-validation* data and freeze it — never on the test set.
+**The bird's-eye vessel map uses NO fixed threshold** (since 2026-08-15). `vessel_map.py`
+chooses each run's operating point: the threshold with the highest pixel-level recall among
+those with precision ≥ 0.9, where a predicted pixel counts as correct within 3 mm of a true
+pixel (`PRECISION_TARGET`, `PRECISION_TOLERANCE_MM`). At 0 mm the target is met only by 3–7
+pixels (silicone) or 1 (meat) because the reprojected truth is sparse marker points, hence the
+tolerance. If the target is unreachable with ≥ 20 predicted pixels the run falls back to the
+F1-optimal threshold and flags it in `report.md` / `run.json` (measured: Sim→Meat). Override
+with `--threshold` / `DIFFTACTILE_VESSEL_MAP_THRESHOLD`.
 
 ### Training is seeded and reproducible (`main/seeding.py`)
 
@@ -379,14 +387,15 @@ table for end users.
 
 | Script | Manuscript artifact |
 |---|---|
-| `domain_adaptation.sh` | **Fig. 5** — sim (red) vs real (green) marker alignment, four interactions |
-| `score_all_scenarios.sh` | **Table 3** (IoU) and **Fig. 6** (ROC curves) |
-| `view_predictions.sh` | **Fig. 7** |
-| `vessel_map.sh` | **Fig. 8** (a), (c), (d) |
+| `alignment_figures.sh` | **Fig. 5** — sim (red) vs real (green) marker alignment, four interactions (50 % opacity, per-trajectory MAE in caption) |
+| `score_all_scenarios.sh --seeds 5` | **Table 3** (IoU, mean ± std) and **Fig. 6** (mean PR curves ± 1 std band; the ROC twins are generated but not in the manuscript) |
+| `ablation_clip_len.sh` | the temporal-window ablation table (`tab:clip-len`) |
+| `vessel_map_all.sh` | **Fig. 8** (Sim→Sim, Sim→Silicone at 0 and 3 mm, Sim→Meat) and **Table 4** (per-pixel confusion statistics, 4 models × {0, 3} mm) |
 
-**Fig. 8(b)** is `vessel_map.sh`'s confusion overlay with yellow shapes added by hand in a photo
-editor, and **Table 4** is a manual analysis of that edited panel — neither is reproducible from
-this repository, and nothing here should claim to produce them.
+The former **Fig. 7** (per-frame prediction grid) was removed from the manuscript;
+`view_predictions.sh` remains an interactive tool. The **accepted version's** Fig. 8 / Table 4
+were made with the LEGACY models (`saved_models_legacy/`, see below), Fig. 8(b) with yellow
+shapes added by hand; the current Fig. 8 / Table 4 come entirely from `vessel_map_all.sh`.
 
 `domain_adaptation.sh` is new: `Contact.domain_adaptation()` had always existed but was
 reachable only by editing `main()`, so it had no entrypoint. `main.py::domain_adaptation_main()`
@@ -510,19 +519,33 @@ function (manuscript: 14 -> 13.5 px over a longer run). No regression from the g
 `sim-short` collection completes, A->B eval is unchanged (0.7314 / 0.2553 / 0.2059), C->B
 training reproduces 0.6043 / 0.1313.
 
-### The vessel map (`vessel_map.sh`) and the confusion colour scheme
+### The vessel map (`vessel_map.sh`, `vessel_map_all.sh`) and the confusion colour scheme
 
-`predict_exp.py::evaluate_downscaled()` writes **two** confusion maps, each as a raw `.png` and
-a legended `.pdf` (paths in the `files` block of `system-params.json`):
+Rewritten 2026-08-15 into `data_analysis/experiment/vessel_map.py` (`predict_exp.py` keeps
+only the video→npz preprocessing helpers). Read that module's docstring first. Summary:
 
-1. `confusion_overlay_vein_map.*` — prediction vs the **video-derived** ground truth. The video
-   one, not the photo one, because it is on the same reprojected grid as the prediction.
-2. `ground_truth_sources_overlay.*` — the two **independent** ground truths against each other,
-   video-derived (reference) vs photo-derived (candidate), written by
-   `overlay_ground_truth_sources()`. Neither is a model output; those are roles chosen so the
-   colour scheme carries over. Expect lots of blue: the photo sees the whole phantom, the video
-   only the swept region. It also prints the video-vs-photo IoU, which bounds what any model
-   could score. Measured: **0.2640**.
+- **Every configuration**: `A-to-A` (one simulated slide with recorded poses, see below),
+  `A-to-B` / `C-to-B` (the ten silicone sweeps on the published 180 × 100 mm grid, byte-for-byte
+  the old geometry), `A-to-C` (one map per meat trial, all on one fixed grid; slide along robot
+  −y, sensor assumed undeformed → plane 19 mm from the lens). 1 px = 1 mm everywhere.
+- **Ground truth** `--ground-truth video|photo`: reprojected per-marker labels (default; called
+  `simulator` for A-to-A) or the silicone top-view photo restricted to the swept region.
+- **Model**: `best` (default; best-of-5 by AP from `files.published_sweep`, via
+  `cnn/model_selection.py`) or `legacy` (needs clip_len 7 — the shell exports it).
+- **Output** is versioned: `difftactile/output/vessel_maps/<train>-to-<test>_gt-<src>/<TS>/`,
+  never overwritten. Per map: prediction/ground-truth masks, `confusion_rNN.png/.pdf` for the
+  truth grown by an L2 disc of NN = 0..10 mm, `metrics_by_radius.md` (TP FP FN TN MCC F1
+  precision recall accuracy + L2 median/mean/deciles), `l2_distances_rNN.png`; run-level
+  `report.md`, `run.json`, `threshold_selection.png`. Recall at r > 0 is against the GROWN
+  region (so it falls with r) — literal to the spec, stated in the manuscript.
+- **Sim→Sim needs poses**, which the published dataset lacks: `main.py::vessel_map_trajectory_main`
+  (`docker/vessel_map_sim_trajectory.sh`, seed 2026) simulates one vein-present slide recording
+  `T_BA` per frame + the vein centreline; the reprojection chain (pixel → plane 16 mm → B via
+  T_EB → A via T_BA → mm at ×200) was verified by reprojecting the recorded vein pixels back onto
+  `vein_centreline_A` exactly. The recorded pixel convention needs NO y-flip before the fisheye
+  inverse. Simulator length scale is **×5** (`meta.distance_scaling_factor`), not ×10.
+- Video-vs-photo ground-truth IoU on silicone is now **0.2934** (clip_len 5 → more central
+  frames; was 0.2640 at clip_len 7).
 
 **One colour scheme, defined once** in `Visualisation.CONFUSION_COLOURS_RGB`:
 green = both say vessel, **red = reference says vessel and the other does not (a miss)**,
@@ -629,10 +652,11 @@ Re-running the *same* configuration still overwrites in place.
 | `DIFFTACTILE_MODE` | `train` or `eval`, if not passed as `--train` / `--eval`. |
 | `DIFFTACTILE_OVERWRITE_PUBLISHED` | `1` lets a training run overwrite the published checkpoints instead of writing `*_retrained` copies. |
 | `DIFFTACTILE_SEED` | Seed for every RNG a training run touches (default 42). See `main/seeding.py`; seed sensitivity on C→B is large, so sweep rather than trusting one run. |
-| `DIFFTACTILE_MAP_THRESHOLD` | Decision threshold for the vessel map and the viewer's hard-prediction panels (default 0.58). Affects no reported metric. |
+| `DIFFTACTILE_MAP_THRESHOLD` | Decision threshold for the viewer's hard-prediction panels only (default 0.58). Affects no reported metric. |
+| `DIFFTACTILE_VESSEL_MAP_THRESHOLD` | Overrides the vessel map's chosen operating point (`vessel_map.sh --threshold`). |
+| `DIFFTACTILE_MAP_CONFIG` / `_GT` / `_MODEL` / `_SEED` | What `vessel_map.sh` sets for `script_vessel_map` (configuration, ground-truth source, `best`/`legacy`, sweep seed). |
 | `DIFFTACTILE_CLIP_LEN` | Override `gnn.clip_len` (the temporal window) for this process; positive odd integers only. Used by the clip-length ablation (`docker/ablation_clip_len.sh`), which trains A-to-B at lengths {1,3,5,7} and ranks them by foreground IoU. |
 | `DIFFTACTILE_SIM_RAW_DIR` | Raw `pickle_<timestamp>` collection directory for `script_pre_process_sim_data` to Hungarian-reorder; writes `<input>_reordered_dense` beside it (the layout `files.sim_data` points at). |
-| `DIFFTACTILE_VESSEL_MAP_MODEL` | Which checkpoint draws the bird's-eye vessel map: `meat` (C-to-B, default — unsuffixed published output names) or `sim` (A-to-B — outputs gain a `_sim` suffix). Prefer `vessel_map.sh --model`. |
 
 ## Configuration model — read this before changing behaviour
 
@@ -782,7 +806,10 @@ Trial directories are **`<description>-<timestamp>`**, e.g.
 The paths below do not exist in a fresh clone:
 
 - `difftactile/output/` — every intermediate artifact the sim writes
-- `saved_models_meat/`, `saved_models_sim/` — trained GNN weights
+- `saved_models_meat/`, `saved_models_sim/` — trained GNN weights (best-of-five instances)
+- `saved_models_sweeps/20260815-130143/` — the published five-seed sweep (all 20 checkpoints +
+  pickles + `sweep.json`); `saved_models_legacy/` — the pre-2026-08-15 models
+- `difftactile/output/vessel_map_sim/` — the one simulated slide with poses behind the Sim→Sim map
 - `difftactile/manual_or_experimental_data/meat_training_data/clean/` — real meat-experiment trials
 - `difftactile/manual_or_experimental_data/silicone_training_data/20250901-131547_dense` — silicone dataset
 

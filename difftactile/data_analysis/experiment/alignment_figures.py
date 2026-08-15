@@ -13,7 +13,9 @@ sets", and for a small figure in a manuscript the photograph is texture that
 competes with the data. Here the background is plain white, the dots are large
 enough to read at print size, and a blue segment joins each corresponding pair
 so the direction and magnitude of the misalignment are visible per marker rather
-than inferred from two overlapping clouds.
+than inferred from two overlapping clouds. Everything is drawn semi-transparent
+(ALPHA) so that a near-perfect overlap shows as a blend instead of one dot
+hiding the other.
 
 Sizing is the whole difficulty: the markers sit ~55 px apart, so dots big enough
 to see must still not touch their neighbours, and the connector must remain
@@ -49,9 +51,17 @@ PANEL_LABELS = {"press": "(a)", "twist_z": "(b)", "twist_x": "(c)",
 # closing the gap to the next marker.
 DOT_RADIUS_PX = 9.0
 REAL_DOT_RADIUS_PX = 12.0
-# Half the red dot's diameter: clearly visible, but it cannot swallow the dots
-# it joins.
-LINE_WIDTH_PX = 9.0
+# A quarter of the red dot's diameter: clearly visible, but it cannot swallow the
+# dots it joins. (Was 9.0; halved on 2026-08-15 because the connectors dominated
+# the panels at print size.)
+LINE_WIDTH_PX = 4.5
+
+# Every entity - both dot kinds and the connectors - is drawn at 50 % opacity,
+# so where a simulated dot sits almost exactly on its real partner the overlap
+# reads as a darker blend of the two rather than as the top dot alone hiding
+# the one beneath. That near-perfect overlap is exactly the case the figure
+# exists to show, so it must not be invisible.
+ALPHA = 0.5
 
 COLOUR_SIM = "#ff0000"
 COLOUR_REAL = "#00cc00"
@@ -78,14 +88,14 @@ def _panel(ax, sim, real):
 
     ax.add_collection(PatchCollection(
         [Circle(p, REAL_DOT_RADIUS_PX) for p in real_xy],
-        facecolor=COLOUR_REAL, edgecolor="none", zorder=1))
+        facecolor=COLOUR_REAL, edgecolor="none", alpha=ALPHA, zorder=1))
     for (sx, sy), (rx, ry) in zip(sim_xy, real_xy):
         ax.plot([sx, rx], [sy, ry], color=COLOUR_LINK,
                 linewidth=LINE_WIDTH_PX * 0.75, solid_capstyle="round",
-                zorder=2)
+                alpha=ALPHA, zorder=2)
     ax.add_collection(PatchCollection(
         [Circle(p, DOT_RADIUS_PX) for p in sim_xy],
-        facecolor=COLOUR_SIM, edgecolor="none", zorder=3))
+        facecolor=COLOUR_SIM, edgecolor="none", alpha=ALPHA, zorder=3))
 
     # add_collection does not update the data limits, so set them explicitly.
     pts = np.vstack([real_xy, sim_xy])

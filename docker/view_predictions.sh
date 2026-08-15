@@ -19,9 +19,15 @@
 #   A-to-C    model trained on simulation, predictions shown on meat
 #
 # Weights:
-#   --pretrained  the published Zenodo checkpoint (default)
+#   --best        (default) the best-of-5-seeds instance of this configuration
+#                 from the published sweep (highest AP; cnn/model_selection.py) -
+#                 the project convention wherever ONE model is shown
+#   --pretrained  the checkpoint at the published path (saved_models_*/), which
+#                 is that same best-of-5 instance for A-to-B / C-to-B
 #   --retrained   the checkpoint written by a local `--train` run of the same
 #                 configuration, i.e. saved_models_*/*_retrained_<config>.pt
+#   --legacy      the pre-2026-08-15 checkpoint (saved_models_legacy/), A-to-B
+#                 and C-to-B only; sets DIFFTACTILE_CLIP_LEN=7 for you
 #   --sweep TS [--seed N]
 #                 one seed's model out of a seed sweep, from
 #                 saved_models_sweeps/TS/ (TS is the sweep's timestamp, or a full
@@ -132,7 +138,7 @@ usage() {
 }
 
 CONFIG=""
-WEIGHTS="--pretrained"
+WEIGHTS="--best"
 # Defaults to the frames the paper actually reports; --all is the opt-in
 # debugging view (see the header).
 FRAMES="--central"
@@ -147,7 +153,7 @@ SWEEP_SEED="0"
 while [ "$#" -gt 0 ]; do
     case "$1" in
         A-to-A|A-to-B|C-to-B|A-to-C) CONFIG="$1" ;;
-        --pretrained|--retrained) WEIGHTS="$1" ;;
+        --pretrained|--retrained|--best|--legacy) WEIGHTS="$1" ;;
         --sweep)
             shift
             [ "$#" -gt 0 ] || { echo "ERROR: --sweep needs a sweep timestamp or path." >&2; exit 1; }
@@ -252,6 +258,9 @@ cd "${REPO_DIR}"
 # This viewer exists to be watched, so opt into blocking windows rather than the
 # project default of never waiting on a GUI.
 export DIFFTACTILE_INTERACTIVE=1
+# The legacy checkpoints were trained with a 7-frame window (their input layer
+# is sized to it); the current default is 5.
+[ "${WEIGHTS}" = "--legacy" ] && export DIFFTACTILE_CLIP_LEN=7
 
 if [ "${BACKEND}" = "wayland" ]; then
     if [ -z "${WAYLAND_DISPLAY:-}" ] || [ ! -S "${XDG_RUNTIME_DIR:-/nonexistent}/${WAYLAND_DISPLAY}" ]; then

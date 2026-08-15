@@ -83,17 +83,13 @@ from difftactile.main.display import finish_plot
 # metric, because AUROC and AP never see it.
 DECISION_THRESHOLD = 0.5
 
-# The vessel map and the viewer's hard-prediction panel historically used 0.58
-# rather than 0.5, hardcoded in two places that had drifted apart from the four
-# using 0.5. It is kept as its own named constant rather than silently
-# normalised to DECISION_THRESHOLD, because doing so would change the published
-# vessel-map figure - a real change to a paper artifact, not a refactor.
-#
-# It is an empirical pick: it looked best on the silicone map. That is exactly
-# the "tune until the picture is nice" move that does not generalise, so it is
-# confined to the qualitative figures and touches nothing that is scored. Anyone
-# reproducing the map gets the published one; anyone wanting the conventional
-# cut can set DIFFTACTILE_MAP_THRESHOLD=0.5.
+# The prediction VIEWER's hard-prediction / confusion panels use this cut. It
+# was historically shared with the bird's-eye vessel map, which no longer uses
+# any fixed threshold at all - vessel_map.py chooses its operating point per run
+# (precision >= 0.9 within 3 mm, recall maximised) - so this now affects the
+# viewer only. It is an empirical pick made by eye on the old silicone map,
+# confined to that qualitative display and touching nothing that is scored;
+# override with DIFFTACTILE_MAP_THRESHOLD (e.g. 0.5 for the conventional cut).
 MAP_DECISION_THRESHOLD = float(os.environ.get("DIFFTACTILE_MAP_THRESHOLD", 0.58))
 
 # Decision thresholds annotated as discrete markers on every ROC curve.

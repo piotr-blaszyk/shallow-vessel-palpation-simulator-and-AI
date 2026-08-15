@@ -113,7 +113,8 @@ since the bundle also ships the simulated dataset and trained checkpoints):
 6. **Run the clip-length ablation** (`./ablation_clip_len.sh`) — how many frames the model
    should see at once.
 7. **Render the qualitative figures**: `./view_predictions.sh` (per-frame panels) and
-   `./vessel_map.sh [--model sim|meat]` (bird's-eye vessel map, one per model).
+   `./vessel_map_all.sh` (bird's-eye vessel maps for every configuration; both use the
+   best-of-five seed instance of each model).
 
 ### Which script produces which figure or table in the paper
 
@@ -124,16 +125,15 @@ Every script below maps onto a specific artifact in the manuscript:
 | `./alignment_figures.sh` | simulated (red) vs real (green) marker alignment on white, four interactions | **Fig. 5** (a) press, (b) twist-z, (c) twist-x, (d) slide |
 | `./domain_adaptation.sh` | the BO search behind the adopted parameters; photo-backed `da_overlay_*` versions of the same four panels | the MAE figures quoted beside Fig. 5 |
 | `./score_all_scenarios.sh` | foreground / background IoU per model | **Table 3** |
-| `./score_all_scenarios.sh` | ROC curves per scenario | **Fig. 6** |
-| `./view_predictions.sh` | per-frame prediction panels | **Fig. 7** |
-| `./vessel_map.sh` | bird's-eye vessel map and confusion overlays | **Fig. 8** (a), (c), (d) |
+| `./score_all_scenarios.sh --seeds 5` | mean ± std IoU / AUROC / AP over five seeds, mean PR (and ROC) curves with a ±1 std band | **Table 3**, **Fig. 6** |
+| `./ablation_clip_len.sh` | foreground IoU / AUROC / AP per temporal window length | the clip-length ablation table |
+| `./view_predictions.sh` | per-frame prediction panels (best-of-five model) | (interactive; no longer a manuscript figure) |
+| `./vessel_map_all.sh` | bird's-eye vessel maps and per-pixel confusion statistics for every configuration (best-of-five models) | **Fig. 8**, **Table 4** |
 | `./run_pipeline.sh <config>` | the same IoU / ROC numbers, one configuration at a time | Table 3, Fig. 6 |
 
-Two things in the manuscript are **not** reproduced by this repository:
-
-- **Fig. 8(b)** starts from `vessel_map.sh` output but its yellow annotations were added by hand
-  in a photo editor afterwards.
-- **Table 4** reports a manual analysis of Fig. 8(b), so nothing here computes it.
+The accepted version's Fig. 8 / Table 4 were produced with the **legacy** models
+(`saved_models_legacy/`, see [Legacy models](#legacy-models)); the current ones come from
+`vessel_map_all.sh`.
 
 `score_all_scenarios.sh --seeds N` additionally produces mean ROC and PR curves with a
 variance band across seeds — beyond what the manuscript currently shows, and worth considering
@@ -488,34 +488,74 @@ is purely a display choice.
 
 ### Bird's-eye vessel localisation map
 
-> 📄 **Manuscript: Fig. 8** (a), (c) and (d). Panel **(b)** begins as this script's confusion
-> overlay but its yellow shapes were added by hand in a photo editor, and **Table 4** is a manual
-> analysis of that edited panel — neither is reproduced here.
+> 📄 **Manuscript: Fig. 8** (all four panels) and **Table 4** — the Sim→Sim, Sim→Silicone
+> (0 mm and 3 mm tolerance) and Sim→Meat maps and the per-model confusion statistics come
+> straight out of these scripts' output directories.
 
 Projects the per-marker predictions through the sensor pose onto the phantom surface at
-1 mm/pixel and renders the top view against the ground truth:
+**1 mm per pixel** and renders the top view against the ground truth, for **every**
+configuration:
 
 ```bash
 # (inside the container, from the docker/ directory)
-./vessel_map.sh                 # Meat→Silicone (C-to-B) model, the default
-./vessel_map.sh --model sim     # Sim→Silicone (A-to-B) model
+./vessel_map.sh A-to-B                          # Sim→Silicone, ground truth from the annotated video
+./vessel_map.sh A-to-B --ground-truth photo     # Sim→Silicone, ground truth from the top-view photo
+./vessel_map.sh C-to-B                          # Meat→Silicone
+./vessel_map.sh A-to-C                          # Sim→Meat: one map per meat trial (ten)
+./vessel_map.sh A-to-A                          # Sim→Sim: one simulated slide, ground truth from the simulator
+./vessel_map_all.sh                             # all of the above, in one go
+./vessel_map.sh A-to-B --model legacy           # the pre-2026-08-15 checkpoint (see "Legacy models")
+./vessel_map.sh A-to-B --threshold 0.6          # override the chosen decision threshold
 ```
 
-`--model` selects which trained checkpoint draws the map — both are evaluated on the same
-silicone clips. The default `meat` (C-to-B, the compact meat-trained model) keeps the
-unsuffixed output names below, which are the published figure paths; `--model sim` (A-to-B,
-the large simulation-trained model) writes the same artifacts with a `_sim` suffix
-(`confusion_overlay_vein_map_sim.png`, …) so the two maps sit side by side.
+**Which model draws a map.** By default the **best-of-five** seed instance of that
+configuration from the published sweep (highest AP; `cnn/model_selection.py`) — the project
+convention wherever a single model is shown, the same one `view_predictions.sh` opens.
+`--model legacy` loads the pre-2026-08-15 checkpoints instead (A-to-B and C-to-B only).
 
-It writes two confusion maps, each as a raw `.png` and as a `.pdf` carrying a title and a
-legend, into `difftactile/output/`:
+**Where the ground truth comes from** (`--ground-truth`): `video` (default) reprojects the
+test data's own per-marker labels exactly like the predictions — manual video annotation on
+Silicone, kinematics-derived labels on Meat, the simulator's vein projection on Sim (written as
+`simulator` in folder names). `photo` uses the silicone phantom's top-view photograph, segmented
+once and block-downsampled onto the same grid and restricted to the region the sensor swept
+(Silicone only).
 
-| Artifact | Compares |
-|---|---|
-| `confusion_overlay_vein_map.{png,pdf}` | the **prediction** against the video-derived ground truth |
-| `ground_truth_sources_overlay.{png,pdf}` | the two **independent ground truths** against each other |
+**The decision threshold is chosen, never assumed.** There is no 0.5 or 0.58 in this path. Each
+run sweeps every candidate threshold over the pooled per-pixel map (the maximum probability of
+any marker that landed on a pixel) and takes the one that keeps pixel-level **precision ≥ 0.9
+while maximising recall**, where a predicted pixel counts as correct when it lies within
+**3 mm** of a true pixel — the reprojected truth is a set of marker *points* 2 mm apart, so at
+0 mm the target is met only by a handful of pixels, i.e. an empty map (the 0 mm numbers are
+still reported for every map). This is deliberately conservative: in venipuncture assistance a
+false vessel sends the needle towards a vessel that is not there, while a missed one costs a
+re-scan. If the target is unreachable the run **falls back to the F1-optimal threshold and says
+so** in its `report.md` / `run.json` (measured: Sim→Meat cannot reach 0.9 precision on the
+map; the other three can). `--threshold T` overrides the rule.
 
-Both use the same colour scheme, defined once in `Visualisation.CONFUSION_COLOURS_RGB`:
+**Output is versioned**, one folder per configuration and ground-truth source, one
+timestamped subfolder per run — nothing is ever overwritten:
+
+```
+difftactile/output/vessel_maps/<train>-to-<test>_gt-<source>/<timestamp>[-legacy]/
+    report.md, run.json          model, threshold, per-map and pooled metrics
+    threshold_selection.png      precision & recall vs threshold, chosen point marked
+    [trial_NN_<name>/]           one subfolder per map when a run has several (meat trials)
+      prediction.png             predicted vessel pixels (white on black)
+      ground_truth.png           true vessel pixels
+      confusion_rNN.png/.pdf     confusion overlay with the truth grown by NN mm (00..10)
+      l2_distances_rNN.png       decile histogram of predicted-to-nearest-true distance
+      metrics_by_radius.md       TP FP FN TN MCC F1 precision recall accuracy, per radius
+      *_big.png                  5× nearest-neighbour twins for documents
+```
+
+For each map the ground-truth positives are **grown by an L2 disc** of radius 0..10 mm and the
+fine-grained (per-pixel) confusion matrix, MCC, F1, precision, recall, accuracy and the
+distribution of L2 distances from every predicted pixel to its nearest true pixel (median,
+mean, deciles) are tabulated per radius. Silicone runs additionally write
+`ground_truth_sources_overlay.png` (video-derived vs photo-derived truth) and print their IoU,
+which bounds what any model could score against either.
+
+Colour scheme, defined once in `Visualisation.CONFUSION_COLOURS_RGB`:
 
 | Colour | Meaning |
 |---|---|
@@ -527,26 +567,29 @@ Both use the same colour scheme, defined once in `Visualisation.CONFUSION_COLOUR
 Red for misses rather than for false alarms is deliberate: in a palpation setting the missed
 vessel is the dangerous error, so it takes the warning colour.
 
-The **second** map answers a different question from the first. The vessel positions are known
-two independent ways — reprojected from the annotated **video** through the sensor pose (the
-same 2D→3D→2D path the prediction takes), and segmented once from an overhead **photo** of the
-phantom. That map shows where they disagree, taking the video as the reference and the photo in
-the "prediction" role, so the colours carry over unchanged; it also prints the video-vs-photo
-IoU. Expect blue wherever the sensor never went — the photo sees the whole phantom, the video
-only the swept region — so read it as agreement *within* the swept region rather than as one
-source being wrong. It is worth having because it bounds how well any model could score against
-either ground truth.
+**Geometry assumptions.** Meat: every trial is one straight slide of the same length along the
+robot's −y axis; the sensor is assumed to rest on the meat surface with the dome undeformed, so
+marker pixels are lifted onto the plane 19 mm from the lens and all ten maps share one grid.
+Silicone: the published 180 × 100 mm workspace, plane 16 mm from the lens (the sensor was
+pressed 3 mm in). Sim: the recorded per-frame sensor pose of one freshly simulated slide
+(`./vessel_map_sim_trajectory.sh`, shipped in the data bundle), plane 16 mm from the lens (the
+slide presses 3 mm), converted with the simulator's 5× length scale
+(`meta.distance_scaling_factor`: simulator lengths are SI metres × 5, so 0.2 simulator units
+= 40 mm). The published simulated dataset does not record poses, which is why the Sim→Sim map
+uses this dedicated trajectory (seed 2026, so it is not one of the training files).
 
-Also writes `segmentation_mask_predicted_aggregated.png` (the predicted mask alone) and
-`exp_overlay_downscaled.pdf` (the multi-panel comparison). **Silicone only** — the workspace
-bounds and sensor offsets are specific to that rig. Add `--cached` to reuse the probabilities
-from a previous run instead of re-running inference.
+### Legacy models
 
-> **The map is a qualitative figure and applies a decision threshold**, unlike the reported
-> AUROC/AP which apply none. It is `MAP_DECISION_THRESHOLD` (0.58) in `cnn/curve_plots.py`, an
-> empirical pick rather than a fitted one; set `DIFFTACTILE_MAP_THRESHOLD=0.5` for the
-> conventional cut. Because the choice was made by eye on this phantom it should not be assumed
-> to transfer, which is why it is confined to figures and touches nothing that is scored.
+`saved_models_legacy/{sim,meat}/` holds the **original** checkpoints (and their statistics
+pickles) from the version of this project that was accepted for publication. They are kept
+only because they produced the accepted manuscript's bird's-eye map figure (`fig:vessel-map`,
+Fig. 8) and the localisation table read off it (`tab:localisation-map`, Table 4): panel (b) of
+that figure was completed by hand in a photo editor and Table 4 was derived from that edited
+panel, and this manual step was not repeated for the new models. **Every other result in the
+manuscript uses the current, non-legacy models** — the five-seed sweep at `gnn.clip_len` 5 on
+the regenerated simulated dataset, with the best-of-five instance at the published paths. The
+legacy models cannot be retrained (previous, unseeded simulated dataset; 7-frame window); see
+`saved_models_legacy/README.md`.
 
 ### Annotate or review the real-world datasets
 
@@ -1215,13 +1258,13 @@ the curve. See [Interactive windows](#interactive-windows) if you want the windo
 ```bash
 python -m difftactile.scripts.script_visualise        # predictions overlaid on sensor frames
 python -m difftactile.scripts.script_visualise_mesh   # simulation mesh
-python -m difftactile.scripts.script_predict_exp      # run a trained model on experimental data
+python -m difftactile.scripts.script_vessel_map       # bird's-eye vessel map (prefer docker/vessel_map.sh)
 ```
 
 `script_visualise` accepts a configuration name (`A-to-B`, `C-to-B`, `A-to-C`) plus
 `--pretrained` / `--retrained` to pick the weights and test set together; `docker/view_predictions.sh`
-is the wrapper around it. `script_predict_exp` builds the bird's-eye vessel map, wrapped by
-`docker/vessel_map.sh`.
+is the wrapper around it. `script_vessel_map` builds the bird's-eye vessel maps, wrapped by
+`docker/vessel_map.sh` / `docker/vessel_map_all.sh`.
 
 **Domain-adaptation overlay figures.** The sim-vs-real marker alignment images for the four
 canonical interactions (press, twist-z, twist-x, slide) are drawn by

@@ -842,6 +842,12 @@ class Contact:
         self.vein_polyline_data = []
         self.vein_polyline_mask_data = []
         self.target_id_data = []
+        self.pose_data = []
+        # Optional override of where write_training_data_to_file() writes; None
+        # means the timestamped `files.dataset_root` as always. Set by the
+        # vessel-map trajectory entrypoint so its one trajectory does not land
+        # among training-data collections.
+        self.training_data_dir_override = None
         self.vein_cx_A = None
         self.target_3_ts = 12
         self.target_4_ts = 226
@@ -2279,6 +2285,17 @@ class Contact:
             self.current_target_idx[None]
         ])
         self.target_id_data.append(target_id_arr)
+
+        # Sensor pose per recorded frame: the rigid transform from the sensor
+        # body frame B (origin at the dome tip, z along the sensor axis) to the
+        # world frame A. This is the simulated twin of the robot end-effector
+        # pose the real datasets carry (`frames_poses.npz` / `poses`), and it is
+        # what lets a simulated trajectory be reprojected onto the phantom plane
+        # by the same 2D->3D->2D route as the real ones (see
+        # data_analysis/experiment/vessel_map.py). Stored under its own key,
+        # `T_BA`, rather than `poses`, so cnn/dataset.py - which slices a
+        # `poses` array by clip and collates it - keeps ignoring it.
+        self.pose_data.append(self.vitactip.T_BA.to_numpy())
     
     @staticmethod
     def get_endpoints(points):
@@ -2330,7 +2347,7 @@ class Contact:
 
     def write_training_data_to_file(self, file_num):
         traj_ix = self.trajectory_ix[None]
-        directory = SYSTEM_PARAMS.files.dataset_root.format(self.timestamp)
+        directory = self.training_data_dir_override or SYSTEM_PARAMS.files.dataset_root.format(self.timestamp)
         Path(directory).mkdir(parents=True, exist_ok=True)
         file = SYSTEM_PARAMS.files.dataset_data_point.format(
             file_num
@@ -2342,6 +2359,7 @@ class Contact:
         vein_polyline_mask = np.array(self.vein_polyline_mask_data)
         target_id_array = np.array(self.target_id_data)
         trajectory_type = np.array([traj_ix], dtype=int)
+        pose_array = np.array(self.pose_data, dtype=np.float32)
 
         np.savez(
             path,
@@ -2350,13 +2368,26 @@ class Contact:
             vein_polyline=vein_polyline_array,
             vein_polyline_mask=vein_polyline_mask,
             target_id_array=target_id_array,
-            trajectory_type=trajectory_type
+            trajectory_type=trajectory_type,
+            # Per-frame sensor pose (frames, 4, 4), see record_training_data_point.
+            T_BA=pose_array,
+            # The vein is a static rigid body: its centreline in the world frame
+            # (50 points, sim units) and its radius, so the map code can draw the
+            # true vessel without re-deriving it from any projection. Only the
+            # sim <-> world unit conversion is needed downstream
+            # (meta.distance_scaling_factor: sim length = real length x 5).
+            vein_centreline_A=self.vein.centerline_A.to_numpy(),
+            vein_radius=np.array([self.vein.r], dtype=np.float32),
+            distance_scaling_factor=np.array(
+                [SYSTEM_PARAMS.meta.distance_scaling_factor], dtype=np.float32
+            ),
         )
         
         self.marker_data = []
         self.vein_polyline_data = []
         self.vein_polyline_mask_data = []
         self.target_id_data = []
+        self.pose_data = []
 
     def take_2d_markers_snapshot(self, k):
         self.take_snapshot_1(k)
@@ -4521,28 +4552,45 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
         print(f"Alignment overlays (best config): "
               f"{os.path.join(run_dir, 'best_da_overlay_<name>.png')}")
 
-    def collect_training_data(self):
+    def collect_training_data(self, num_loops=None, substeps=(0, 1),
+                              trajectory_ixs=None, with_vein=COLLECT_VEIN_PAIR):
+        """Run the randomised trajectories and write one .npz per trial.
+
+        Defaults reproduce the training-data collection exactly; the keyword
+        arguments exist for `vessel_map_trajectory_main()`, which wants a
+        single vein-present slide rather than the whole loop:
+
+          num_loops       outer loops (default DIFFTACTILE_NUM_LOOPS / config)
+          substeps        which of the two substeps to run; substep 0 is the
+                          vein-present one when `with_vein`
+          trajectory_ixs  trajectory types to execute (default
+                          DIFFTACTILE_TRAJECTORIES)
+          with_vein       enable the sensor<->vein contact pair on substep 0
+        """
         # self.clear_temp_images()
         # self.clear_npz()
         file_num = 0
         # Number of outer loops; each contributes 2 substeps x 4 trajectories.
         # DIFFTACTILE_NUM_LOOPS=1 gives an 8-trial smoke test instead of the full run.
-        num_loops = _env_int(
-            "DIFFTACTILE_NUM_LOOPS", SYSTEM_PARAMS.contact.num_training_trajectories
-        )
+        if num_loops is None:
+            num_loops = _env_int(
+                "DIFFTACTILE_NUM_LOOPS", SYSTEM_PARAMS.contact.num_training_trajectories
+            )
         if num_loops != SYSTEM_PARAMS.contact.num_training_trajectories:
             print(
                 f"DIFFTACTILE_NUM_LOOPS={num_loops} (full run would be "
                 f"{SYSTEM_PARAMS.contact.num_training_trajectories}); "
                 f"expecting {num_loops * 8} trials"
             )
+        if trajectory_ixs is None:
+            trajectory_ixs = list(_trajectory_indices())
         for i in range(num_loops):
-            for j in range(2):
+            for j in substeps:
                 print(f"training trajectory: {i}/{num_loops - 1}; substep: {j}/5")
                 self.generate_trajectories()
                 # Pair 0 is disabled project-wide (see __init__), so a
                 # "vein-absent" substep resolves NO contact pairs at all.
-                if COLLECT_VEIN_PAIR and j < 1:
+                if with_vein and j < 1:
                     self.collision_ixs = active_collision_pairs(True)
                 else:
                     self.collision_ixs = active_collision_pairs(False)
@@ -4561,7 +4609,7 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
                 # empty arrays by design.
                 # Set DIFFTACTILE_TRAJECTORIES=3 to reproduce the published
                 # dataset; the default keeps the current all-four behaviour.
-                for traj_ix in _trajectory_indices():
+                for traj_ix in trajectory_ixs:
                     self.trajectory_ix[None] = traj_ix
                     trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
                     # print(f'executing trajectory: {trajectory_name}')
@@ -4611,6 +4659,71 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
                     )
         print("training data collection done")
         print("all done")
+
+
+def vessel_map_trajectory_main():
+    """Simulate ONE vein-present slide, with sensor poses, for the Sim->Sim map.
+
+    The published simulated dataset records marker pixels and the vein's image
+    projection but NOT the sensor pose (pose recording was added later, see
+    `record_training_data_point`), so none of its trajectories can be
+    reprojected onto the phantom plane the way the real datasets are. Rather
+    than regenerate 500 trajectories (~5 h GPU) for one figure, this simulates a
+    single slide from the same generator (`get_slide_trajectory`, vein contact
+    pair enabled, same randomised contact parameters), under its own seed so it
+    is a fresh draw from the training distribution and not one of the training
+    files. Its .npz carries `T_BA` per frame and the vein's world centreline.
+
+    Output: difftactile/output/vessel_map_sim/raw/trajectory_0000.npz, then
+    Hungarian-reordered into .../raw_reordered_dense/ (the layout cnn/dataset.py
+    reads) by pre_process_sim_data. Both are small and shipped in the data
+    bundle, so the map can be regenerated without a simulator; run this again
+    only to draw a different trajectory (change DIFFTACTILE_SEED).
+
+    Seed: DIFFTACTILE_SEED, default 2026 here - deliberately NOT the dataset's
+    42, whose first slide is trajectory_0000 of the published TRAINING split.
+    """
+    os.environ.setdefault("DIFFTACTILE_SEED", "2026")
+    seed = seed_everything(deterministic_torch=False)
+    print(f"Seed: {seed} (override with DIFFTACTILE_SEED)")
+
+    out_root = repo_path("difftactile/output/vessel_map_sim")
+    raw_dir = os.path.join(out_root, "raw")
+    os.makedirs(raw_dir, exist_ok=True)
+    for stale in os.listdir(raw_dir):
+        os.remove(os.path.join(raw_dir, stale))
+
+    if RUN_ON_LAB_MACHINE:
+        ti.init(debug=False, offline_cache=False, log_level=ti.ERROR,
+                arch=ti.cuda,
+                device_memory_GB=float(os.environ.get("TI_DEVICE_MEMORY_GB", 9)))
+    else:
+        ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)
+    contact_model = Contact()
+    contact_model.visualisation_set_up_gui()
+    contact_model.save_tactile_sensor_mesh_node_mapping_to_pickle()
+    contact_model.trajectory_ix[None] = 0
+    contact_model.set_up_initial_positions_state_and_trajectory()
+    contact_model.reset_pid_controller()
+    contact_model.reset_exp_sim_traj()
+    contact_model.get_keypoint_indices_and_validate()
+    contact_model.training_data_dir_override = raw_dir
+
+    # One loop, the vein-present substep only, the slide only. Type 3 is
+    # "slide" in the list generate_trajectories() installs at the top of the
+    # collection loop (press, twist_z, twist_x, slide) - the same index the
+    # published dataset was collected with (DIFFTACTILE_TRAJECTORIES=3).
+    slide_ix = 3
+    contact_model.collect_training_data(
+        num_loops=1, substeps=(0,), trajectory_ixs=[slide_ix], with_vein=True
+    )
+
+    # Reorder into the base-graph marker order the GNN expects.
+    from difftactile.data_analysis.sim.pre_process_sim_data import PreProcessSimData
+    os.environ["DIFFTACTILE_SIM_RAW_DIR"] = raw_dir
+    PreProcessSimData.sim_marker_tracker()
+    print(f"Sim vessel-map trajectory written under {out_root}")
+    print("all done")
 
 
 def alignment_figures_main():

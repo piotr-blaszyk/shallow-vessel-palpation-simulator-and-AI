@@ -75,6 +75,15 @@ class PreProcessSimData:
                 (labels.shape[0], labels.shape[1], 3), dtype=np.float32
             )
 
+            # Any further keys (e.g. the per-frame sensor pose `T_BA` and the
+            # vein geometry that vessel_map_trajectory_main() records) are not
+            # per-marker, so they pass through untouched.
+            extra = {
+                k: data[k] for k in data.files
+                if k not in ("markers", "markers_mask", "vein_polyline",
+                             "vein_polyline_mask", "target_id_array")
+            }
+
             file_name = os.path.basename(file_path)
             output_path = f'{output_dir}/{file_name}'
             np.savez(
@@ -85,7 +94,8 @@ class PreProcessSimData:
                 vein_polyline_mask=labels_mask,
                 vein_classification=vein_classification,
                 vein_regression=vein_regression,
-                target_id_array=target_id_array
+                target_id_array=target_id_array,
+                **extra,
             )
     
     @staticmethod

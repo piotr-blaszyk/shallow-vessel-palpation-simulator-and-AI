@@ -423,8 +423,11 @@ class Visualisation:
 
         Passing one of VIEWER_SCENARIOS selects the model weights AND the test
         dataset together, so all six canonical scenarios are reachable by name
-        instead of by editing source. `weights` is "pretrained" (the published
-        checkpoint) or "retrained" (what a local `--train` run wrote).
+        instead of by editing source. `weights` is "best" (default: the
+        best-of-N seed instance of the published sweep, see
+        cnn/model_selection.py), "pretrained" (the checkpoint at the published
+        path), "retrained" (what a local `--train` run wrote) or "legacy" (the
+        pre-2026-08-15 checkpoint; A-to-B / C-to-B only).
 
         `frames` picks which of the model's outputs are shown:
 
@@ -488,6 +491,16 @@ class Visualisation:
                 sweep_dir, scenario, sweep_seed
             )
             weights_label = f"sweep {os.path.basename(sweep_dir)} seed {sweep_seed}"
+        elif weights in ("best", "legacy"):
+            # "best" (the default): the best-of-N seed instance of this
+            # configuration in the published sweep - the project-wide
+            # convention wherever a single model is shown (see
+            # cnn/model_selection.py). "legacy": the pre-2026-08-15 checkpoint,
+            # only for A-to-B / C-to-B and only with a 7-frame window.
+            from difftactile.cnn.model_selection import resolve_model
+            spec = resolve_model(scenario, weights)
+            self.model_path, self.test_loader = spec["checkpoint"], spec["stats"]
+            weights_label = spec["description"]
         else:
             if weights == "retrained":
                 ckpt_rel = _retrained_variant(ckpt_rel, scenario)
@@ -1695,8 +1708,13 @@ def main():
         weights = "retrained"
     elif "--pretrained" in flags:
         weights = "pretrained"
+    elif "--legacy" in flags:
+        weights = "legacy"
+    elif "--best" in flags:
+        weights = "best"
     else:
-        weights = os.environ.get("DIFFTACTILE_WEIGHTS", "pretrained")
+        # Default: the best-of-N seed instance from the published sweep.
+        weights = os.environ.get("DIFFTACTILE_WEIGHTS", "best")
 
     # Asking for both is contradictory, so reject it rather than letting one
     # silently win.

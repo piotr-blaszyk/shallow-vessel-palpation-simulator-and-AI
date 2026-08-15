@@ -125,13 +125,32 @@ copy_tree "difftactile/manual_or_experimental_data/silicone_training_data/202509
 copy_tree "difftactile/manual_or_experimental_data/meat_training_data/clean" -name '*.npz'
 copy_tree "difftactile/manual_or_experimental_data/meat_training_data/clean" -name 'frames.mp4'
 
-echo "[3/4] Trained checkpoints"
+echo "[3/5] Trained checkpoints"
+# The published pair = the best-of-five instances of the published sweep.
 copy_file "saved_models_sim/final_segmentation_model_gnn_sim.pt"
 copy_file "saved_models_meat/final_segmentation_model_gnn_meat.pt"
+# The whole published sweep: five seeds x four configurations, each seed's
+# checkpoint with its test-loader pickle, plus sweep.json and the per-seed
+# score arrays behind the mean ROC/PR curves. ~70 MB; it is what every
+# mean +/- std in the manuscript rests on, and what the viewer / vessel map
+# select the best-of-five instance from (cnn/model_selection.py).
+copy_tree "saved_models_sweeps/20260815-130143"
+# LEGACY models (pre-2026-08-15): kept only because they produced the accepted
+# manuscript's Fig. 8 / Table 4 - see saved_models_legacy/README.md.
+copy_file "saved_models_legacy/README.md"
+copy_file "saved_models_legacy/sim/final_segmentation_model_gnn_sim.pt"
+copy_file "saved_models_legacy/sim/test_loader_gnn_sim.pickle"
+copy_file "saved_models_legacy/meat/final_segmentation_model_gnn_meat.pt"
+copy_file "saved_models_legacy/meat/test_loader_gnn_meat.pickle"
 
 echo "[4/5] Small artifacts required by the ML entrypoints"
 copy_file "difftactile/output/test_loader_gnn_sim.pickle"
 copy_file "difftactile/output/test_loader_gnn_meat.pickle"
+# The single simulated slide (with per-frame sensor poses) that the Sim->Sim
+# bird's-eye map is drawn from; regenerable in ~2 min with a GPU
+# (docker/vessel_map_sim_trajectory.sh) but shipped so the map needs no simulator.
+copy_tree "difftactile/output/vessel_map_sim/raw"
+copy_tree "difftactile/output/vessel_map_sim/raw_reordered_dense"
 
 echo "[5/5] Sensor geometry / marker layout (~5 MB)"
 # Derived from the sensor CAD and a reference photo of the undeformed sensor.
