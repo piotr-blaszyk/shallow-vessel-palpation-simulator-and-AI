@@ -605,7 +605,40 @@ linear from it, so `git log` across it is not meaningful).
 
 ## Citation
 
-This work builds on DiffTactile. If you use this code, please cite the original simulator:
+If you use this repository, please cite it (and, where relevant, the companion robot-control
+repository and the data bundle) — GitHub's "Cite this repository" button reads the same
+metadata from `CITATION.cff`:
+
+```bibtex
+@misc{blaszyk_shallow-vessel-palpation-simulator-and-ai_2026,
+  title        = {shallow-vessel-palpation-simulator-and-{AI}: a calibrated digital twin and spatio-temporal {GNN} for robot-assisted sliding palpation and shallow vessel localisation},
+  author       = {Blaszyk, Piotr and Fan, Wen and Deng, Kaizhong and Elson, Daniel and Zhang, Dandan},
+  year         = {2026},
+  howpublished = {Zenodo},
+  doi          = {10.5281/zenodo.21958186},
+  url          = {https://doi.org/10.5281/zenodo.21958186}
+}
+
+@misc{blaszyk_shallow-vessel-palpation-robot-control_2026,
+  title        = {shallow-vessel-palpation-robot-control: {DOBOT} {Magician E6} control and synchronised tactile-video capture for robot-assisted sliding palpation},
+  author       = {Blaszyk, Piotr and Fan, Wen and Deng, Kaizhong and Elson, Daniel and Zhang, Dandan},
+  year         = {2026},
+  howpublished = {Zenodo},
+  doi          = {10.5281/zenodo.21958190},
+  url          = {https://doi.org/10.5281/zenodo.21958190}
+}
+
+@misc{blaszyk_shallow-vessel-palpation-dataset_2026,
+  title        = {shallow-vessel-palpation-dataset},
+  author       = {Blaszyk, Piotr},
+  year         = {2026},
+  howpublished = {Zenodo},
+  doi          = {10.5281/zenodo.21958107},
+  url          = {https://doi.org/10.5281/zenodo.21958107}
+}
+```
+
+This work builds on DiffTactile; please also cite the original simulator:
 
 ```bibtex
 @inproceedings{si2024difftactile,
