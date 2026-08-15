@@ -320,7 +320,7 @@ neither), Soft Prediction, Metadata — using the best-of-five model by default.
 # from the docker/ directory on the HOST - it execs into the container itself
 ./view_predictions.sh A-to-B                    # central frames (default)
 ./view_predictions.sh A-to-C --all              # every frame of every window (debugging view)
-./view_predictions.sh A-to-A --trials first-vessel-present   # one held-out simulated trajectory
+./view_predictions.sh A-to-A --trials random:10             # ten random held-out simulated trajectories
 ./view_predictions.sh C-to-B --retrained        # a locally trained model
 ./view_predictions.sh C-to-B --sweep 20260815-194045 --seed 1   # one seed of a sweep
 ./view_predictions.sh A-to-B --record out.mp4   # record instead of opening a window
@@ -337,8 +337,8 @@ neither), Soft Prediction, Metadata — using the best-of-five model by default.
 `--central` shows exactly what is scored (one prediction per sliding window, its centre; the
 first and last `clip_len // 2` frames of a trial have none). `--all` shows every off-centre
 prediction too, on sequential clips. Trials are meat trial directories, silicone videos or
-simulated trajectory files; `--trials` takes comma-separated trial-id substrings or
-`first-vessel-present`. `--record PATH` steps through everything automatically (one key press
+simulated trajectory files; `--trials` takes comma-separated trial-id substrings,
+`first-vessel-present` or `random:N` (fixed seed). `--record PATH` steps through everything automatically (one key press
 per 500 ms of video), rendered offscreen. The Hard Prediction / Confusion panels use
 `MAP_DECISION_THRESHOLD` (0.58, `DIFFTACTILE_MAP_THRESHOLD`) — a display choice only; no
 reported metric depends on it. **The viewer shows one model, never an average over seeds**: an
@@ -457,8 +457,8 @@ green = absent):
 **Per-frame GNN predictions** — the prediction viewer on each configuration's best-of-five
 model. Panels: ground truth, hard prediction, confusion (green = both say vessel, red = missed
 vessel, blue = false alarm, grey = neither), soft prediction, metadata. Central frames of every
-trial for the real datasets; one vessel-present held-out trajectory (nine dilation-24 windows)
-for Sim→Sim:
+trial for the real datasets; ten randomly drawn held-out trajectories (nine dilation-24 windows
+each) for Sim→Sim:
 
 | | |
 |---|---|

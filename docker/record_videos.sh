@@ -16,7 +16,7 @@
 #        every frame of every silicone video / meat trial
 #   3. Prediction viewer (in the container, docker/view_predictions.sh --record):
 #        one video per configuration, the best-of-five model of each
-#        (A-to-A: one vessel-present held-out trajectory; the others: every trial)
+#        (A-to-A: ten random held-out trajectories; the others: every trial)
 #
 # The GUI tools are driven automatically - one key press per 500 ms of video
 # (DIFFTACTILE_RECORD_INTERVAL_MS) - and rendered OFFSCREEN, so no viewer
@@ -119,7 +119,7 @@ fi
 if [ "${DO_PRED}" -eq 1 ]; then
     echo "=== 3/3 prediction viewer ==="
     raw_rel="difftactile/output/videos_raw"
-    ./docker/view_predictions.sh A-to-A --trials first-vessel-present --record "${raw_rel}/predictions_sim_to_sim.mp4"
+    ./docker/view_predictions.sh A-to-A --trials random:10 --record "${raw_rel}/predictions_sim_to_sim.mp4"
     ./docker/view_predictions.sh A-to-B --record "${raw_rel}/predictions_sim_to_silicone.mp4"
     ./docker/view_predictions.sh A-to-C --record "${raw_rel}/predictions_sim_to_meat.mp4"
     ./docker/view_predictions.sh C-to-B --record "${raw_rel}/predictions_meat_to_silicone.mp4"

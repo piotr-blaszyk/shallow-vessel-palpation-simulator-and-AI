@@ -177,8 +177,9 @@ ffmpeg, ~15 MB total, committed — `.gitignore` has `!videos/*.mp4`). The predi
 gained `--trials SPEC` (`Visualisation._select_trials()`): the navigators now recover trials on
 EVERY dataset via `_clip_trials()` (meat trial dir, or the sim/silicone `.npz` stem), clips are
 ordered by trial then time (the pickled sim test set is shuffled), and `first-vessel-present`
-picks one trajectory — the sim test set is dilation-24 windows, so one trajectory is 9 central
-frames, not 313. A-to-A works in the viewer with `--best`.
+picks one trajectory and `random:N` N trajectories with a fixed seed (`DIFFTACTILE_VIEW_TRIALS_SEED`,
+default 0; the README video uses `random:10`) — the sim test set is dilation-24 windows, so one
+trajectory is 9 central frames, not 313. A-to-A works in the viewer with `--best`.
 
 No PyAV here, deliberately: this path decodes no video. It renders from precomputed `.npz`
 stacks and pickles, so there is nothing for a decoder to do. (The one `cv2.VideoCapture` left in

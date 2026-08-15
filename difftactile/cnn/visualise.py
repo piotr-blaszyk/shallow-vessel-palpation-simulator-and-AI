@@ -637,9 +637,10 @@ class Visualisation:
     def _select_trials(self, dataset):
         """Order `dataset`'s clips by trial and time, and restrict to `self.trials`.
 
-        `self.trials` is a comma-separated list. Each item is either the token
-        `first-vessel-present` - the first trial (in dataset order) with at
-        least one vessel-present frame - or a substring of a trial id (a meat
+        `self.trials` is a comma-separated list. Each item is the token
+        `first-vessel-present` (the first trial, in dataset order, with at
+        least one vessel-present frame), `random:N` (N trials drawn with a
+        fixed seed, kept in dataset order) or a substring of a trial id (a meat
         trial directory such as `2-metal-straws-beneath-2-steaks-20260228-235749`
         or a simulated/silicone file stem such as `trajectory_0426`). Trials
         keep their dataset order. Raises if nothing matches, since a viewer
@@ -701,6 +702,15 @@ class Visualisation:
             if item == "first-vessel-present":
                 match = next((t for t in trial_ids if has_vessel(t)), None)
                 matches = [match] if match is not None else []
+            elif item.startswith("random:"):
+                # `random:N` - N trials drawn without replacement, in dataset
+                # order, from a FIXED seed (DIFFTACTILE_VIEW_TRIALS_SEED, default
+                # 0) so a recording is reproducible.
+                import random as _random
+                n = int(item.split(":", 1)[1])
+                rng = _random.Random(int(os.environ.get("DIFFTACTILE_VIEW_TRIALS_SEED", "0")))
+                chosen = set(rng.sample(trial_ids, min(n, len(trial_ids))))
+                matches = [t for t in trial_ids if t in chosen]
             else:
                 matches = [t for t in trial_ids if item in t]
             if not matches:
@@ -1824,7 +1834,7 @@ def main():
     how good the model looks, that is the one that should be seen first.
 
     --trials SPEC  restrict the test set to some trials: a comma-separated list
-               of trial-id substrings, or `first-vessel-present`
+               of trial-id substrings, `first-vessel-present` or `random:N`
                (see `Visualisation._select_trials()`).
 
     The configuration may also come from DIFFTACTILE_SCENARIO, the weight source

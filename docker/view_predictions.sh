@@ -81,8 +81,9 @@
 #   --trials SPEC
 #             Show only some trials of the test set: a comma-separated list of
 #             trial-id substrings (a meat trial directory name, or a simulated /
-#             silicone file stem such as trajectory_0426), or the token
-#             first-vessel-present. The i/o keys then step over just those.
+#             silicone file stem such as trajectory_0426), or the tokens
+#             first-vessel-present / random:N (N trials, fixed seed). The i/o
+#             keys then step over just those.
 #             Mainly for the simulated test set, whose 75 held-out trajectories
 #             are ~23k sliding windows - the README recording shows one.
 #   --record PATH
