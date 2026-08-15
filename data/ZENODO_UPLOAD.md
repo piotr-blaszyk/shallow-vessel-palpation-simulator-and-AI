@@ -99,7 +99,7 @@ are disposable, so a mistake costs nothing.
 One archive is simpler to cite and to download. Split into two only if you also
 want to publish the **raw** experimental recordings (~1.6 GB of `.avi`), which
 are excluded from the default bundle — in that case ship
-`shallow-vessel-palpation-data.tar.gz` (the ~186 MB reproduction bundle) and
+`shallow-vessel-palpation-data.tar.gz` (the ~275 MB reproduction bundle) and
 `difftactile-raw-recordings.tar.gz` separately, so users who only want to verify
 results are not forced to download the raw videos.
 

@@ -62,7 +62,7 @@ the NVIDIA driver, Docker, and the
 git clone https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI.git
 cd shallow-vessel-palpation-simulator-and-AI
 
-# 2. Fetch the data bundle from Zenodo (~190 MB) and unpack it into place
+# 2. Fetch the data bundle from Zenodo (~275 MB) and unpack it into place
 #    (datasets + trained checkpoints; see data/MANIFEST.md for what is inside)
 #    Zenodo record "shallow-vessel-palpation-dataset", DOI 10.5281/zenodo.21900934
 #    -> https://doi.org/10.5281/zenodo.21900934
@@ -915,13 +915,13 @@ regenerated:
 
 ```bash
 wget https://zenodo.org/records/21900934/files/shallow-vessel-palpation-data.tar.gz
-./data/restore_data.sh shallow-vessel-palpation-data.tar.gz   # ~190 MB
+./data/restore_data.sh shallow-vessel-palpation-data.tar.gz   # ~275 MB
 ./data/restore_data.sh --verify                  # list what is present / missing
 ```
 
 [`data/MANIFEST.md`](data/MANIFEST.md) documents exactly what the bundle contains and what is
 deliberately excluded (raw videos, intermediate preprocessing stages, training logs) — the
-exclusions are what take it from 4.5 GB down to ~190 MB without affecting any published result.
+exclusions are what take it from 4.5 GB down to ~275 MB without affecting any published result.
 
 Without the bundle, most entrypoints raise `FileNotFoundError`. In particular `script_main`
 reads marker-tracker output (`traj_{0..3}_out.pkl`) during construction, so **even the

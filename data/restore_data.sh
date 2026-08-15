@@ -59,6 +59,16 @@ EXPECTED=(
     "difftactile/output/initial_vertex_positions_undeformed.pkl"
     "difftactile/output/vitactip_points_E.pkl"
     "difftactile/output/marker_tracker/domain-adaptation-vascular-markers"
+    # The published domain-adaptation BO run: alignment_figures.sh reads its
+    # marker caches / MAEs, and it is the record behind the adopted parameters.
+    "difftactile/output/domain_adaptation_published"
+)
+
+# Restored when present, but not required for anything to run: the manuscript's
+# figures and tables, shipped as the bundle's one "generable but included"
+# exception (see data/MANIFEST.md). Lands in difftactile/output/manuscript_artifacts/.
+OPTIONAL=(
+    "manuscript_artifacts:difftactile/output/manuscript_artifacts"
 )
 
 verify() {
@@ -149,6 +159,17 @@ for rel in "${EXPECTED[@]}"; do
         cp "${src}" "${dest}"
     fi
     echo "  restored: ${rel}"
+done
+
+# Optional extras: "<bundle path>:<destination>" pairs, skipped silently if absent.
+for pair in "${OPTIONAL[@]}"; do
+    src="${BUNDLE}/${pair%%:*}"
+    dest="${REPO_DIR}/${pair#*:}"
+    if [ -d "${src}" ]; then
+        mkdir -p "${dest}"
+        cp -r "${src}/." "${dest}/"
+        echo "  restored (optional): ${pair%%:*} -> ${pair#*:}"
+    fi
 done
 
 verify

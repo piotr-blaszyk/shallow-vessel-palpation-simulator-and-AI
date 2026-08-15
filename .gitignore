@@ -34,6 +34,7 @@ saved_models_sim/
 saved_models_sweeps/
 saved_models_ablation/
 shallow-vessel-palpation-data.tar.gz
+shallow-vessel-palpation-data.tar.gz.sha256
 
 # Per-run output of the particle-spacing study (screenshots and logs). The
 # scripts and the write-up are tracked; the captures they produce are not.

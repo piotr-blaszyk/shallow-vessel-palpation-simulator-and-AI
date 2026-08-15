@@ -10,11 +10,21 @@ carries only artifacts that a user cannot produce themselves, either because
 they are recordings of physical experiments or because regenerating them takes
 impractically long.
 
-The single exception is the **simulated training dataset**. It *is* generable
-(`script_main`), but doing so takes several hours of GPU time (~5 h 30 m for
-the shipped 500-trajectory configuration), and a user who only wants to verify
-the published results should not have to pay that cost. It is therefore
-treated as non-generable and shipped.
+Two kinds of exception are made:
+
+1. **Generable but expensive.** The simulated training dataset (`script_main`,
+   ~5 h 30 m of GPU time for the shipped 500-trajectory configuration), the
+   published five-seed sweep of trained models, and the domain-adaptation BO
+   run are all reproducible from the repository, but a user who only wants to
+   verify the published results should not have to pay hours of GPU time.
+   They are treated as non-generable and shipped.
+2. **The manuscript's own figures and tables** (`manuscript_artifacts/`). These
+   are cheap to regenerate and are the *only* things shipped purely for
+   convenience: they are the exact figures and result tables the manuscript
+   presents, so a reader can check any number against the archive without
+   running anything. They are staged under their own directory rather than at
+   their working-tree paths, so a restore never overwrites what a user's own
+   runs have produced.
 
 ## Bundle paths vs. the currently published archive
 
@@ -46,9 +56,10 @@ history if you ever need to read a pre-rename bundle again.
 | `difftactile/output/test_loader_gnn_meat.pickle` | ~4 KB | As above, for the meat-trained checkpoint. |
 | `difftactile/output/` sensor-geometry set (16 files) | ~5.5 MB | Sensor mesh, marker layout and graph connectivity: `base-graph-connectivity.npz`, `marker_locations_ordered.npz`, `init-marker-positions.{npz,pkl}`, `gmsh_mesh_{vitactip,vein}.pkl`, `vitactip_mesh.npz`, `edge_lengths.pkl`, `tactile_sensor.f2v.pkl`, `phantom_points.npz`, `vein_points.npz`, `is_fixed_layer.npz`, `grid_node_v0_mask.npz`, `initial_vertex_positions_undeformed.pkl`, `vitactip_points_E.pkl`. Regenerable (Gmsh + marker detection) but tiny, fixed, and required before the simulator will start. |
 | `difftactile/output/marker_tracker/domain-adaptation-vascular-markers/` | ~1.3 MB | System-identification marker tracks (`traj_0..3_out.pkl`), loaded at simulator start-up to align the contact model against the real sensor. |
+| `manuscript_artifacts/` → restored to `difftactile/output/manuscript_artifacts/` | ~8 MB | **The manuscript's figures and tables, as published — the one "generable but included" exception.** `figures/`: the Fig. 5 alignment panels (`alignment_{press,twist_z,twist_x,slide,all}.png`) and the Fig. 6 mean PR curves plus their ROC twins (`mean_{pr,roc}_curve_<config>.pdf`, five-seed mean ± 1 std). `tables/`: `AUROC_RESULTS.md` (Table 3), `sweep.json` (every per-seed metric and the best-of-five choice), `CLIP_LEN_ABLATION.md` (temporal-window ablation), `FRAME_SPACE_METRICS.md` (Table 4, video-frame rows), `alignment_validation.json` (the MAEs beside Fig. 5). `vessel_maps/<train>-to-<test>_gt-<source>/`: the latest `vessel_map_all.sh` run of each of the six map configurations (Fig. 8, Table 4 map-space rows) with `confusion_rNN.{png,pdf}`, `metrics_by_radius.md`, `report.md`, `run.json`. `manuscript_artifacts/README.md` maps every file to its manuscript figure/table and to the repository path and script it came from. |
 | `difftactile/output/domain_adaptation_published/` | ~12 MB | The published domain-adaptation BO run behind the adopted simulator parameters. `joint_bo/` is the 10-iteration joint search over sensor Young's modulus and sensor↔vein contact stiffness: `bo_joint_results.json` (every iteration, both reward terms and the best configuration), `iteration_log.csv` (the same, written live one line per iteration), `final_joint_validation.json` (all four trajectories at the winning configuration), the `da_overlay_*.png` alignment figures and the per-iteration `vein_iterNNN_overlay_slide.png`. Also holds the manuscript's white-background alignment panels (`alignment_{press,twist_z,twist_x,slide,all}.png`, drawn by `docker/alignment_figures.sh` at the adopted parameters), the `markers_*.npz` marker-position caches behind them (so the figures can be restyled without re-simulating) and `alignment_validation.json` with the per-trajectory MAEs. |
 
-**Total: roughly 370 MB uncompressed / ~270 MB as a `.tar.gz`**, dominated by the
+**Total: roughly 375 MB uncompressed / ~275 MB as a `.tar.gz`**, dominated by the
 simulated dataset, the five-seed sweep and the meat camera frames.
 
 Note the BO runs' `snapshots/` subdirectories are **excluded** — ~16 MB of rendered
@@ -66,11 +77,13 @@ results rest on.
 | `silicone_training_data/20250901-131547{,_interpolated_trimmed,_markers,_dilated,...}` | ~1.05 GB | Intermediate silicone preprocessing stages; only the final `_dense` directory is consumed. |
 | `system-id-screws-*.mkv`, `vein_slide_across.avi`, `domain-adaptation-vascular-videos/` | ~960 MB | Videos used for system identification and exploratory analysis, not for the published results. |
 | `difftactile/output/*` (meshes, voronoi, marker_tracker, debug images) | ~60 MB | All regenerated by `script_pre_main` / `script_generate_*_mesh_gmsh` / `script_marker_tracker`. |
+| `difftactile/output/vessel_maps/` (all but the latest run per configuration), `da_recordings/`, `videos_raw/`, `pr_curves/`, `roc_curves/`, `alignment_figures/`, `da_snapshots*/`, `domain_adaptation/<other runs>/` and their `snapshots/` | ~1 GB | Superseded / intermediate runs and renders. Every run of `vessel_map.sh`, `record_da_trajectories.sh` and `domain_adaptation.sh` gets a fresh timestamped directory, so these accumulate; only the published run of each is shipped (see `manuscript_artifacts/` and `domain_adaptation_published/`). The demonstration videos are in the git repository (`videos/`), not the bundle. |
+| `saved_models_sweeps/<other timestamps>/`, `saved_models_*/*_retrained_*` , `stale_artifacts_pre_new_dataset_20260815/` | ~200 MB | Earlier sweeps (clip_len 7, the pre-regeneration dataset), local `--train` outputs and pre-2026-08-15 artifacts, all superseded by the published sweep `20260815-130143`. |
 | `difftactile/output/exp_probs.npz` | 424 KB | Cached per-marker probabilities for the bird's-eye vessel map. Pure model output: `./docker/vessel_map.sh` recomputes it from the shipped silicone dataset + meat checkpoint in **under a second**, bit-identically. Only `--cached` reuses it, and that flag is an optimisation, not a requirement. |
 | `difftactile/output/phantom_ground_truth_segmentation_mask.jpg` and the other `*ground_truth*` images | ~150 KB | Regenerated bit-identically by `script_annotate` from two **git-tracked** inputs (`phantom-labels-vgg.json`, `phantom-uncropped-compressed-undistorted.jpg`), so they are in the repository already, not missing. The remaining `ground_truth_*` images are written by `predict_exp` itself during the same run. |
 | `lightning_logs/`, `logs/` | 68 MB | Training logs from the original runs; recreated on any new training run. |
 
-Excluding these takes the bundle from **4.5 GB to roughly 258 MB (~190 MB compressed)** without
+Excluding these takes the bundle from **4.5 GB to roughly 375 MB (~275 MB compressed)** without
 affecting the reproducibility of any published result.
 
 ## Restoring

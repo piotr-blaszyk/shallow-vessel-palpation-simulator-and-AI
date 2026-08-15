@@ -833,7 +833,7 @@ So most ML entrypoints **cannot run in a fresh clone** — they will raise `File
 Do not "fix" such a failure by inventing data. Restore the published bundle instead:
 
 ```bash
-./data/restore_data.sh shallow-vessel-palpation-data.tar.gz   # ~190 MB from Zenodo
+./data/restore_data.sh shallow-vessel-palpation-data.tar.gz   # ~275 MB from Zenodo
 ./data/restore_data.sh --verify                  # check what is present
 ```
 
@@ -904,7 +904,7 @@ published SHA256 even when its contents are identical.
 
 `data/MANIFEST.md` documents what the bundle contains and — more usefully — what is
 deliberately excluded (raw videos, intermediate preprocessing stages, training logs), which
-is what takes it from 4.5 GB to ~190 MB. `data/make_data_bundle.sh` rebuilds it (author-side).
+is what takes it from 4.5 GB to ~275 MB. `data/make_data_bundle.sh` rebuilds it (author-side).
 `data/ZENODO_UPLOAD.md` covers publishing it from the command line.
 
 The **hardcoded absolute paths are gone** — everything now resolves through
