@@ -1,1497 +1,444 @@
-# Sim-to-Real Subsurface Feature Localisation with a Soft Optical Tactile Sensor
+# Robot-Assisted Sliding Palpation for Shallow Vessel Localisation with a Calibrated Digital Twin
 
-A differentiable-simulation pipeline for locating features **hidden beneath a soft surface** —
-blood vessels in a silicone phantom, or plastic straws buried under layers of steak — from the
-deformation of markers on a ViTacTip optical tactile sensor.
+Locating features **hidden beneath a soft surface** — blood vessels in a silicone phantom,
+straws buried under layers of steak — from the deformation of the marker grid of a ViTacTip
+optical tactile sensor sliding over it.
 
-The core question: **can a model trained entirely in simulation localise subsurface structure in
-the real world?** A graph neural network is trained only on synthetic marker displacements
-produced by a differentiable FEM simulation, then evaluated on video from a physical sensor
-pressing on real tissue.
+The core question: **can a model trained entirely in simulation localise subsurface structure
+in the real world?** A digital twin (a Taichi FEM simulation of the sensor pressing on a
+phantom with a stiff inclusion) is calibrated against the real sensor by Bayesian optimisation,
+generates labelled marker trajectories, and a spatio-temporal graph neural network trained only
+on those is evaluated on video from the physical sensor — per marker, and as a top-view vessel
+map.
 
-This is a masters project. It is a fork of
-[DiffTactile](https://difftactile.github.io/) (Si et al., ICLR 2024); the upstream
-manipulation tasks have been removed and the differentiable Taichi FEM core repurposed for
-subsurface sensing. Upstream's original README is preserved at the `upstream-difftactile` tag.
+This is a masters project, and a fork of [DiffTactile](https://difftactile.github.io/)
+(Si et al., ICLR 2024): the upstream manipulation tasks were removed and the differentiable FEM
+core repurposed. The pristine upstream state is preserved at the `upstream-difftactile` tag.
 
-### Project repositories
+### Project repositories and data
 
-This work spans two repositories, submitted together to an **ECCV 2026 workshop** as
-*"Sim-to-Real Subsurface Feature Localisation with a Soft Optical Tactile Sensor"*:
+The manuscript — *"Toward Trustworthy Robot-Assisted Sliding Palpation for Shallow Vessel
+Localisation with a Calibrated Digital Twin"*, submitted to **ECCV 2026** — is backed by two
+repositories and one data archive:
 
-| Repository | Role |
+| Artefact | Role |
 |---|---|
-| **[shallow-vessel-palpation-simulator-and-AI](https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI)** (this one) | **Main repository.** Simulation, dataset generation, GNN training and evaluation — everything needed to reproduce the published results. |
-| [shallow-vessel-palpation-robot-control](https://github.com/piotr-blaszyk/shallow-vessel-palpation-robot-control) | Robot control. Drives the DOBOT Magician E6 arm that collected the real tactile recordings for both phantoms. Needed only to *gather new* data, not to reproduce results. |
-
-Data and trained model weights are published on Zenodo as **shallow-vessel-palpation-dataset**
-([10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934)) — see
-[Quickstart](#quickstart-docker) below.
+| **[shallow-vessel-palpation-simulator-and-AI](https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI)** (this one) | **Main repository.** Simulator, domain adaptation, dataset generation, GNN training and evaluation, all figures and tables — everything needed to reproduce the published results. |
+| [shallow-vessel-palpation-robot-control](https://github.com/piotr-blaszyk/shallow-vessel-palpation-robot-control) | Drives the DOBOT Magician E6 arm that collected the real tactile recordings. Needed only to *gather new* data. |
+| Zenodo **shallow-vessel-palpation-dataset**, DOI [10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934) | Datasets, trained checkpoints and the manuscript's figures/tables (~275 MB). See [Data](#data-the-zenodo-bundle). |
 
 ```
-   Taichi FEM simulation            Real sensor
-   sensor + phantom + vein          video of pressing
-            │                             │
-            ▼                             ▼
-   synthetic marker displacements   tracked marker displacements
-            │                             │
-            └──────────► GNN ◄────────────┘
-                     train on sim      evaluate on real
-                          │
-                          ▼
-                 subsurface feature map (+ ROC / IoU)
+   Taichi FEM digital twin                 Real ViTacTip sensor
+   sensor + phantom + vessel               video, sliding over the phantom
+   (calibrated by Bayesian optimisation)             │
+            │                                        ▼
+   simulated marker trajectories        tracked marker trajectories
+            │                                        │
+            └──────────────► ST-GNN ◄────────────────┘
+                        train on Sim         test on Sim / Silicone / Meat
+                              │
+                              ▼
+        per-marker vessel probability  ──►  top-view vessel map (1 mm/px)
 ```
 
 ---
 
 ## Quickstart (Docker)
 
-**Docker is the only officially supported way to run this repository.** The image pins the
-whole stack (CUDA 12.6, Taichi, PyTorch 2.8 + PyTorch Geometric) on a single Python
-interpreter, and passes the host X display through so the Taichi GGUI simulator windows work.
+**Docker is the only supported way to run this repository.** The image pins the whole stack
+(CUDA 12.6, Taichi, PyTorch 2.8 + PyTorch Geometric, PySide6) and passes the host display
+through so the simulator's windows work.
 
-**Requirements:** Ubuntu 20.04/22.04/24.04/26.04, an NVIDIA GPU (≥10 GB VRAM),
-the NVIDIA driver, Docker, and the
-[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
-
-> **Use the `main` branch** — it is the only branch, and a plain `git clone` already puts you
-> there. See [Branches and tags](#branches-and-tags).
+**Requirements:** Ubuntu 22.04/24.04, an NVIDIA GPU (≥10 GB VRAM), the NVIDIA driver, Docker
+and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+`main` is the only branch.
 
 ```bash
-# 1. Clone (main is the only branch)
+# 1. Clone
 git clone https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI.git
 cd shallow-vessel-palpation-simulator-and-AI
 
-# 2. Fetch the data bundle from Zenodo (~275 MB) and unpack it into place
-#    (datasets + trained checkpoints; see data/MANIFEST.md for what is inside)
-#    Zenodo record "shallow-vessel-palpation-dataset", DOI 10.5281/zenodo.21900934
-#    -> https://doi.org/10.5281/zenodo.21900934
+# 2. Fetch the data bundle (~275 MB) and unpack it into place
 wget https://zenodo.org/records/21900934/files/shallow-vessel-palpation-data.tar.gz
 ./data/restore_data.sh shallow-vessel-palpation-data.tar.gz
 
-# 3. Build the image (~10-30 min, downloads several GB), start the container,
-#    and open a shell inside it
+# 3. Build the image (~10-30 min), start the container, open a shell inside it
 cd docker
 ./docker-build.sh
 ./docker-run.sh
 ./docker-connect.sh
 
-# 4. You are now INSIDE the container. Verify GPU, dependencies and data
+# 4. INSIDE the container: verify GPU, dependencies and data
 cd docker
 ./run_pipeline.sh check
 ```
 
-> **Everything from step 4 onwards runs *inside* the container, from the `docker/` directory.**
-> `./docker-connect.sh` puts you there; `cd docker` is what makes the `./run_pipeline.sh` form
-> below work. The two exceptions are the viewer scripts — `view_predictions.sh` and
-> `annotate_data_docker.sh` — which are launched from the **host** and `docker exec` into the
-> container themselves; each says so where it appears.
->
-> If you prefer not to keep a shell open, every in-container command below is equivalent to
-> `docker exec -it vessel-palpation ./docker/<script> <args>` run from the host.
+> **Everything below runs inside the container, from its `docker/` directory**, unless a
+> command says otherwise. Every in-container command is equivalent to
+> `docker exec -it vessel-palpation ./docker/<script> <args>` from the host. Three scripts are
+> launched **from the host** and `docker exec` in by themselves (`view_predictions.sh`,
+> `annotate_data_docker.sh`, `record_videos.sh`), and one runs on **bare metal by design**
+> (`annotate_data_bare_metal.sh`).
 
-### The global pipeline at a glance
+### The pipeline at a glance
 
-End to end, the project runs in this order. Steps 1–2 are already completed and their outputs
-ship in the Zenodo bundle, so a fresh clone normally starts at step 3 (or skips to step 5,
-since the bundle also ships the simulated dataset and trained checkpoints):
+Steps 1–2 are done and their outputs ship in the bundle, as do the simulated dataset (step 4)
+and the trained models (step 5), so a fresh clone can start anywhere.
 
-1. **Preprocess the real experimental data** (silicone and meat) — shipped in the bundle;
-   see [Annotate or review the real-world datasets](#annotate-or-review-the-real-world-datasets)
-   and the detailed pipeline sections below to redo it from raw recordings.
-2. **Calibrate the simulator** against the real sensor (`./domain_adaptation.sh`) and adopt
-   the fitted parameters into `system-params.json` — see
-   [Domain adaptation](#domain-adaptation-calibrating-the-simulator).
-3. **Draw the alignment panels** at the adopted parameters (`./alignment_figures.sh`) —
-   the manuscript's sim-vs-real marker figures.
-4. **Generate the simulated dataset** in the calibrated simulator
-   (`./run_pipeline.sh sim-full` + the reorder step) — see
-   [Regenerate the simulated dataset](#regenerate-the-simulated-dataset-optional).
-5. **Train and evaluate the four models** (A→A, A→B, A→C, C→B):
-   `./run_pipeline.sh <config> --train`, or `./score_all_scenarios.sh --seeds N` for
-   mean ± std across seeds.
-6. **Run the clip-length ablation** (`./ablation_clip_len.sh`) — how many frames the model
-   should see at once.
-7. **Render the qualitative figures**: `./view_predictions.sh` (per-frame panels) and
-   `./vessel_map_all.sh` (bird's-eye vessel maps for every configuration; both use the
-   best-of-five seed instance of each model).
+1. **Preprocess the real recordings** (Silicone, Meat) → [Real datasets](#real-datasets-annotate-review-preprocess).
+2. **Calibrate the digital twin** (`./domain_adaptation.sh`) and adopt the fitted parameters into
+   `system-params.json`; draw the validation panels (`./alignment_figures.sh`) →
+   [Domain adaptation](#domain-adaptation-calibrating-the-digital-twin).
+3. **Pick the temporal window** (`./ablation_clip_len.sh`).
+4. **Generate the simulated dataset** (`./run_pipeline.sh sim-full` + reorder) →
+   [Regenerate the simulated dataset](#regenerate-the-simulated-dataset).
+5. **Train and evaluate the four models** (`./score_all_scenarios.sh --seeds 5`, or one
+   configuration with `./run_pipeline.sh <config> --train`) →
+   [Reproduce the published results](#reproduce-the-published-results).
+6. **Render the qualitative results**: `./vessel_map_all.sh` (top-view maps),
+   `./view_predictions.sh` (per-frame viewer), `./record_videos.sh` (the videos below).
 
-### Which script produces which figure or table in the paper
+### Which script produces which figure or table in the manuscript
 
-Every script below maps onto a specific artifact in the manuscript:
-
-| Script | Produces | In the paper |
+| Script | Produces | Manuscript |
 |---|---|---|
-| `./alignment_figures.sh` | simulated (red) vs real (green) marker alignment on white, four interactions | **Fig. 5** (a) press, (b) twist-z, (c) twist-x, (d) slide |
-| `./domain_adaptation.sh` | the BO search behind the adopted parameters; photo-backed `da_overlay_*` versions of the same four panels | the MAE figures quoted beside Fig. 5 |
-| `./score_all_scenarios.sh` | foreground / background IoU per model | **Table 3** |
-| `./score_all_scenarios.sh --seeds 5` | mean ± std IoU / AUROC / AP over five seeds, mean PR (and ROC) curves with a ±1 std band | **Table 3**, **Fig. 6** |
-| `./ablation_clip_len.sh` | foreground IoU / AUROC / AP per temporal window length | the clip-length ablation table |
-| `./view_predictions.sh` | per-frame prediction panels (best-of-five model) | (interactive; no longer a manuscript figure) |
-| `./vessel_map_all.sh` | top-view vessel maps and per-pixel statistics (TP/FP/FN/TN, MCC, F1, precision, recall, FG/BG IoU, AP, mean L2) for every configuration (best-of-five models) | **Fig. 8**, **Table 4** (map-space rows) |
-| `python -m difftactile.scripts.script_frame_space_metrics` | the same statistics per marker in video-frame space, pooled once over all frames of all trials, best-of-five models → `FRAME_SPACE_METRICS.md` | **Table 4** (video-frame rows) |
-| `./run_pipeline.sh <config>` | the same IoU / ROC numbers, one configuration at a time | Table 3, Fig. 6 |
-| `./record_videos.sh` | the [demonstration videos](#demonstration-videos) in `videos/` (simulator interactions, annotated datasets, per-frame predictions of all four models) | (supplementary; not a manuscript figure) |
+| `./annotate_data_bare_metal.sh --silicone` / `--meat` | the annotation viewers | **Fig. 4** (annotated Silicone frame, Meat labels) |
+| `./domain_adaptation.sh` → `./alignment_figures.sh` | joint BO calibration; sim (red) vs real (green) marker alignment on the four validation interactions, MAE per panel | **Fig. 5** and the 0.50 mm MAE |
+| `./ablation_clip_len.sh` | foreground IoU / AP per temporal window length, mean ± std over seeds | **Table 3** |
+| `./score_all_scenarios.sh --seeds 5` | five-seed sweep of every configuration: mean PR curves ± 1 std (ROC twins too), `AUROC_RESULTS.md`, `sweep.json` | **Fig. 6** |
+| `python -m difftactile.scripts.script_frame_space_metrics` | per-marker statistics of each best-of-five model, pooled over all central frames → `FRAME_SPACE_METRICS.md` | **Table 4**, upper half |
+| `./vessel_map_all.sh` | top-view vessel maps and per-pixel statistics for every configuration | **Fig. 7**, **Table 4** lower half |
+| `./record_videos.sh` | the [demonstration videos](#demonstration-videos) | supplementary |
 
-The accepted version's Fig. 8 / Table 4 were produced with the **legacy** models
-(`saved_models_legacy/`, see [Legacy models](#legacy-models)); the current ones come from
-`vessel_map_all.sh`.
+Every mean ± std quotes the five seeds of the published sweep (`saved_models_sweeps/20260815-130143`);
+wherever a **single** model is shown or tabulated it is that configuration's **best-of-five
+instance by average precision** (`cnn/model_selection.py`) — the convention the manuscript states.
 
-`score_all_scenarios.sh --seeds N` additionally produces mean ROC and PR curves with a
-variance band across seeds — beyond what the manuscript currently shows, and worth considering
-for Fig. 6, since a single-seed curve understates the spread (see
-[Training is deterministic](#training-is-deterministic)).
+---
 
-### Domain adaptation: calibrating the simulator
+## Reproduce the published results
 
-> 📄 **Manuscript: Fig. 5**, and the MAE figures quoted beside it.
+**Naming.** The code uses **A / B / C** for the three datasets; the manuscript spells them out.
+`X-to-Y` reads "trained on X, tested on Y":
 
-The premise of the project is that a model trained purely in simulation transfers to a real
-sensor — which only holds if the simulator's markers move like the real ones. This calibrates
-the material and contact parameters against the physical sensor by **Bayesian optimisation**:
-each iteration proposes a parameter set, replays the four canonical interactions with it, and
-scores it by the MAE between simulated and real marker positions at each apex.
-
-```bash
-# (inside the container, from the docker/ directory)
-./domain_adaptation.sh                          # uses contact.num_opt_steps iterations
-DIFFTACTILE_BO_ITERATIONS=20 ./domain_adaptation.sh   # a longer search (~35 s/iteration)
-```
-
-**Not differentiable.** An earlier design backpropagated through the Taichi simulation to fit
-these parameters; that was abandoned, and all the machinery supporting it has been removed. BO
-treats the simulator as a black box, so only forward simulation is needed.
-
-**Every run gets its own timestamped directory** under
-`difftactile/output/domain_adaptation/<YYYYmmdd-HHMMSS>/`, so repeated runs accumulate rather
-than overwrite — the same convention the training pipeline uses:
-
-| File | Contents |
-|---|---|
-| `bo_results.json` | best configuration, and every iteration tried |
-| `bo_all_params.json` / `bo_all_targets.json` | each parameter set and the MAE it scored |
-| `bo_convergence.png` | MAE per iteration, with the running best |
-| `best_da_overlay_<name>.png` | **Fig. 5 panels**, from the best configuration |
-| `trajectories/iterNNN_<name>.npz` | the collected trajectory: simulated and real markers, MAE, and the parameters that produced it |
-
-Fig. 5 panels are (a) press, (b) twist about *z*, (c) twist about *x*, (d) slide — simulated
-markers **red**, real markers **green**.
-
-Measured over 5 iterations: aggregated MAE improved **13.88 px (0.50 mm) → 11.40 px (0.41 mm)**,
-with the best set found by the acquisition function. The manuscript reports 14 → 13.5 px over a
-longer run. The inter-marker spacing is ~55 px (2 mm), so all of these align to a small fraction
-of one grid step.
-
-A diverged parameter set — the FEM solve blows up and markers come back NaN — is scored as the
-worst possible value and the search continues, rather than aborting the run.
-
-> **Adopting the result is manual, deliberately.** The best configuration is printed and stored
-> in `bo_results.json`, but nothing writes it back into `system-params.json`. Copy it across
-> yourself once you are satisfied.
-
-To check a trajectory by eye, set `DIFFTACTILE_SNAPSHOT_DIR` to render the 3D scene periodically
-(needs a `DISPLAY`; Taichi GGUI segfaults offscreen in this image):
-
-```bash
-DIFFTACTILE_SNAPSHOT_DIR=difftactile/output/da_snapshots ./domain_adaptation.sh
-```
-
-### Reproduce the published results
-
-The paper's three models — one per (train → test) configuration over the simulated (**A**),
-silicone (**B**) and meat (**C**) datasets — are selected **by name**, with no source editing.
-
-**Naming legend.** The codebase keeps the concise **A / B / C** dataset names; the manuscript
-spells them out. A configuration name `X-to-Y` reads "trained on dataset X, tested on
-dataset Y":
-
-| Codebase | Manuscript | What it is |
+| Code | Manuscript | Dataset |
 |---|---|---|
-| **A** | **Sim** | simulated dataset, collected in the Taichi FEM simulator |
-| **B** | **Silicone** | real silicone phantom with shallow veins |
-| **C** | **Meat** | real meat phantom (straws under layers of steak) |
+| **A** | **Sim** | 500 simulated slides (250 with / 250 without the vessel), 317 frames each |
+| **B** | **Silicone** | real silicone phantom with shallow vessels: 10 annotated straight-line slides |
+| **C** | **Meat** | real meat phantom (metal / silicone straws under 5 mm steaks): 10 trials |
 
-So e.g. `A-to-B` is the manuscript's **Sim→Silicone** model, `C-to-B` is **Meat→Silicone**,
-and `A-to-A` is the in-domain **Sim→Sim** reference.
+Four (train → test) configurations, each selected **by name** and run either from the published
+checkpoint (`--eval`) or retrained (`--train`):
 
-```bash
-# (inside the container, from the docker/ directory)
+| Config | Manuscript | Model | Default | AUROC | AP | FG IoU | BG IoU |
+|---|---|---|---|---|---|---|---|
+| `A-to-A` | Sim→Sim | large | `--eval` | 0.958 ± 0.001 | 0.493 ± 0.005 | 0.193 ± 0.018 | 0.818 ± 0.022 |
+| `A-to-B` | Sim→Silicone | large | `--eval` | 0.779 ± 0.004 | 0.321 ± 0.004 | 0.234 ± 0.007 | 0.811 ± 0.027 |
+| `A-to-C` | Sim→Meat | large | `--eval` | 0.837 ± 0.002 | 0.224 ± 0.004 | 0.171 ± 0.006 | 0.730 ± 0.019 |
+| `C-to-B` | Meat→Silicone | compact | `--train` | 0.717 ± 0.054 | 0.304 ± 0.038 | 0.155 ± 0.012 | 0.537 ± 0.124 |
 
-# Evaluate the sim-trained GNN on the real SILICONE phantom -> ROC curve
-./run_pipeline.sh A-to-B
-
-# Cross-domain: test the sim-trained checkpoint on real MEAT (no retraining)
-./run_pipeline.sh A-to-C
-
-# Train on real MEAT trials, test on silicone
-./run_pipeline.sh C-to-B
-
-# ...or all three in sequence
-./run_pipeline.sh all-scenarios
-```
-
-Each configuration also takes `--train` (reproduce the model from scratch) or `--eval` (load
-the published checkpoint); see [Training and evaluating the GNN](#4-training-and-evaluating-the-gnn)
-for the full table. Outputs land in `difftactile/output/` (e.g. `roc_curve_A-to-B.pdf`) and `logs/`.
-
-Any run that **trains** writes `*_retrained_<config>` artifacts
-(`final_segmentation_model_gnn_meat_retrained_C-to-B.pt`,
-`test_loader_gnn_meat_retrained_C-to-B.pickle`, and the `_sim` equivalents) rather than
-overwriting the published checkpoints that the evaluation paths read — otherwise running the
-configurations in sequence would silently change the reported AUC. The `<config>` tag also
-keeps A→B and A→C apart, since they share the same underlying `*_sim` artifact names. Pass
-`DIFFTACTILE_OVERWRITE_PUBLISHED=1` if you deliberately want to replace them.
-
-### IoU, AUROC and AP for all six scenarios
-
-> 📄 **Manuscript: Table 3** (the IoU values) and **Fig. 6** (the ROC curves).
-
-The three configurations above, each scored from either the published checkpoint or one you
-trained yourself, give six scenarios. `score_all_scenarios.sh` measures all of them in one
-pass — per **marker node across video frames**, not from a reprojected phantom map:
+Mean ± std over the five seeds of the published sweep; per-marker over every central frame of
+every test trial; IoU at threshold 0.5. `large` is `GNN(arch="large")` (`latent_dim` 256, the
+`*_large` keys of the `gnn` config block), `compact` is `latent_dim` 64; a checkpoint only loads
+into the architecture it was trained with. `A-to-A`, `A-to-B` and `A-to-C` score the **same**
+sim-trained checkpoint on three test sets — the A→A → A→B gap is the sim-to-real transfer cost.
 
 ```bash
-# (inside the container, from the docker/ directory)
+./run_pipeline.sh A-to-B                 # evaluate the published checkpoint (default for A-to-*)
+./run_pipeline.sh C-to-B                 # train on meat, test on silicone (default for C-to-B)
+./run_pipeline.sh A-to-C --train         # retrain any configuration from scratch
+./run_pipeline.sh all-scenarios          # the four in sequence
 
-# score every scenario whose checkpoint is present -> AUROC_RESULTS.md
-./score_all_scenarios.sh
-
-# published checkpoints only (no training needed)
-./score_all_scenarios.sh --pretrained
-
-# one configuration
-./score_all_scenarios.sh A-to-B
+./score_all_scenarios.sh                 # one table for all configurations -> AUROC_RESULTS.md
+./score_all_scenarios.sh --pretrained    # published checkpoints only
+./score_all_scenarios.sh --seeds 5       # retrain each configuration per seed: mean ± std,
+                                         # mean PR/ROC curves, saved_models_sweeps/<TS>/
 ```
 
-Scenarios whose checkpoint is absent are skipped with a note rather than failing the run, so
-this is safe on a fresh restore where nothing has been retrained yet. The `retrained` rows need
-a `--train` run of the matching configuration first.
+Each run prints AUROC, AP (with its chance level and lift) and both IoUs, and writes
+`roc_curve_<config>.pdf` / `pr_curve_<config>.pdf` under `difftactile/output/`.
+The older names `sim-to-silicone`, `sim-to-meat`, `silicone-to-meat` are accepted as aliases
+(the last is a misnomer for A→C). The configuration and mode can also come from
+`DIFFTACTILE_SCENARIO` / `DIFFTACTILE_MODE`.
 
-> **This is the script that reports the paper's IoU table.** `./score_all_scenarios.sh` prints
-> and tabulates **foreground IoU** (vessel present) and **background IoU** (vessel absent) for
-> every model, alongside AUROC and AP, into `AUROC_RESULTS.md`. The three `run_pipeline.sh`
-> configurations print the same two numbers for their own model. Add `--seeds N` for
-> **mean ± std** over N seeds, which is what a table ought to quote.
+**Training never overwrites the published checkpoints.** A `--train` run writes
+`*_retrained_<config>` artifacts (`saved_models_sim/final_segmentation_model_gnn_sim_retrained_A-to-B.pt`
+and its `test_loader_gnn_sim_retrained_A-to-B.pickle`, etc.); `DIFFTACTILE_OVERWRITE_PUBLISHED=1`
+replaces the published files instead. A checkpoint and its test-loader pickle always travel
+together — the pickle holds the normalisation statistics the checkpoint was trained with, and
+mismatching them is a silent wrong answer, not an error.
 
-#### What foreground and background IoU mean
+**Metrics.** AUROC and AP are threshold-free (they read only the ranking of the probabilities,
+so a domain shift of the output *scale* cannot masquerade as ignorance of where the vessels
+are). They are reported together because AUROC normalises false alarms by the huge negative
+count while AP ignores true negatives entirely and its chance level is the positive rate
+(4–11% here) — the two can disagree in rank, and did on earlier checkpoints. IoU is per class
+over the same marker predictions: **foreground** = vessel-present class
+(`|pred ∧ true| / |pred ∨ true|`), **background** = vessel-absent class, always the flattering
+one (the negative class is ~89% of nodes on Silicone, ~93% on Meat). Unlike AUROC/AP it depends
+on the 0.5 threshold. This is the per-marker IoU; the top-view map has its own.
 
-Each is an ordinary per-class intersection-over-union over the **frame-by-frame marker
-predictions** — not the reprojected bird's-eye phantom map, which has its own separate IoU from
-`vessel_map.sh`:
+**Seeds.** Training is deterministic (`main/seeding.py`: torch/numpy, the shared `NP_RNG`,
+DataLoader workers and deterministic CUDA kernels; default seed 42, `DIFFTACTILE_SEED=N`), so a
+run reproduces bit-identically on the same machine. But the spread across seeds is large where
+the training set is small — C→B AUROC ranges 0.604–0.779 over seven seeds, wider than any gap
+between configurations — so quote a mean ± std, never a single run, and never the best seed.
+`--seeds N` runs each seed in a fresh subprocess and keeps every seed's checkpoint + pickle
+under `saved_models_sweeps/<timestamp>/<config>_seedNN/` with `sweep.json`.
 
-```
-foreground IoU = |predicted vessel AND truly vessel| / |predicted vessel OR truly vessel|
-background IoU = the same, for the "vessel absent" class
-```
+**Sim test split.** Dataset A is split by trajectory (filenames sorted, cut at 70% / 85% →
+350 / 75 / 75), so overlapping windows never leak across splits; every trajectory holds exactly
+one vessel, so there is nothing to stratify over. `A-to-A` scores the held-out **test** split
+read from the test-loader pickle (never re-derived), not the validation split that drives
+early stopping. The test windows are cut at dilation 24 (nine 5-frame windows per 317-frame
+trajectory) — which is why the Sim→Sim video below has nine frames.
 
-So "foreground" is the **class label**, not a claim about one side: it is the agreement between
-prediction and ground truth over the vessel-present class, needing both. A model that finds
-every vessel marker but also flags many empty ones scores a low foreground IoU despite perfect
-recall, because the union grows.
+**Temporal window.** Every sample is a `clip_len` = **5** frame window; the GNN predicts every
+frame in it (deep supervision) but only the **central** frame is scored (`dataset.py::get_mask()`,
+applied in `segmentation_gnn.shared_step()` for val/test). `DIFFTACTILE_CLIP_LEN` overrides
+the window for one process; `./ablation_clip_len.sh [--seeds N]` trains A-to-B at
+{1, 3, 5, 7} and writes `CLIP_LEN_ABLATION.md` (Table 3; 5 won on foreground IoU 0.238 vs
+0.214 for 7).
 
-**Background IoU is always the flattering one** — the negative class is ~89% of nodes on
-silicone and ~93% on meat, so even a poor model overlaps with it heavily. Read the foreground
-number as the real result. And unlike AUROC and AP, IoU **depends on the decision threshold**
-(`DECISION_THRESHOLD`, 0.5), so it carries every caveat about that choice; it is reported
-because it is the intuitive quantity, not because it is the most trustworthy one.
+---
 
-#### A→A: the in-domain (simulation → simulation) reference
+## Domain adaptation: calibrating the digital twin
 
-**A→A is a configuration in its own right**, alongside the three transfers — train on dataset A,
-test on a disjoint part of dataset A:
+> 📄 **Fig. 5** and the marker-alignment MAE (0.50 mm at deepest contact).
+
+The premise only holds if the simulated markers move like the real ones. `./domain_adaptation.sh`
+fits the sensor's Young's modulus and the sensor↔vessel contact stiffness by **Bayesian
+optimisation** (`DIFFTACTILE_DA_MODE=joint`, the default): every iteration simulates **two
+slides** at the proposed parameters — vessel-**absent**, scored by marker MAE against the real
+photograph (fidelity), and vessel-**present**, scored by how far the vessel holds the sensor up
+(sensitivity) — and maximises one objective that trades the two off
+(`main.py::domain_adaptation_joint`). The winning configuration is then **validated, not
+searched**, on the four canonical interactions — press, twist about *z*, twist about *x*, slide
+— against one photograph of the real sensor at each interaction's apex. `staged` keeps the
+older two-stage design.
 
 ```bash
-./run_pipeline.sh A-to-A            # evaluate the published checkpoint (default)
-./run_pipeline.sh A-to-A --train    # retrain and evaluate
-./score_all_scenarios.sh A-to-A     # into the results table
+./domain_adaptation.sh                                # ~35 s per iteration; DIFFTACTILE_BO_ITERATIONS=N
+./alignment_figures.sh                                # Fig. 5: white-background panels + MAE, from the
+                                                      # published run (or the current parameters)
+./score_params.sh                                     # score the CURRENT system-params.json once, no search
+./record_da_trajectories.sh                           # record the four interactions to .mp4 (needs a display)
 ```
 
-It is the ceiling the transfers are measured against: the gap between A→A and A→B **is the
-sim-to-real transfer cost**. On the published checkpoint that is AUROC **0.9369 → 0.7314**.
+Every DA run gets its own `difftactile/output/domain_adaptation/<timestamp>/`
+(`bo_joint_results.json`, `iteration_log.csv`, `final_joint_validation.json`,
+`da_overlay_<name>.png` on the photograph, `snapshots/` when a display is available). The
+published run is `difftactile/output/domain_adaptation_published/joint_bo/` (in the bundle);
+`alignment_figures.sh` redraws Fig. 5 from its cached marker positions and reports MAEs
+11.9 / 15.8 / 14.5 / 12.4 px (press / twist-z / twist-x / slide; ~55 px = 2 mm marker
+spacing). **Adopting a result is manual, deliberately** — nothing writes back into
+`system-params.json`.
 
-It scores the *same* published checkpoint as A→B and A→C — the three differ only in which
-dataset they are tested on. The simulated test split comes straight out of the test-loader
-pickle rather than being re-derived, so it is guaranteed to be the split the checkpoint was
-actually held out from.
+Details worth knowing: the search space is log-scaled for the parameters that span decades and
+the sensor is kept stiff by construction (`bo_gp.py`, `BoGp.__init__` explains the bounds and
+the CFL limit behind them); a diverged parameter set is scored as the worst value rather than
+aborting; the earlier *differentiable* fit through Taichi was abandoned and its machinery
+removed — BO treats the simulator as a black box. The five reference photographs live in
+`difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/` (keys `da_press`,
+`da_twist_z`, `da_twist_x`, `da_slide`, `flat_sensor_default_state` in `system-params.json`;
+the filename encodes press depth, angle and slide length) and are turned into
+`difftactile/output/da_<name>.npz` marker positions automatically. They are unrelated to the
+Silicone *training* videos.
 
-This is the simulated **test** split, not the validation split. Validation drives early stopping
-and checkpoint selection, so a number read off it is optimistic by construction; the test split
-is untouched by both.
+Reading the simulator window: the **sensor is green**, the **phantom blue**, the **vessel
+yellow** (drawn only when its contact pair is enabled). This is a different convention from
+the Fig. 5 overlays, where red = simulated and green = real markers.
 
-> A `--train` run of A→B or A→C *also* prints an in-domain reference before its cross-domain
-> result, since training already holds out that split. A→A is the standalone way to get the same
-> number without retraining.
+---
 
-#### How dataset A is split
+## Top-view vessel map
 
-**The split is mechanical, not stratified.** `create_splits_single_dataset_scheme()` sorts the
-trajectory filenames and cuts at 70% / 85% — 350 train, 75 validation, 75 test of the 500
-trajectories. Nothing balances the splits by vein count, depth or any other property.
+> 📄 **Fig. 7** and the lower half of **Table 4**.
 
-That turns out not to matter here, because **every trajectory in the shipped dataset contains
-exactly one vein** (`vein_polyline` has shape `(frames, 1, 50, 2)` in all 500 files). So a
-concern like "the test set contains two vessels but training only ever saw one" cannot arise —
-there is no such variation to stratify over. The label balance confirms the split is
-unremarkable: the fraction of vein-present frames is 0.5019 / 0.5029 / 0.5017 across
-train / val / test, and each trajectory is ~317 frames.
-
-Splitting **by trajectory** (not by clip) is the part that matters, and it is done correctly:
-all clips cut from one trajectory land in the same split, so overlapping sliding windows cannot
-leak between train and test.
-
-#### Why AUROC *and* average precision
-
-Both are **threshold-free and ranking-based**: they read only the *order* of the predicted
-probabilities, never their absolute scale, so no decision threshold is picked anywhere. That is
-deliberate — this is a sim-to-real project, and the first thing to shift when a model crosses a
-domain gap is the output *scale*, not the ranking. A single-threshold score (IoU, F1) confounds
-the two, so it cannot tell "the model doesn't know where the vessels are" from "the model knows,
-but its probabilities are miscalibrated for this domain".
-
-Both are reported because each is blind to something the other sees:
-
-| Metric | Ignores | Baseline | Reads as |
-|---|---|---|---|
-| **AUROC** | the absolute count of false positives, which it normalises by the (huge) negative total | always **0.5** | comparable across papers, but can look reassuring where precision is poor |
-| **AP** | true negatives entirely, so the negative majority cannot flatter it | the **positive rate** (~7–11% here) | the honest summary of a needle-in-a-haystack problem |
-
-Because AP's baseline moves with the dataset, the table reports the chance level and the **lift**
-(AP / chance) beside it. The two metrics can and do disagree — on the published checkpoints
-C-to-B scores *worse* than A-to-B on AUROC (0.679 vs 0.731) but *better* on AP (0.287 vs 0.255).
-That disagreement is information, not noise, and is the reason for reporting both.
-
-Outputs, one PDF per scenario:
-
-```
-AUROC_RESULTS.md                                        the summary table
-difftactile/output/roc_curves/roc_curve_<config>_<weights>.pdf
-difftactile/output/pr_curves/pr_curve_<config>_<weights>.pdf
-```
-
-Both figure types share their styling — the same threshold colourmap along the curve, the same
-marked operating points — so a ROC and a PR panel can sit side by side. The PR figure
-additionally draws its **chance baseline** as a dashed line, because a PR curve cannot be read
-without it: the same curve is excellent on a 1% positive set and worthless on a 50% one.
-
-The three `run_pipeline.sh` configurations report the same two metrics (and write
-`roc_curve_<config>.pdf` / `pr_curve_<config>.pdf` directly under `difftactile/output/`), so you
-get them without a separate scoring pass. Use this script when you want all six side by side.
-
-### Clip-length ablation: how many frames should the model see?
-
-The GNN takes a `clip_len`-frame window of marker positions and predicts the window's central
-frame. This trains the A-to-B configuration at each window length in {1, 3, 5, 7} — several
-seeds per length, reported as mean ± std — and ranks them by **foreground IoU** on the silicone
-test set (AUROC and AP are recorded alongside):
+Projects the per-marker predictions through the sensor pose onto the phantom plane at
+**1 mm per pixel** and renders the top view against the ground truth, for every configuration:
 
 ```bash
-# (inside the container, from the docker/ directory)
-./ablation_clip_len.sh                # 3 seeds per clip length (default)
-./ablation_clip_len.sh --seeds 5      # more seeds, tighter mean ± std
-```
-
-Outputs: `CLIP_LEN_ABLATION.md` (the summary table, best length marked), and
-`saved_models_ablation/<timestamp>/clip_len_XX/` with every run's checkpoint, test-loader
-pickle and raw scores, plus `ablation.json` for the numbers in machine-readable form. The
-clip length reaches each training subprocess through `DIFFTACTILE_CLIP_LEN`, so nothing in
-`system-params.json` is edited; a length of 1 means "no temporal context at all" (the graph
-then has no temporal edges).
-
-### Inspect predictions frame by frame
-
-> 📄 **Manuscript: Fig. 7.**
-
-An interactive viewer that steps through the test-set frames and shows the confusion overlay
-(per marker: green TP, yellow TN, red FP, blue FN — note this is the marker-dot scheme, not the
-[vessel map's](#birds-eye-vessel-localisation-map)) alongside the ground truth and soft predictions. The
-configuration selects **both** the model weights and the test dataset, so all six scenarios are
-reachable by name:
-
-```bash
-# (from the docker/ directory on the HOST - this one execs into the container itself)
-./view_predictions.sh A-to-B              # central frames (default), published checkpoint
-./view_predictions.sh A-to-B --all        # every frame of every window
-./view_predictions.sh A-to-C --retrained  # locally trained
-./view_predictions.sh A-to-B --all --x11  # force X11 instead of Wayland
-./view_predictions.sh A-to-A --trials first-vessel-present   # one held-out simulated trajectory
-./view_predictions.sh C-to-B --record out.mp4                # record instead of opening a window
-
-# one seed's model out of a sweep (see "Training is deterministic" below)
-./view_predictions.sh C-to-B --sweep 20260813-163201 --seed 1
-```
-
-`--trials SPEC` restricts the test set to some trials (comma-separated trial-id substrings, or
-`first-vessel-present`); the `i`/`o` keys then step over just those. It exists mainly for
-`A-to-A`, whose 75 held-out simulated trajectories are ~23k sliding windows. `--record PATH`
-steps the viewer through everything automatically (one key press per 500 ms of video),
-rendered offscreen, and writes an `.mp4` — the same mechanism the [demonstration
-videos](#demonstration-videos) are made with.
-
-`--sweep TS [--seed N]` is the only way to say *which* trained model to view once a sweep has
-produced several — `--retrained` alone means "whatever was trained last". `TS` is the sweep's
-timestamp (or a full path); an unknown sweep or seed lists what is available rather than
-silently falling back to a different model.
-
-> **The viewer shows one model, never an average over seeds — deliberately.** A mean prediction
-> over N models is an *ensemble*: a different model, whose AUROC and AP are not the numbers any
-> table here reports, so displaying it would put the figures at odds with the results.
-> Ensembling is a legitimate research direction, but it would need its own entrypoint and its
-> own reported numbers rather than being smuggled in as a display option. To compare seeds, open
-> two viewers at different `--seed` values; to quantify the spread, read `AUROC_RESULTS.md`.
-
-Run it from the **host** — like `annotate_data_docker.sh` it `docker exec`s into the running
-container for you (start it with `./docker-run.sh` first). It still runs *inside* the
-container, because it needs torch and CUDA for inference; there is no bare-metal variant.
-
-#### Which frames: `--central` (default) or `--all`
-
-The model consumes a **`clip_len`-frame sliding window** (`clip_len` is 7) and predicts a label
-for *every* frame in it. That is a training decision — supervising all seven frames gives far
-more learning signal per window than supervising one — but it is **not** what gets reported.
-Only the **central** frame's prediction is scored, because it is the only one with temporal
-context on both sides. That masking is real and lives in the code: `dataset.py::get_mask()`
-marks exactly frame `clip_len // 2`, and `segmentation_gnn.shared_step()` applies it in the
-`val` and `test` stages (but not in `train`), as does `evaluate_and_plot_roc()`.
-
-The viewer offers both views, defaulting to the reported one:
-
-| Flag | Shows | Navigation |
-|---|---|---|
-| `--central` *(default)* | one prediction per window: its **central frame** — what is reported and scored | `i`/`o` trial, `j`/`k` central frame |
-| `--all` | **every** frame of every window, off-centre predictions included — a debugging view | `i`/`o` trial, `j`/`k` clip, `n`/`m` frame |
-
-| Key | `--central` | `--all` |
-|---|---|---|
-| `i` / `o` | previous / next **trial** | previous / next **trial** |
-| `j` / `k` | previous / next **central frame**, within the trial | previous / next **clip**, within the trial |
-| `n` / `m` | — | previous / next **frame**, within the clip |
-| `q` | quit | quit |
-
-Changing trial (or clip) lands on that unit's first frame, and every move clamps at the ends
-rather than wrapping. Nothing advances on its own.
-
-Under `--central` the clips are cut as a **sliding** window (one starting at every frame), so
-consecutive windows have consecutive centres and `j`/`k` walks the trial frame by frame. The
-one consequence is that a trial's **first and last `clip_len // 2` frames — 3 of each — are
-never any window's centre**, so they have no prediction and are skipped. That is inherent to
-central-frame reporting, not a limitation of the viewer. Under `--all` the clips are instead
-tiled **sequentially** (non-overlapping), so stepping walks each trial once from start to
-finish rather than dropping you into the middle of a vein sweep.
-
-The **Metadata** panel reports exactly where you are. Under `--all`: the trial number and what
-that trial is (e.g. "1 silicone straw beneath 2 steaks"), the clip number, the frames the clip
-covers as a closed interval `[first, last]`, and the frame within the clip. Under `--central`:
-the trial, the central-frame number within it, and the video frame that window is centred on.
-
-The five panels (Ground Truth, Hard Prediction, Confusion Matrix, Soft Prediction, Metadata)
-are tiled into **one** Qt window rather than five OpenCV ones. That window is a native Wayland
-client by default, so it is smooth; `--x11` forces the Xwayland path and is choppy for the same
-reason the annotators' is. Five separate windows were not viable under Wayland anyway: a
-Wayland client cannot position itself, so `cv2.moveWindow()` silently did nothing and the
-panels landed on top of each other.
-
-The **Hard Prediction** and **Confusion Matrix** panels have to turn a probability into a
-yes/no, and use `MAP_DECISION_THRESHOLD` (0.58) from `cnn/curve_plots.py` to do it — the same
-cut as the vessel map, so the two qualitative views agree. Override it with
-`DIFFTACTILE_MAP_THRESHOLD`. The **Soft Prediction** panel beside them shows the underlying
-probabilities with no cut at all, and the reported metrics (AUROC, AP) never apply one, so this
-is purely a display choice.
-
-### Bird's-eye vessel localisation map
-
-> 📄 **Manuscript: Fig. 8** (all four panels) and **Table 4** — the Sim→Sim, Sim→Silicone
-> (0 mm and 3 mm tolerance) and Sim→Meat maps and the per-model confusion statistics come
-> straight out of these scripts' output directories.
-
-Projects the per-marker predictions through the sensor pose onto the phantom surface at
-**1 mm per pixel** and renders the top view against the ground truth, for **every**
-configuration:
-
-```bash
-# (inside the container, from the docker/ directory)
-./vessel_map.sh A-to-B                          # Sim→Silicone, ground truth from the annotated video
-./vessel_map.sh A-to-B --ground-truth photo     # Sim→Silicone, ground truth from the top-view photo
+./vessel_map.sh A-to-B                          # Sim→Silicone, truth reprojected from the annotated video
+./vessel_map.sh A-to-B --ground-truth photo     # Sim→Silicone, truth from the phantom's top-view photo
 ./vessel_map.sh C-to-B                          # Meat→Silicone
-./vessel_map.sh A-to-C                          # Sim→Meat: one map per meat trial (ten)
-./vessel_map.sh A-to-A                          # Sim→Sim: one simulated slide, ground truth from the simulator
-./vessel_map_all.sh                             # all of the above, in one go
-./vessel_map.sh A-to-B --model legacy           # the pre-2026-08-15 checkpoint (see "Legacy models")
+./vessel_map.sh A-to-C                          # Sim→Meat: one map per meat trial
+./vessel_map.sh A-to-A                          # Sim→Sim: one simulated slide with recorded poses
+./vessel_map_all.sh                             # all six, in one go
+./vessel_map.sh A-to-B --model legacy           # pre-2026-08-15 checkpoint (see Legacy models)
 ./vessel_map.sh A-to-B --threshold 0.6          # override the chosen decision threshold
 ```
 
-**Which model draws a map.** By default the **best-of-five** seed instance of that
-configuration from the published sweep (highest AP; `cnn/model_selection.py`) — the project
-convention wherever a single model is shown, the same one `view_predictions.sh` opens.
-`--model legacy` loads the pre-2026-08-15 checkpoints instead (A-to-B and C-to-B only).
+- **Model:** the best-of-five instance by AP (default) or `--model legacy`.
+- **Ground truth:** `video` (default) reprojects the test data's own per-marker labels
+  (manual annotation on Silicone, kinematics-derived on Meat, the simulator's vessel projection
+  on Sim); `photo` (Silicone only) segments the phantom's top-view photograph. Video-vs-photo
+  truth IoU is 0.29, which bounds what any model can score against either.
+- **The decision threshold is chosen, not assumed:** the one that keeps pixel-level precision
+  ≥ 0.9 (a predicted pixel counts within 3 mm of a true pixel) while maximising recall — few
+  false alarms over high sensitivity, since a false vessel misdirects a needle while a missed
+  one costs a re-scan. If unreachable the run falls back to the F1-optimal threshold and says so
+  (measured: Sim→Meat). `--threshold` / `DIFFTACTILE_VESSEL_MAP_THRESHOLD` override.
+- **Output is versioned** under `difftactile/output/vessel_maps/<train>-to-<test>_gt-<source>/<timestamp>/`
+  and never overwritten: `report.md`, `run.json`, `threshold_selection.png`, and per map
+  `prediction.png`, `ground_truth.png`, `confusion_rNN.{png,pdf}` with the truth grown by
+  0/1/2 mm, `l2_distances_rNN.png`, `metrics_by_radius.md` (TP FP FN TN MCC F1 precision
+  recall accuracy, FG/BG IoU, AP, L2 mean/median/deciles).
+- **Colours** (`Visualisation.CONFUSION_COLOURS_RGB`, shared with the viewer): 🟩 green both
+  say vessel, 🟥 **red = a miss** (truth says vessel, prediction does not), 🟦 blue = a false
+  alarm, ⬛ black neither. Red for misses is deliberate — the missed vessel is the dangerous
+  error in palpation.
+- **Geometry.** Silicone: the published 180 × 100 mm workspace, plane 16 mm from the lens
+  (pressed 3 mm in). Meat: each trial one straight slide along the robot's −y, sensor assumed
+  undeformed on the surface (plane 19 mm), all ten maps on one grid. Sim: the recorded
+  per-frame pose of one dedicated vessel-present slide (`./vessel_map_sim_trajectory.sh`, seed
+  2026, ~2 min; shipped in the bundle) — the published dataset records no poses — with the
+  simulator's ×5 length scale (`meta.distance_scaling_factor`).
 
-**Where the ground truth comes from** (`--ground-truth`): `video` (default) reprojects the
-test data's own per-marker labels exactly like the predictions — manual video annotation on
-Silicone, kinematics-derived labels on Meat, the simulator's vein projection on Sim (written as
-`simulator` in folder names). `photo` uses the silicone phantom's top-view photograph, segmented
-once and block-downsampled onto the same grid and restricted to the region the sensor swept
-(Silicone only).
-
-**The decision threshold is chosen, never assumed.** There is no 0.5 or 0.58 in this path. Each
-run sweeps every candidate threshold over the pooled per-pixel map (the maximum probability of
-any marker that landed on a pixel) and takes the one that keeps pixel-level **precision ≥ 0.9
-while maximising recall**, where a predicted pixel counts as correct when it lies within
-**3 mm** of a true pixel — the reprojected truth is a set of marker *points* 2 mm apart, so at
-0 mm the target is met only by a handful of pixels, i.e. an empty map (the 0 mm numbers are
-still reported for every map). This is deliberately conservative: in venipuncture assistance a
-false vessel sends the needle towards a vessel that is not there, while a missed one costs a
-re-scan. If the target is unreachable the run **falls back to the F1-optimal threshold and says
-so** in its `report.md` / `run.json` (measured: Sim→Meat cannot reach 0.9 precision on the
-map; the other three can). `--threshold T` overrides the rule.
-
-**Output is versioned**, one folder per configuration and ground-truth source, one
-timestamped subfolder per run — nothing is ever overwritten:
-
-```
-difftactile/output/vessel_maps/<train>-to-<test>_gt-<source>/<timestamp>[-legacy]/
-    report.md, run.json          model, threshold, per-map and pooled metrics
-    threshold_selection.png      precision & recall vs threshold, chosen point marked
-    [trial_NN_<name>/]           one subfolder per map when a run has several (meat trials)
-      prediction.png             predicted vessel pixels (white on black)
-      ground_truth.png           true vessel pixels
-      confusion_rNN.png/.pdf     confusion overlay with the truth grown by NN mm (00, 01, 02)
-      l2_distances_rNN.png       decile histogram of predicted-to-nearest-true distance
-      metrics_by_radius.md       TP FP FN TN MCC F1 precision recall accuracy, per radius
-      *_big.png                  5× nearest-neighbour twins for documents
-```
-
-For each map the ground-truth positives are **grown by an L2 disc** of radius 0, 1 and 2 mm and the
-fine-grained (per-pixel) confusion matrix, MCC, F1, precision, recall, accuracy and the
-distribution of L2 distances from every predicted pixel to its nearest true pixel (median,
-mean, deciles) are tabulated per radius. Silicone runs additionally write
-`ground_truth_sources_overlay.png` (video-derived vs photo-derived truth) and print their IoU,
-which bounds what any model could score against either.
-
-Colour scheme, defined once in `Visualisation.CONFUSION_COLOURS_RGB`:
-
-| Colour | Meaning |
-|---|---|
-| 🟩 **green** | both say vessel |
-| 🟥 **red** | the **reference** says vessel, the other does not — a **miss** |
-| 🟦 **blue** | the **other** says vessel, the reference does not — a **false alarm** |
-| ⬛ **black** | neither says vessel |
-
-Red for misses rather than for false alarms is deliberate: in a palpation setting the missed
-vessel is the dangerous error, so it takes the warning colour.
-
-**Geometry assumptions.** Meat: every trial is one straight slide of the same length along the
-robot's −y axis; the sensor is assumed to rest on the meat surface with the dome undeformed, so
-marker pixels are lifted onto the plane 19 mm from the lens and all ten maps share one grid.
-Silicone: the published 180 × 100 mm workspace, plane 16 mm from the lens (the sensor was
-pressed 3 mm in). Sim: the recorded per-frame sensor pose of one freshly simulated slide
-(`./vessel_map_sim_trajectory.sh`, shipped in the data bundle), plane 16 mm from the lens (the
-slide presses 3 mm), converted with the simulator's 5× length scale
-(`meta.distance_scaling_factor`: simulator lengths are SI metres × 5, so 0.2 simulator units
-= 40 mm). The published simulated dataset does not record poses, which is why the Sim→Sim map
-uses this dedicated trajectory (seed 2026, so it is not one of the training files).
+The **upper half of Table 4** — the same statistics per marker in video-frame space, pooled once
+over all central frames of the best-of-five models — is `python -m difftactile.scripts.script_frame_space_metrics`
+→ `FRAME_SPACE_METRICS.md`.
 
 ### Legacy models
 
-`saved_models_legacy/{sim,meat}/` holds the **original** checkpoints (and their statistics
-pickles) from the version of this project that was accepted for publication. They are kept
-only because they produced the accepted manuscript's bird's-eye map figure (`fig:vessel-map`,
-Fig. 8) and the localisation table read off it (`tab:localisation-map`, Table 4): panel (b) of
-that figure was completed by hand in a photo editor and Table 4 was derived from that edited
-panel, and this manual step was not repeated for the new models. **Every other result in the
-manuscript uses the current, non-legacy models** — the five-seed sweep at `gnn.clip_len` 5 on
-the regenerated simulated dataset, with the best-of-five instance at the published paths. The
-legacy models cannot be retrained (previous, unseeded simulated dataset; 7-frame window); see
-`saved_models_legacy/README.md`.
+`saved_models_legacy/{sim,meat}/` are the checkpoints (clip_len 7, previous unseeded simulated
+dataset) of the version first accepted for publication. They are kept only because they made
+that version's vessel-map figure and table; **every current result uses the five-seed sweep at
+clip_len 5**. `--model legacy` / `--legacy` load them (they set `DIFFTACTILE_CLIP_LEN=7`); they
+cannot be retrained. See `saved_models_legacy/README.md`.
 
-### Annotate or review the real-world datasets
+---
 
-Manual annotation and annotation review for the two real datasets. In each, one tool does both
-jobs: it loads the annotations already on disk, redraws them, and lets you step through frames.
+## Inspect predictions frame by frame
 
-**This is the one entrypoint that runs outside Docker.** These are hand-driven, frame-by-frame
-GUI tools, and inside the container every repaint crosses a forwarded X socket, which makes
-stepping through frames choppy. Run them natively instead — they need no part of the Docker
-stack (no Taichi, no CUDA, no torch), just a small dedicated environment created once:
+An interactive viewer over the test set of any configuration: five panels in one Qt window —
+Ground Truth, Hard Prediction, Confusion (green both / **red miss** / blue false alarm / grey
+neither), Soft Prediction, Metadata — using the best-of-five model by default.
 
 ```bash
-micromamba env create -f requirements/annotator-env.yml   # once, ~500 MB, about a minute
-
-# (from the docker/ directory on the HOST - these run on bare metal by design)
-./annotate_data_bare_metal.sh --silicone   # click annotator
-./annotate_data_bare_metal.sh --meat       # marker-label review
+# from the docker/ directory on the HOST - it execs into the container itself
+./view_predictions.sh A-to-B                    # central frames (default)
+./view_predictions.sh A-to-C --all              # every frame of every window (debugging view)
+./view_predictions.sh A-to-A --trials first-vessel-present   # one held-out simulated trajectory
+./view_predictions.sh C-to-B --retrained        # a locally trained model
+./view_predictions.sh C-to-B --sweep 20260815-130143 --seed 1   # one seed of a sweep
+./view_predictions.sh A-to-B --record out.mp4   # record instead of opening a window
+./view_predictions.sh A-to-B --x11              # force X11 instead of Wayland (choppy)
 ```
 
-The script activates that environment itself. If you would rather use your own interpreter,
-point `DIFFTACTILE_ANNOTATOR_PYTHON` at it — it needs numpy, scipy, tqdm, **PySide6** (the
-windows) and **av** (video decoding); the script checks for the last two and says so if they
-are missing. Note that these two viewers are the **only** part of the project that does not
-draw its windows with OpenCV.
+| Keys | `--central` (default) | `--all` |
+|---|---|---|
+| `i` / `o` | previous / next trial | previous / next trial |
+| `j` / `k` | previous / next **central frame** | previous / next **clip** |
+| `n` / `m` | — | previous / next frame within the clip |
+| `q` | quit | quit |
 
-**They are Qt 6 applications, so they are native Wayland clients.** The `opencv-python` wheel
-ships exactly one Qt platform plugin (`xcb`), so every OpenCV window on a Wayland desktop goes
-through Xwayland; the PySide6 wheels bundle the Wayland plugins, so Qt selects `wayland` by
-itself and no compatibility layer is involved. Nothing is forced — set `QT_QPA_PLATFORM=xcb`
-to fall back to X11, which is what to use inside the container or over X forwarding. Because
-Qt needs no X server, `DISPLAY` may be unset entirely: `WAYLAND_DISPLAY` alone is enough.
+`--central` shows exactly what is scored (one prediction per sliding window, its centre; the
+first and last `clip_len // 2` frames of a trial have none). `--all` shows every off-centre
+prediction too, on sequential clips. Trials are meat trial directories, silicone videos or
+simulated trajectory files; `--trials` takes comma-separated trial-id substrings or
+`first-vessel-present`. `--record PATH` steps through everything automatically (one key press
+per 500 ms of video), rendered offscreen. The Hard Prediction / Confusion panels use
+`MAP_DECISION_THRESHOLD` (0.58, `DIFFTACTILE_MAP_THRESHOLD`) — a display choice only; no
+reported metric depends on it. **The viewer shows one model, never an average over seeds**: an
+ensemble is a different model whose numbers no table here reports.
 
-There is also an **in-container twin**, `docker/annotate_data_docker.sh`, which runs the same
-two viewers through the same modules and the same PySide6/PyAV versions inside the Docker
-image. It exists so the two can be compared directly — run one, run the other, and any
-difference in responsiveness is the container's rather than the code's. Bare metal is still the
-normal way to annotate; this is a debugging aid.
+---
+
+## Real datasets: annotate, review, preprocess
+
+> 📄 **Fig. 4.**
+
+The two annotation viewers are **Qt (PySide6) applications that run on bare metal by design**,
+in a small dedicated environment — hand-driven frame by frame, they need to be responsive, and
+they need no Taichi, CUDA or torch:
 
 ```bash
-# (from the docker/ directory on the HOST - execs into the container itself)
-./annotate_data_docker.sh --meat          # native Wayland window (default)
-./annotate_data_docker.sh --meat --x11    # force the X11/Xwayland path instead
+micromamba env create -f requirements/annotator-env.yml    # once, ~500 MB
+
+# from the docker/ directory on the HOST
+./annotate_data_bare_metal.sh --silicone      # click up to 4 vessel points per frame; g unlocks
+                                              # editing, click a point + Delete removes it, z undo,
+                                              # d clear frame, m/n video, k/j frame, p save,
+                                              # q save+quit, x x quit without saving
+./annotate_data_bare_metal.sh --meat          # review-only: red = vessel present, green = absent
+                                              # (labels are derived from robot kinematics + straw
+                                              # geometry); m/n trial, k/j frame, q quit
+./annotate_data_bare_metal.sh --meat --record out.mp4     # record offscreen instead
 ```
 
-Run it from the **host** — it `docker exec`s into the running container for you (start it first
-with `./docker-run.sh`). The default is a genuine Wayland client: the container gets the
-host compositor's socket bind-mounted, which is the entire client/compositor interface, so it
-talks to the compositor over the identical IPC path a host-native client uses, with no proxy or
-nested compositor in between. `--x11` is the A/B switch for isolating a Wayland-specific bug.
-To confirm which you got, run `xlsclients` on the host while a viewer is up — in Wayland mode
-it must not appear. A container started before this feature was added has no Wayland socket;
-`docker stop vessel-palpation && ./docker/docker-run.sh` picks it up.
+Both are native Wayland clients (PySide6 bundles the Wayland plugin; `QT_QPA_PLATFORM=xcb`
+falls back to X11) and open in the container too via `./annotate_data_docker.sh --meat [--x11]`
+(host-launched; a debugging twin — the container's Wayland path is as smooth as bare metal, its
+X11 path is not). `--meat` works from the bundle (`clean/<trial>/frames.mp4` + `marker_labels.npz`);
+`--silicone` needs the dilated videos and annotation pickles, which are **not** in the bundle
+(`--source DIR`, see `data/MANIFEST.md`).
 
-> **Known limitation: `--x11` is choppy.** Measured on Ubuntu 24.04 / GNOME Wayland, the
-> containerised viewer under Wayland feels **indistinguishable from bare metal** when stepping
-> through frames, which is what the socket bind-mount buys. Under `--x11` it is noticeably
-> choppy — every repaint takes an extra copy through the Xwayland compatibility layer. This is
-> not fixed and is not planned to be: the X11 path exists only as a fallback for X11-only hosts
-> and as an A/B switch for isolating Wayland-specific bugs. **If you are annotating rather than
-> debugging, use the default Wayland path** (or the bare-metal script). Note the cost is
-> Xwayland's, not Docker's — the project's other in-container GUIs are X11-only and pay the same
-> price, but they are not hand-driven frame by frame, so it does not matter for them.
+**Preprocessing from raw** (only to redo the shipped datasets):
 
-Both need a display and set `DIFFTACTILE_INTERACTIVE=1` for you. Keys are printed on start-up
-(`m`/`n` video or trial, `k`/`j` frame, `q` quit; silicone additionally: left click to add a
-point, `d` to clear the frame, `p` to save).
+- **Meat** — `python -m difftactile.scripts.script_preprocess_meat_data`: interpolates robot
+  poses onto frames, detects and Hungarian-reorders markers, projects the straw geometry from
+  [`meat_experiment_spec.md`](difftactile/manual_or_experimental_data/meat_experiment_spec.md)
+  through the fisheye model into a label per marker → `clean/<description>-<timestamp>/{marker_positions,marker_labels}.npz`.
+  Ten of the 23 recorded trials ship (the rest were repeats no split used); the timestamp is
+  the trial's identity, the description only a label. It runs from the shipped `frames.mp4`
+  (regenerating, not bit-reproducing: median 0.03 px marker shift); `DIFFTACTILE_MEAT_FROM_RAW=1`
+  forces the 1.6 GB raw archive.
+- **Silicone** — `python -m difftactile.scripts.script_preprocess_silicone_data`: a chain of
+  directory-to-directory stages (interpolate/trim → dilate → markers → reorder → annotate →
+  line points → merge → dense labels) ending at the `_dense` directory `files.exp_data_silicone`
+  points to. The stages are a commented menu in `preprocess_silicone_data.main()` — uncomment
+  the ones you need, in order.
+- The viewers as bare modules: `DIFFTACTILE_INTERACTIVE=1 python -m difftactile.scripts.script_annotate_silicone`
+  / `script_browse_meat_annotations`.
 
-Annotation points in the silicone tool are real Qt scene objects rather than circles burned
-into the image, so **clicking a point selects it and `Delete` removes that one** — alongside
-the older `z` (undo last) and `d` (clear frame). The view is scaled to fit the window while the
-scene stays in the video's own 1080p pixel grid, so the window is freely resizable and clicks
-map back to full-resolution coordinates exactly. (This replaces the old `DIFFTACTILE_VIEW_WIDTH`
-downscaling, which existed because OpenCV had to shrink the frame itself before pushing it over
-an X socket.)
+---
 
-The meat viewer draws the labels over the **real camera frames**: the bundle ships
-`clean/<trial>/frames.mp4`, the 26 decimated frames per trial that preprocessing kept, aligned
-1:1 with `marker_labels.npz`. Each trial is decoded and composited once on first visit, so
-frame stepping is instant afterwards.
+## Regenerate the simulated dataset
 
-> `--silicone` still needs the dilated videos and annotation pickles, which are **not** in the
-> bundle (they are intermediate preprocessing stages — see [`data/MANIFEST.md`](data/MANIFEST.md)).
-> Pass `--source DIR` to point at a tree that has them.
-
-### Regenerate the simulated dataset (optional)
-
-The simulated training set ships in the Zenodo bundle, so **this is not required** to
-reproduce the results. Run it only if you want to extend the project:
+The Sim dataset ships in the bundle; run this only to extend the project.
 
 ```bash
-# (inside the container, from the docker/ directory)
+./run_pipeline.sh sim-short                     # 1 loop (8 trials, ~2-3 min): does the simulator work?
+DIFFTACTILE_TRAJECTORIES=3 DIFFTACTILE_VEIN_PAIR=1 DIFFTACTILE_NUM_LOOPS=250 \
+    ./run_pipeline.sh sim-full                  # the published shape: 500 slides, half with the vessel
+                                                # (seed 42; ~5.5 h on an RTX 3080)
 
-# ~2-3 minutes: a single loop (8 trials), to check the simulator works
-./run_pipeline.sh sim-short
-
-# ~2 h 45 m: a full 800-trial collection run
-./run_pipeline.sh sim-full
-```
-
-> **To regenerate a dataset of the *published* shape specifically**, set
-> `DIFFTACTILE_TRAJECTORIES=3 DIFFTACTILE_VEIN_PAIR=1 DIFFTACTILE_NUM_LOOPS=250`.
-> All 500 trajectories in the shipped dataset are type 3 ("slide (vein)") — it
-> was collected when the collection loop read `range(3, 4)`, which a later commit
-> widened to all four types. A default run therefore also produces types 0/1/2,
-> and type 0 yields empty arrays by design (it ends in ~36 timesteps, below the
-> `ts > 80` recording threshold). `DIFFTACTILE_VEIN_PAIR=1` runs each loop's
-> first substep **with** the sensor↔vein contact pair, so half the trajectories
-> carry vessel-present labels (the shipped dataset is ~50% vessel-present
-> frames), and 250 loops × 2 substeps × 1 type = the shipped 500 trajectories.
->
-> ```bash
-> # (inside the container, from the docker/ directory)
-> DIFFTACTILE_TRAJECTORIES=3 DIFFTACTILE_VEIN_PAIR=1 DIFFTACTILE_NUM_LOOPS=250 \
->     ./run_pipeline.sh sim-full
-> ```
-
-Collection writes raw trajectories to `difftactile/output/training_data/pickle_<timestamp>/`.
-Two more steps make that a dataset the GNN can train on:
-
-```bash
-# (inside the container, from the docker/ directory)
-
-# 1. Hungarian-reorder the markers into the base-graph order the GNN expects;
-#    writes <raw-dir>_reordered_dense beside the input
+# then Hungarian-reorder into the base-graph order the GNN expects
 DIFFTACTILE_SIM_RAW_DIR=difftactile/output/training_data/pickle_<timestamp> \
     python -m difftactile.scripts.script_pre_process_sim_data
+# and point files.sim_data in system-params.json at the new ..._reordered_dense directory
 ```
 
-2. Point `files.sim_data` in `difftactile/system_params/system-params.json` at the new
-   `..._reordered_dense` directory. Every training and evaluation entrypoint reads the
-   simulated dataset from that key.
-
-GUI windows (Taichi GGUI, the cv2 annotation tool, matplotlib) appear on your desktop
-automatically — the image ships Vulkan, which GGUI requires — and `DIFFTACTILE_HEADLESS=1`
-suppresses them when running over SSH or in CI.
-
-### Rebuilding and restarting the container
-
-If you change the `Dockerfile`, or a `docker-run.sh` change needs picking up (a container keeps
-the mounts, environment and ulimits it was **created** with, so a running one never gains them),
-stop it and go round again — from the **host**, in `docker/`:
-
-```bash
-docker stop vessel-palpation
-./docker-build.sh
-./docker-run.sh
-```
-
-There is no `docker rm` step: `docker-run.sh` starts the container with `--rm`, so **stopping it
-also removes it**. That is the container only — the *image* built by `docker-build.sh` persists,
-which is why an unchanged `Dockerfile` makes the rebuild a near-instant cache hit and only
-`docker-run.sh` really needs re-running. It also means nothing inside the container survives a
-stop: keep your work in the repository, which is bind-mounted, not in the container filesystem.
-
-> With the GUI enabled, Taichi may segfault **during interpreter shutdown**, after the
-> simulation has already printed `all done` and written its data. This is a teardown-only
-> issue in Taichi's GGUI destructor; the output is complete and unaffected. Use
-> `DIFFTACTILE_HEADLESS=1` for a clean exit code in scripted runs.
-
-Everything below documents the pipeline in detail, including how to run it outside Docker.
-
----
-
-## Branches and tags
-
-> ### 👉 `main` is the only branch.
->
-> Everything is on `main`: it is the only branch, the only one the documentation describes, and
-> the only one the Docker image and Zenodo bundle are tested against. All three of the paper's
-> models train and evaluate from it, selected by name (see [Quickstart](#quickstart-docker)).
-
-### The `upstream-difftactile` tag
-
-One tag is published alongside `main`:
-
-| Tag | Commit | What it is |
-|---|---|---|
-| `upstream-difftactile` | `c9b348e` | The pristine [DiffTactile](https://difftactile.github.io/) state this project forked from, before any masters-project work. Upstream's original README is preserved here. |
-
-It marks the fork point, so you can separate inherited upstream code from the contribution of
-this project:
-
-```bash
-# What this project changed relative to upstream DiffTactile
-git diff upstream-difftactile..main --stat
-
-# Browse the upstream code as it was at the fork
-git checkout upstream-difftactile
-```
-
-Note that `main` does not descend linearly from this tag — the history was rewritten during
-development — so `git diff` is meaningful but `git log upstream-difftactile..main` is not.
-The tag is a reference point only; it is not a branch and there is no need to check it out to
-run anything in this README.
-
----
-
-## Setup
-
-### Requirements
-
-- **Python 3.10–3.12.** (Upstream DiffTactile said 3.9.16; that does not apply to this fork's
-  torch 2.8 / CUDA 12.6 stack.)
-- **An NVIDIA GPU with CUDA is effectively mandatory.** Developed on an RTX 3080 (10 GB);
-  `difftactile/main/main.py` requests `device_memory_GB=9` from Taichi. The simulation can be
-  switched to CPU (see [Running without a GPU](#running-without-a-gpu)), but the **GNN cannot** —
-  `difftactile/cnn/segmentation_gnn.py:570` allocates on a hardcoded `cuda:0` with no fallback, so even
-  loading a checkpoint to plot a ROC curve fails on a CPU-only machine.
-- **A display is optional, and nothing ever waits for one.** No script blocks on a GUI
-  window: figures are written to `difftactile/output/` and the run continues, so the
-  simulator, all three GNN scenarios and the preprocessing tools finish unattended over SSH
-  or in CI. Set `DIFFTACTILE_INTERACTIVE=1` to get the blocking windows back (you then close
-  them by hand), or `DIFFTACTILE_HEADLESS=1` to skip creating windows altogether. See
-  [Interactive windows](#interactive-windows).
-- Linux (developed on Ubuntu 24.04).
-
-### Install
-
-```bash
-# main is the only branch.
-git clone https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI.git
-cd shallow-vessel-palpation-simulator-and-AI
-
-conda create -n difftactile python=3.10
-conda activate difftactile
-
-pip install uv          # the install scripts use uv
-pip install -e .
-```
-
-Then install the dependencies. There are two sets — the simulator and the ML stack:
-
-```bash
-bash requirements/install_dependencies_difftactile.sh   # Taichi sim + ML
-bash requirements/install_dependencies_ml.sh            # GNN stack only
-```
-
-`install_dependencies_difftactile.sh` is the superset and is enough on its own for most work.
-
-> **Notes on the dependency scripts.** They carry a `#!/bin/zsh` shebang, so invoke them with
-> `bash` (as above) or install zsh. They pin CUDA 12.6 wheels and PyTorch Geometric extensions
-> built against `torch-2.8.0+cu126` — if you use a different CUDA version, edit the
-> `--index-url` and `-f` lines to match. There is **no lockfile**, so exact versions are not
-> reproducible; `requirements/requirements_ml.in` records the intended set.
-> Two transitively-required packages are not listed explicitly: install them if imports fail:
-> ```bash
-> uv pip install scipy seaborn
-> ```
-
-### Always run from the repository root
-
-Configuration is loaded with a path relative to the working directory
-(`difftactile/main/constants.py` reads `difftactile/system_params/system-params.json`).
-Running from anywhere else fails immediately. Every command below assumes you are at the repo
-root and invokes modules with `python -m`.
-
----
-
-## Configuration
-
-There are **no command-line flags anywhere in this project.** Three mechanisms control behaviour:
-
-1. **`difftactile/system_params/system-params.json`** — the runtime source of truth for geometry,
-   material properties, trajectories, GNN hyperparameters, and all input/output paths.
-   Accessed in code as `SYSTEM_PARAMS.gnn.batch_size`, `SYSTEM_PARAMS.files.dataset_root`, …
-
-   The other JSON files in that directory form a small hierarchy:
-
-   | File | Role |
-   |---|---|
-   | `system-params-distances.json` | **Edit this** for any length. SI metres, unscaled; multiplied by `meta.distance_scaling_factor` into `system-params.json` by `apply_scaling`. |
-   | `system-params-youngs-modulus.json` | **Edit this** for stiffnesses; same mechanism. |
-   | `system-params.json` | Working config. Partly **regenerated** by `apply_scaling` — hand edits to scaled keys are lost. |
-   | `system-params-computed.json` | **Generated** by `pre_main.py` (poses, MPM grid layout). Never hand-edit. |
-   | `bo-gp.json` | Best Bayesian-optimisation parameters (inert while `meta.load_params_from_bo = 0`). |
-   | `system-params-units.json`, `system-params-literature-values.json` | Documentation only — no code reads them. Useful provenance for the material parameters. |
-2. **Module-level constants** — notably `RUN_ON_LAB_MACHINE` at `difftactile/main/main.py:30`,
-   which switches Taichi between `ti.cuda` and `ti.cpu`.
-3. **Commented-out call lists** — several `main()` functions are a menu of pipeline steps that
-   you enable by uncommenting. `difftactile/data_analysis/experiment/preprocess_silicone_data.py` is the clearest
-   case; `difftactile/scripts/script_segmentation_gnn.py` toggles between training and evaluation.
-
-To change a parameter, prefer editing the JSON.
-
----
-
-## Reproducibility — read before running
-
-**The datasets and trained model weights are not in this repository** — they are large binary
-artifacts excluded by `.gitignore`. **They are published on Zenodo instead**; see
-[the fix](#the-fix-restore-the-published-data-bundle) immediately below the table.
-
-A fresh clone does **not** contain:
-
-| Missing | Expected at | Needed by | Regenerable? |
-|---|---|---|---|
-| Simulation outputs and intermediates | `difftactile/output/` | most ML and analysis steps | yes, by the sim |
-| Canonical 127-marker graph | `difftactile/output/base-graph-connectivity.npz` | **every** dataset/train/eval run | **yes** — `script_base_graph_connectivity`, from an image that *is* in the repo |
-| Detected initial marker positions | `difftactile/output/init-marker-positions.npz` | marker tracking, base graph | yes — `script_fisheye_model` |
-| Trained GNN weights + test-loader pickle | `saved_models_meat/final_segmentation_model_gnn_meat.pt`, `difftactile/output/test_loader_gnn_meat.pickle` | evaluation / ROC (needs **both**) | only by retraining |
-| Silicone dataset | `difftactile/manual_or_experimental_data/silicone_training_data/20250901-131547_dense` | silicone training/eval | from raw video via `script_preprocess_silicone_data` |
-| Meat experiment trials | `difftactile/manual_or_experimental_data/meat_training_data/clean/` | the meat scenarios (`A-to-C`, `C-to-B`) | from raw video via `script_preprocess_meat_data` |
-| Raw experiment videos + robot poses | `.../meat_training_data/raw/<id>.{avi,npz}`, `silicone_training_data/…` | all preprocessing | no — must be supplied |
-| Fisheye calibration | `difftactile/output/fisheye_params.npz` | undistortion | yes, with your own checkerboard images |
-| Marker-tracker trajectories | `difftactile/output/marker_tracker/domain-adaptation-vascular-markers/traj_{0..3}_out.pkl` | **`script_main` construction** | from raw video via marker tracking |
-
-### The fix: restore the published data bundle
-
-Everything in that table is supplied by the Zenodo archive
-([10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934)), so none of it has to be
-regenerated:
-
-```bash
-wget https://zenodo.org/records/21900934/files/shallow-vessel-palpation-data.tar.gz
-./data/restore_data.sh shallow-vessel-palpation-data.tar.gz   # ~275 MB
-./data/restore_data.sh --verify                  # list what is present / missing
-```
-
-[`data/MANIFEST.md`](data/MANIFEST.md) documents exactly what the bundle contains and what is
-deliberately excluded (raw videos, intermediate preprocessing stages, training logs) — the
-exclusions are what take it from 4.5 GB down to ~275 MB without affecting any published result.
-
-Without the bundle, most entrypoints raise `FileNotFoundError`. In particular `script_main`
-reads marker-tracker output (`traj_{0..3}_out.pkl`) during construction, so **even the
-simulation cannot start from a bare clone**. The parts that work unaided are mesh generation
-(`script_generate_*_mesh_gmsh`), `script_apply_scaling` and `script_pre_main`.
-
-Paths are resolved against the repository root by `difftactile/main/paths.py` (override with
-`DIFFTACTILE_ROOT`), so scripts run from any working directory and no absolute paths need
-editing. Output directories are created on demand.
-
-**Verified:** a clone into an empty directory, plus the bundle, reproduces all three scenarios
-in Docker — see [REPRODUCTION_TEST.md](REPRODUCTION_TEST.md) for the transcript and numbers.
-
-The simulator entrypoints (`script_main`, `domain_adaptation.sh`) are **seeded** (default 42,
-override with `DIFFTACTILE_SEED`), so a collection run is repeatable. Note the *published*
-dataset predates this seeding and cannot be regenerated by any seed — restore it from the
-bundle. The evaluation scenarios are deterministic (AUC agrees to ~15 significant figures
-across machines).
-
----
-
-## Running the pipeline
-
-### 1. Simulation — generate synthetic training data
-
-```bash
-# scale physical units into simulation units (rewrites system-params.json in place)
-python -m difftactile.scripts.script_apply_scaling
-
-# derive poses and MPM grid layout -> writes system-params-computed.json
-python -m difftactile.scripts.script_pre_main
-
-# run the Taichi FEM simulation and collect training data
-python -m difftactile.scripts.script_main
-```
-
-Or all three in order:
-
-```bash
-bash difftactile/scripts/run_all.sh   # zsh shebang; invoke with bash or install zsh
-```
-
-`run_all_loop.sh` repeats this 100× to accumulate a dataset across randomised runs.
-
-> ⚠️ **`script_apply_scaling` rewrites `system-params.json` in place.** It multiplies the values
-> in `system-params-distances.json` (SI metres) and `system-params-youngs-modulus.json` by the
-> scale factors in `meta` and merges the result into `system-params.json`, overwriting whatever
-> was there. **To change a geometry or material value, edit the `-distances` /
-> `-youngs-modulus` file, not `system-params.json`** — otherwise your edit is silently
-> discarded on the next run.
->
-> ⚠️ **Run the three stages as separate processes** — that is what `run_all.sh` does. A single
-> process that imports all three modules up front makes `constants.py` load `system-params.json`
-> *before* `apply_scaling` rewrites it, so the simulation runs against pre-scaling constants.
-> (An old `script_all.py` had exactly this bug and has been removed.)
-
-Outputs land in `difftactile/output/`: per-trajectory training data at
-`difftactile/output/training_data/pickle_<timestamp>/trajectory_XXXX.npz`, containing `markers`,
-`markers_mask`, `vein_polyline`, `vein_polyline_mask`, `target_id_array` and `trajectory_type`.
-
-`script_main` opens **two Taichi GGUI windows** unconditionally, so it needs a Vulkan-capable
-display; it will not run headless without patching out `visualisation_set_up_gui()`.
-
-**Mesh generation** (optional — regenerates sensor and vein geometry with gmsh; each opens an
-interactive Gmsh window that you must close for the script to continue):
-
-```bash
-python -m difftactile.scripts.script_generate_vitactip_mesh_gmsh
-python -m difftactile.scripts.script_generate_vein_mesh_gmsh
-```
-
-**System identification / calibration:**
-
-```bash
-python -m difftactile.scripts.script_fisheye_model     # detect markers -> init-marker-positions.{pkl,npz}
-python -m difftactile.scripts.script_bo_gp             # Bayesian optimisation of simulation parameters
-```
-
-`difftactile/main/cfl_and_contact_params_estimation.py` (CFL timestep + Hertzian
-contact-stiffness estimates) is **diagnostics only and destructive if run as an entrypoint**: it
-writes contact parameters back to `system-params.json` as scalars, whereas `main.py` expects
-3-element lists (one per contact pair), so running it breaks the next `script_main`. Its
-`script_*` wrapper has therefore been removed; the module stays because `main.py` imports it.
-
-### 2. Processing real sensor data
-
-Requires the recorded videos.
-
-```bash
-python -m difftactile.scripts.script_preprocess_meat_data    # meat experiment: raw/ -> clean/
-python -m difftactile.scripts.script_preprocess_silicone_data                 # silicone phantom cleaning pipeline
-python -m difftactile.scripts.script_marker_tracker          # marker tracking + tkinter labelling GUI
-python -m difftactile.scripts.script_domain_adaptation       # sim-vs-real marker comparison
-```
-
-**Meat (`script_preprocess_meat_data`)** — interpolates robot poses onto frames, detects and
-Hungarian-reorders markers, then projects the straw geometry through the fisheye camera model to
-derive a binary label per marker. Trial geometry is parsed from
-[`meat_experiment_spec.md`](difftactile/manual_or_experimental_data/meat_experiment_spec.md),
-which catalogues the meat trials (straw depth vs. number of 5 mm steaks above it). Produces,
-per trial, `clean/<trial_id>/marker_positions.npz` `(T, 127, 2)` and `marker_labels.npz`
-`(T, 127)`.
-
-**Ten trials ship, named descriptively.** The experiment recorded 23 runs, but 13 were repeats
-of the same condition at different sensor heights that no split ever referenced; only the 10
-the model actually uses are in the bundle. Trial directories are
-`<description>-<timestamp>` — e.g. `2-metal-straws-beneath-2-steaks-20260228-235749` — so a
-trial's condition is readable from its name. The timestamp remains the trial's identity: the
-raw recordings and `meat_experiment_spec.md` are keyed by it, and the pipeline matches
-directories on it, so reprocessing from raw rebuilds the same descriptive layout rather than
-reverting to bare timestamps. The spec file still lists all 23 as the record of what was
-recorded, marking which ten ship.
-
-**It runs from the data bundle.** Each trial ships as `clean/<trial_id>/frames.mp4` (the 26
-decimated frames) plus `frames_poses.npz` (their robot poses), so preprocessing starts from
-those rather than needing the 1.6 GB raw archive. If `meat_training_data/raw/` is present, any
-trial without a shipped video falls back to it — decimating full-rate 1920×1080 AVIs by 15×, as
-before. Force the raw path with `DIFFTACTILE_MEAT_FROM_RAW=1`.
-
-> Because `frames.mp4` is H.264, re-running preprocessing **regenerates** the dataset rather
-> than reproducing it bit-for-bit: marker positions shift by a median 0.03 px (p99 0.47 px)
-> against ~55 px marker spacing, and 16 of ~76000 labels differ (0.02%). The `*.npz` files in
-> the bundle stay the authoritative artifacts. The pre-rendered `marker_labels.avi` overlays are
-> no longer written by default — the annotation viewer composites the same view live from
-> `frames.mp4` and the labels; set `DIFFTACTILE_MEAT_WRITE_OVERLAY=1` if you want the files.
-
-Rebuild the shipped videos from the raw archive (author-side) with:
-
-```bash
-python -m difftactile.scripts.script_make_meat_clean_videos
-```
-
-**Silicone (`script_preprocess_silicone_data`)** — a chain of directory-to-directory stages: interpolate/trim →
-dilate → extract markers → reorder → annotate (a manual cv2 click GUI) → line points → merge into
-the simulation `.npz` format → add dense labels, ending at the `_dense` directory that
-`exp_data_silicone` points to. Each stage is a method call in `preprocess_silicone_data.main()`. As shipped, the
-whole chain is commented out and only `count_annotation_dots()` runs, because the published
-`_dense` output is already in the data bundle. **Uncomment the stages you need, in order.**
-
-**Annotation and annotation review.** The one stage of each pipeline that is a manual tool has
-its own entrypoint, so it can be reached without editing the commented menu above:
-
-```bash
-DIFFTACTILE_INTERACTIVE=1 python -m difftactile.scripts.script_annotate_silicone         # click annotator
-DIFFTACTILE_INTERACTIVE=1 python -m difftactile.scripts.script_browse_meat_annotations   # label review
-```
-
-Both load whatever annotations already exist and redraw them, so the same window reviews the
-shipped annotations and creates new ones. `docker/annotate_data_bare_metal.sh --silicone|--meat` wraps them,
-selects the dedicated bare-metal environment and handles staging the silicone videos, which the
-bundle excludes; it is the recommended way to run these two — see
-[Annotate or review the real-world datasets](#annotate-or-review-the-real-world-datasets). Note the meat labels are
-derived analytically from robot kinematics and straw geometry rather than clicked, so the meat
-tool is review-only.
-
-### 3. Preparing datasets
-
-**Run this first** — it builds the canonical 127-marker graph that *every* dataset, training run
-and evaluation loads at construction time:
-
-```bash
-python -m difftactile.scripts.script_base_graph_connectivity   # -> difftactile/output/base-graph-connectivity.npz
-```
-
-Then, for simulated data:
-
-```bash
-python -m difftactile.scripts.script_pre_process_sim_data   # Hungarian-reorder sim markers into base-graph order
-```
-
-### 4. Training and evaluating the GNN
-
-The paper uses three datasets:
-
-| | Dataset |
-|---|---|
-| **A** | Simulated, collected in the differentiable tactile simulator. |
-| **B** | Real **silicone** phantom — shallow veins ("easy"). |
-| **C** | Real **meat** phantom — veins at varying depths ("difficult"). |
-
-and reports three separately trained models, one per (train → test) configuration. Each is
-selected **by name**, and each can be either trained from scratch or evaluated from the
-published checkpoint — with **no source editing**:
-
-```bash
-# Train each of the three models from scratch
-python -m difftactile.scripts.script_segmentation_gnn A-to-B --train   # train on sim,  test on silicone
-python -m difftactile.scripts.script_segmentation_gnn C-to-B --train   # train on meat, test on silicone
-python -m difftactile.scripts.script_segmentation_gnn A-to-C --train   # train on sim,  test on meat
-
-# ...or reproduce the published numbers without retraining
-python -m difftactile.scripts.script_segmentation_gnn A-to-B --eval    # evaluate on silicone + ROC
-python -m difftactile.scripts.script_segmentation_gnn A-to-C --eval    # cross-domain, no retraining
-```
-
-| Config | Train set | Test set | `--train` | `--eval` | Default |
-|---|---|---|---|---|---|
-| `A-to-B` | simulation | silicone | Trains the large model on sim, tests on silicone. | Loads the published sim-trained checkpoint (`*_sim`), evaluates on silicone, writes the ROC curve (AUC 0.7314). | `--eval` |
-| `C-to-B` | meat | silicone | Trains the small model on the real meat trials, tests the best checkpoint on silicone. | Same as `--train` — the published run ends by testing on silicone. | `--train` |
-| `A-to-C` | simulation | meat | Trains the large model on sim, tests on meat with every trial in the test split. | Loads the published sim-trained checkpoint and tests it on meat, no retraining. | `--eval` |
-
-Omitting the mode uses the default in the last column (evaluation wherever a published
-checkpoint makes it the cheaper path). The configuration can also be given as
-`DIFFTACTILE_SCENARIO` and the mode as `DIFFTACTILE_MODE`.
-
-> The **older scenario names still work** as aliases: `sim-to-silicone` → `A-to-B`,
-> `sim-to-meat` → `C-to-B`, `silicone-to-meat` → `A-to-C`. Note that `silicone-to-meat` was a
-> misnomer: it loads `final_segmentation_model_gnn_sim.pt`, which is the **simulation**-trained
-> checkpoint, so the configuration it actually runs is sim → meat (A→C), as the paper describes.
-
-Two architectures exist, and a checkpoint only loads into the one it was trained with —
-`GNN(arch="compact")` is the small model (`latent_dim` 64) and `GNN(arch="large")` the large one
-(`latent_dim` 256), whose sizes come from the `*_large` keys of the `gnn` config block. The
-dispatcher picks the right one per configuration: the two sim-trained models (A→B, A→C) use
-the large architecture, the meat-trained model (C→B) the small one.
-
-Training writes `*_retrained_<config>` artifacts rather than overwriting the published
-checkpoints — see the note in
-[Reproduce the published results](#reproduce-the-published-results). The configuration name is
-part of the suffix because A→B and A→C share `train_on_sim()` and therefore the same `*_sim`
-artifact names; tagging them keeps a later run from silently replacing an earlier one's
-checkpoint. Re-running the same configuration overwrites in place.
-
-#### Training is deterministic
-
-Every training run is seeded, so re-running the same configuration on the same machine
-reproduces it exactly — verified bit-identical, down to the last decimal of the IoU. The seed
-defaults to **42** and is printed at the top of each run:
-
-```bash
-DIFFTACTILE_SEED=7 ./run_pipeline.sh C-to-B    # a different, equally reproducible run
-```
-
-`difftactile/main/seeding.py` covers all four sources of randomness — torch and numpy, the
-project's shared `NP_RNG` (augmentation, shuffles, per-epoch subset choice), the DataLoader
-worker processes, and the CUDA kernels themselves. That last one is what actually closed the
-gap: the GNN's `GINEConv` / `global_add_pool` scatter with atomics, and atomic float addition is
-not associative, so identical inputs still produced different gradients until deterministic
-algorithms were requested. Expect a modest slowdown as a result.
-
-Reproducibility is *same machine, same code, same seed*. Different GPU models, CUDA versions or
-worker counts change floating-point reduction order, so cross-machine agreement is not promised.
-
-> ⚠️ **The seed matters a lot here — do not report a single run.** Measured on C→B, seven seeds
-> gave **AUROC 0.604–0.779** and **AP 0.239–0.342**. That spread is wider than any difference
-> the three configurations claim between one another, because the meat training set is small
-> (139 clips) and which subset a run happens to favour dominates the outcome.
->
-> So: report a mean and spread over several seeds rather than one number, compare
-> configurations as distributions rather than single runs, and **never pick the seed that scores
-> best** — that is fitting to the test set as surely as tuning a threshold on it would be.
-
-`--seeds N` does the sweep and the statistics for you:
-
-```bash
-# (inside the container, from the docker/ directory)
-./score_all_scenarios.sh --seeds 5           # all three configurations
-./score_all_scenarios.sh --seeds 5 C-to-B    # just one
-```
-
-It trains each configuration from scratch once per seed (0…N−1) and appends a **Seed sweep**
-section to `AUROC_RESULTS.md` with mean ± std and range of AUROC, AP **and both IoU values**,
-plus every per-seed value so an outlier is visible rather than averaged away. The existing
-scenario table is kept — the section is replaced rather than duplicated on a re-run.
-
-Each seed runs in a **fresh subprocess**, so "seed *k*" means the same thing inside a sweep as
-it does standalone; run in one process, the second run would inherit CUDA context and RNG state
-from the first. Measured on three seeds:
-
-| Config | AUROC mean ± std | AP mean ± std | IoU foreground | IoU background |
-|---|---|---|---|---|
-| A-to-B | 0.7740 ± 0.0088 | 0.3243 ± 0.0048 | 0.2023 ± 0.0314 | 0.8636 ± 0.0193 |
-| C-to-B | 0.6767 ± 0.0208 | 0.2788 ± 0.0106 | 0.1536 ± 0.0133 | 0.5397 ± 0.1184 |
-| A-to-C | 0.8238 ± 0.0008 | 0.2203 ± 0.0004 | 0.1922 ± 0.0032 | 0.7765 ± 0.0188 |
-
-Two things worth noticing, both arguments for quoting ± rather than a single run:
-
-- **The variance is very unevenly spread.** A→C is almost seed-independent on AUROC (±0.0008)
-  because it trains on the large simulated set, while C→B swings 25× more (±0.0208) on its 139
-  meat clips.
-- **IoU is markedly less stable than the ranking metrics**, which is expected — it depends on
-  the decision threshold, so it absorbs calibration wobble that AUROC and AP ignore by
-  construction. C→B's *background* IoU is the extreme case at ±0.1184, an eighth of the metric's
-  whole range. A single-seed IoU there is close to meaningless.
-
-**Every seed's weights are kept.** Each sweep creates a new timestamped directory, so sweeping
-repeatedly accumulates rather than overwriting:
-
-```
-saved_models_sweeps/20260813-163201/
-    sweep.json                  all metrics, machine-readable, with each checkpoint's path
-    C-to-B_seed00/
-        final_segmentation_model_gnn_meat_retrained_C-to-B.pt
-        test_loader_gnn_meat_retrained_C-to-B.pickle
-    C-to-B_seed01/
-        ...
-```
-
-The checkpoint and its test-loader pickle travel together deliberately: the pickle holds the
-normalisation statistics that checkpoint was trained with, and pairing a checkpoint with the
-wrong statistics evaluates it on mis-normalised inputs — a silent wrong answer rather than an
-error. (That exact mistake once understated the cross-domain result six-fold.) Nothing prunes
-these directories; delete them when you are done. The published checkpoints and the ordinary
-`*_retrained_<config>` artifacts are untouched by a sweep.
-
-> Sweeping **trains** once per seed, so it is far slower than plain scoring.
-
-The legacy `python -m difftactile.scripts.script_gnn` entrypoint (large model) still exists.
-
-> ⚠️ **A CUDA GPU is required to even construct the model**, not just to train quickly:
-> `difftactile/cnn/segmentation_gnn.py` allocates accumulators with a hardcoded `device='cuda:0'`
-> and no CPU fallback, so evaluation fails on a CPU-only machine too.
-
-Hyperparameters come from the `gnn` block of `system-params.json`. Outputs:
-
-| Artifact | Path |
-|---|---|
-| Per-epoch metrics (CSVLogger) | `logs/my_experiment/run_<timestamp>/metrics.csv` |
-| Best checkpoint (monitors `val_iou/1`) | `lightning_logs/.../best-model-sim.ckpt` (A→B, A→C), `best-model-meat.ckpt` (C→B) |
-| Published weights read by `--eval` | `saved_models_sim/final_segmentation_model_gnn_sim.pt` (A→B, A→C), `saved_models_meat/final_segmentation_model_gnn_meat.pt` (C→B) |
-| Pickled test set + normalisation stats | `difftactile/output/test_loader_gnn_sim.pickle` (A→B, A→C), `..._meat.pickle` (C→B) |
-| Weights written by `--train` | the same paths with a `_retrained_<config>` suffix |
-| ROC curve (`A-to-B --eval`) | `difftactile/output/roc_curve_A-to-B.pdf` |
-
-`A-to-B --eval` loads the **simulation**-trained checkpoint
-(`saved_models_sim/final_segmentation_model_gnn_sim.pt`) and needs **both** it and the
-matching `difftactile/output/test_loader_gnn_sim.pickle` (it recovers the normalisation
-statistics from the latter), plus the silicone dataset at
-`SYSTEM_PARAMS.files.exp_data_silicone` — all three ship in the Zenodo bundle.
-
-> **Corrected in this revision.** `evaluate_and_plot_roc()` previously loaded
-> `final_segmentation_model_gnn_meat.pt` — the small, *meat*-trained model — with a
-> default-architecture `GNN()`. That made `A-to-B --eval` compute **C→B**, duplicating the
-> C-to-B configuration, so the AUC it reported was the meat-trained model on silicone rather
-> than the sim-to-real result. Loading the sim checkpoint changes the reported figure from
-> **0.6786 to 0.7314**. The `--train` path always built A→B correctly; only this evaluate
-> shortcut was wrong.
-
-The ROC PDF is always written to `difftactile/output/roc_curve_A-to-B.pdf`, and the script
-exits on its own rather than waiting for you to close a plot window — open the PDF to inspect
-the curve. See [Interactive windows](#interactive-windows) if you want the window back.
-
-### 5. Visualisation and results
-
-```bash
-python -m difftactile.scripts.script_visualise        # predictions overlaid on sensor frames
-python -m difftactile.scripts.script_visualise_mesh   # simulation mesh
-python -m difftactile.scripts.script_vessel_map       # bird's-eye vessel map (prefer docker/vessel_map.sh)
-```
-
-`script_visualise` accepts a configuration name (`A-to-B`, `C-to-B`, `A-to-C`) plus
-`--pretrained` / `--retrained` to pick the weights and test set together; `docker/view_predictions.sh`
-is the wrapper around it. `script_vessel_map` builds the bird's-eye vessel maps, wrapped by
-`docker/vessel_map.sh` / `docker/vessel_map_all.sh`.
-
-**Domain-adaptation overlay figures.** The sim-vs-real marker alignment images for the four
-canonical interactions (press, twist-z, twist-x, slide) are drawn by
-`Contact.generate_validation_img()` in [`difftactile/main/main.py`](difftactile/main/main.py),
-called from `compute_da_loss()` in the same file — the simulator writes them inline while it
-computes the alignment MAE, rather than in a separate plotting stage. They land in
-`difftactile/output/da_overlay_{press,twist_z,twist_x,slide}.png` and are produced during a
-collection run with `meta.load_params_from_bo == 1`. The real marker positions they are compared
-against come from `extract_reorder_save_markers()` in
-[`difftactile/data_analysis/experiment/domain_adaptation.py`](difftactile/data_analysis/experiment/domain_adaptation.py)
-(`script_domain_adaptation`).
-
-### Interactive windows
-
-**No script waits for user input.** Every figure, mask and 3-D view is written to disk (mostly
-under `difftactile/output/`), and the script then carries on and exits. This is what makes the
-pipeline safe to run unattended — in Docker, over SSH, or in CI — where a window nobody can
-close would hang the run forever. To look at a result, open the saved `.pdf` / `.png`.
-
-Two environment variables change this:
-
-| Variable | Effect |
-|---|---|
-| `DIFFTACTILE_INTERACTIVE=1` | Restore the original blocking behaviour: `plt.show()` waits, frame browsers step on your key presses (`j`/`k`/`q`), the Gmsh FLTK viewer opens, and the tkinter marker-labelling GUI runs. Requires a real display. |
-| `DIFFTACTILE_HEADLESS=1` | Stronger: do not create windows at all. Implied automatically when neither `DISPLAY` nor `WAYLAND_DISPLAY` is set. |
-| `DIFFTACTILE_MAX_FRAMES=N` | How many frames a viewer loop steps through before returning when non-interactive. |
-| `QT_QPA_PLATFORM=xcb` | Force the Qt annotation viewers onto X11 instead of letting Qt pick Wayland. Use inside the container or over X forwarding. |
-| `DIFFTACTILE_ANNOTATOR_PYTHON` | Interpreter `docker/annotate_data_bare_metal.sh` should use, instead of the `vessel-palpation-annotator` micromamba env. |
-
-Two tools exist *only* to collect manual input — the Qt click-annotator in
-`preprocess_silicone_data.py::annotate()` and the tkinter labeller in
-`marker_tracker.py::VideoPlayer.run()`. Without `DIFFTACTILE_INTERACTIVE=1` they print a note
-and return immediately, leaving any annotations already on disk untouched.
-
-The policy lives in `difftactile/main/paths.py`'s neighbour, `difftactile/main/display.py`;
-route new GUI calls through its `wait_key()`, `imshow()`, `finish_plot()` and `prompt()`
-helpers rather than calling OpenCV or pyplot directly.
-
-### Running without a GPU
-
-Set `RUN_ON_LAB_MACHINE = False` at `difftactile/main/main.py:30` to switch Taichi to the CPU
-backend for the **simulation**. Expect a large slowdown.
-
-The **GNN has no working CPU path**: several call sites do check `torch.cuda.is_available()`, but
-`difftactile/cnn/segmentation_gnn.py:570` allocates its metric accumulators on a hardcoded `cuda:0`, so
-constructing the model at all requires CUDA. Patch that line if you need CPU inference.
-
----
-
-## Repository layout
-
-```
-difftactile/
-├── main/                 Taichi FEM simulation core
-│   ├── main.py           contact simulation + training-data collection (the big one)
-│   ├── pre_main.py       trajectory/geometry precomputation
-│   ├── apply_scaling.py  physical units -> simulation units
-│   └── generate_*_gmsh.py  mesh generation
-├── sensor_model/         ViTacTip FEM model + fisheye camera projection
-├── object_model/         phantom, vein, mesh loading
-├── cnn/                  GNN and CNN models, datasets, training, visualisation
-│   ├── segmentation_gnn.py  the three paper configurations
-│   ├── gnn.py            large (simulation-trained) model
-│   └── dataset.py        dataset construction and splits
-├── data_analysis/
-│   ├── experiment/       real sensor data: tracking, calibration, annotation, ROC
-│   ├── sim/              simulated data postprocessing
-│   ├── training/ testing/  metrics and figures
-├── scripts/              entrypoint wrappers — run these
-├── system_params/        JSON configuration
-├── meshes/               STL geometry
-└── manual_or_experimental_data/   reference photos, calibration images, annotations, specs
-```
-
-Every runnable entrypoint is a thin wrapper in `difftactile/scripts/`; the logic lives in the
-corresponding module. To add one, follow the existing 3-line pattern.
-
----
-
-## Limitations and known issues
-
-This is a research snapshot rather than a packaged tool, and it is published as-is. The first
-two entries below are deliberate modelling decisions, and understanding them is essential to
-interpreting the simulator's output correctly. The remainder are known rough edges and are
-*not* worth reporting as bugs:
-
-- **Contact compliance is deliberately asymmetric across the three contact pairs.** The
-  sensor↔phantom pair is tuned to transfer very little deformation to either body, so the bulk
-  of the phantom surface registers only weakly on the sensor membrane. Visible sensor
-  deformation is instead driven almost entirely by the sensor↔vein pair. The simulator is
-  therefore best understood as a *targeted model of the subsurface feature's mechanical
-  signature* rather than a general-purpose soft-body contact solver: the quantity it is built
-  to reproduce is the marker displacement field induced by a stiff inclusion beneath a
-  compliant surface, not the absolute contact mechanics of the surface itself.
-
-  This is a strong simplification of the underlying physics, and it is adopted because it
-  reproduces the target signal well. The resulting marker deformations match those measured on
-  the real ViTacTip across all four domain-adaptation trajectories (press, press-and-slide,
-  press-and-twist-x, press-and-twist-z) and throughout training-set collection — which is the
-  property the downstream GNN actually consumes. Since the network is trained purely in
-  simulation and evaluated on real sensor video, the fidelity that matters is fidelity of the
-  marker field, and the sim-to-real transfer results reported for the A→B and A→C
-  configurations bear this out. Treat absolute contact forces and phantom-surface deformation
-  magnitudes as uncalibrated; treat the marker displacements as the validated output.
-
-- **The MPM phantom is kinematically fixed.** Every phantom material point is pinned rather
-  than advected: in `Phantom.g2p()` (`difftactile/object_model/phantom.py`) each particle whose
-  `is_fixed` flag is set has its velocity and affine velocity field zeroed and its position
-  copied unchanged to the next substep. Despite the name, `phantom.fix_bottom_points` does not
-  restrict this to the bottom layer — `is_fixed` is assigned `np.ones_like(...)`, so the flag
-  is set for *all* particles and the phantom acts as a rigid, immovable body. (The commented-out
-  `z_coords <= z_threshold` line and the now-unused `phantom.fixed_points_z_ratio` parameter
-  are remnants of the earlier bottom-only scheme.) Note this pins the **particles**; the
-  background Eulerian grid is rebuilt each substep as usual.
-
-  This is intentional. Allowing the phantom to deform freely produced two failure modes that
-  are avoided entirely by pinning it:
-
-  1. **Collapse of the MPM body**, encountered when the grid node spacing was set too large —
-     the deformation field is band-limited by the cell size, so an under-resolved grid cannot
-     sustain the phantom's shape.
-  2. **High-frequency jitter**, in which the phantom vibrated persistently and small clusters
-     of particles were ejected far from the body.
-
-  Because the informative signal is the sensor's response to the subsurface feature, freezing
-  the phantom removes both instabilities without affecting the quantity being learned.
-
-- **Configuration is partly "edit the source".** Enabling a pipeline stage, switching train vs.
-  evaluate, or choosing the Taichi backend all mean editing Python, not passing a flag.
-- **Absolute paths** to the original machine remain in a handful of files (listed above).
-- **Non-interactive by default.** Nothing blocks waiting for a window to be closed; inspect
-  the saved figures in `difftactile/output/` instead. `DIFFTACTILE_INTERACTIVE=1` restores the
-  blocking windows — see [Interactive windows](#interactive-windows).
-- **The annotation viewers need their own environment.** They are the only Qt (PySide6) windows
-  in the project — everything else uses OpenCV — so they run from the dedicated
-  `vessel-palpation-annotator` env on bare metal, not inside the container, which ships neither
-  PySide6 nor PyAV. Being native Wayland clients is the point: it removed the stale-frame
-  double-present workaround the OpenCV viewers needed, so one keypress moves exactly one frame.
-- **`script_main` can segfault at exit when the Taichi GGUI window is open** (exit code 139,
-  "Segmentation fault (core dumped)"). This happens *after* `main()` has finished and printed
-  `all done`, during CUDA/GGUI teardown, so **the collected trajectories are complete and
-  valid** — the crash cannot corrupt them. It only occurs when a display is available:
-  `docker-run.sh` passes `DISPLAY` through, and `run_pipeline.sh` forces headless mode only
-  when `DISPLAY` is unset. Run with `DIFFTACTILE_HEADLESS=1` to avoid it:
-
-  ```bash
-  docker exec -e DIFFTACTILE_HEADLESS=1 vessel-palpation ./docker/run_pipeline.sh sim-short
-  ```
-
-  Headless is also markedly faster (~108 s vs ~149 s for `sim-short`), so prefer it unless you
-  actually want to watch the simulation.
-
----
-
-## Troubleshooting
-
-| Symptom | Cause |
-|---|---|
-| `FileNotFoundError: difftactile/system_params/system-params.json` | Not running from the repository root. |
-| `FileNotFoundError` on a `.npz` / `.pkl` / `.pt` | Missing dataset or checkpoint — see [Reproducibility](#reproducibility--read-before-running). |
-| CUDA out of memory in Taichi | Lower `device_memory_GB` in `difftactile/main/main.py:2611`. |
-| `ModuleNotFoundError: scipy` / `seaborn` | `uv pip install scipy seaborn`. |
-| PyG extension import errors | The `pyg_lib` / `torch_scatter` wheels must match your Torch+CUDA build; edit the `-f` URL in the install scripts. |
-| A pipeline step does nothing | Its call is commented out in the module's `main()` — uncomment it. |
-| Taichi GGUI / Vulkan error, or hang on a headless machine | `script_main` always opens two GGUI windows and the gmsh scripts open FLTK windows. A display with a working Vulkan driver is required. |
-| Edits to `system-params.json` keep reverting | `script_apply_scaling` regenerates them — edit `system-params-distances.json` instead. |
-| `script_main` breaks after running the CFL script | It wrote scalar contact params where lists are expected; restore them in `system-params.json`. |
-
----
-
-## Domain-adaptation reference photographs
-
-The four domain-adaptation interactions are calibrated against **single photographs** of the
-real ViTacTip sensor pressed into the silicone phantom — one per interaction, not videos. Each
-captures the sensor at that interaction's **apex**, which is why `domain_adaptation.sh` scores
-by apex MAE rather than over a whole trajectory: one frame per interaction is all the ground
-truth there is.
-
-All five live in `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/` and
-are wired up in the `files` block of `difftactile/system_params/system-params.json`.
-
-| Config key | Path (relative to repository root) |
-|---|---|
-| `da_press` | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/press_press_depth=4_angle=10_slide_length=50_timestamp=2025-08-30-21-23-31.jpg` |
-| `da_twist_z` | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/twist_z_press_depth=4_angle=90_slide_length=50_timestamp=2025-08-30-21-26-57.jpg` |
-| `da_twist_x` | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/twist_x_press_depth=2_angle=20_slide_length=50_timestamp=2025-08-30-21-34-40.jpg` |
-| `da_slide` | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/slide_press_depth=3_angle=10_slide_length=50_timestamp=2025-08-30-21-49-26.png` |
-| `flat_sensor_default_state` | `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/press_press_depth=0_angle=10_slide_length=50_timestamp=2025-08-30-21-23-00.jpg` |
-
-The filename encodes the capture settings — `press_depth`, `angle` and `slide_length` — and the
-timestamp. The last row is the **undeformed** reference (press depth 0), not an interaction.
-Note `da_slide` is the only `.png`; the rest are `.jpg`.
-
-`extract_real_marker_positions()` turns these into `difftactile/output/da_<name>.npz`, which
-holds the marker positions the MAE is actually computed against; `domain_adaptation_main()`
-calls it automatically and skips any that already exist. The red/green alignment overlays a run
-writes (`da_overlay_<name>.png`, manuscript Fig. 5) compare the simulated markers against
-exactly these photographs.
-
-**These are not the GNN training data.** The silicone dataset under
-`difftactile/manual_or_experimental_data/silicone_training_data/` is a separate experiment — a
-raster scan of the phantom, stored as `.avi` videos plus `.npz` metadata — and is unrelated to
-these four calibration images.
+`run_pipeline.sh sim-*` runs `script_apply_scaling` → `script_pre_main` → `script_main` as
+separate processes (`difftactile/scripts/run_all.sh` does the same outside Docker; a single
+process would load the config before `apply_scaling` rewrites it). Trajectory types are
+0 press, 1 slide-vessel, 2 twist-y, 3 twist-z (`DIFFTACTILE_TRAJECTORIES`); the published
+dataset is entirely type 3 with `DIFFTACTILE_VEIN_PAIR=1` (each loop's first substep with the
+sensor↔vessel contact pair, so half the trajectories are vessel-present). Collection is seeded,
+so the same invocation regenerates the same dataset up to GPU nondeterminism. Raw output is
+`difftactile/output/training_data/pickle_<timestamp>/trajectory_XXXX.npz` (`markers`,
+`markers_mask`, `vein_polyline`, `vein_classification`, …).
+
+Mesh generation (`script_generate_vitactip_mesh_gmsh`, `script_generate_vein_mesh_gmsh`) and
+the sensor-geometry artifacts the simulator loads at start-up ship in the bundle too.
+
+> The simulator opens Taichi GGUI windows when a display is available and **may segfault at
+> interpreter exit** (code 139) in GGUI teardown, *after* printing `all done` and writing
+> everything — the output is complete. `DIFFTACTILE_HEADLESS=1` avoids it (and is ~35% faster);
+> it is implied when `DISPLAY` is unset.
 
 ---
 
 ## Demonstration videos
 
-All videos live in **[`videos/`](videos/)** at the repository root (H.264 `.mp4`, ~15 MB in
-total). They are produced by `./docker/record_videos.sh` from the parameters currently in
-`system-params.json` and the published best-of-five checkpoints; the two GUI tools are stepped
-automatically, one key press per 500 ms of video, and rendered offscreen (see the "Record mode"
-section of `difftactile/main/qt_viewer.py`).
+All videos live in **[`videos/`](videos/)** (H.264 `.mp4`, ~15 MB in total), made by
+`./docker/record_videos.sh` (host-launched) at the parameters in `system-params.json` with the
+best-of-five checkpoints; the GUI tools are stepped automatically, one key press per 500 ms of
+video, and rendered offscreen (see "Record mode" in `difftactile/main/qt_viewer.py`).
 
-**Simulator** — the four sensor–phantom interactions (sensor **green**, phantom **blue**, vein
-**yellow**), recorded from the simulator's own camera by `record_da_trajectories.sh`:
+**Simulator** — the four sensor–phantom interactions (sensor **green**, phantom **blue**,
+vessel **yellow**), from the simulator's own camera (`record_da_trajectories.sh`):
 
 | | | |
 |---|---|---|
@@ -1499,26 +446,159 @@ section of `difftactile/main/qt_viewer.py`).
 | **Slide, blood vessel absent** — [`sim_slide_vessel_absent.mp4`](videos/sim_slide_vessel_absent.mp4)<br><video src="videos/sim_slide_vessel_absent.mp4" controls muted width="100%"></video> | **Slide, blood vessel present** — [`sim_slide_vessel_present.mp4`](videos/sim_slide_vessel_present.mp4)<br><video src="videos/sim_slide_vessel_present.mp4" controls muted width="100%"></video> | |
 
 **Annotated datasets** — every frame of every recording, stepped through with the annotation
-viewers (`annotate_data_bare_metal.sh --record`). Silicone: the clicked vessel points (up to
-four per frame). Meat: per-marker ground-truth labels (red = vessel present, green = absent):
+viewers. Silicone: the clicked vessel points. Meat: per-marker labels (red = vessel present,
+green = absent):
 
 | | |
 |---|---|
 | **Silicone phantom** — [`dataset_annotations_silicone.mp4`](videos/dataset_annotations_silicone.mp4)<br><video src="videos/dataset_annotations_silicone.mp4" controls muted width="100%"></video> | **Meat phantom** — [`dataset_annotations_meat.mp4`](videos/dataset_annotations_meat.mp4)<br><video src="videos/dataset_annotations_meat.mp4" controls muted width="100%"></video> |
 
-**Per-frame GNN predictions** — the prediction viewer (`view_predictions.sh --record`) on each
-of the four configurations, using the best-of-five model of each (highest AP in the published
-five-seed sweep). Panels: ground truth, hard prediction, confusion overlay (green = both say
-vessel, red = missed vessel, blue = false alarm), soft prediction, metadata. Central frames of
-every trial for the real datasets; one vessel-present held-out trajectory for Sim→Sim (the
-simulated test set is subsampled 24×, hence its nine frames):
+**Per-frame GNN predictions** — the prediction viewer on each configuration's best-of-five
+model. Panels: ground truth, hard prediction, confusion (green = both say vessel, red = missed
+vessel, blue = false alarm, grey = neither), soft prediction, metadata. Central frames of every
+trial for the real datasets; one vessel-present held-out trajectory (nine dilation-24 windows)
+for Sim→Sim:
 
 | | |
 |---|---|
 | **Sim → Sim** — [`predictions_sim_to_sim.mp4`](videos/predictions_sim_to_sim.mp4)<br><video src="videos/predictions_sim_to_sim.mp4" controls muted width="100%"></video> | **Sim → Silicone** — [`predictions_sim_to_silicone.mp4`](videos/predictions_sim_to_silicone.mp4)<br><video src="videos/predictions_sim_to_silicone.mp4" controls muted width="100%"></video> |
 | **Sim → Meat** — [`predictions_sim_to_meat.mp4`](videos/predictions_sim_to_meat.mp4)<br><video src="videos/predictions_sim_to_meat.mp4" controls muted width="100%"></video> | **Meat → Silicone** — [`predictions_meat_to_silicone.mp4`](videos/predictions_meat_to_silicone.mp4)<br><video src="videos/predictions_meat_to_silicone.mp4" controls muted width="100%"></video> |
 
-If a player does not render inline, the linked file opens in GitHub's own video viewer.
+If a player does not render inline, the linked file opens in GitHub's own video viewer. The
+robot-control repository carries a video of the real data collection.
+
+---
+
+## Reference
+
+### Data: the Zenodo bundle
+
+**No dataset or checkpoint is in git** (`.gitignore` excludes `*.npz`, `*.pkl`, `*.pt`,
+`*.mp4` except `videos/`, `output/`, `saved_models*/`, `logs/`). Everything comes from the
+bundle, DOI [10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934):
+
+```bash
+./data/restore_data.sh shallow-vessel-palpation-data.tar.gz   # unpack into place (~275 MB)
+./data/restore_data.sh --verify                               # what is present / missing
+```
+
+It restores the simulated dataset, the Silicone and Meat datasets, the published checkpoints
+and their test-loader pickles, the whole five-seed sweep, the legacy models, the posed Sim→Sim
+slide, the sensor-geometry files the simulator loads at start-up, the system-identification
+marker tracks, the published domain-adaptation run, and `difftactile/output/manuscript_artifacts/`
+(the manuscript's figures and tables, with a README mapping each to its source — the one
+"generable but shipped" exception). Raw videos, intermediate preprocessing stages, superseded
+runs and training logs are deliberately excluded — [`data/MANIFEST.md`](data/MANIFEST.md) lists
+both sides. `restore_data.sh` takes any local tarball or unpacked directory, so it never needs
+Zenodo itself. Authors rebuild the bundle with `./data/make_data_bundle.sh` (bare metal; refuses
+to write an incomplete archive) — see `data/ZENODO_UPLOAD.md`.
+
+Without the bundle most entrypoints raise `FileNotFoundError` — including `script_main`, which
+loads marker tracks and geometry at construction. Paths resolve against the repository root
+(`difftactile/main/paths.py`, override `DIFFTACTILE_ROOT`), so scripts run from any directory.
+
+### Configuration
+
+There are **no command-line flags** beyond the ones documented above; behaviour comes from:
+
+1. **`difftactile/system_params/system-params.json`** — geometry, material and contact
+   parameters, trajectories, the `gnn` hyperparameter block, and every path (`files.*`),
+   reached in code as `SYSTEM_PARAMS.gnn.clip_len` etc. It is **partly regenerated** by
+   `script_apply_scaling` from `system-params-distances.json` (SI metres) and
+   `system-params-youngs-modulus.json` — edit *those* for lengths and stiffnesses.
+   `system-params-computed.json` is generated by `pre_main.py`; `system-params-units.json` and
+   `system-params-literature-values.json` are documentation only; `bo-gp.json` holds BO
+   parameters (inert while `meta.load_params_from_bo = 0`).
+2. **`RUN_ON_LAB_MACHINE`** in `difftactile/main/main.py` — Taichi on `ti.cuda` (True) or `ti.cpu`.
+3. **Environment variables**:
+
+| Variable | Effect |
+|---|---|
+| `DIFFTACTILE_ROOT` / `DIFFTACTILE_DATA_ROOT` | Repository root for path resolution / keep the real meat trials outside the repository. |
+| `DIFFTACTILE_HEADLESS=1` | Create no windows (implied when `DISPLAY` and `WAYLAND_DISPLAY` are unset). |
+| `DIFFTACTILE_INTERACTIVE=1` | Restore blocking windows (`plt.show()`, viewers, Gmsh FLTK, the tkinter labeller). Off by default: **no script ever waits for a window**; figures go to `difftactile/output/`. |
+| `DIFFTACTILE_SEED` | Seed for every RNG of a training, collection or DA run (default 42). |
+| `DIFFTACTILE_NUM_LOOPS`, `DIFFTACTILE_TRAJECTORIES`, `DIFFTACTILE_VEIN_PAIR` | Simulator collection: loops (each = 2 substeps × trajectory types), types to collect, vessel on the first substep. |
+| `DIFFTACTILE_SCENARIO`, `DIFFTACTILE_MODE`, `DIFFTACTILE_OVERWRITE_PUBLISHED` | Configuration / `train`\|`eval` when not given as arguments; let training overwrite published checkpoints. |
+| `DIFFTACTILE_CLIP_LEN` | Temporal window for one process (positive odd integer; the ablation uses it). |
+| `DIFFTACTILE_ARTIFACT_DIR` | Redirect a training run's checkpoint + pickle (the seed sweep uses it). |
+| `DIFFTACTILE_MAP_THRESHOLD` / `DIFFTACTILE_VESSEL_MAP_THRESHOLD` | Viewer hard-prediction cut (display only) / vessel-map operating point. |
+| `DIFFTACTILE_MAP_CONFIG`, `_GT`, `_MODEL`, `_SEED` | What `vessel_map.sh` passes to `script_vessel_map`. |
+| `DIFFTACTILE_VIEW_TRIALS`, `DIFFTACTILE_RECORD_MP4`, `DIFFTACTILE_RECORD_INTERVAL_MS`, `DIFFTACTILE_RECORD_SIZE` | Viewer trial selection; record mode (path, ms of video per key press, window size). |
+| `DIFFTACTILE_DA_MODE`, `DIFFTACTILE_BO_ITERATIONS`, `DIFFTACTILE_BO_RANDOM`, `DIFFTACTILE_VEIN`, `DIFFTACTILE_RECORD_TRAJECTORIES`, `DIFFTACTILE_DA_MAX_TIMESTEPS` | Domain adaptation / DA recording controls. |
+| `DIFFTACTILE_SIM_RAW_DIR`, `DIFFTACTILE_MEAT_FROM_RAW` | Preprocessing inputs. |
+| `DIFFTACTILE_ANNOTATOR_PYTHON`, `QT_QPA_PLATFORM` | Interpreter for the bare-metal annotator; force a Qt platform (`xcb`). |
+
+### Repository layout
+
+```
+difftactile/
+├── main/                    Taichi FEM simulation core: main.py (contact, collection, DA, recording),
+│                            pre_main.py, apply_scaling.py, seeding.py, paths.py, display.py, qt_viewer.py
+├── sensor_model/            ViTacTip FEM model + fisheye camera projection
+├── object_model/            phantom, vessel, mesh loading
+├── cnn/                     the GNN: segmentation_gnn.py (the configurations), gnn.py, dataset.py,
+│                            seed_sweep.py, clip_len_ablation.py, model_selection.py, curve_plots.py,
+│                            frame_space_metrics.py, visualise.py (the prediction viewer)
+├── data_analysis/experiment/  real-sensor data: preprocessing, marker tracking, annotation,
+│                            calibration, bo_gp.py, vessel_map.py, alignment_figures.py
+├── scripts/                 script_<name>.py entrypoint wrappers (each imports a main() and calls it)
+├── system_params/           JSON configuration
+├── meshes/, manual_or_experimental_data/   STL geometry; reference photos, calibration, specs
+docker/                      Dockerfile and every user-facing shell entrypoint
+data/                        restore_data.sh, make_data_bundle.sh, MANIFEST.md, ZENODO_UPLOAD.md
+videos/                      the demonstration videos
+requirements/                dependency scripts; annotator-env.yml
+```
+
+Result tables at the root: `AUROC_RESULTS.md`, `CLIP_LEN_ABLATION.md`, `FRAME_SPACE_METRICS.md`.
+`CLAUDE.md` holds the detailed engineering notes (design decisions, pitfalls, and why things are
+the way they are).
+
+### Running outside Docker
+
+Not supported, but possible: Python 3.10–3.12, `pip install uv && pip install -e .`, then
+`bash requirements/install_dependencies_difftactile.sh` (Taichi + ML stack; pins CUDA 12.6
+wheels and PyG extensions against `torch-2.8.0+cu126`, no lockfile). Set `RUN_ON_LAB_MACHINE = False`
+to run the **simulator** on CPU (slowly); the **GNN has no CPU path** —
+`cnn/segmentation_gnn.py` allocates on a hardcoded `cuda:0`, so even evaluation needs a GPU.
+The container also needs restarting (`docker stop vessel-palpation && ./docker-run.sh`) to pick
+up changes to `docker-run.sh` (mounts, ulimits, the Wayland socket); it is started with `--rm`,
+so keep work in the bind-mounted repository.
+
+### Modelling decisions to know about
+
+- **Contact compliance is deliberately asymmetric.** The sensor↔phantom pair transfers very
+  little deformation; visible sensor deformation is driven almost entirely by the
+  sensor↔vessel pair. The simulator is a targeted model of the *inclusion's mechanical
+  signature on the marker field* — the quantity the GNN consumes and the one validated against
+  the real sensor (Fig. 5) — not a general soft-body contact solver. Treat absolute contact
+  forces and phantom deformation as uncalibrated.
+- **The phantom is kinematically pinned** (every particle's `is_fixed` flag is set in
+  `Phantom.g2p()`), which avoids the MPM collapse and jitter a free phantom showed and does not
+  affect the learned quantity.
+- **The sensor is kept stiff in the BO** (`E` ∈ [1e6, 2e6], ν ∈ [0.42, 0.45]): a soft sensor
+  reproduces markers by draping, the wrong mechanism, and near-incompressibility made the tip
+  lag the base during slides. Do not "restore" ν towards 0.5 — see `bo_gp.py`.
+
+### Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `FileNotFoundError` on a `.npz` / `.pkl` / `.pt` | Data bundle not restored — `./data/restore_data.sh --verify`. |
+| `received 0 items of ancdata` in training | Container started before `docker-run.sh` raised the fd limit (`ulimit -Sn` should be 65535) — restart it. |
+| Viewer says "no Wayland socket" | Container started before the socket mount existed — restart it, or `--x11`. |
+| Segfault (139) after `all done` | Taichi GGUI teardown; output is complete. `DIFFTACTILE_HEADLESS=1` for a clean exit. |
+| CUDA out of memory in Taichi | Lower `device_memory_GB` in `main.py` (`TI_DEVICE_MEMORY_GB`). |
+| Edits to `system-params.json` revert | `script_apply_scaling` regenerates them — edit `system-params-distances.json` / `-youngs-modulus.json`. |
+| Different numbers than the tables | Single seed vs five-seed mean; or a `--retrained` model instead of the published one. |
+
+### Branches and tags
+
+`main` is the only branch, and the only one the documentation, the image and the bundle are
+tested against. The `upstream-difftactile` tag marks the pristine DiffTactile fork point
+(`git diff upstream-difftactile..main --stat` shows this project's changes; the history is not
+linear from it, so `git log` across it is not meaningful).
 
 ---
 
@@ -1542,6 +622,5 @@ MIT — see [LICENSE](LICENSE). Inherited from upstream DiffTactile.
 
 ## Contact
 
-Piotr Blaszyk — for questions about this fork please open an issue on this repository. The
-experimental datasets and trained weights are not in the repository itself; they are published
-on Zenodo at [10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934).
+Piotr Blaszyk — please open an issue on this repository. Data and weights are on Zenodo at
+[10.5281/zenodo.21900934](https://doi.org/10.5281/zenodo.21900934).

@@ -136,7 +136,7 @@ copy_file "saved_models_meat/final_segmentation_model_gnn_meat.pt"
 # select the best-of-five instance from (cnn/model_selection.py).
 copy_tree "saved_models_sweeps/20260815-130143"
 # LEGACY models (pre-2026-08-15): kept only because they produced the accepted
-# manuscript's Fig. 8 / Table 4 - see saved_models_legacy/README.md.
+# manuscript's vessel-map figure/table - see saved_models_legacy/README.md.
 copy_file "saved_models_legacy/README.md"
 copy_file "saved_models_legacy/sim/final_segmentation_model_gnn_sim.pt"
 copy_file "saved_models_legacy/sim/test_loader_gnn_sim.pickle"
@@ -227,7 +227,7 @@ copy_file "difftactile/output/domain_adaptation_published/joint_bo/alignment_val
 cp "${BUNDLE}/difftactile/output/domain_adaptation_published/joint_bo/alignment_validation.json" "${MA}/tables/"
 echo "| tables/alignment_validation.json | MAEs quoted beside Fig. 5 | difftactile/output/domain_adaptation_published/joint_bo/ |" >> "${MA}/README.md"
 
-# Fig. 6 - mean PR (and ROC) curves over the five seeds; Table 3 rests on
+# Fig. 6 - mean PR (and ROC) curves over the five seeds; the seed statistics rest on
 # sweep.json. Both come from the published sweep, which section [3/5] already
 # ships in full; the curves are duplicated here so the figure set is complete.
 for cfg in A-to-A A-to-B A-to-C C-to-B; do
@@ -238,7 +238,7 @@ for cfg in A-to-A A-to-B A-to-C C-to-B; do
     done
 done
 cp "${BUNDLE}/saved_models_sweeps/20260815-130143/sweep.json" "${MA}/tables/sweep.json"
-echo "| tables/sweep.json | Table 3 (mean +/- std over five seeds), best-of-five selection | saved_models_sweeps/20260815-130143/sweep.json |" >> "${MA}/README.md"
+echo "| tables/sweep.json | every per-seed metric behind Fig. 6, best-of-five selection | saved_models_sweeps/20260815-130143/sweep.json |" >> "${MA}/README.md"
 
 # Tables 3 / 4 and the clip-length ablation, as the repository's own Markdown
 # summaries (git-tracked, but copied so the archive is self-contained).
@@ -246,11 +246,11 @@ for md in AUROC_RESULTS.md CLIP_LEN_ABLATION.md FRAME_SPACE_METRICS.md; do
     copy_file "${md}"
     mv "${BUNDLE}/${md}" "${MA}/tables/"
 done
-echo "| tables/AUROC_RESULTS.md | Table 3 (IoU / AUROC / AP, five-seed sweep) | AUROC_RESULTS.md (docker/score_all_scenarios.sh --seeds 5) |" >> "${MA}/README.md"
-echo "| tables/CLIP_LEN_ABLATION.md | temporal-window ablation table | CLIP_LEN_ABLATION.md (docker/ablation_clip_len.sh) |" >> "${MA}/README.md"
-echo "| tables/FRAME_SPACE_METRICS.md | Table 4, video-frame-space rows | FRAME_SPACE_METRICS.md (script_frame_space_metrics) |" >> "${MA}/README.md"
+echo "| tables/AUROC_RESULTS.md | per-scenario AUROC / AP / IoU of the published checkpoints | AUROC_RESULTS.md (docker/score_all_scenarios.sh --seeds 5) |" >> "${MA}/README.md"
+echo "| tables/CLIP_LEN_ABLATION.md | Table 3 (temporal-window ablation) | CLIP_LEN_ABLATION.md (docker/ablation_clip_len.sh) |" >> "${MA}/README.md"
+echo "| tables/FRAME_SPACE_METRICS.md | Table 4, upper half (video-frame-space per-marker statistics) | FRAME_SPACE_METRICS.md (script_frame_space_metrics) |" >> "${MA}/README.md"
 
-# Fig. 8 / Table 4 (map-space rows) - the bird's-eye vessel maps. Runs are
+# Fig. 7 / Table 4 (lower half) - the bird's-eye vessel maps. Runs are
 # versioned by timestamp and never overwritten; the LATEST run of each
 # configuration is the published one (all six are produced together by
 # docker/vessel_map_all.sh). Legacy-model runs (suffix -legacy) are skipped.
@@ -265,7 +265,7 @@ for cfg_dir in "${SOURCE_DIR}"/difftactile/output/vessel_maps/*/; do
     mkdir -p "${MA}/vessel_maps/${cfg}"
     cp -r "${BUNDLE}/${rel}/." "${MA}/vessel_maps/${cfg}/"
     rm -rf "${BUNDLE}/difftactile/output/vessel_maps"
-    echo "| vessel_maps/${cfg}/ | Fig. 8 + Table 4 map-space rows (confusion_r00.png, metrics_by_radius.md, report.md) | ${rel} (docker/vessel_map_all.sh) |" >> "${MA}/README.md"
+    echo "| vessel_maps/${cfg}/ | Fig. 7 + Table 4 lower half (confusion_r00.png, metrics_by_radius.md, report.md) | ${rel} (docker/vessel_map_all.sh) |" >> "${MA}/README.md"
 done
 echo "  staged: manuscript_artifacts  ($(du -sh "${MA}" | cut -f1))"
 

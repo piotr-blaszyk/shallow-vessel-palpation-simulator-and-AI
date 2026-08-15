@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 #
 # Domain adaptation: calibrate the simulator against the real sensor via
-# Bayesian optimisation, and produce MANUSCRIPT FIGURE 5.
+# Bayesian optimisation, then validate on the four canonical interactions
+# (MANUSCRIPT FIGURE 5).
 #
-# Each BO iteration proposes a set of material and contact parameters, replays
-# the four canonical interactions (press, twist about z, twist about x, slide)
-# with them, and scores the set by the MAE between simulated and real marker
-# positions at each apex. Lower is better; the GP then proposes the next set.
+# DIFFTACTILE_DA_MODE=joint (default): ONE Bayesian optimisation over the sensor
+# stiffness and the sensor<->vein contact stiffness. Every iteration runs TWO
+# slides at the proposed parameters - vessel-ABSENT (scored by marker MAE against
+# the real photograph, i.e. fidelity) and vessel-PRESENT (scored by how far the
+# vessel holds the sensor up, i.e. sensitivity) - and maximises a single
+# objective that trades the two off (main.py::domain_adaptation_joint). The
+# winning configuration is then VALIDATED, not searched, on all four canonical
+# interactions (press, twist about z, twist about x, slide, vessel-free) - those
+# MAEs and overlays are what Fig. 5 shows.
+#
+# DIFFTACTILE_DA_MODE=staged: the older two-stage design (vessel-absent slide BO,
+# then vessel-present BO at the chosen sensor). Kept because the published
+# slide_only_bo run used it; the published joint_bo run is the current one.
 #
 # NOT DIFFERENTIABLE. An earlier design backpropagated through the Taichi
 # simulation to fit these parameters; that was abandoned, and every piece of
@@ -37,19 +47,16 @@
 # accumulates rather than overwrites - the same convention the training pipeline
 # uses. Each contains:
 #
-#   bo_results.json              best configuration + every iteration tried
-#   bo_all_params.json           every parameter set, in order
-#   bo_all_targets.json          the MAE each one scored
-#   bo_convergence.png           MAE per iteration, with the running best
-#   best_da_overlay_<name>.png   Fig. 5 panels, from the BEST configuration
-#   da_overlay_<name>.png        the same, from the LAST iteration
-#   trajectories/iterNNN_<name>.npz
-#                                the collected trajectory itself - simulated and
-#                                real marker positions, MAE, and the parameters
-#                                that produced it, per (iteration, trajectory)
+#   bo_joint_results.json        every iteration (both objective terms) + the best
+#   iteration_log.csv            the same, one line per iteration, written live
+#   final_joint_validation.json  all four interactions at the winning configuration
+#   da_overlay_<name>.png        Fig. 5 panels from that validation - simulated
+#                                markers RED, real markers GREEN
+#   vein_iterNNN_overlay_slide.png   the vessel-present slide, per iteration
+#   snapshots/                   rendered 3D frames per iteration (needs a DISPLAY)
 #
-# Fig. 5 panels: (a) press, (b) twist about z, (c) twist about x, (d) slide -
-# simulated markers RED, real markers GREEN.
+# The published run is difftactile/output/domain_adaptation_published/joint_bo/;
+# docker/alignment_figures.sh redraws Fig. 5 (white background) from it.
 #
 # Environment:
 #   DIFFTACTILE_BO_ITERATIONS     how many parameter sets to try (default:

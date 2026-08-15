@@ -24,16 +24,17 @@
 #   ./docker/score_all_scenarios.sh --seeds N [config ...]
 #
 # Configurations (A = simulation, B = real silicone, C = real meat):
+#   A-to-A    train on simulation, test on held-out simulation
 #   A-to-B    train on simulation, test on silicone
 #   C-to-B    train on meat,       test on silicone
 #   A-to-C    train on simulation, test on meat
-# With none given, all three are scored.
+# With none given, all four are scored.
 #
 # Weights:
 #   --pretrained  only the published Zenodo checkpoints
 #   --retrained   only the checkpoints a local `--train` run wrote
-# With neither given, BOTH are scored - the three configurations x two weight
-# sources are the six scenarios. Any whose checkpoint is absent is skipped with
+# With neither given, BOTH are scored - the four configurations x two weight
+# sources are the eight scenarios. Any whose checkpoint is absent is skipped with
 # a note rather than failing the run, so this is safe on a fresh restore where
 # nothing has been retrained yet.
 #

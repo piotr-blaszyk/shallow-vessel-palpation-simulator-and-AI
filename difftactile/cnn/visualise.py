@@ -1447,19 +1447,21 @@ class Visualisation:
                             pred_val = frame_pred[point_idx]
                             true_val = ground_truth[point_idx]
                             
-                            # Color coding:
-                            # TP: Lime Green (50, 205, 50)
-                            # TN: Yellow (255, 255, 0)
-                            # FP: Red (255, 0, 0)
-                            # FN: Bright Blue (0, 0, 255)
+                            # The project-wide confusion scheme
+                            # (CONFUSION_COLOURS_RGB, shared with the vessel
+                            # map): green = both say vessel, RED = a MISS
+                            # (truth says vessel, prediction does not), BLUE =
+                            # a FALSE ALARM. True negatives are dim grey rather
+                            # than the map's black, since a black dot on this
+                            # black panel would be invisible. BGR for cv2.
                             if pred_val == 1 and true_val == 1:  # TP
-                                color = (50, 205, 50)
+                                color = (0, 255, 0)
                             elif pred_val == 0 and true_val == 0:  # TN
-                                color = (0, 255, 255)  # BGR format
-                            elif pred_val == 1 and true_val == 0:  # FP
-                                color = (0, 0, 255)
-                            else:  # FN
+                                color = (90, 90, 90)
+                            elif pred_val == 1 and true_val == 0:  # FP (false alarm)
                                 color = (255, 0, 0)
+                            else:  # FN (miss)
+                                color = (0, 0, 255)
                             
                             cv2.circle(confusion_matrix_stack[frame_idx], center, MARKER_RADIUS, color, -1, cv2.LINE_AA)
                     

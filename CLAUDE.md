@@ -238,7 +238,7 @@ clip_len-7 pair was 0.9563 → 0.7719, the pre-regeneration pair 0.9369 → 0.73
 (`cnn/model_selection.py::best_model`; `sweep.json` records `best_seed`: A-to-A 1, A-to-B 2,
 A-to-C 2, C-to-B 4). The published paths `saved_models_sim/` + `saved_models_meat/` (and their
 pickles) hold the A-to-B and C-to-B best instances. **Legacy models** (`saved_models_legacy/`,
-pre-2026-08-15, clip_len 7) exist only because they made the accepted version's Fig. 8/Table 4;
+pre-2026-08-15, clip_len 7) exist only because they made the accepted version's vessel-map figure/table;
 `--model legacy` / `--legacy` load them and export `DIFFTACTILE_CLIP_LEN=7`.
 
 The simulated test split is taken from the test-loader **pickle**, never re-derived — the pickle
@@ -400,18 +400,21 @@ heat-map would.
 Recorded so a future change knows what it might break. The README quickstart carries the same
 table for end users.
 
-| Script | Manuscript artifact |
+| Script | Manuscript artifact (numbering of the ECCV 2026 submission, 2026-08-15) |
 |---|---|
-| `alignment_figures.sh` | **Fig. 5** — sim (red) vs real (green) marker alignment, four interactions (50 % opacity, per-trajectory MAE in caption) |
-| `score_all_scenarios.sh --seeds 5` | **Table 3** (IoU, mean ± std) and **Fig. 6** (mean PR curves ± 1 std band; the ROC twins are generated but not in the manuscript) |
-| `ablation_clip_len.sh` | the temporal-window ablation table (`tab:clip-len`) |
-| `vessel_map_all.sh` | **Fig. 8** (Sim→Sim, Sim→Meat, Sim→Silicone, Meat→Silicone) and the map-space rows of **Table 4** (per-pixel TP/FP/FN/TN, MCC, F1, P, R, FG/BG IoU, AP, mean L2 at 0 mm growth) |
-| `script_frame_space_metrics` (`cnn/frame_space_metrics.py`) | the video-frame-space rows of **Table 4**: the same statistics per marker, pooled once over all frames, best-of-five instances (`FRAME_SPACE_METRICS.md`) |
+| `annotate_data_bare_metal.sh --silicone/--meat` | **Fig. 4** (`fig:annotation-line`) — annotated Silicone frame, Meat labels |
+| `alignment_figures.sh` | **Fig. 5** (`fig:da-results`) — sim (red) vs real (green) marker alignment, four interactions (50 % opacity, per-trajectory MAE in caption) |
+| `ablation_clip_len.sh` | **Table 3** (`tab:clip-len`) — the temporal-window ablation |
+| `score_all_scenarios.sh --seeds 5` | **Fig. 6** (`fig:pr-curve`) — mean PR curves ± 1 std band (the ROC twins are generated but not in the manuscript). There is no longer a separate IoU table. |
+| `script_frame_space_metrics` (`cnn/frame_space_metrics.py`) | **Table 4** (`tab:localisation-map`) upper half: per-marker statistics in video-frame space, pooled once over all central frames, best-of-five instances (`FRAME_SPACE_METRICS.md`) |
+| `vessel_map_all.sh` | **Fig. 7** (`fig:vessel-map`, Sim→Sim, Sim→Silicone, Sim→Meat, Meat→Silicone) and the lower half of **Table 4** (per-pixel TP/FP/FN/TN, MCC, F1, P, R, FG/BG IoU, AP, mean L2 at 0 mm growth) |
+| `record_videos.sh` | the README's demonstration videos (supplementary) |
 
-The former **Fig. 7** (per-frame prediction grid) was removed from the manuscript;
-`view_predictions.sh` remains an interactive tool. The **accepted version's** Fig. 8 / Table 4
-were made with the LEGACY models (`saved_models_legacy/`, see below), Fig. 8(b) with yellow
-shapes added by hand; the current Fig. 8 / Table 4 come entirely from `vessel_map_all.sh`.
+Tables 1–2 are the related-work comparison; Figs 1–3 are hand-drawn diagrams. The former
+per-frame prediction grid figure was removed; `view_predictions.sh` remains an interactive
+tool. The **accepted version's** vessel-map figure/table were made with the LEGACY models
+(`saved_models_legacy/`, see below), one panel with yellow shapes added by hand; the current
+Fig. 7 / Table 4 come entirely from `vessel_map_all.sh` + `script_frame_space_metrics`.
 
 `domain_adaptation.sh` is new: `Contact.domain_adaptation()` had always existed but was
 reachable only by editing `main()`, so it had no entrypoint. `main.py::domain_adaptation_main()`

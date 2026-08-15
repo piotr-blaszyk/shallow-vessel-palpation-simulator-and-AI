@@ -4902,11 +4902,14 @@ def score_current_params_main():
 def domain_adaptation_main():
     """Entrypoint: calibrate the simulator against the real sensor, via BO.
 
-    Runs Bayesian optimisation over the material and contact parameters. Each
-    iteration proposes a parameter set, replays the four canonical interactions
-    (press, twist about z, twist about x, slide) with it, and scores it by the
-    MAE between simulated and real marker positions at each apex - exactly the
-    procedure the manuscript describes.
+    Default (DIFFTACTILE_DA_MODE=joint): one Bayesian optimisation over sensor
+    stiffness and sensor<->vein contact stiffness, scoring each proposal on a
+    vessel-ABSENT slide (fidelity to the real photograph) and a vessel-PRESENT
+    slide (how visibly the vessel deforms the sensor) together - see
+    `domain_adaptation_joint()`. The chosen configuration is then validated on
+    all four canonical interactions (press, twist about z, twist about x,
+    slide), which is what the manuscript's Fig. 5 shows. `staged` keeps the
+    older sequential design.
 
     NOT DIFFERENTIABLE. An earlier design backpropagated through the Taichi
     simulation; that was abandoned, and all of the machinery supporting it has

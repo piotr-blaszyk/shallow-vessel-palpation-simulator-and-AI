@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Interactive per-frame prediction viewer: step through test-set frames and
-# inspect the confusion overlay (green TP, yellow TN, red FP, blue FN) for any of
-# the six canonical scenarios.
+# inspect the confusion overlay (green = both say vessel, red = missed vessel,
+# blue = false alarm, grey = neither - the project-wide scheme) for any of the
+# four configurations.
 #
 # Runs IN THE DOCKER CONTAINER - it needs the GNN stack (torch, torch-geometric,
 # CUDA) to run inference, so unlike the annotation viewers there is no bare-metal
