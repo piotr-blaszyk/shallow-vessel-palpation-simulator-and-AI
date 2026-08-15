@@ -90,13 +90,39 @@ cd docker
 > If you prefer not to keep a shell open, every in-container command below is equivalent to
 > `docker exec -it vessel-palpation ./docker/<script> <args>` run from the host.
 
+### The global pipeline at a glance
+
+End to end, the project runs in this order. Steps 1–2 are already completed and their outputs
+ship in the Zenodo bundle, so a fresh clone normally starts at step 3 (or skips to step 5,
+since the bundle also ships the simulated dataset and trained checkpoints):
+
+1. **Preprocess the real experimental data** (silicone and meat) — shipped in the bundle;
+   see [Annotate or review the real-world datasets](#annotate-or-review-the-real-world-datasets)
+   and the detailed pipeline sections below to redo it from raw recordings.
+2. **Calibrate the simulator** against the real sensor (`./domain_adaptation.sh`) and adopt
+   the fitted parameters into `system-params.json` — see
+   [Domain adaptation](#domain-adaptation-calibrating-the-simulator).
+3. **Draw the alignment panels** at the adopted parameters (`./alignment_figures.sh`) —
+   the manuscript's sim-vs-real marker figures.
+4. **Generate the simulated dataset** in the calibrated simulator
+   (`./run_pipeline.sh sim-full` + the reorder step) — see
+   [Regenerate the simulated dataset](#regenerate-the-simulated-dataset-optional).
+5. **Train and evaluate the four models** (A→A, A→B, A→C, C→B):
+   `./run_pipeline.sh <config> --train`, or `./score_all_scenarios.sh --seeds N` for
+   mean ± std across seeds.
+6. **Run the clip-length ablation** (`./ablation_clip_len.sh`) — how many frames the model
+   should see at once.
+7. **Render the qualitative figures**: `./view_predictions.sh` (per-frame panels) and
+   `./vessel_map.sh [--model sim|meat]` (bird's-eye vessel map, one per model).
+
 ### Which script produces which figure or table in the paper
 
 Every script below maps onto a specific artifact in the manuscript:
 
 | Script | Produces | In the paper |
 |---|---|---|
-| `./domain_adaptation.sh` | simulated (red) vs real (green) marker alignment, four interactions | **Fig. 5** (a) press, (b) twist-z, (c) twist-x, (d) slide |
+| `./alignment_figures.sh` | simulated (red) vs real (green) marker alignment on white, four interactions | **Fig. 5** (a) press, (b) twist-z, (c) twist-x, (d) slide |
+| `./domain_adaptation.sh` | the BO search behind the adopted parameters; photo-backed `da_overlay_*` versions of the same four panels | the MAE figures quoted beside Fig. 5 |
 | `./score_all_scenarios.sh` | foreground / background IoU per model | **Table 3** |
 | `./score_all_scenarios.sh` | ROC curves per scenario | **Fig. 6** |
 | `./view_predictions.sh` | per-frame prediction panels | **Fig. 7** |
@@ -171,7 +197,20 @@ DIFFTACTILE_SNAPSHOT_DIR=difftactile/output/da_snapshots ./domain_adaptation.sh
 ### Reproduce the published results
 
 The paper's three models — one per (train → test) configuration over the simulated (**A**),
-silicone (**B**) and meat (**C**) datasets — are selected **by name**, with no source editing:
+silicone (**B**) and meat (**C**) datasets — are selected **by name**, with no source editing.
+
+**Naming legend.** The codebase keeps the concise **A / B / C** dataset names; the manuscript
+spells them out. A configuration name `X-to-Y` reads "trained on dataset X, tested on
+dataset Y":
+
+| Codebase | Manuscript | What it is |
+|---|---|---|
+| **A** | **Sim** | simulated dataset, collected in the Taichi FEM simulator |
+| **B** | **Silicone** | real silicone phantom with shallow veins |
+| **C** | **Meat** | real meat phantom (straws under layers of steak) |
+
+So e.g. `A-to-B` is the manuscript's **Sim→Silicone** model, `C-to-B` is **Meat→Silicone**,
+and `A-to-A` is the in-domain **Sim→Sim** reference.
 
 ```bash
 # (inside the container, from the docker/ directory)
@@ -336,6 +375,26 @@ The three `run_pipeline.sh` configurations report the same two metrics (and writ
 `roc_curve_<config>.pdf` / `pr_curve_<config>.pdf` directly under `difftactile/output/`), so you
 get them without a separate scoring pass. Use this script when you want all six side by side.
 
+### Clip-length ablation: how many frames should the model see?
+
+The GNN takes a `clip_len`-frame window of marker positions and predicts the window's central
+frame. This trains the A-to-B configuration at each window length in {1, 3, 5, 7} — several
+seeds per length, reported as mean ± std — and ranks them by **foreground IoU** on the silicone
+test set (AUROC and AP are recorded alongside):
+
+```bash
+# (inside the container, from the docker/ directory)
+./ablation_clip_len.sh                # 3 seeds per clip length (default)
+./ablation_clip_len.sh --seeds 5      # more seeds, tighter mean ± std
+```
+
+Outputs: `CLIP_LEN_ABLATION.md` (the summary table, best length marked), and
+`saved_models_ablation/<timestamp>/clip_len_XX/` with every run's checkpoint, test-loader
+pickle and raw scores, plus `ablation.json` for the numbers in machine-readable form. The
+clip length reaches each training subprocess through `DIFFTACTILE_CLIP_LEN`, so nothing in
+`system-params.json` is edited; a length of 1 means "no temporal context at all" (the graph
+then has no temporal edges).
+
 ### Inspect predictions frame by frame
 
 > 📄 **Manuscript: Fig. 7.**
@@ -438,8 +497,15 @@ Projects the per-marker predictions through the sensor pose onto the phantom sur
 
 ```bash
 # (inside the container, from the docker/ directory)
-./vessel_map.sh
+./vessel_map.sh                 # Meat→Silicone (C-to-B) model, the default
+./vessel_map.sh --model sim     # Sim→Silicone (A-to-B) model
 ```
+
+`--model` selects which trained checkpoint draws the map — both are evaluated on the same
+silicone clips. The default `meat` (C-to-B, the compact meat-trained model) keeps the
+unsuffixed output names below, which are the published figure paths; `--model sim` (A-to-B,
+the large simulation-trained model) writes the same artifacts with a `_sim` suffix
+(`confusion_overlay_vein_map_sim.png`, …) so the two maps sit side by side.
 
 It writes two confusion maps, each as a raw `.png` and as a `.pdf` carrying a title and a
 legend, into `difftactile/output/`:
@@ -580,17 +646,38 @@ reproduce the results. Run it only if you want to extend the project:
 ./run_pipeline.sh sim-full
 ```
 
-> **To regenerate the *published* dataset specifically, set
-> `DIFFTACTILE_TRAJECTORIES=3`.** All 500 trajectories in the shipped dataset are
-> type 3 ("slide (vein)") — it was collected when the collection loop read
-> `range(3, 4)`, which a later commit widened to all four types. A default run
-> therefore also produces types 0/1/2, and type 0 yields empty arrays by design
-> (it ends in ~36 timesteps, below the `ts > 80` recording threshold).
+> **To regenerate a dataset of the *published* shape specifically**, set
+> `DIFFTACTILE_TRAJECTORIES=3 DIFFTACTILE_VEIN_PAIR=1 DIFFTACTILE_NUM_LOOPS=250`.
+> All 500 trajectories in the shipped dataset are type 3 ("slide (vein)") — it
+> was collected when the collection loop read `range(3, 4)`, which a later commit
+> widened to all four types. A default run therefore also produces types 0/1/2,
+> and type 0 yields empty arrays by design (it ends in ~36 timesteps, below the
+> `ts > 80` recording threshold). `DIFFTACTILE_VEIN_PAIR=1` runs each loop's
+> first substep **with** the sensor↔vein contact pair, so half the trajectories
+> carry vessel-present labels (the shipped dataset is ~50% vessel-present
+> frames), and 250 loops × 2 substeps × 1 type = the shipped 500 trajectories.
 >
 > ```bash
 > # (inside the container, from the docker/ directory)
-> DIFFTACTILE_TRAJECTORIES=3 ./run_pipeline.sh sim-full
+> DIFFTACTILE_TRAJECTORIES=3 DIFFTACTILE_VEIN_PAIR=1 DIFFTACTILE_NUM_LOOPS=250 \
+>     ./run_pipeline.sh sim-full
 > ```
+
+Collection writes raw trajectories to `difftactile/output/training_data/pickle_<timestamp>/`.
+Two more steps make that a dataset the GNN can train on:
+
+```bash
+# (inside the container, from the docker/ directory)
+
+# 1. Hungarian-reorder the markers into the base-graph order the GNN expects;
+#    writes <raw-dir>_reordered_dense beside the input
+DIFFTACTILE_SIM_RAW_DIR=difftactile/output/training_data/pickle_<timestamp> \
+    python -m difftactile.scripts.script_pre_process_sim_data
+```
+
+2. Point `files.sim_data` in `difftactile/system_params/system-params.json` at the new
+   `..._reordered_dense` directory. Every training and evaluation entrypoint reads the
+   simulated dataset from that key.
 
 GUI windows (Taichi GGUI, the cv2 annotation tool, matplotlib) appear on your desktop
 automatically — the image ships Vulkan, which GGUI requires — and `DIFFTACTILE_HEADLESS=1`
@@ -794,11 +881,11 @@ editing. Output directories are created on demand.
 **Verified:** a clone into an empty directory, plus the bundle, reproduces all three scenarios
 in Docker — see [REPRODUCTION_TEST.md](REPRODUCTION_TEST.md) for the transcript and numbers.
 
-Results are **not bit-wise reproducible for the simulation**: `NP_RNG = np.random.default_rng()`
-in `difftactile/main/constants.py` is unseeded and drives trajectory and contact-parameter
-randomisation, so two runs of `script_main` produce different datasets. Seed `NP_RNG` if you
-need repeatable runs. The *evaluation* scenarios are deterministic (AUC agrees to ~15
-significant figures across machines).
+The simulator entrypoints (`script_main`, `domain_adaptation.sh`) are **seeded** (default 42,
+override with `DIFFTACTILE_SEED`), so a collection run is repeatable. Note the *published*
+dataset predates this seeding and cannot be regenerated by any seed — restore it from the
+bundle. The evaluation scenarios are deterministic (AUC agrees to ~15 significant figures
+across machines).
 
 ---
 

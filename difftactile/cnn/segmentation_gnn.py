@@ -1561,7 +1561,13 @@ def silicone_to_meat():
     if has_flat_stats(test_data):
         stats = test_data["dataset_stats"]
     else:
-        stats = test_data["dataset_stats"][0.0]
+        # Curriculum-keyed stats. train_on_sim() trains at difficulty 1.0 and
+        # stores {1.0: stats}; older pickles used 0.0. Prefer 1.0 and fall back
+        # to whatever single entry is present, matching evaluate_and_plot_roc()
+        # and evaluate_on_sim().
+        all_stats = test_data["dataset_stats"]
+        target_difficulty = 1.0 if 1.0 in all_stats else next(iter(all_stats))
+        stats = all_stats[target_difficulty]
     model.set_stats(stats)
     # NOTE — deliberate behaviour change from the old `sim-to-meat-test` branch,
     # and NOT a cosmetic one.

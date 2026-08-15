@@ -22,7 +22,7 @@ usage() {
 
 # Paths the pipeline expects to exist once the bundle is restored.
 EXPECTED=(
-    "difftactile/output/training_data/pickle_20250901_220921_reordered_dense"
+    "difftactile/output/training_data/pickle_20260814_191137_reordered_dense"
     "difftactile/manual_or_experimental_data/silicone_training_data/20250901-131547_dense"
     "difftactile/manual_or_experimental_data/meat_training_data/clean"
     "saved_models_sim/final_segmentation_model_gnn_sim.pt"

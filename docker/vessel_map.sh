@@ -11,11 +11,19 @@
 # The figures are written to disk, so a display is optional.
 #
 # Usage:
-#   ./docker/vessel_map.sh [--cached]
+#   ./docker/vessel_map.sh [--cached] [--model sim|meat]
 #
 # Options:
+#   --model M  Which trained model draws the map. "meat" (default) is the
+#              compact meat-trained C-to-B checkpoint - the historical default
+#              behind the published figures, whose outputs keep their unsuffixed
+#              names. "sim" is the large simulation-trained A-to-B checkpoint;
+#              its outputs get a `_sim` suffix (confusion_overlay_vein_map_sim.png
+#              etc.) so the two maps sit side by side. Both are evaluated on the
+#              same silicone clips.
 #   --cached   Reuse the per-marker probabilities in difftactile/output/exp_probs.npz
-#              instead of running the model again. Only works once a previous run
+#              (or exp_probs_sim.npz with --model sim) instead of running the
+#              model again. Only works once a previous run of the SAME model
 #              has produced that cache, so the first run must do inference.
 #              That cache is deliberately not in the data bundle: it is pure model
 #              output, and recomputing it from the shipped dataset and checkpoint
@@ -76,28 +84,47 @@ usage() {
 }
 
 RERUN=1
-for arg in "$@"; do
-    case "${arg}" in
+MODEL="meat"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         --cached)  RERUN=0 ;;
+        --model)
+            shift
+            if [ "$#" -eq 0 ]; then
+                echo "ERROR: --model needs 'sim' or 'meat'" >&2; exit 1
+            fi
+            MODEL="$1" ;;
+        --model=*) MODEL="${1#*=}" ;;
         -h|--help) usage; exit 0 ;;
-        *) echo "ERROR: unrecognised argument: ${arg}" >&2; echo; usage; exit 1 ;;
+        *) echo "ERROR: unrecognised argument: $1" >&2; echo; usage; exit 1 ;;
     esac
+    shift
 done
+case "${MODEL}" in
+    sim|meat) ;;
+    *) echo "ERROR: --model must be 'sim' or 'meat', got '${MODEL}'" >&2; exit 1 ;;
+esac
+export DIFFTACTILE_VESSEL_MAP_MODEL="${MODEL}"
+
+# The sim model's outputs carry a _sim suffix (see predict_exp.py).
+SUFFIX=""
+[ "${MODEL}" = "sim" ] && SUFFIX="_sim"
 
 # No display -> never block on a window; the figures on disk are the output.
 if [ -z "${DISPLAY:-}" ]; then
     export DIFFTACTILE_HEADLESS="${DIFFTACTILE_HEADLESS:-1}"
 fi
 
-CACHE="difftactile/output/exp_probs.npz"
+CACHE="difftactile/output/exp_probs${SUFFIX}.npz"
 if [ "${RERUN}" = "0" ] && [ ! -f "${CACHE}" ]; then
     echo "ERROR: --cached given but ${CACHE} does not exist." >&2
-    echo "Run without --cached once to produce it." >&2
+    echo "Run without --cached once (with the same --model) to produce it." >&2
     exit 1
 fi
 
 if [ "${RERUN}" = "1" ]; then
-    echo "Running inference over the silicone clips, then building the vessel map."
+    echo "Running inference over the silicone clips with the '${MODEL}' model,"
+    echo "then building the vessel map."
     export DIFFTACTILE_RERUN_INFERENCE=1
 else
     echo "Reusing cached probabilities from ${CACHE}."
@@ -108,9 +135,9 @@ python -m difftactile.scripts.script_predict_exp
 echo
 echo "Written to difftactile/output/:"
 echo
-echo "  prediction vs ground truth:"
-for f in confusion_overlay_vein_map.png \
-         confusion_overlay_vein_map.pdf; do
+echo "  prediction vs ground truth (model: ${MODEL}):"
+for f in confusion_overlay_vein_map${SUFFIX}.png \
+         confusion_overlay_vein_map${SUFFIX}.pdf; do
     [ -f "difftactile/output/${f}" ] && echo "    ${f}"
 done
 echo "  ground truth from video vs from top-view photo:"
@@ -119,8 +146,8 @@ for f in ground_truth_sources_overlay.png \
     [ -f "difftactile/output/${f}" ] && echo "    ${f}"
 done
 echo "  supporting:"
-for f in segmentation_mask_predicted_aggregated.png \
-         exp_overlay_downscaled.pdf; do
+for f in segmentation_mask_predicted_aggregated${SUFFIX}.png \
+         exp_overlay_downscaled${SUFFIX}.pdf; do
     [ -f "difftactile/output/${f}" ] && echo "    ${f}"
 done
 echo

@@ -110,7 +110,7 @@ copy_file() {
 }
 
 echo "[1/4] Simulated training dataset (~245 MB)"
-copy_tree "difftactile/output/training_data/pickle_20250901_220921_reordered_dense"
+copy_tree "difftactile/output/training_data/pickle_20260814_191137_reordered_dense"
 
 echo "[2/4] Real experimental data"
 # Silicone: only the final _dense stage is consumed by the GNN.

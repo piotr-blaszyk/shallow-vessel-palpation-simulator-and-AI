@@ -1337,6 +1337,11 @@ class MyDataset(torch.utils.data.Dataset):
         return np.zeros(shape=(2, 0), dtype=int)
 
     def get_edge_index_temporal(self):
+        # A single-frame clip (clip_len 1, used by the clip-length ablation)
+        # has no consecutive frame pairs, so no temporal edges exist. The
+        # loops below would concatenate an empty list, which numpy rejects.
+        if self.clip_len == 1:
+            return self.get_empty_edge_index_temporal()
         adjacency_clip_list = []
         for t in range(self.clip_len - 1):
             src_dst = np.array([[t, t + 1], [t + 1, t]], dtype=int)
@@ -1353,6 +1358,9 @@ class MyDataset(torch.utils.data.Dataset):
         return adjacency_clip
 
     def get_temporal_edge_dist_dx_dy_cos_sin(self, clip_points):
+        # No temporal edges for a single-frame clip; see get_edge_index_temporal.
+        if self.clip_len == 1:
+            return np.zeros(shape=(0, 5), dtype=float)
         edge_attr_clip_list = []
         for t in range(self.clip_len - 1):
             src_dst = np.array([[t, t + 1], [t + 1, t]], dtype=int)
@@ -1374,6 +1382,9 @@ class MyDataset(torch.utils.data.Dataset):
         return edge_attr_clip
 
     def get_temporal_edge_time_direction(self):
+        # No temporal edges for a single-frame clip; see get_edge_index_temporal.
+        if self.clip_len == 1:
+            return np.zeros(shape=(0, 2), dtype=float)
         edge_attr_clip_list = []
         for t in range(self.clip_len - 1):
             src_dst = np.array([[t, t + 1], [t + 1, t]], dtype=int)
@@ -1420,6 +1431,9 @@ class MyDataset(torch.utils.data.Dataset):
         return np.zeros(shape=(num_regular_nodes * 2, 0), dtype=float)
 
     def get_edge_index_global_temporal(self):
+        # No temporal edges for a single-frame clip; see get_edge_index_temporal.
+        if self.clip_len == 1:
+            return np.zeros(shape=(2, 0), dtype=int)
         num_regular_nodes = self.num_nodes * self.clip_len
         adjacency_clip_list = []
         for t in range(self.clip_len - 1):
@@ -1438,6 +1452,9 @@ class MyDataset(torch.utils.data.Dataset):
         return np.zeros(shape=((self.clip_len - 1) * 2, 0), dtype=float)
 
     def get_global_temporal_edge_time_direction(self):
+        # No temporal edges for a single-frame clip; see get_edge_index_temporal.
+        if self.clip_len == 1:
+            return np.zeros(shape=(0, 2), dtype=float)
         edge_attr_clip_list = []
         for t in range(self.clip_len - 1):
             src_dst = np.array([[t, t + 1], [t + 1, t]], dtype=int)
@@ -1566,6 +1583,11 @@ class MyDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def normalise_single(means, stds, xs, ixs):
+        # With clip_len 1 there are no temporal edges, so their attribute array
+        # is empty and compute_mean_std() stored None for its stats - nothing
+        # to normalise either way.
+        if means is None or xs.size == 0:
+            return
         ixs = np.array(ixs)
         if ixs.size > 0:
             xs[:, ixs] = (xs[:, ixs] - means[ixs]) / stds[ixs]

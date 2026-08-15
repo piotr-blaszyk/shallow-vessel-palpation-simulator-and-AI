@@ -30,8 +30,10 @@ saved_models_sim/
 # One timestamped directory per seed sweep, each holding a checkpoint and its
 # test-loader pickle per (configuration, seed). See cnn/seed_sweep.py.
 saved_models_sweeps/
+saved_models_ablation/
 shallow-vessel-palpation-data.tar.gz
 
 # Per-run output of the particle-spacing study (screenshots and logs). The
 # scripts and the write-up are tracked; the captures they produce are not.
 difftactile/manual_or_experimental_data/particle_spacing_study/iteration_*/
+stale_artifacts_pre_new_dataset_20260815/

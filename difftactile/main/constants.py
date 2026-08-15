@@ -57,4 +57,29 @@ def _absolutise_file_paths(files):
 
 _absolutise_file_paths(SYSTEM_PARAMS.files)
 
+
+def _apply_clip_len_override(params):
+    """Let DIFFTACTILE_CLIP_LEN override `gnn.clip_len` for this process.
+
+    Used by the clip-length ablation (cnn/clip_len_ablation.py) to train the
+    GNN with a different temporal window without editing system-params.json.
+    Applied here, at SYSTEM_PARAMS construction time, because clip_len is read
+    at dataset/model construction in several modules - overriding the single
+    shared object once covers them all.
+    """
+    override = os.environ.get("DIFFTACTILE_CLIP_LEN")
+    if override is not None:
+        clip_len = int(override)
+        if clip_len < 1 or clip_len % 2 == 0:
+            # The reported prediction is the CENTRAL frame of the window
+            # (dataset.get_mask marks clip_len // 2), which only names a
+            # unique centre for an odd length.
+            raise ValueError(
+                f"DIFFTACTILE_CLIP_LEN must be a positive odd integer, got {clip_len}"
+            )
+        params.gnn.clip_len = clip_len
+
+
+_apply_clip_len_override(SYSTEM_PARAMS)
+
 NP_RNG = np.random.default_rng()

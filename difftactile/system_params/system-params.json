@@ -13,7 +13,7 @@
         "single_material": {
             "density": 1.100e+03,
             "poissons_ratio": 4.970e-01,
-            "youngs_modulus": 8.813592e+05
+            "youngs_modulus": 8.814e+05
         },
         "collision_search_distance": 5.000e+00,
         "keypoint_search_z_threshold": 5.000e-03,
@@ -436,7 +436,7 @@
         "bo_all_targets": "difftactile/output/bo_all_targets.json",
         "bo_all_params": "difftactile/output/bo_all_params.json",
         "exp_data_silicone": "difftactile/manual_or_experimental_data/silicone_training_data/20250901-131547_dense",
-        "sim_data": "difftactile/output/training_data/pickle_20250901_220921_reordered_dense"
+        "sim_data": "difftactile/output/training_data/pickle_20260814_191137_reordered_dense"
     },
     "rigid_static": {
         "particle_spacing": 5.000e-03

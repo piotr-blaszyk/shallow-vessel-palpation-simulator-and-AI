@@ -34,6 +34,19 @@ class PredictExp:
         self.synthetic_image_generator = SyntheticImageGenerator()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+        # Which trained model draws the map: "meat" (C-to-B, the compact
+        # meat-trained checkpoint - the historical default behind the published
+        # figures) or "sim" (A-to-B, the large simulation-trained checkpoint).
+        # Both are evaluated on the same silicone clips; only the model and its
+        # normalisation statistics change. Selected via DIFFTACTILE_VESSEL_MAP_MODEL
+        # (see docker/vessel_map.sh --model).
+        self.model_choice = os.environ.get("DIFFTACTILE_VESSEL_MAP_MODEL", "meat")
+        if self.model_choice not in ("sim", "meat"):
+            raise ValueError(
+                "DIFFTACTILE_VESSEL_MAP_MODEL must be 'sim' or 'meat', "
+                f"got {self.model_choice!r}"
+            )
+
         self.x_min = -0.425
         self.x_max = -0.245
         self.y_min = -0.054
@@ -53,7 +66,13 @@ class PredictExp:
             apply_augmentations=False,
             name='silicone',
         )
-        with open(SYSTEM_PARAMS.files.test_loader_gnn_meat, 'rb') as f:
+        # Normalisation statistics must be the ones the selected checkpoint was
+        # trained with, so they come from that checkpoint's test-loader pickle.
+        if self.model_choice == "sim":
+            stats_path = SYSTEM_PARAMS.files.test_loader_gnn_sim
+        else:
+            stats_path = SYSTEM_PARAMS.files.test_loader_gnn_meat
+        with open(stats_path, 'rb') as f:
             test_data = pickle.load(f)
         if has_flat_stats(test_data):
             self.stats = test_data['dataset_stats']
@@ -79,12 +98,45 @@ class PredictExp:
 
         self.ground_truth_img_path = SYSTEM_PARAMS.files.phantom_ground_truth_segmentation_mask
         self.ground_truth_img_downsampled_path = SYSTEM_PARAMS.files.ground_truth_labels_downsampled
-        self.prediction_img_path = SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask
         self.sensor_trajectory_img_path = SYSTEM_PARAMS.files.sensor_trajectory
         self.ground_truth_feasible_img_path = SYSTEM_PARAMS.files.ground_truth_feasible
         self.ground_truth_from_video_img_path = SYSTEM_PARAMS.files.experiment_ground_truth_from_video_img_path
 
+        # MODEL-DEPENDENT outputs (the prediction, its cache, and every figure
+        # drawn from it) get a `_sim` suffix when the sim model is selected, so
+        # the two models' maps sit side by side instead of overwriting each
+        # other. The meat model keeps the unsuffixed names - those are the
+        # published figure paths, and they must stay byte-compatible.
+        # Ground-truth-only artifacts are model-independent and stay shared.
+        self.prediction_img_path = self._model_suffixed(
+            SYSTEM_PARAMS.files.vein_slide_across_predicted_aggregated_segmentation_mask
+        )
+        self.exp_probs_path = self._model_suffixed(SYSTEM_PARAMS.files.exp_probs_npz)
+        self.confusion_overlay_path = self._model_suffixed(
+            SYSTEM_PARAMS.files.confusion_overlay_vein_map
+        )
+        self.confusion_overlay_pdf_path = self._model_suffixed(
+            SYSTEM_PARAMS.files.confusion_overlay_vein_map_pdf
+        )
+        self.exp_overlay_downscaled_path = self._model_suffixed(
+            SYSTEM_PARAMS.files.exp_overlay_downscaled
+        )
+        self.exp_overlay_upscaled_path = self._model_suffixed(
+            SYSTEM_PARAMS.files.exp_overlay_upscaled
+        )
+
         self.set_up_keypoints()
+
+    def _model_suffixed(self, path):
+        """Insert `_sim` before the extension when the sim model is selected.
+
+        The meat model returns the path unchanged, keeping the published
+        (unsuffixed) filenames stable.
+        """
+        if self.model_choice == "meat":
+            return path
+        base, ext = os.path.splitext(path)
+        return f"{base}_sim{ext}"
 
     def set_up_keypoints(self):
 
@@ -147,8 +199,15 @@ class PredictExp:
         """
         from difftactile.cnn.segmentation_gnn import GNN as SegmentationGNN
 
-        model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn_meat
-        model = SegmentationGNN(arch="compact")
+        if self.model_choice == "sim":
+            # A-to-B: the large simulation-trained checkpoint.
+            model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn_sim
+            model = SegmentationGNN(arch="large")
+        else:
+            # C-to-B: the compact meat-trained checkpoint (historical default).
+            model_path = SYSTEM_PARAMS.files.final_segmentation_model_gnn_meat
+            model = SegmentationGNN(arch="compact")
+        print(f"vessel map model: {self.model_choice} ({model_path})")
         model.load_state_dict(torch.load(model_path, map_location=self.device))
         model.eval()
         model = model.to(self.device)
@@ -279,7 +338,7 @@ class PredictExp:
         return img
     
     def write_probs_to_npz(self):
-        path = SYSTEM_PARAMS.files.exp_probs_npz
+        path = self.exp_probs_path
         self.bin_pred = PredictExp.transform_image(self.bin_pred)
         self.bin_trajectory = PredictExp.transform_image(self.bin_trajectory)
         self.bins_ground_truth = PredictExp.transform_image(self.bins_ground_truth)
@@ -291,7 +350,7 @@ class PredictExp:
         )
     
     def load_probs_from_npz(self):
-        path = SYSTEM_PARAMS.files.exp_probs_npz
+        path = self.exp_probs_path
         data = np.load(path)
         self.bin_pred = data['bin_prob_sum']
         self.bin_trajectory = data['bin_trajectory']
@@ -633,7 +692,7 @@ class PredictExp:
         confusion_overlay = Visualisation.confusion_overlay_bgr(
             ground_truth_from_video, prediction
         )
-        confusion_overlay_path = SYSTEM_PARAMS.files.confusion_overlay_vein_map
+        confusion_overlay_path = self.confusion_overlay_path
         cv2.imwrite(confusion_overlay_path, confusion_overlay)
         print(f"Confusion overlay (prediction vs ground truth): {confusion_overlay_path}")
 
@@ -642,7 +701,7 @@ class PredictExp:
         self.render_confusion_figure(
             ground_truth_from_video,
             prediction,
-            SYSTEM_PARAMS.files.confusion_overlay_vein_map_pdf,
+            self.confusion_overlay_pdf_path,
             title="Predicted vessel map vs ground truth (silicone phantom)",
             reference="ground truth",
             candidate="prediction",
@@ -728,7 +787,7 @@ class PredictExp:
         # DIFFTACTILE_INTERACTIVE=1.
         finish_plot(
             plt,
-            SYSTEM_PARAMS.files.exp_overlay_downscaled,
+            self.exp_overlay_downscaled_path,
             format="pdf",
             dpi=300,
             bbox_inches="tight",
@@ -789,7 +848,7 @@ class PredictExp:
             fontsize=8,
         )
         plt.tight_layout()
-        finish_plot(plt, SYSTEM_PARAMS.files.exp_overlay_upscaled)
+        finish_plot(plt, self.exp_overlay_upscaled_path)
 
     def go(self, rerun_inference=False):
         """Build the bird's-eye vessel map and its confusion overlay.

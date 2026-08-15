@@ -11,9 +11,10 @@ they are recordings of physical experiments or because regenerating them takes
 impractically long.
 
 The single exception is the **simulated training dataset**. It *is* generable
-(`script_main`), but doing so takes about 2 h 45 m of GPU time, and a user who
-only wants to verify the published results should not have to pay that cost. It
-is therefore treated as non-generable and shipped.
+(`script_main`), but doing so takes several hours of GPU time (~5 h 30 m for
+the shipped 500-trajectory configuration), and a user who only wants to verify
+the published results should not have to pay that cost. It is therefore
+treated as non-generable and shipped.
 
 ## Bundle paths vs. the currently published archive
 
@@ -32,7 +33,7 @@ history if you ever need to read a pre-rename bundle again.
 
 | Path (after restore) | Size | Why it cannot be regenerated |
 |---|---:|---|
-| `difftactile/output/training_data/pickle_20250901_220921_reordered_dense/` | ~245 MB | 500 simulated trajectories. Generable via `script_main` but takes ~2 h 45 m GPU; shipped for convenience. |
+| `difftactile/output/training_data/pickle_20260814_191137_reordered_dense/` | ~250 MB | 500 simulated trajectories (250 with / 250 without the vessel), collected at the post-Bayesian-optimisation simulator parameters. Generable via `script_main` (~5 h 30 m GPU); shipped for convenience. |
 | `difftactile/manual_or_experimental_data/silicone_training_data/20250901-131547_dense/` | ~684 KB | Real **silicone** phantom trials, fully preprocessed. Physical recording. |
 | `difftactile/manual_or_experimental_data/meat_training_data/clean/` | ~480 KB | Real **meat** phantom trials, fully preprocessed (10 trials × 2 `.npz`). Physical recording. Directories are named `<description>-<timestamp>`, e.g. `2-metal-straws-beneath-2-steaks-20260228-235749`, so the trial's condition is readable without cross-referencing `meat_experiment_spec.md`. |
 | `difftactile/manual_or_experimental_data/meat_training_data/clean/*/frames.mp4` | ~22 MB | The 26 camera frames per meat trial that preprocessing kept, H.264 CRF 26 (~2.3 MB each). Frame *i* corresponds 1:1 with row *i* of `marker_labels.npz`, so the annotation viewer can draw the ground-truth labels over the real meat images (paper Fig. `annotation-line`(d)). Cut down from the 1.6 GB raw recordings by `script_make_meat_clean_videos`; the raw videos themselves are a physical recording and are not shipped. |
@@ -42,9 +43,9 @@ history if you ever need to read a pre-rename bundle again.
 | `difftactile/output/test_loader_gnn_meat.pickle` | ~4 KB | As above, for the meat-trained checkpoint. |
 | `difftactile/output/` sensor-geometry set (16 files) | ~5.5 MB | Sensor mesh, marker layout and graph connectivity: `base-graph-connectivity.npz`, `marker_locations_ordered.npz`, `init-marker-positions.{npz,pkl}`, `gmsh_mesh_{vitactip,vein}.pkl`, `vitactip_mesh.npz`, `edge_lengths.pkl`, `tactile_sensor.f2v.pkl`, `phantom_points.npz`, `vein_points.npz`, `is_fixed_layer.npz`, `grid_node_v0_mask.npz`, `initial_vertex_positions_undeformed.pkl`, `vitactip_points_E.pkl`. Regenerable (Gmsh + marker detection) but tiny, fixed, and required before the simulator will start. |
 | `difftactile/output/marker_tracker/domain-adaptation-vascular-markers/` | ~1.3 MB | System-identification marker tracks (`traj_0..3_out.pkl`), loaded at simulator start-up to align the contact model against the real sensor. |
-| `difftactile/output/domain_adaptation_published/` | ~250 KB | The published domain-adaptation BO run behind the adopted simulator parameters. `joint_bo/` is the 10-iteration joint search over sensor Young's modulus and sensor↔vein contact stiffness: `bo_joint_results.json` (every iteration, both reward terms and the best configuration), `iteration_log.csv` (the same, written live one line per iteration), `final_joint_validation.json` (all four trajectories at the winning configuration), the `da_overlay_*.png` alignment figures and the per-iteration `vein_iterNNN_overlay_slide.png`. |
+| `difftactile/output/domain_adaptation_published/` | ~12 MB | The published domain-adaptation BO run behind the adopted simulator parameters. `joint_bo/` is the 10-iteration joint search over sensor Young's modulus and sensor↔vein contact stiffness: `bo_joint_results.json` (every iteration, both reward terms and the best configuration), `iteration_log.csv` (the same, written live one line per iteration), `final_joint_validation.json` (all four trajectories at the winning configuration), the `da_overlay_*.png` alignment figures and the per-iteration `vein_iterNNN_overlay_slide.png`. Also holds the manuscript's white-background alignment panels (`alignment_{press,twist_z,twist_x,slide,all}.png`, drawn by `docker/alignment_figures.sh` at the adopted parameters), the `markers_*.npz` marker-position caches behind them (so the figures can be restyled without re-simulating) and `alignment_validation.json` with the per-trajectory MAEs. |
 
-**Total: roughly 310 MB uncompressed / ~242 MB as a `.tar.gz`**, dominated by the
+**Total: roughly 292 MB uncompressed / ~201 MB as a `.tar.gz`**, dominated by the
 simulated dataset and the meat camera frames.
 
 Note the BO runs' `snapshots/` subdirectories are **excluded** — ~16 MB of rendered
