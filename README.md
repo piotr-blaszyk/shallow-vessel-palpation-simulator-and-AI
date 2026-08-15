@@ -131,6 +131,7 @@ Every script below maps onto a specific artifact in the manuscript:
 | `./vessel_map_all.sh` | top-view vessel maps and per-pixel statistics (TP/FP/FN/TN, MCC, F1, precision, recall, FG/BG IoU, AP, mean L2) for every configuration (best-of-five models) | **Fig. 8**, **Table 4** (map-space rows) |
 | `python -m difftactile.scripts.script_frame_space_metrics` | the same statistics per marker in video-frame space, pooled once over all frames of all trials, best-of-five models → `FRAME_SPACE_METRICS.md` | **Table 4** (video-frame rows) |
 | `./run_pipeline.sh <config>` | the same IoU / ROC numbers, one configuration at a time | Table 3, Fig. 6 |
+| `./record_videos.sh` | the [demonstration videos](#demonstration-videos) in `videos/` (simulator interactions, annotated datasets, per-frame predictions of all four models) | (supplementary; not a manuscript figure) |
 
 The accepted version's Fig. 8 / Table 4 were produced with the **legacy** models
 (`saved_models_legacy/`, see [Legacy models](#legacy-models)); the current ones come from
@@ -412,10 +413,19 @@ reachable by name:
 ./view_predictions.sh A-to-B --all        # every frame of every window
 ./view_predictions.sh A-to-C --retrained  # locally trained
 ./view_predictions.sh A-to-B --all --x11  # force X11 instead of Wayland
+./view_predictions.sh A-to-A --trials first-vessel-present   # one held-out simulated trajectory
+./view_predictions.sh C-to-B --record out.mp4                # record instead of opening a window
 
 # one seed's model out of a sweep (see "Training is deterministic" below)
 ./view_predictions.sh C-to-B --sweep 20260813-163201 --seed 1
 ```
+
+`--trials SPEC` restricts the test set to some trials (comma-separated trial-id substrings, or
+`first-vessel-present`); the `i`/`o` keys then step over just those. It exists mainly for
+`A-to-A`, whose 75 held-out simulated trajectories are ~23k sliding windows. `--record PATH`
+steps the viewer through everything automatically (one key press per 500 ms of video),
+rendered offscreen, and writes an `.mp4` — the same mechanism the [demonstration
+videos](#demonstration-videos) are made with.
 
 `--sweep TS [--seed N]` is the only way to say *which* trained model to view once a sweep has
 produced several — `--retrained` alone means "whatever was trained last". `TS` is the sweep's
@@ -1469,6 +1479,46 @@ exactly these photographs.
 `difftactile/manual_or_experimental_data/silicone_training_data/` is a separate experiment — a
 raster scan of the phantom, stored as `.avi` videos plus `.npz` metadata — and is unrelated to
 these four calibration images.
+
+---
+
+## Demonstration videos
+
+All videos live in **[`videos/`](videos/)** at the repository root (H.264 `.mp4`, ~15 MB in
+total). They are produced by `./docker/record_videos.sh` from the parameters currently in
+`system-params.json` and the published best-of-five checkpoints; the two GUI tools are stepped
+automatically, one key press per 500 ms of video, and rendered offscreen (see the "Record mode"
+section of `difftactile/main/qt_viewer.py`).
+
+**Simulator** — the four sensor–phantom interactions (sensor **green**, phantom **blue**, vein
+**yellow**), recorded from the simulator's own camera by `record_da_trajectories.sh`:
+
+| | | |
+|---|---|---|
+| **Press** — [`sim_press.mp4`](videos/sim_press.mp4)<br><video src="videos/sim_press.mp4" controls muted width="100%"></video> | **Twist about x** — [`sim_twist_x.mp4`](videos/sim_twist_x.mp4)<br><video src="videos/sim_twist_x.mp4" controls muted width="100%"></video> | **Twist about z** — [`sim_twist_z.mp4`](videos/sim_twist_z.mp4)<br><video src="videos/sim_twist_z.mp4" controls muted width="100%"></video> |
+| **Slide, blood vessel absent** — [`sim_slide_vessel_absent.mp4`](videos/sim_slide_vessel_absent.mp4)<br><video src="videos/sim_slide_vessel_absent.mp4" controls muted width="100%"></video> | **Slide, blood vessel present** — [`sim_slide_vessel_present.mp4`](videos/sim_slide_vessel_present.mp4)<br><video src="videos/sim_slide_vessel_present.mp4" controls muted width="100%"></video> | |
+
+**Annotated datasets** — every frame of every recording, stepped through with the annotation
+viewers (`annotate_data_bare_metal.sh --record`). Silicone: the clicked vessel points (up to
+four per frame). Meat: per-marker ground-truth labels (red = vessel present, green = absent):
+
+| | |
+|---|---|
+| **Silicone phantom** — [`dataset_annotations_silicone.mp4`](videos/dataset_annotations_silicone.mp4)<br><video src="videos/dataset_annotations_silicone.mp4" controls muted width="100%"></video> | **Meat phantom** — [`dataset_annotations_meat.mp4`](videos/dataset_annotations_meat.mp4)<br><video src="videos/dataset_annotations_meat.mp4" controls muted width="100%"></video> |
+
+**Per-frame GNN predictions** — the prediction viewer (`view_predictions.sh --record`) on each
+of the four configurations, using the best-of-five model of each (highest AP in the published
+five-seed sweep). Panels: ground truth, hard prediction, confusion overlay (green = both say
+vessel, red = missed vessel, blue = false alarm), soft prediction, metadata. Central frames of
+every trial for the real datasets; one vessel-present held-out trajectory for Sim→Sim (the
+simulated test set is subsampled 24×, hence its nine frames):
+
+| | |
+|---|---|
+| **Sim → Sim** — [`predictions_sim_to_sim.mp4`](videos/predictions_sim_to_sim.mp4)<br><video src="videos/predictions_sim_to_sim.mp4" controls muted width="100%"></video> | **Sim → Silicone** — [`predictions_sim_to_silicone.mp4`](videos/predictions_sim_to_silicone.mp4)<br><video src="videos/predictions_sim_to_silicone.mp4" controls muted width="100%"></video> |
+| **Sim → Meat** — [`predictions_sim_to_meat.mp4`](videos/predictions_sim_to_meat.mp4)<br><video src="videos/predictions_sim_to_meat.mp4" controls muted width="100%"></video> | **Meat → Silicone** — [`predictions_meat_to_silicone.mp4`](videos/predictions_meat_to_silicone.mp4)<br><video src="videos/predictions_meat_to_silicone.mp4" controls muted width="100%"></video> |
+
+If a player does not render inline, the linked file opens in GitHub's own video viewer.
 
 ---
 

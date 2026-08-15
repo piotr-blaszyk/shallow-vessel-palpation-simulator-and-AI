@@ -14,6 +14,7 @@
 #   ./docker/view_predictions.sh <config> [--central|--all] [--pretrained|--retrained] [--x11]
 #
 # Configurations (A = simulation, B = real silicone, C = real meat):
+#   A-to-A    model trained on simulation, predictions shown on held-out simulation
 #   A-to-B    model trained on simulation, predictions shown on silicone
 #   C-to-B    model trained on meat,       predictions shown on silicone
 #   A-to-C    model trained on simulation, predictions shown on meat
@@ -76,6 +77,18 @@
 # first. The script prints which mode it is in either way.
 #
 # Options:
+#   --trials SPEC
+#             Show only some trials of the test set: a comma-separated list of
+#             trial-id substrings (a meat trial directory name, or a simulated /
+#             silicone file stem such as trajectory_0426), or the token
+#             first-vessel-present. The i/o keys then step over just those.
+#             Mainly for the simulated test set, whose 75 held-out trajectories
+#             are ~23k sliding windows - the README recording shows one.
+#   --record PATH
+#             Record instead of opening a window: the viewer is stepped through
+#             every trial and frame automatically (one key press per 500 ms of
+#             video) and written to PATH as .mp4, rendered offscreen so nothing
+#             appears on screen. Used by docker/record_videos.sh.
 #   --x11     Force the X11/Xwayland backend instead of Wayland. Expect this to
 #             be choppy (see the note below); it is a fallback for X11-only
 #             hosts and an A/B switch for isolating Wayland-specific bugs.
@@ -147,6 +160,8 @@ BACKEND="wayland"
 PRINT_ONLY=0
 SWEEP_DIR=""
 SWEEP_SEED="0"
+TRIALS=""
+RECORD=""
 
 # A while loop rather than `for arg`, because --sweep and --seed consume the
 # argument that follows them.
@@ -166,6 +181,18 @@ while [ "$#" -gt 0 ]; do
             SWEEP_SEED="$1"
             ;;
         --seed=*) SWEEP_SEED="${1#*=}" ;;
+        --trials)
+            shift
+            [ "$#" -gt 0 ] || { echo "ERROR: --trials needs a selection." >&2; exit 1; }
+            TRIALS="$1"
+            ;;
+        --trials=*) TRIALS="${1#*=}" ;;
+        --record)
+            shift
+            [ "$#" -gt 0 ] || { echo "ERROR: --record needs an output .mp4 path." >&2; exit 1; }
+            RECORD="$1"
+            ;;
+        --record=*) RECORD="${1#*=}" ;;
         --all|--central)
             # Asking for both is contradictory, so reject it rather than letting
             # the last one silently win. Tracked separately from FRAMES, which
@@ -214,7 +241,7 @@ EOF
         exit 1
     fi
 
-    if [ "${BACKEND}" = "wayland" ]; then
+    if [ "${BACKEND}" = "wayland" ] && [ -z "${RECORD}" ]; then
         if ! docker exec "${CONTAINER_NAME}" bash -lc \
                 '[ -S "${XDG_RUNTIME_DIR:-/nonexistent}/${WAYLAND_DISPLAY:-nonexistent}" ]' \
                 >/dev/null 2>&1; then
@@ -241,6 +268,8 @@ EOF
     CMD=(docker exec "${TTY_ARGS[@]}" "${CONTAINER_NAME}"
          ./docker/view_predictions.sh "${CONFIG}" "${WEIGHTS}" "${FRAMES}")
     [ -n "${SWEEP_DIR}" ] && CMD+=(--sweep "${SWEEP_DIR}" --seed "${SWEEP_SEED}")
+    [ -n "${TRIALS}" ] && CMD+=(--trials "${TRIALS}")
+    [ -n "${RECORD}" ] && CMD+=(--record "${RECORD}")
     [ "${BACKEND}" = "x11" ] && CMD+=(--x11)
 
     if [ "${PRINT_ONLY}" -eq 1 ]; then
@@ -262,7 +291,14 @@ export DIFFTACTILE_INTERACTIVE=1
 # is sized to it); the current default is 5.
 [ "${WEIGHTS}" = "--legacy" ] && export DIFFTACTILE_CLIP_LEN=7
 
-if [ "${BACKEND}" = "wayland" ]; then
+if [ -n "${RECORD}" ]; then
+    # Recording renders offscreen: no window, no display of any kind needed,
+    # and nothing appears on anyone's desktop. qt_viewer.run_browser drives the
+    # viewer from the key script the navigator supplies.
+    unset DISPLAY WAYLAND_DISPLAY
+    export QT_QPA_PLATFORM=offscreen
+    export DIFFTACTILE_RECORD_MP4="${RECORD}"
+elif [ "${BACKEND}" = "wayland" ]; then
     if [ -z "${WAYLAND_DISPLAY:-}" ] || [ ! -S "${XDG_RUNTIME_DIR:-/nonexistent}/${WAYLAND_DISPLAY}" ]; then
         echo "ERROR: no Wayland socket at \${XDG_RUNTIME_DIR}/\${WAYLAND_DISPLAY}." >&2
         echo "Restart the container with ./docker/docker-run.sh, or pass --x11." >&2
@@ -289,6 +325,8 @@ fi
 
 echo "Qt platform: ${QT_QPA_PLATFORM}  (DISPLAY=${DISPLAY:-<unset>}, WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-<unset>})"
 VIEW_ARGS=("${CONFIG}" "${WEIGHTS}" "${FRAMES}")
+[ -n "${TRIALS}" ] && VIEW_ARGS+=(--trials "${TRIALS}")
+[ -n "${RECORD}" ] && echo "Recording to ${RECORD} (offscreen, automatic stepping)."
 if [ -n "${SWEEP_DIR}" ]; then
     VIEW_ARGS+=(--sweep "${SWEEP_DIR}" --seed "${SWEEP_SEED}")
     echo "Viewing predictions: ${CONFIG} ${FRAMES} (sweep ${SWEEP_DIR}, seed ${SWEEP_SEED})"

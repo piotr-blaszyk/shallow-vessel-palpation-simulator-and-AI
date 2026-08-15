@@ -165,6 +165,21 @@ script and in `visualise.main()`): asking for both is contradictory, so neither 
   abandoned stepping loop — is gone. It referenced `is_interactive()`, which was never
   imported, so it would have raised `NameError` had it ever run.
 
+**Record mode and trial selection (2026-08-15).** `qt_viewer.run_browser()` takes an
+`auto_keys` list; when `DIFFTACTILE_RECORD_MP4` is set it feeds those keys through
+`keyPressEvent` one per `DIFFTACTILE_RECORD_INTERVAL_MS` (500) of *video time*, grabbing the
+widget after each (`QWidget.grab()`, works under `QT_QPA_PLATFORM=offscreen` — nothing opens
+on the user's display), and writes an mp4v `.mp4`. All three viewers supply their key script
+(the navigators' `walk_keys()`; the silicone annotator ends with `x x` so it never saves).
+`view_predictions.sh --record PATH` and `annotate_data_bare_metal.sh --record PATH` expose it,
+and `docker/record_videos.sh` (host-side) makes all README videos in `videos/` (H.264 via
+ffmpeg, ~15 MB total, committed — `.gitignore` has `!videos/*.mp4`). The prediction viewer also
+gained `--trials SPEC` (`Visualisation._select_trials()`): the navigators now recover trials on
+EVERY dataset via `_clip_trials()` (meat trial dir, or the sim/silicone `.npz` stem), clips are
+ordered by trial then time (the pickled sim test set is shuffled), and `first-vessel-present`
+picks one trajectory — the sim test set is dilation-24 windows, so one trajectory is 9 central
+frames, not 313. A-to-A works in the viewer with `--best`.
+
 No PyAV here, deliberately: this path decodes no video. It renders from precomputed `.npz`
 stacks and pickles, so there is nothing for a decoder to do. (The one `cv2.VideoCapture` left in
 the file is in `visualize_experiment()`, a separate method not reachable from this entrypoint —

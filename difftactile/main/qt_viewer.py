@@ -44,12 +44,28 @@ Keyboard handling stays deliberately close to the OpenCV loop it replaces: the
 viewers' existing `on_key(key)` callbacks take an integer key code and return
 `"redraw"`, `"quit"` or `None`, and this widget calls them with exactly that
 contract, so their key-handling logic did not have to be rewritten.
+
+Record mode (unattended video of a viewer)
+------------------------------------------
+Setting `DIFFTACTILE_RECORD_MP4=<path>` turns `run_browser()` into a recorder:
+instead of waiting for a human, it feeds the window the key presses the caller
+supplies (`auto_keys`, one character per press) at a fixed cadence
+(`DIFFTACTILE_RECORD_INTERVAL_MS`, default 500 ms of *video time* per press),
+grabs the window after every press with `QWidget.grab()`, and writes the frames
+to an .mp4. The keys go through the same `keyPressEvent` a keyboard would, so
+what is recorded is exactly what a user stepping through the tool would see -
+status bar, overlays and all. It works under `QT_QPA_PLATFORM=offscreen`, so no
+window ever appears on anyone's desktop, and it does not sleep between presses:
+the cadence is baked into the video, not into the run time. This is what
+`docker/record_videos.sh` uses to make the README videos.
 """
+
+import os
 
 import numpy as np
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QImage, QPen, QPixmap
+from PySide6.QtCore import QEvent, QRectF, Qt, QTimer
+from PySide6.QtGui import QBrush, QColor, QImage, QKeyEvent, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QGraphicsEllipseItem, QGraphicsPixmapItem, QGraphicsScene,
     QGraphicsView, QLabel, QVBoxLayout, QWidget,
@@ -283,7 +299,8 @@ class _FrameView(QGraphicsView):
 
 
 def run_browser(title, render, on_key, on_click=None, on_delete=None, status=None,
-                overlay_points=None, point_colours=None, on_close=None):
+                overlay_points=None, point_colours=None, on_close=None,
+                auto_keys=None):
     """Open a `FrameBrowser` and run the Qt event loop until it is closed.
 
     Blocks, like any ordinary GUI. The callers are the two interactive
@@ -292,16 +309,115 @@ def run_browser(title, render, on_key, on_click=None, on_delete=None, status=Non
 
     `on_close` is called once the window has gone, which is where the silicone
     annotator saves.
+
+    `auto_keys` is the key sequence (one character per press) that walks the
+    viewer over everything it can show. It is only consumed in record mode
+    (`DIFFTACTILE_RECORD_MP4` set, see the module docstring); interactively it
+    is ignored, so callers can always pass it.
     """
     app = QApplication.instance() or QApplication([])
     browser = FrameBrowser(
         title, render, on_key, on_click, on_delete, status, overlay_points,
         point_colours,
     )
+    record_path = os.environ.get("DIFFTACTILE_RECORD_MP4")
+    if record_path:
+        # A fixed, generous window: QWidget.grab() records the widget at its
+        # own size, and offscreen there is no screen to fit to.
+        browser.resize(*_record_size())
     browser.redraw()
     browser.show()
     browser.setFocus()
-    app.exec()
+    if record_path:
+        if auto_keys is None:
+            raise ValueError(
+                "DIFFTACTILE_RECORD_MP4 is set but this viewer supplies no "
+                "auto_keys, so there is nothing to drive the recording with."
+            )
+        _record_browser(app, browser, list(auto_keys), record_path)
+    else:
+        app.exec()
     if on_close is not None:
         on_close()
     return browser
+
+
+def _record_size():
+    """Window size used in record mode: DIFFTACTILE_RECORD_SIZE=WxH, else 1280x960."""
+    raw = os.environ.get("DIFFTACTILE_RECORD_SIZE", "1280x960")
+    w, h = (int(v) for v in raw.lower().split("x"))
+    # H.264 needs even dimensions; round down rather than fail later in ffmpeg.
+    return w - w % 2, h - h % 2
+
+
+def _grab_bgr(widget):
+    """Render `widget` to a numpy BGR array (what cv2.VideoWriter wants)."""
+    image = widget.grab().toImage().convertToFormat(QImage.Format_BGR888)
+    w, h, stride = image.width(), image.height(), image.bytesPerLine()
+    buf = np.frombuffer(image.constBits(), dtype=np.uint8, count=h * stride)
+    return buf.reshape(h, stride)[:, : w * 3].reshape(h, w, 3).copy()
+
+
+def _record_browser(app, browser, keys, path):
+    """Drive `browser` with `keys` and write one video frame per press to `path`.
+
+    Runs the Qt event loop with a zero-interval timer: each tick grabs the
+    window (state after the previous press), then posts the next key. Frames
+    are written at 10 fps, each held for `DIFFTACTILE_RECORD_INTERVAL_MS`
+    (default 500 ms), so the video plays at the cadence of a person pressing a
+    key every half second even though the recording itself runs flat out. The
+    first frame is the initial view; the last is the state after the final key.
+
+    Written with OpenCV's `mp4v` (always available); the caller is expected to
+    re-encode to H.264 for distribution - see docker/record_videos.sh.
+    """
+    import cv2
+
+    interval_ms = int(os.environ.get("DIFFTACTILE_RECORD_INTERVAL_MS", "500"))
+    fps = 10
+    # Number of identical video frames a single grab is held for.
+    hold = max(1, round(interval_ms * fps / 1000))
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    writer = None
+    state = {"written": 0, "pressed": 0}
+
+    def write(frame):
+        nonlocal writer
+        if writer is None:
+            h, w = frame.shape[:2]
+            writer = cv2.VideoWriter(
+                path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h)
+            )
+        for _ in range(hold):
+            writer.write(frame)
+        state["written"] += 1
+
+    def tick():
+        # A key may have closed the window (e.g. the annotator's `x x`); the
+        # recording ends there rather than grabbing a hidden widget.
+        if not browser.isVisible() or not keys:
+            if browser.isVisible():
+                write(_grab_bgr(browser))
+            timer.stop()
+            app.quit()
+            return
+        write(_grab_bgr(browser))
+        char = keys.pop(0)
+        state["pressed"] += 1
+        # Through keyPressEvent, exactly as a real keyboard press would arrive.
+        browser.keyPressEvent(
+            QKeyEvent(QEvent.KeyPress, ord(char.upper()), Qt.NoModifier, char)
+        )
+        # Let the scene repaint before the next grab.
+        app.processEvents()
+
+    timer = QTimer()
+    timer.timeout.connect(tick)
+    timer.start(0)
+    app.exec()
+    if writer is not None:
+        writer.release()
+    print(
+        f"Recorded {state['written']} frames ({state['pressed']} key presses, "
+        f"{interval_ms} ms each) -> {path}"
+    )

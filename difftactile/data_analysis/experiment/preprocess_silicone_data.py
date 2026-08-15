@@ -587,6 +587,17 @@ class SiliconePreprocessData:
             save_all()
             print("Annotations saved.")
 
+        # Key script for record mode (DIFFTACTILE_RECORD_MP4, see qt_viewer):
+        # step every frame of every video, then quit WITHOUT saving (`x x`) so
+        # a recording can never rewrite the annotation pickles. Ignored when
+        # driven by hand.
+        auto_keys = []
+        for i, avi_path in enumerate(avi_files):
+            auto_keys += ["k"] * (len(annotations[avi_path]) - 1)
+            if i < len(avi_files) - 1:
+                auto_keys.append("m")
+        auto_keys += ["x", "x"]
+
         run_browser(
             "Annotator",
             render,
@@ -597,6 +608,7 @@ class SiliconePreprocessData:
             overlay_points=overlay_points,
             point_colours=colors,
             on_close=on_close,
+            auto_keys=auto_keys,
         )
 
     def annotations_to_line_points(self):

@@ -58,6 +58,12 @@
 # Options:
 #   --source DIR  Where to stage the silicone videos and annotations from, when
 #                 they are not already in the working tree (see below).
+#   --record PATH Record instead of opening a window: the viewer is stepped
+#                 through every video/trial and frame automatically (one key
+#                 press per 500 ms of video), rendered offscreen and written to
+#                 PATH as .mp4. Nothing appears on screen and nothing is
+#                 written to the annotations (the silicone tool exits with
+#                 `x x`, quit-without-saving). Used by docker/record_videos.sh.
 #
 # NOTE ON DATA. The published Zenodo bundle deliberately ships only the final
 # processed datasets, not the raw/intermediate videos (data/MANIFEST.md), so:
@@ -77,6 +83,7 @@ usage() {
 }
 
 DATASET=""
+RECORD=""
 # Default staging source: the author's frozen pre-rename tree, where the silicone
 # videos and annotations live under the old `endgame/` directory name.
 SOURCE_DIR="${DIFFTACTILE_ANNOTATION_SOURCE:-/home/psb120/Documents/phd/data/masters/diff-tactile-fork-IROS-submission-state/diff-tactile-fork/difftactile/manual_or_experimental_data/endgame}"
@@ -86,6 +93,7 @@ while [ $# -gt 0 ]; do
         --silicone) DATASET="silicone" ;;
         --meat)     DATASET="meat" ;;
         --source)   SOURCE_DIR="${2:?--source needs a directory}"; shift ;;
+        --record)   RECORD="${2:?--record needs an output .mp4 path}"; shift ;;
         -h|--help)  usage; exit 0 ;;
         *) echo "ERROR: unrecognised argument: $1" >&2; echo; usage; exit 1 ;;
     esac
@@ -99,7 +107,13 @@ if [ -z "${DATASET}" ]; then
     exit 1
 fi
 
-if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+if [ -n "${RECORD}" ]; then
+    # Record mode renders offscreen (see difftactile/main/qt_viewer.py): no
+    # display is needed and no window is opened.
+    export QT_QPA_PLATFORM=offscreen
+    export DIFFTACTILE_RECORD_MP4="${RECORD}"
+    echo "Recording to ${RECORD} (offscreen, automatic stepping)."
+elif [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     cat >&2 <<'EOF'
 ERROR: neither WAYLAND_DISPLAY nor DISPLAY is set, so no windows can be opened.
 

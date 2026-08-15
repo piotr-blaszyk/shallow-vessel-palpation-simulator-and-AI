@@ -43,6 +43,9 @@
 #                                 reference photographs are of a plain phantom.
 #   DIFFTACTILE_SEED              seed for the trajectory randomisation
 #                                 (default 42).
+#   DIFFTACTILE_RECORD_TRAJECTORIES
+#                                 comma-separated subset of press / twist_z /
+#                                 twist_x / slide to record (default all four).
 #
 # Reading the scene: the SENSOR is green, the PHANTOM is blue, the vein is
 # yellow. (The red/green convention in the Fig. 5 overlays is a different,

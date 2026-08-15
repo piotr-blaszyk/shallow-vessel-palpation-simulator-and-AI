@@ -813,7 +813,18 @@ class MeatPreprocessData:
             state["frame"] = new_frame
             return "redraw"
 
-        run_browser("Meat annotations", render, on_key, status=status_lines)
+        # Key script for record mode (DIFFTACTILE_RECORD_MP4, see qt_viewer):
+        # every frame of every trial, in order. Ignored when driven by hand.
+        auto_keys = []
+        for i, trial_dir in enumerate(trials):
+            with np.load(trial_dir / "marker_labels.npz") as d:
+                n_frames = d["marker_labels"].shape[0]
+            auto_keys += ["k"] * (n_frames - 1)
+            if i < len(trials) - 1:
+                auto_keys.append("m")
+
+        run_browser("Meat annotations", render, on_key, status=status_lines,
+                    auto_keys=auto_keys)
 
 
 def main():

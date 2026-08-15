@@ -3049,8 +3049,21 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
         }}
         combined_writer = None
 
+        # DIFFTACTILE_RECORD_TRAJECTORIES="slide,press" records a subset (all
+        # four by default) - used to record the vessel-present slide alone.
+        only = os.environ.get("DIFFTACTILE_RECORD_TRAJECTORIES", "")
+        only = [n.strip() for n in only.split(",") if n.strip()]
+        unknown = [n for n in only if n not in self.trajectory_names]
+        if unknown:
+            raise ValueError(
+                f"DIFFTACTILE_RECORD_TRAJECTORIES names {unknown}, which are not "
+                f"in {self.trajectory_names}"
+            )
+
         for i in range(self.trajectories.shape[0]):
             name = self.trajectory_names[i]
+            if only and name not in only:
+                continue
             self.trajectory_ix[None] = i
 
             # Same reset sequence as domain_adaptation(): rebuild from the rest
@@ -5118,6 +5131,9 @@ def record_da_trajectories_main():
         DIFFTACTILE_VEIN         1 to embed the subsurface vein (default off,
                                  matching domain adaptation - the reference
                                  photographs are of a plain phantom)
+        DIFFTACTILE_RECORD_TRAJECTORIES
+                                 comma-separated subset of press / twist_z /
+                                 twist_x / slide to record (default all four)
     """
     run_dir = repo_path(
         f"difftactile/output/da_recordings/{time.strftime('%Y%m%d-%H%M%S')}"

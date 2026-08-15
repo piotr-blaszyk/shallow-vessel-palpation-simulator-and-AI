@@ -152,6 +152,44 @@ def _available_sweeps():
     )
 
 
+def _clip_trials(dataset, clip_ids):
+    """`{clip_ix: (trial_id, video_frame_indices)}` for the viewer's clips.
+
+    The viewer renders a flat list of clips; this recovers which TRIAL (a real
+    recording or a simulated trajectory) each came from and which video frames
+    it covers, so the navigators can offer a trial level on every dataset:
+
+      * meat (`dataset.meat_data`): trial directory basename and the clip's
+        frame indices, as `populate_clips_meat()` stored them;
+      * simulated / silicone (`dataset.data_points`, the single_dataset scheme):
+        the `.npz` file each sliding window was cut from, and
+        `start, start + dilation, ...` for its frames.
+
+    Anything else falls back to one synthetic trial per clip, which keeps the
+    arithmetic valid even if the trial line is then meaningless.
+    """
+    meat_clips = getattr(dataset, "meat_data", None) or []
+    data_points = getattr(dataset, "data_points", None) or []
+    clip_len = getattr(dataset, "clip_len", SYSTEM_PARAMS.gnn.clip_len)
+    out = {}
+    for clip_ix in clip_ids:
+        if clip_ix < len(meat_clips):
+            out[clip_ix] = (
+                os.path.basename(meat_clips[clip_ix][0]),
+                list(meat_clips[clip_ix][2]),
+            )
+        elif clip_ix < len(data_points) and len(data_points[clip_ix]) == 3:
+            file_path, start_ix, dilation = data_points[clip_ix]
+            trial = os.path.splitext(os.path.basename(file_path))[0]
+            frames = list(range(int(start_ix),
+                                int(start_ix) + clip_len * int(dilation),
+                                int(dilation)))
+            out[clip_ix] = (trial, frames)
+        else:
+            out[clip_ix] = (f"clip-{clip_ix}", None)
+    return out
+
+
 class _CentralFrameNavigator:
     """Two-level cursor over one central-frame prediction per sliding window.
 
@@ -185,8 +223,6 @@ class _CentralFrameNavigator:
         self.clip_len = max((f for _, f in frame_index), default=0) + 1
         self.centre = self.clip_len // 2
 
-        meat_clips = getattr(dataset, "meat_data", None) or []
-
         # One entry per clip: the position in the flat frame list of that clip's
         # central frame. Everything else is dropped, which is the whole point.
         self.positions = []
@@ -196,18 +232,18 @@ class _CentralFrameNavigator:
                 self.positions.append(pos)
                 clip_ids.append(clip_ix)
 
-        # Trial each retained entry belongs to, and the video frame its window is
-        # centred on. Falls back to a synthetic id when there is no meat
-        # structure to read (the simulated and silicone datasets have no trials).
+        # Trial each retained entry belongs to (meat trial, or the simulated /
+        # silicone trajectory file), and the video frame its window is centred
+        # on. See `_clip_trials()` for what counts as a trial on each dataset.
+        trials_of = _clip_trials(dataset, clip_ids)
         self.entry_trial = []
         self.entry_video_frame = []
         for clip_ix in clip_ids:
-            if clip_ix < len(meat_clips):
-                self.entry_trial.append(os.path.basename(meat_clips[clip_ix][0]))
-                self.entry_video_frame.append(meat_clips[clip_ix][2][self.centre])
-            else:
-                self.entry_trial.append(f"clip-{clip_ix}")
-                self.entry_video_frame.append(None)
+            trial, frames = trials_of[clip_ix]
+            self.entry_trial.append(trial)
+            self.entry_video_frame.append(
+                None if frames is None else frames[self.centre]
+            )
 
         # Trials in first-appearance order, so numbering follows playback order.
         self.trials = []
@@ -261,6 +297,20 @@ class _CentralFrameNavigator:
         n = len(self.entries_of[self.trials[self.trial_ix]])
         self.entry_in_trial = max(0, min(ix, n - 1))
 
+    def walk_keys(self):
+        """Key presses that visit every central frame of every trial, in order.
+
+        Used by record mode (qt_viewer.run_browser `auto_keys`): `k` through
+        each trial, `o` to the next. Starts from the initial position (trial 1,
+        frame 1), which is where a fresh viewer opens.
+        """
+        keys = []
+        for i, trial in enumerate(self.trials):
+            keys += ["k"] * (len(self.entries_of[trial]) - 1)
+            if i < len(self.trials) - 1:
+                keys.append("o")
+        return keys
+
     # --- reporting --------------------------------------------------------
 
     def metadata_lines(self):
@@ -305,16 +355,11 @@ class _MeatNavigator:
         self.frame_index = frame_index
         self.clip_len = max((f for _, f in frame_index), default=0) + 1
 
-        meat_clips = getattr(dataset, "meat_data", None) or []
-        # Trial id per clip index, in clip order. Falls back to a synthetic id
-        # per clip when there is no meat structure to read.
+        # Trial id per clip index, in clip order (meat trial, or the simulated /
+        # silicone trajectory file - see `_clip_trials()`).
         clip_ids = sorted({c for c, _ in frame_index})
-        self.clip_trial = []
-        for clip_ix in clip_ids:
-            if clip_ix < len(meat_clips):
-                self.clip_trial.append(os.path.basename(meat_clips[clip_ix][0]))
-            else:
-                self.clip_trial.append(f"clip-{clip_ix}")
+        trials_of = _clip_trials(dataset, clip_ids)
+        self.clip_trial = [trials_of[clip_ix][0] for clip_ix in clip_ids]
 
         # Trials in first-appearance order, so the numbering follows playback
         # order rather than alphabetical order.
@@ -331,11 +376,9 @@ class _MeatNavigator:
         # panel. Reported as a closed interval [first, last].
         self.clip_frames = {}
         for clip_ix in clip_ids:
-            if clip_ix < len(meat_clips):
-                video_frame_indices = meat_clips[clip_ix][2]
-                self.clip_frames[clip_ix] = (
-                    video_frame_indices[0], video_frame_indices[-1]
-                )
+            frames = trials_of[clip_ix][1]
+            if frames is not None:
+                self.clip_frames[clip_ix] = (frames[0], frames[-1])
 
         self.trial_ix = 0
         self.clip_in_trial = 0
@@ -390,6 +433,23 @@ class _MeatNavigator:
         self.clip_in_trial = max(0, min(ix, n_clips - 1))
         self.frame_in_clip = 0
 
+    def walk_keys(self):
+        """Key presses that visit every frame of every clip of every trial.
+
+        Used by record mode (qt_viewer.run_browser `auto_keys`): `m` through
+        each clip's frames, `k` to the next clip, `o` to the next trial.
+        """
+        keys = []
+        for i, trial in enumerate(self.trials):
+            n_clips = len(self.clips_of[trial])
+            for c in range(n_clips):
+                keys += ["m"] * (self.clip_len - 1)
+                if c < n_clips - 1:
+                    keys.append("k")
+            if i < len(self.trials) - 1:
+                keys.append("o")
+        return keys
+
     # --- reporting --------------------------------------------------------
 
     def metadata_lines(self):
@@ -414,7 +474,7 @@ class _MeatNavigator:
 
 class Visualisation:
     def __init__(self, scenario=None, weights="pretrained", frames="central",
-                 sweep_dir=None, sweep_seed=0):
+                 sweep_dir=None, sweep_seed=0, trials=None):
         """Interactive viewer for per-frame predictions.
 
         With `scenario=None` the historical behaviour is kept: the checkpoint and
@@ -454,6 +514,9 @@ class Visualisation:
         """
         if frames not in ("all", "central"):
             raise ValueError(f"unknown frames mode {frames!r}; expected 'all' or 'central'")
+        # Optional restriction of the test set to some trials - see
+        # `_select_trials()`. None shows everything.
+        self.trials = trials
         self.scenario = scenario
         self.weights = weights
         # Overwritten below once the source is known; set here so the legacy
@@ -568,7 +631,86 @@ class Visualisation:
             _, _, test_dataset = full_dataset.create_splits(all_to_test=True)
         test_dataset.set_stats(stats)
         test_dataset.eval()
+        self._select_trials(test_dataset)
         return test_dataset
+
+    def _select_trials(self, dataset):
+        """Order `dataset`'s clips by trial and time, and restrict to `self.trials`.
+
+        `self.trials` is a comma-separated list. Each item is either the token
+        `first-vessel-present` - the first trial (in dataset order) with at
+        least one vessel-present frame - or a substring of a trial id (a meat
+        trial directory such as `2-metal-straws-beneath-2-steaks-20260228-235749`
+        or a simulated/silicone file stem such as `trajectory_0426`). Trials
+        keep their dataset order. Raises if nothing matches, since a viewer
+        that silently shows a different trial than asked for is worse than one
+        that stops.
+
+        Exists for the README recordings, which show one vessel-present
+        simulated trajectory rather than all 75 held-out ones (~23k sliding
+        windows, minutes of rendering, and hours of video at half a second per
+        frame). Perfectly usable by hand too.
+        """
+        wanted = [t.strip() for t in str(self.trials or "").split(",") if t.strip()]
+        is_meat = getattr(dataset, "scheme", None) == "meat"
+        # The meat split datasets carry their clips in `meat_data` only.
+        clips = list(dataset.meat_data if is_meat else dataset.data_points)
+        trials_of = _clip_trials(dataset, range(len(clips)))
+        # Trial ids in first-appearance order, and the clips of each, in the
+        # order of the frames they cover. The pickled simulated test set keeps
+        # the shuffled clip order it was trained with, which as a viewing order
+        # would jump back and forth in time; sorting here changes only what
+        # the viewer shows next, never what the model is given.
+        trial_ids = []
+        clips_of = {}
+        for clip_ix, (trial, frames) in trials_of.items():
+            if trial not in clips_of:
+                trial_ids.append(trial)
+                clips_of[trial] = []
+            clips_of[trial].append((frames[0] if frames else clip_ix, clips[clip_ix]))
+        for trial in trial_ids:
+            clips_of[trial] = [c for _, c in sorted(clips_of[trial], key=lambda t: t[0])]
+        if not wanted:
+            keep = trial_ids
+        else:
+            keep = self._match_trials(wanted, trial_ids, clips_of)
+        selected = [c for t in trial_ids if t in keep for c in clips_of[t]]
+        if is_meat:
+            dataset.meat_data = selected
+        else:
+            dataset.data_points = selected
+        if wanted:
+            print(f"Trials restricted to {len(keep)}/{len(trial_ids)}: {', '.join(keep)}")
+
+    @staticmethod
+    def _match_trials(wanted, trial_ids, clips_of):
+        """The trial ids selected by the `--trials` items, in dataset order."""
+
+        def has_vessel(trial):
+            """True if any frame of the trial is labelled vessel-present."""
+            first = clips_of[trial][0]
+            path = first[0]
+            if os.path.isdir(path):  # meat trial directory
+                labels = np.load(os.path.join(path, "marker_labels.npz"))["marker_labels"]
+                return bool(np.any(labels))
+            with np.load(path) as d:  # simulated / silicone .npz
+                return bool(np.any(d["vein_classification"]))
+
+        keep = []
+        for item in wanted:
+            if item == "first-vessel-present":
+                match = next((t for t in trial_ids if has_vessel(t)), None)
+                matches = [match] if match is not None else []
+            else:
+                matches = [t for t in trial_ids if item in t]
+            if not matches:
+                raise SystemExit(
+                    f"--trials {item!r} matches no trial. Available "
+                    f"({len(trial_ids)}): {', '.join(trial_ids[:20])}"
+                    + (" ..." if len(trial_ids) > 20 else "")
+                )
+            keep += [t for t in matches if t not in keep]
+        return keep
 
     @staticmethod
     def calculate_iou(ground_truth, prediction):
@@ -1475,6 +1617,9 @@ class Visualisation:
             render=render,
             on_key=on_key,
             status=status,
+            # Record mode only (DIFFTACTILE_RECORD_MP4): the key script that
+            # walks every trial and frame. Ignored when driven by hand.
+            auto_keys=nav.walk_keys(),
         )
 
     @staticmethod
@@ -1676,15 +1821,21 @@ def main():
     The default is the reported view on purpose: if the two ever disagree about
     how good the model looks, that is the one that should be seen first.
 
+    --trials SPEC  restrict the test set to some trials: a comma-separated list
+               of trial-id substrings, or `first-vessel-present`
+               (see `Visualisation._select_trials()`).
+
     The configuration may also come from DIFFTACTILE_SCENARIO, the weight source
-    from DIFFTACTILE_WEIGHTS (pretrained | retrained) and the frames mode from
-    DIFFTACTILE_FRAMES (all | central).
+    from DIFFTACTILE_WEIGHTS (pretrained | retrained), the frames mode from
+    DIFFTACTILE_FRAMES (all | central) and the trial selection from
+    DIFFTACTILE_VIEW_TRIALS.
     """
     argv = sys.argv[1:]
-    # --sweep and --seed take a value, so they are pulled out before the rest is
-    # split into flags and positionals.
+    # --sweep, --seed and --trials take a value, so they are pulled out before
+    # the rest is split into flags and positionals.
     sweep_dir = os.environ.get("DIFFTACTILE_SWEEP_DIR")
     sweep_seed = int(os.environ.get("DIFFTACTILE_SWEEP_SEED", 0))
+    trials = os.environ.get("DIFFTACTILE_VIEW_TRIALS")
     rest = []
     i = 0
     while i < len(argv):
@@ -1692,6 +1843,10 @@ def main():
             sweep_dir = argv[i + 1]; i += 2
         elif argv[i].startswith("--sweep="):
             sweep_dir = argv[i].split("=", 1)[1]; i += 1
+        elif argv[i] == "--trials" and i + 1 < len(argv):
+            trials = argv[i + 1]; i += 2
+        elif argv[i].startswith("--trials="):
+            trials = argv[i].split("=", 1)[1]; i += 1
         elif argv[i] == "--seed" and i + 1 < len(argv):
             sweep_seed = int(argv[i + 1]); i += 2
         elif argv[i].startswith("--seed="):
@@ -1732,7 +1887,7 @@ def main():
         frames = os.environ.get("DIFFTACTILE_FRAMES", "central")
 
     v = Visualisation(scenario=scenario, weights=weights, frames=frames,
-                      sweep_dir=sweep_dir, sweep_seed=sweep_seed)
+                      sweep_dir=sweep_dir, sweep_seed=sweep_seed, trials=trials)
     v.visualise_gnn(
         mode='predictions',
         data_source='fresh_dataset'
