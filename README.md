@@ -488,9 +488,9 @@ is purely a display choice.
 
 ### Bird's-eye vessel localisation map
 
-> 📄 **Manuscript: Fig. 8** (all four panels) and **Table 4** — the Sim→Sim, Sim→Silicone
-> (0 mm and 3 mm tolerance) and Sim→Meat maps and the per-model confusion statistics come
-> straight out of these scripts' output directories.
+> 📄 **Manuscript: Fig. 8** (all four panels) and **Table 4** — the Sim→Sim, Sim→Meat,
+> Sim→Silicone and Meat→Silicone maps and the per-model confusion statistics (0 mm growth)
+> come straight out of these scripts' output directories.
 
 Projects the per-marker predictions through the sensor pose onto the phantom surface at
 **1 mm per pixel** and renders the top view against the ground truth, for **every**
@@ -524,7 +524,7 @@ once and block-downsampled onto the same grid and restricted to the region the s
 run sweeps every candidate threshold over the pooled per-pixel map (the maximum probability of
 any marker that landed on a pixel) and takes the one that keeps pixel-level **precision ≥ 0.9
 while maximising recall**, where a predicted pixel counts as correct when it lies within
-**3 mm** of a true pixel — the reprojected truth is a set of marker *points* 2 mm apart, so at
+**2 mm** of a true pixel — the reprojected truth is a set of marker *points* 2 mm apart, so at
 0 mm the target is met only by a handful of pixels, i.e. an empty map (the 0 mm numbers are
 still reported for every map). This is deliberately conservative: in venipuncture assistance a
 false vessel sends the needle towards a vessel that is not there, while a missed one costs a

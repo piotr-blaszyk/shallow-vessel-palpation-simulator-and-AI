@@ -86,7 +86,7 @@ DECISION_THRESHOLD = 0.5
 # The prediction VIEWER's hard-prediction / confusion panels use this cut. It
 # was historically shared with the bird's-eye vessel map, which no longer uses
 # any fixed threshold at all - vessel_map.py chooses its operating point per run
-# (precision >= 0.9 within 3 mm, recall maximised) - so this now affects the
+# (precision >= 0.9 within 2 mm, recall maximised) - so this now affects the
 # viewer only. It is an empirical pick made by eye on the old silicone map,
 # confined to that qualitative display and touching nothing that is scored;
 # override with DIFFTACTILE_MAP_THRESHOLD (e.g. 0.5 for the conventional cut).

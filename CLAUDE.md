@@ -271,7 +271,7 @@ hardcoded probability cuts left anywhere in the project:
 
 **The bird's-eye vessel map uses NO fixed threshold** (since 2026-08-15). `vessel_map.py`
 chooses each run's operating point: the threshold with the highest pixel-level recall among
-those with precision ≥ 0.9, where a predicted pixel counts as correct within 3 mm of a true
+those with precision ≥ 0.9, where a predicted pixel counts as correct within 2 mm of a true
 pixel (`PRECISION_TARGET`, `PRECISION_TOLERANCE_MM`). At 0 mm the target is met only by 3–7
 pixels (silicone) or 1 (meat) because the reprojected truth is sparse marker points, hence the
 tolerance. If the target is unreachable with ≥ 20 predicted pixels the run falls back to the
@@ -390,7 +390,7 @@ table for end users.
 | `alignment_figures.sh` | **Fig. 5** — sim (red) vs real (green) marker alignment, four interactions (50 % opacity, per-trajectory MAE in caption) |
 | `score_all_scenarios.sh --seeds 5` | **Table 3** (IoU, mean ± std) and **Fig. 6** (mean PR curves ± 1 std band; the ROC twins are generated but not in the manuscript) |
 | `ablation_clip_len.sh` | the temporal-window ablation table (`tab:clip-len`) |
-| `vessel_map_all.sh` | **Fig. 8** (Sim→Sim, Sim→Silicone at 0 and 3 mm, Sim→Meat) and **Table 4** (per-pixel confusion statistics, 4 models × {0, 3} mm) |
+| `vessel_map_all.sh` | **Fig. 8** (Sim→Sim, Sim→Meat, Sim→Silicone, Meat→Silicone) and **Table 4** (per-pixel confusion statistics at 0 mm growth, incl. IoU and mean L2) |
 
 The former **Fig. 7** (per-frame prediction grid) was removed from the manuscript;
 `view_predictions.sh` remains an interactive tool. The **accepted version's** Fig. 8 / Table 4
