@@ -390,7 +390,8 @@ table for end users.
 | `alignment_figures.sh` | **Fig. 5** — sim (red) vs real (green) marker alignment, four interactions (50 % opacity, per-trajectory MAE in caption) |
 | `score_all_scenarios.sh --seeds 5` | **Table 3** (IoU, mean ± std) and **Fig. 6** (mean PR curves ± 1 std band; the ROC twins are generated but not in the manuscript) |
 | `ablation_clip_len.sh` | the temporal-window ablation table (`tab:clip-len`) |
-| `vessel_map_all.sh` | **Fig. 8** (Sim→Sim, Sim→Silicone at 0 and 3 mm, Sim→Meat) and **Table 4** (per-pixel confusion statistics, 4 models × {0, 3} mm) |
+| `vessel_map_all.sh` | **Fig. 8** (Sim→Sim, Sim→Meat, Sim→Silicone, Meat→Silicone) and the map-space rows of **Table 4** (per-pixel TP/FP/FN/TN, MCC, F1, P, R, FG/BG IoU, AP, mean L2 at 0 mm growth) |
+| `script_frame_space_metrics` (`cnn/frame_space_metrics.py`) | the video-frame-space rows of **Table 4**: the same statistics per marker, pooled once over all frames, best-of-five instances (`FRAME_SPACE_METRICS.md`) |
 
 The former **Fig. 7** (per-frame prediction grid) was removed from the manuscript;
 `view_predictions.sh` remains an interactive tool. The **accepted version's** Fig. 8 / Table 4
