@@ -111,7 +111,7 @@ and the trained models (step 5), so a fresh clone can start anywhere.
 | `./vessel_map_all.sh` | top-view vessel maps and per-pixel statistics for every configuration | **Fig. 7**, **Table 4** lower half |
 | `./record_videos.sh` | the [demonstration videos](#demonstration-videos) | supplementary |
 
-Every mean ± std quotes the five seeds of the published sweep (`saved_models_sweeps/20260815-130143`);
+Every mean ± std quotes the five seeds of the published sweep (`saved_models_sweeps/20260815-194045`);
 wherever a **single** model is shown or tabulated it is that configuration's **best-of-five
 instance by average precision** (`cnn/model_selection.py`) — the convention the manuscript states.
 
@@ -133,7 +133,7 @@ checkpoint (`--eval`) or retrained (`--train`):
 
 | Config | Manuscript | Model | Default | AUROC | AP | FG IoU | BG IoU |
 |---|---|---|---|---|---|---|---|
-| `A-to-A` | Sim→Sim | large | `--eval` | 0.958 ± 0.001 | 0.493 ± 0.005 | 0.193 ± 0.018 | 0.818 ± 0.022 |
+| `A-to-A` | Sim→Sim | large | `--eval` | 0.958 ± 0.001 | 0.491 ± 0.006 | 0.193 ± 0.019 | 0.818 ± 0.024 |
 | `A-to-B` | Sim→Silicone | large | `--eval` | 0.779 ± 0.004 | 0.321 ± 0.004 | 0.234 ± 0.007 | 0.811 ± 0.027 |
 | `A-to-C` | Sim→Meat | large | `--eval` | 0.837 ± 0.002 | 0.224 ± 0.004 | 0.171 ± 0.006 | 0.730 ± 0.019 |
 | `C-to-B` | Meat→Silicone | compact | `--train` | 0.717 ± 0.054 | 0.304 ± 0.038 | 0.155 ± 0.012 | 0.537 ± 0.124 |
@@ -322,7 +322,7 @@ neither), Soft Prediction, Metadata — using the best-of-five model by default.
 ./view_predictions.sh A-to-C --all              # every frame of every window (debugging view)
 ./view_predictions.sh A-to-A --trials first-vessel-present   # one held-out simulated trajectory
 ./view_predictions.sh C-to-B --retrained        # a locally trained model
-./view_predictions.sh C-to-B --sweep 20260815-130143 --seed 1   # one seed of a sweep
+./view_predictions.sh C-to-B --sweep 20260815-194045 --seed 1   # one seed of a sweep
 ./view_predictions.sh A-to-B --record out.mp4   # record instead of opening a window
 ./view_predictions.sh A-to-B --x11              # force X11 instead of Wayland (choppy)
 ```

@@ -19,5 +19,5 @@ standard decision threshold); AUROC and AP are context.
 | 5 **(best)** | **0.2384 ± 0.0012** | 0.2371–0.2394 | 0.7818 ± 0.0018 | 0.3243 ± 0.0011 |
 | 7 | **0.2139 ± 0.0294** | 0.1799–0.2310 | 0.7676 ± 0.0078 | 0.3105 ± 0.0061 |
 
-Checkpoints and per-run artifacts: `saved_models_ablation/20260815-005709/clip_len_XX/`;
+Checkpoints and per-run artifacts: `saved_models_ablation/20260815-193236/clip_len_XX/`;
 `ablation.json` there repeats these numbers in machine-readable form.

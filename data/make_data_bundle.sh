@@ -134,7 +134,7 @@ copy_file "saved_models_meat/final_segmentation_model_gnn_meat.pt"
 # score arrays behind the mean ROC/PR curves. ~70 MB; it is what every
 # mean +/- std in the manuscript rests on, and what the viewer / vessel map
 # select the best-of-five instance from (cnn/model_selection.py).
-copy_tree "saved_models_sweeps/20260815-130143"
+copy_tree "saved_models_sweeps/20260815-194045"
 # LEGACY models (pre-2026-08-15): kept only because they produced the accepted
 # manuscript's vessel-map figure/table - see saved_models_legacy/README.md.
 copy_file "saved_models_legacy/README.md"
@@ -232,13 +232,13 @@ echo "| tables/alignment_validation.json | MAEs quoted beside Fig. 5 | difftacti
 # ships in full; the curves are duplicated here so the figure set is complete.
 for cfg in A-to-A A-to-B A-to-C C-to-B; do
     for kind in pr roc; do
-        copy_file "saved_models_sweeps/20260815-130143/mean_${kind}_curve_${cfg}.pdf"
-        cp "${BUNDLE}/saved_models_sweeps/20260815-130143/mean_${kind}_curve_${cfg}.pdf" "${MA}/figures/"
-        echo "| figures/mean_${kind}_curve_${cfg}.pdf | Fig. 6 (PR; ROC twins not in the manuscript) | saved_models_sweeps/20260815-130143/ (docker/score_all_scenarios.sh --seeds 5) |" >> "${MA}/README.md"
+        copy_file "saved_models_sweeps/20260815-194045/mean_${kind}_curve_${cfg}.pdf"
+        cp "${BUNDLE}/saved_models_sweeps/20260815-194045/mean_${kind}_curve_${cfg}.pdf" "${MA}/figures/"
+        echo "| figures/mean_${kind}_curve_${cfg}.pdf | Fig. 6 (PR; ROC twins not in the manuscript) | saved_models_sweeps/20260815-194045/ (docker/score_all_scenarios.sh --seeds 5) |" >> "${MA}/README.md"
     done
 done
-cp "${BUNDLE}/saved_models_sweeps/20260815-130143/sweep.json" "${MA}/tables/sweep.json"
-echo "| tables/sweep.json | every per-seed metric behind Fig. 6, best-of-five selection | saved_models_sweeps/20260815-130143/sweep.json |" >> "${MA}/README.md"
+cp "${BUNDLE}/saved_models_sweeps/20260815-194045/sweep.json" "${MA}/tables/sweep.json"
+echo "| tables/sweep.json | every per-seed metric behind Fig. 6, best-of-five selection | saved_models_sweeps/20260815-194045/sweep.json |" >> "${MA}/README.md"
 
 # Tables 3 / 4 and the clip-length ablation, as the repository's own Markdown
 # summaries (git-tracked, but copied so the archive is self-contained).

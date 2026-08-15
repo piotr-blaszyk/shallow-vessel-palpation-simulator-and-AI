@@ -229,11 +229,20 @@ it is a reported metric rather than a figure.
 `score_all_scenarios.sh A-to-A`, `view_predictions.sh A-to-A`, and sweepable. `--eval` goes
 through `evaluate_on_sim()`, `--train` through `train_on_sim(test_on="sim")`. It scores the same
 published checkpoint as A→B/A→C; only the test set differs. The gap A→A → A→B is the sim-to-real
-transfer cost: AUROC 0.958 → 0.779 (5-seed means at clip_len 5, sweep 20260815-130143; the
+transfer cost: AUROC 0.958 → 0.779 (5-seed means at clip_len 5, sweep 20260815-194045; the
 clip_len-7 pair was 0.9563 → 0.7719, the pre-regeneration pair 0.9369 → 0.7314).
 
+**Rotation augmentation (fixed 2026-08-15 evening).** The random 60°-step rotation is a
+TRAINING augmentation, drawn ONCE per clip (all `clip_len` frames turn together); it is now
+gated on `mode == "train"` on the sim/silicone path too (the meat path already was), so the
+val split and the held-out Sim test split are never rotated. Only Sim→Sim *scores* changed
+(A→A AUROC 0.9581 → 0.9577 mean, published-ckpt row 0.9582 → 0.9569): the large model trains
+for one epoch, so val-based checkpoint selection never mattered and every checkpoint is
+bit-identical to the previous sweep's. The re-run sweep is `20260815-194045` (same models,
+corrected A→A evaluation; best seeds unchanged: A-to-A 1, A-to-B 2, A-to-C 2, C-to-B 4).
+
 **Best-of-five convention (2026-08-15).** All tables quote mean ± std over the five seeds of
-`files.published_sweep` (`saved_models_sweeps/20260815-130143`). Wherever ONE model must be shown
+`files.published_sweep` (`saved_models_sweeps/20260815-194045`). Wherever ONE model must be shown
 — the prediction viewer, the bird's-eye maps — the best-of-five instance by AP is used
 (`cnn/model_selection.py::best_model`; `sweep.json` records `best_seed`: A-to-A 1, A-to-B 2,
 A-to-C 2, C-to-B 4). The published paths `saved_models_sim/` + `saved_models_meat/` (and their
@@ -826,7 +835,7 @@ The paths below do not exist in a fresh clone:
 
 - `difftactile/output/` — every intermediate artifact the sim writes
 - `saved_models_meat/`, `saved_models_sim/` — trained GNN weights (best-of-five instances)
-- `saved_models_sweeps/20260815-130143/` — the published five-seed sweep (all 20 checkpoints +
+- `saved_models_sweeps/20260815-194045/` — the published five-seed sweep (all 20 checkpoints +
   pickles + `sweep.json`); `saved_models_legacy/` — the pre-2026-08-15 models
 - `difftactile/output/vessel_map_sim/` — the one simulated slide with poses behind the Sim→Sim map
 - `difftactile/manual_or_experimental_data/meat_training_data/clean/` — real meat-experiment trials

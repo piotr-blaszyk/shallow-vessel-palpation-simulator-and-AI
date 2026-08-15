@@ -970,7 +970,18 @@ class MyDataset(torch.utils.data.Dataset):
         # )
         # veins_mask &= labels_signal_mask
 
-        if self.apply_augmentations:
+        # Random rotation is a TRAINING augmentation only, and ONE angle is
+        # drawn per clip: `markers` / `veins` hold every frame of the window
+        # (clip_len, nodes, 2), so the whole temporal input turns together and
+        # the model never sees a clip whose frames disagree in orientation.
+        #
+        # The mode gate matters (fixed 2026-08-15): create_splits_* hand the
+        # same apply_augmentations to all three splits, so without it the
+        # validation split that drives early stopping and checkpoint selection,
+        # and the held-out simulated test split behind A-to-A, were rotated at
+        # random on every fetch - which is exactly what the Sim->Sim viewer
+        # showed. The meat path (getitem_meat) already had this gate.
+        if self.apply_augmentations and self.mode == "train":
             discrete_angles = [0, 60, 120, 180, 240, 300]
             rotation_angle_deg = NP_RNG.choice(discrete_angles)
             markers = self.augmentation_rotation(markers, rotation_angle_deg)

@@ -32,7 +32,7 @@ EXPECTED=(
     # The published five-seed sweep (every seed's checkpoint + pickle); the
     # published checkpoints above are its best-of-five instances. Pinned by
     # files.published_sweep in system-params.json.
-    "saved_models_sweeps/20260815-130143"
+    "saved_models_sweeps/20260815-194045"
     # Legacy (pre-2026-08-15) models: only behind the accepted manuscript's
     # Fig. 8 / Table 4. See saved_models_legacy/README.md.
     "saved_models_legacy/sim/final_segmentation_model_gnn_sim.pt"
