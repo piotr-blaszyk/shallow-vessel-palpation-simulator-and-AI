@@ -103,8 +103,8 @@ and the trained models (step 5), so a fresh clone can start anywhere.
 
 | Script | Produces | Manuscript |
 |---|---|---|
-| `./annotate_data_bare_metal.sh --silicone` / `--meat` | the annotation viewers | **Fig. 4** (annotated Silicone frame, Meat labels) |
-| `./domain_adaptation.sh` → `./alignment_figures.sh` | joint BO calibration; sim (red) vs real (green) marker alignment on the four validation interactions, MAE per panel | **Fig. 5** and the 0.50 mm MAE |
+| `./annotate_data_bare_metal.sh --silicone` / `--meat` | the annotation viewers | **Fig. 5** (annotated Silicone frame, Meat labels) |
+| `./domain_adaptation.sh` → `./alignment_figures.sh` | joint BO calibration; sim (red) vs real (green) marker alignment on the four validation interactions, MAE per panel | **Fig. 4** and the 0.50 mm MAE |
 | `./ablation_clip_len.sh` | foreground IoU / AP per temporal window length, mean ± std over seeds | **Table 3** |
 | `./score_all_scenarios.sh --seeds 5` | five-seed sweep of every configuration: mean PR curves ± 1 std (ROC twins too), `AUROC_RESULTS.md`, `sweep.json` | **Fig. 6** |
 | `python -m difftactile.scripts.script_frame_space_metrics` | per-marker statistics of each best-of-five model, pooled over all central frames → `FRAME_SPACE_METRICS.md` | **Table 4**, upper half |
@@ -205,7 +205,7 @@ the window for one process; `./ablation_clip_len.sh [--seeds N]` trains A-to-B a
 
 ## Domain adaptation: calibrating the digital twin
 
-> 📄 **Fig. 5** and the marker-alignment MAE (0.50 mm at deepest contact).
+> 📄 **Fig. 4** and the marker-alignment MAE (0.50 mm at deepest contact).
 
 The premise only holds if the simulated markers move like the real ones. `./domain_adaptation.sh`
 fits the sensor's Young's modulus and the sensor↔vessel contact stiffness by **Bayesian
@@ -220,7 +220,7 @@ older two-stage design.
 
 ```bash
 ./domain_adaptation.sh                                # ~35 s per iteration; DIFFTACTILE_BO_ITERATIONS=N
-./alignment_figures.sh                                # Fig. 5: white-background panels + MAE, from the
+./alignment_figures.sh                                # Fig. 4: white-background panels + MAE, from the
                                                       # published run (or the current parameters)
 ./score_params.sh                                     # score the CURRENT system-params.json once, no search
 ./record_da_trajectories.sh                           # record the four interactions to .mp4 (needs a display)
@@ -230,7 +230,7 @@ Every DA run gets its own `difftactile/output/domain_adaptation/<timestamp>/`
 (`bo_joint_results.json`, `iteration_log.csv`, `final_joint_validation.json`,
 `da_overlay_<name>.png` on the photograph, `snapshots/` when a display is available). The
 published run is `difftactile/output/domain_adaptation_published/joint_bo/` (in the bundle);
-`alignment_figures.sh` redraws Fig. 5 from its cached marker positions and reports MAEs
+`alignment_figures.sh` redraws Fig. 4 from its cached marker positions and reports MAEs
 11.9 / 15.8 / 14.5 / 12.4 px (press / twist-z / twist-x / slide; ~55 px = 2 mm marker
 spacing). **Adopting a result is manual, deliberately** — nothing writes back into
 `system-params.json`.
@@ -248,7 +248,7 @@ Silicone *training* videos.
 
 Reading the simulator window: the **sensor is green**, the **phantom blue**, the **vessel
 yellow** (drawn only when its contact pair is enabled). This is a different convention from
-the Fig. 5 overlays, where red = simulated and green = real markers.
+the Fig. 4 overlays, where red = simulated and green = real markers.
 
 ---
 
@@ -348,7 +348,7 @@ ensemble is a different model whose numbers no table here reports.
 
 ## Real datasets: annotate, review, preprocess
 
-> 📄 **Fig. 4.**
+> 📄 **Fig. 5.**
 
 The two annotation viewers are **Qt (PySide6) applications that run on bare metal by design**,
 in a small dedicated environment — hand-driven frame by frame, they need to be responsive, and
@@ -573,7 +573,7 @@ so keep work in the bind-mounted repository.
   little deformation; visible sensor deformation is driven almost entirely by the
   sensor↔vessel pair. The simulator is a targeted model of the *inclusion's mechanical
   signature on the marker field* — the quantity the GNN consumes and the one validated against
-  the real sensor (Fig. 5) — not a general soft-body contact solver. Treat absolute contact
+  the real sensor (Fig. 4) — not a general soft-body contact solver. Treat absolute contact
   forces and phantom deformation as uncalibrated.
 - **The phantom is kinematically pinned** (every particle's `is_fixed` flag is set in
   `Phantom.g2p()`), which avoids the MPM collapse and jitter a free phantom showed and does not

@@ -411,8 +411,8 @@ table for end users.
 
 | Script | Manuscript artifact (numbering of the 2026-08-15 manuscript) |
 |---|---|
-| `annotate_data_bare_metal.sh --silicone/--meat` | **Fig. 4** (`fig:annotation-line`) — annotated Silicone frame, Meat labels |
-| `alignment_figures.sh` | **Fig. 5** (`fig:da-results`) — sim (red) vs real (green) marker alignment, four interactions (50 % opacity, per-trajectory MAE in caption) |
+| `annotate_data_bare_metal.sh --silicone/--meat` | **Fig. 5** (`fig:annotation-line`) — annotated Silicone frame, Meat labels |
+| `alignment_figures.sh` | **Fig. 4** (`fig:da-results`) — sim (red) vs real (green) marker alignment, four interactions (50 % opacity, per-trajectory MAE in caption) |
 | `ablation_clip_len.sh` | **Table 3** (`tab:clip-len`) — the temporal-window ablation |
 | `score_all_scenarios.sh --seeds 5` | **Fig. 6** (`fig:pr-curve`) — mean PR curves ± 1 std band (the ROC twins are generated but not in the manuscript). There is no longer a separate IoU table. |
 | `script_frame_space_metrics` (`cnn/frame_space_metrics.py`) | **Table 4** (`tab:localisation-map`) upper half: per-marker statistics in video-frame space, pooled once over all central frames, best-of-five instances (`FRAME_SPACE_METRICS.md`) |
@@ -445,7 +445,7 @@ Getting this backwards makes every screenshot say the opposite of what it shows,
 The sensor is the deformable body being *measured*, so it is the one that fills most of the
 frame; the camera tracks it, which is why the PHANTOM appears to sweep across the view during
 `slide` while the sensor stays roughly put. Do not confuse this with the **marker overlay**
-convention used by Fig. 5 (`da_overlay_*.png`), where red = simulated markers and green = real
+convention used by Fig. 4 (`da_overlay_*.png`), where red = simulated markers and green = real
 markers — that is a 2D image-space figure, unrelated to these 3D particle colours.
 
 Because the vein's draw is gated on the same `collision_ixs` that gates its physics, the absence
@@ -536,7 +536,7 @@ Other things worth knowing:
   entries"). That is caught, penalised with the top of the target range so the GP learns to
   avoid the region, and the search continues.
 - **Each run is timestamped** under `difftactile/output/domain_adaptation/<stamp>/`, holding the
-  BO history, convergence figure, Fig. 5 overlays for the best config, and
+  BO history, convergence figure, Fig. 4 overlays for the best config, and
   `trajectories/iterNNN_<name>.npz` with the raw simulated/real markers per iteration.
 - **Nothing writes results back into `system-params.json`.** Adopting a configuration is manual
   and should stay that way.

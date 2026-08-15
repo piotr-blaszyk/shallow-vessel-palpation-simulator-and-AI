@@ -217,15 +217,15 @@ mkdir -p "${MA}/figures" "${MA}/tables" "${MA}/vessel_maps"
     echo "|---|---|---|"
 } > "${MA}/README.md"
 
-# Fig. 5 - alignment panels (sim vs real markers, four interactions).
+# Fig. 4 - alignment panels (sim vs real markers, four interactions).
 for name in press twist_z twist_x slide all; do
     copy_file "difftactile/output/domain_adaptation_published/joint_bo/alignment_${name}.png"
     cp "${BUNDLE}/difftactile/output/domain_adaptation_published/joint_bo/alignment_${name}.png" "${MA}/figures/"
-    echo "| figures/alignment_${name}.png | Fig. 5 | difftactile/output/domain_adaptation_published/joint_bo/ (docker/alignment_figures.sh) |" >> "${MA}/README.md"
+    echo "| figures/alignment_${name}.png | Fig. 4 | difftactile/output/domain_adaptation_published/joint_bo/ (docker/alignment_figures.sh) |" >> "${MA}/README.md"
 done
 copy_file "difftactile/output/domain_adaptation_published/joint_bo/alignment_validation.json"
 cp "${BUNDLE}/difftactile/output/domain_adaptation_published/joint_bo/alignment_validation.json" "${MA}/tables/"
-echo "| tables/alignment_validation.json | MAEs quoted beside Fig. 5 | difftactile/output/domain_adaptation_published/joint_bo/ |" >> "${MA}/README.md"
+echo "| tables/alignment_validation.json | MAEs quoted beside Fig. 4 | difftactile/output/domain_adaptation_published/joint_bo/ |" >> "${MA}/README.md"
 
 # Fig. 6 - mean PR (and ROC) curves over the five seeds; the seed statistics rest on
 # sweep.json. Both come from the published sweep, which section [3/5] already

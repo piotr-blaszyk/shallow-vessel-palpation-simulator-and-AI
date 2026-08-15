@@ -4118,7 +4118,7 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
         that is what the four reference photographs show.
 
         Writes one alignment overlay per trajectory (`da_overlay_<name>.png`,
-        simulated markers RED against real markers GREEN - manuscript Fig. 5)
+        simulated markers RED against real markers GREEN - manuscript Fig. 4)
         plus a JSON of the per-trajectory MAEs.
         """
         print("\n" + "=" * 70)
@@ -4222,7 +4222,7 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
         with open(path, "w") as f:
             json.dump(summary, f, indent=4)
         print(f"\n  Statistics: {path}")
-        print(f"  Alignment figures (Fig. 5 panels): "
+        print(f"  Alignment figures (Fig. 4 panels): "
               f"{os.path.join(run_dir, 'da_overlay_<name>.png')}")
         return summary
 
@@ -4908,7 +4908,7 @@ def domain_adaptation_main():
     slide (how visibly the vessel deforms the sensor) together - see
     `domain_adaptation_joint()`. The chosen configuration is then validated on
     all four canonical interactions (press, twist about z, twist about x,
-    slide), which is what the manuscript's Fig. 5 shows. `staged` keeps the
+    slide), which is what the manuscript's Fig. 4 shows. `staged` keeps the
     older sequential design.
 
     NOT DIFFERENTIABLE. An earlier design backpropagated through the Taichi

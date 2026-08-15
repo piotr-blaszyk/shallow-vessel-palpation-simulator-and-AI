@@ -12,7 +12,7 @@
 # objective that trades the two off (main.py::domain_adaptation_joint). The
 # winning configuration is then VALIDATED, not searched, on all four canonical
 # interactions (press, twist about z, twist about x, slide, vessel-free) - those
-# MAEs and overlays are what Fig. 5 shows.
+# MAEs and overlays are what Fig. 4 shows.
 #
 # DIFFTACTILE_DA_MODE=staged: the older two-stage design (vessel-absent slide BO,
 # then vessel-present BO at the chosen sensor). Kept because the published
@@ -50,13 +50,13 @@
 #   bo_joint_results.json        every iteration (both objective terms) + the best
 #   iteration_log.csv            the same, one line per iteration, written live
 #   final_joint_validation.json  all four interactions at the winning configuration
-#   da_overlay_<name>.png        Fig. 5 panels from that validation - simulated
+#   da_overlay_<name>.png        Fig. 4 panels from that validation - simulated
 #                                markers RED, real markers GREEN
 #   vein_iterNNN_overlay_slide.png   the vessel-present slide, per iteration
 #   snapshots/                   rendered 3D frames per iteration (needs a DISPLAY)
 #
 # The published run is difftactile/output/domain_adaptation_published/joint_bo/;
-# docker/alignment_figures.sh redraws Fig. 5 (white background) from it.
+# docker/alignment_figures.sh redraws Fig. 4 (white background) from it.
 #
 # Environment:
 #   DIFFTACTILE_BO_ITERATIONS     how many parameter sets to try (default:
@@ -122,7 +122,7 @@ echo "Simulated markers are drawn RED, real markers GREEN."
 python -m difftactile.scripts.script_domain_adaptation
 
 echo
-echo "Manuscript Fig. 5 panels, written to difftactile/output/:"
+echo "Manuscript Fig. 4 panels, written to difftactile/output/:"
 for panel in "press:(a) press" \
              "twist_z:(b) twist about the z-axis" \
              "twist_x:(c) twist about the x-axis" \

@@ -48,7 +48,7 @@
 #                                 twist_x / slide to record (default all four).
 #
 # Reading the scene: the SENSOR is green, the PHANTOM is blue, the vein is
-# yellow. (The red/green convention in the Fig. 5 overlays is a different,
+# yellow. (The red/green convention in the Fig. 4 overlays is a different,
 # 2D marker-space figure - not these 3D particle colours.)
 #
 set -euo pipefail
