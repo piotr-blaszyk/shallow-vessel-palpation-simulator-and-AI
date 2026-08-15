@@ -534,7 +534,7 @@ only the video→npz preprocessing helpers). Read that module's docstring first.
   `cnn/model_selection.py`) or `legacy` (needs clip_len 7 — the shell exports it).
 - **Output** is versioned: `difftactile/output/vessel_maps/<train>-to-<test>_gt-<src>/<TS>/`,
   never overwritten. Per map: prediction/ground-truth masks, `confusion_rNN.png/.pdf` for the
-  truth grown by an L2 disc of NN = 0..10 mm, `metrics_by_radius.md` (TP FP FN TN MCC F1
+  truth grown by an L2 disc of NN = 0, 1, 2 mm, `metrics_by_radius.md` (TP FP FN TN MCC F1
   precision recall accuracy + L2 median/mean/deciles), `l2_distances_rNN.png`; run-level
   `report.md`, `run.json`, `threshold_selection.png`. Recall at r > 0 is against the GROWN
   region (so it falls with r) — literal to the spec, stated in the manuscript.

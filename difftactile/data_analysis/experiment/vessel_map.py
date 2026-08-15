@@ -47,7 +47,7 @@ WHAT IS WRITTEN. Everything goes to a versioned run directory,
 
 so runs never overwrite each other. Per map: the prediction mask alone, the
 ground-truth mask alone, and the confusion overlay - the latter repeated with
-the ground-truth positives GROWN by an L2 (Euclidean disc) radius of 0..10 mm,
+the ground-truth positives GROWN by an L2 (Euclidean disc) radius of 0, 1, 2 mm,
 each with its own confusion counts, MCC, F1, precision, recall, accuracy and
 the distribution of distances from every predicted pixel to its nearest true
 pixel (median, mean, decile histogram). Text tables carry all of it
@@ -106,7 +106,10 @@ PRECISION_TARGET = 0.9
 PRECISION_TOLERANCE_MM = 3.0
 
 # Ground-truth growth radii (mm == px) for the morphological-tolerance sweep.
-GROWTH_RADII_MM = list(range(0, 11))
+# 0 is the plain map; 1 and 2 show how the per-pixel statistics move when the
+# sparse marker-point truth is thickened. NOTE that recall/accuracy/IoU can
+# FALL with radius: growing adds true pixels that nothing predicted (FN).
+GROWTH_RADII_MM = [0, 1, 2]
 
 # Distance from the camera lens to the plane the marker pixels are lifted onto,
 # in REAL millimetres, per test dataset. This plane is where the sensor tip
@@ -164,7 +167,11 @@ def confusion_counts(gt, pred):
 
 
 def confusion_metrics(tp, fp, fn, tn):
-    """MCC, F1, precision, recall, accuracy from the four counts.
+    """MCC, F1, precision, recall, accuracy and IoU from the four counts.
+
+    IoU is the vessel-class (foreground) intersection over union,
+    TP / (TP + FP + FN) - the same quantity the marker-level tables call
+    "foreground IoU", here over map pixels.
 
     Undefined ratios (0/0) are reported as NaN rather than 0, so a map with no
     true pixels (the meat control trial) shows "n/a" recall instead of a fake 0.
@@ -177,10 +184,11 @@ def confusion_metrics(tp, fp, fn, tn):
     recall = ratio(tp, tp + fn)
     f1 = ratio(2 * tp, 2 * tp + fp + fn)
     accuracy = ratio(tp + tn, tp + fp + fn + tn)
+    iou = ratio(tp, tp + fp + fn)
     denom = np.sqrt(float(tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
     mcc = (float(tp) * tn - float(fp) * fn) / denom if denom > 0 else 0.0
     return {"mcc": mcc, "f1": f1, "precision": precision, "recall": recall,
-            "accuracy": accuracy}
+            "accuracy": accuracy, "iou": iou}
 
 
 def grow_l2(mask, radius):
@@ -763,9 +771,9 @@ def score_map(m, gt, pred, out_dir, title):
         "Ground-truth positives grown by an L2 disc of radius r (mm == px); the",
         "prediction is fixed. Distances are from each predicted pixel to the nearest",
         "(grown) true pixel.", "",
-        "| r (mm) | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | "
+        "| r (mm) | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | IoU | "
         "L2 median | L2 mean | n pred |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in GROWTH_RADII_MM:
         gt_r = grow_l2(gt, r)
@@ -784,7 +792,7 @@ def score_map(m, gt, pred, out_dir, title):
         lines.append(
             f"| {r} | {tp} | {fp} | {fn} | {tn} | {_fmt(met['mcc'])} | {_fmt(met['f1'])} | "
             f"{_fmt(met['precision'])} | {_fmt(met['recall'])} | {_fmt(met['accuracy'], 4)} | "
-            f"{_fmt(dsum['median'], 2)} | {_fmt(dsum['mean'], 2)} | {dsum['count']} |"
+            f"{_fmt(met['iou'])} | {_fmt(dsum['median'], 2)} | {_fmt(dsum['mean'], 2)} | {dsum['count']} |"
         )
     lines += ["", "L2 deciles (0 %, 10 %, ..., 100 %) at r = 0 mm: " +
               ", ".join(_fmt(v, 2) for v in records[0]["l2"]["deciles"]), ""]
@@ -876,10 +884,10 @@ def run(config, gt_source=None, model_choice="best", threshold=None, seed=None,
         f"# Bird's-eye vessel map run: {config} ({cfg['train']} -> {cfg['test']}), "
         f"ground truth from {gt_source}", "",
         f"Model: {spec['description']}", f"Threshold: {choice['note']}", "",
-        "Per-map metrics at r = 0 and r = 3 mm (full tables in each map's "
+        "Per-map metrics at every growth radius (full tables in each map's "
         "metrics_by_radius.md):", "",
-        "| map | r | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | L2 mean |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| map | r | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | IoU | L2 mean |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for m, gt in zip(maps, gts):
         pred = m.prediction(choice["threshold"])
@@ -889,12 +897,12 @@ def run(config, gt_source=None, model_choice="best", threshold=None, seed=None,
         per_map[m.name] = {"description": m.description, "shape": m.shape,
                            "swept_pixels": int(m.visited.sum()), "records": records}
         for rec in records:
-            if rec["radius_mm"] in (0, 3):
+            if True:
                 summary_lines.append(
                     f"| {m.name} | {rec['radius_mm']} | {rec['tp']} | {rec['fp']} | {rec['fn']} | "
                     f"{rec['tn']} | {_fmt(rec['mcc'])} | {_fmt(rec['f1'])} | "
                     f"{_fmt(rec['precision'])} | {_fmt(rec['recall'])} | "
-                    f"{_fmt(rec['accuracy'], 4)} | {_fmt(rec['l2']['mean'], 2)} |")
+                    f"{_fmt(rec['accuracy'], 4)} | {_fmt(rec['iou'])} | {_fmt(rec['l2']['mean'], 2)} |")
 
     # Pooled over maps (meat: the ten trials together), per radius.
     pooled = []
@@ -912,13 +920,13 @@ def run(config, gt_source=None, model_choice="best", threshold=None, seed=None,
                        **confusion_metrics(tp, fp, fn, tn), "l2": distance_summary(d_all)})
     if len(maps) > 1:
         summary_lines += ["", "Pooled over all maps:", "",
-                          "| r | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | L2 median | L2 mean |",
-                          "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+                          "| r | TP | FP | FN | TN | MCC | F1 | precision | recall | accuracy | IoU | L2 median | L2 mean |",
+                          "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for rec in pooled:
             summary_lines.append(
                 f"| {rec['radius_mm']} | {rec['tp']} | {rec['fp']} | {rec['fn']} | {rec['tn']} | "
                 f"{_fmt(rec['mcc'])} | {_fmt(rec['f1'])} | {_fmt(rec['precision'])} | "
-                f"{_fmt(rec['recall'])} | {_fmt(rec['accuracy'], 4)} | "
+                f"{_fmt(rec['recall'])} | {_fmt(rec['accuracy'], 4)} | {_fmt(rec['iou'])} | "
                 f"{_fmt(rec['l2']['median'], 2)} | {_fmt(rec['l2']['mean'], 2)} |")
     with open(os.path.join(out_dir, "report.md"), "w") as f:
         f.write("\n".join(summary_lines) + "\n")

@@ -8,7 +8,7 @@
 # of the phantom at 1 mm per pixel (the 2D->3D->2D projection). The map is
 # thresholded, compared with a ground-truth map on the same grid, and scored
 # pixel by pixel - at the native resolution and with the ground-truth region
-# grown by an L2 disc of 0..10 mm.
+# grown by an L2 disc of 0, 1 and 2 mm.
 #
 # Run this INSIDE the container (see docker/docker-run.sh + docker/docker-connect.sh).
 # Figures are written to disk, so a display is optional.
@@ -46,10 +46,11 @@
 #
 # THE DECISION THRESHOLD is chosen per run, never assumed: the smallest cut at
 # which the map's pixel-level PRECISION is >= 0.9, i.e. the one that maximises
-# RECALL under that constraint, measured against the run's radius-0 ground
-# truth (pooled over its maps). No 0.5 / 0.58 anywhere. If 0.9 is out of reach
-# the run falls back to the highest reachable precision and SAYS SO in
-# report.md / run.json - read that line before reading the map.
+# RECALL under that constraint, pooled over the run's maps, with a predicted
+# pixel counted as correct within 3 mm of a true pixel (the reprojected truth is
+# sparse marker points, so at 0 mm the rule is met by an empty map). No 0.5 /
+# 0.58 anywhere. If 0.9 is out of reach the run falls back to the F1-optimal
+# threshold and SAYS SO in report.md / run.json - read that line first.
 #
 # OUTPUT goes to a versioned directory that this script picks itself:
 #
@@ -61,7 +62,7 @@
 #
 #   prediction.png            predicted vessel pixels (white on black)
 #   ground_truth.png          true vessel pixels
-#   confusion_rNN.png/.pdf    confusion overlay, truth grown by NN mm (00..10)
+#   confusion_rNN.png/.pdf    confusion overlay, truth grown by NN mm (00, 01, 02)
 #   l2_distances_rNN.png      decile histogram of predicted-to-nearest-true distance
 #   metrics_by_radius.md      TP FP FN TN MCC F1 precision recall accuracy, per radius
 #   *_big.png                 5x nearest-neighbour twins, for documents

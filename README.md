@@ -542,13 +542,13 @@ difftactile/output/vessel_maps/<train>-to-<test>_gt-<source>/<timestamp>[-legacy
     [trial_NN_<name>/]           one subfolder per map when a run has several (meat trials)
       prediction.png             predicted vessel pixels (white on black)
       ground_truth.png           true vessel pixels
-      confusion_rNN.png/.pdf     confusion overlay with the truth grown by NN mm (00..10)
+      confusion_rNN.png/.pdf     confusion overlay with the truth grown by NN mm (00, 01, 02)
       l2_distances_rNN.png       decile histogram of predicted-to-nearest-true distance
       metrics_by_radius.md       TP FP FN TN MCC F1 precision recall accuracy, per radius
       *_big.png                  5× nearest-neighbour twins for documents
 ```
 
-For each map the ground-truth positives are **grown by an L2 disc** of radius 0..10 mm and the
+For each map the ground-truth positives are **grown by an L2 disc** of radius 0, 1 and 2 mm and the
 fine-grained (per-pixel) confusion matrix, MCC, F1, precision, recall, accuracy and the
 distribution of L2 distances from every predicted pixel to its nearest true pixel (median,
 mean, deciles) are tabulated per radius. Silicone runs additionally write
