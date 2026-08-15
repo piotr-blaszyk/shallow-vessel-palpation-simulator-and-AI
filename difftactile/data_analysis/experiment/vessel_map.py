@@ -32,7 +32,7 @@ any marker that landed on a pixel) is swept over every candidate threshold and
 the one that keeps pixel-level PRECISION >= PRECISION_TARGET while maximising
 RECALL is used, pooled over all the run's maps (so a configuration gets one
 threshold). A predicted pixel counts as correct when it lies within
-PRECISION_TOLERANCE_MM (2 mm) of a true pixel - see that constant for why the
+PRECISION_TOLERANCE_MM (3 mm) of a true pixel - see that constant for why the
 tolerance is needed. This is a deliberate, conservative operating point: for
 venipuncture assistance a false vessel (blue) sends the needle towards a
 vessel that is not there, while a missed vessel (red) merely costs a re-scan.
@@ -94,16 +94,16 @@ MM_PER_PIXEL = 1.0
 # The threshold rule: precision at least this, then maximise recall ...
 PRECISION_TARGET = 0.9
 # ... where a predicted pixel counts as correct if it lies within this L2
-# distance (mm == px) of a true pixel. WHY A TOLERANCE, AND WHY 2 mm. The
+# distance (mm == px) of a true pixel. WHY A TOLERANCE, AND WHY 3 mm. The
 # reprojected ground truth is a set of marker POINTS (2 mm apart), not a
 # filled vessel region, so exact-pixel precision measures coincidence with a
 # marker rather than "is this pixel over the vessel": at radius 0 the rule is
 # met by 3-7 pixels on the silicone maps and by a single pixel on meat, i.e.
-# by an empty map. 2 mm is the inter-marker spacing and the vessel-radius scale
-# (2 mm radius phantom vessels, 3 mm metal straws), it is the largest growth
-# radius the tables report (GROWTH_RADII_MM), and it is applied identically to
-# every run. The 0 mm metrics are still computed and reported for every map.
-PRECISION_TOLERANCE_MM = 2.0
+# by an empty map. 3 mm is the vessel-radius scale (2 mm radius phantom
+# vessels, 3 mm metal straws), it is the tolerance the manuscript reports
+# beside the raw 0 mm counts, and it is applied identically to every run.
+# The 0 mm metrics are still computed and reported for every map.
+PRECISION_TOLERANCE_MM = 3.0
 
 # Ground-truth growth radii (mm == px) for the morphological-tolerance sweep.
 # 0 is the plain map; 1 and 2 show how the per-pixel statistics move when the

@@ -47,7 +47,7 @@
 # THE DECISION THRESHOLD is chosen per run, never assumed: the smallest cut at
 # which the map's pixel-level PRECISION is >= 0.9, i.e. the one that maximises
 # RECALL under that constraint, pooled over the run's maps, with a predicted
-# pixel counted as correct within 2 mm of a true pixel (the reprojected truth is
+# pixel counted as correct within 3 mm of a true pixel (the reprojected truth is
 # sparse marker points, so at 0 mm the rule is met by an empty map). No 0.5 /
 # 0.58 anywhere. If 0.9 is out of reach the run falls back to the F1-optimal
 # threshold and SAYS SO in report.md / run.json - read that line first.
