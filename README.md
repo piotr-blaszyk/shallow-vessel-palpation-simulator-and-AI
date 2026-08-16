@@ -449,8 +449,8 @@ vessel **yellow**), from the simulator's own camera (`record_da_trajectories.sh`
 
 | | | |
 |---|---|---|
-| **Press** — [`sim_press.mp4`](videos/sim_press.mp4)<br><video src="videos/sim_press.mp4" controls muted width="100%"></video> | **Twist about x** — [`sim_twist_x.mp4`](videos/sim_twist_x.mp4)<br><video src="videos/sim_twist_x.mp4" controls muted width="100%"></video> | **Twist about z** — [`sim_twist_z.mp4`](videos/sim_twist_z.mp4)<br><video src="videos/sim_twist_z.mp4" controls muted width="100%"></video> |
-| **Slide, blood vessel absent** — [`sim_slide_vessel_absent.mp4`](videos/sim_slide_vessel_absent.mp4)<br><video src="videos/sim_slide_vessel_absent.mp4" controls muted width="100%"></video> | **Slide, blood vessel present** — [`sim_slide_vessel_present.mp4`](videos/sim_slide_vessel_present.mp4)<br><video src="videos/sim_slide_vessel_present.mp4" controls muted width="100%"></video> | |
+| **Press** — [`sim_press.mp4`](videos/sim_press.mp4) | **Twist about x** — [`sim_twist_x.mp4`](videos/sim_twist_x.mp4) | **Twist about z** — [`sim_twist_z.mp4`](videos/sim_twist_z.mp4) |
+| **Slide, blood vessel absent** — [`sim_slide_vessel_absent.mp4`](videos/sim_slide_vessel_absent.mp4) | **Slide, blood vessel present** — [`sim_slide_vessel_present.mp4`](videos/sim_slide_vessel_present.mp4) | |
 
 **Annotated datasets** — every frame of every recording, stepped through with the annotation
 viewers. Silicone: the clicked vessel points. Meat: per-marker labels (red = vessel present,
@@ -458,7 +458,7 @@ green = absent):
 
 | | |
 |---|---|
-| **Silicone phantom** — [`dataset_annotations_silicone.mp4`](videos/dataset_annotations_silicone.mp4)<br><video src="videos/dataset_annotations_silicone.mp4" controls muted width="100%"></video> | **Meat phantom** — [`dataset_annotations_meat.mp4`](videos/dataset_annotations_meat.mp4)<br><video src="videos/dataset_annotations_meat.mp4" controls muted width="100%"></video> |
+| **Silicone phantom** — [`dataset_annotations_silicone.mp4`](videos/dataset_annotations_silicone.mp4) | **Meat phantom** — [`dataset_annotations_meat.mp4`](videos/dataset_annotations_meat.mp4) |
 
 **Per-frame GNN predictions** — the prediction viewer on each configuration's best-of-five
 model. Panels: ground truth, hard prediction, confusion (green = both say vessel, red = missed
@@ -468,11 +468,12 @@ each) for Sim→Sim:
 
 | | |
 |---|---|
-| **Sim → Sim** — [`predictions_sim_to_sim.mp4`](videos/predictions_sim_to_sim.mp4)<br><video src="videos/predictions_sim_to_sim.mp4" controls muted width="100%"></video> | **Sim → Silicone** — [`predictions_sim_to_silicone.mp4`](videos/predictions_sim_to_silicone.mp4)<br><video src="videos/predictions_sim_to_silicone.mp4" controls muted width="100%"></video> |
-| **Sim → Meat** — [`predictions_sim_to_meat.mp4`](videos/predictions_sim_to_meat.mp4)<br><video src="videos/predictions_sim_to_meat.mp4" controls muted width="100%"></video> | **Meat → Silicone** — [`predictions_meat_to_silicone.mp4`](videos/predictions_meat_to_silicone.mp4)<br><video src="videos/predictions_meat_to_silicone.mp4" controls muted width="100%"></video> |
+| **Sim → Sim** — [`predictions_sim_to_sim.mp4`](videos/predictions_sim_to_sim.mp4) | **Sim → Silicone** — [`predictions_sim_to_silicone.mp4`](videos/predictions_sim_to_silicone.mp4) |
+| **Sim → Meat** — [`predictions_sim_to_meat.mp4`](videos/predictions_sim_to_meat.mp4) | **Meat → Silicone** — [`predictions_meat_to_silicone.mp4`](videos/predictions_meat_to_silicone.mp4) |
 
-If a player does not render inline, the linked file opens in GitHub's own video viewer. The
-robot-control repository carries a video of the real data collection.
+Each link opens the file in GitHub's own video viewer; all videos are also embedded on the
+[project page](https://piotr-blaszyk.github.io/shallow-vessel-palpation-simulator-and-AI/).
+The robot-control repository carries a video of the real data collection.
 
 ---
 
