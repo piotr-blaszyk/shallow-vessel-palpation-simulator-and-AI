@@ -50,9 +50,15 @@ archive:
 (CUDA 12.6, Taichi, PyTorch 2.8 + PyTorch Geometric, PySide6) and passes the host display
 through so the simulator's windows work.
 
-**Requirements:** Ubuntu 22.04/24.04, an NVIDIA GPU (≥10 GB VRAM), the NVIDIA driver, Docker
-and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
-`main` is the only branch.
+**Requirements:** Linux with an NVIDIA GPU (a must), the NVIDIA driver, Docker and the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+Developed and tested on **Ubuntu 24.04** with an **NVIDIA GeForce RTX 3080 (10 GB)**. Since the
+whole stack lives inside the container (Ubuntu 22.04 base image), the host only needs the three
+items above, so other Ubuntu releases — including older ones such as 18.04 / 20.04 — should work
+too (untested; the optional bare-metal annotator env, `annotate_data_bare_metal.sh`, needs
+PySide6 wheels and hence glibc ≥ 2.28, i.e. Ubuntu 20.04+). Less GPU RAM than 10 GB will likely
+work as well: the GNN training uses little; the Taichi simulator is the main consumer, and its
+budget is set by `TI_DEVICE_MEMORY_GB` (see Troubleshooting). `main` is the only branch.
 
 ```bash
 # 1. Clone
