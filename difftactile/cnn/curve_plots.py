@@ -310,11 +310,13 @@ def plot_pr(plt, precision, recall, all_probs, all_labels, ap, out_path,
 _PANEL_AXES_W, _PANEL_AXES_H = 5.2, 4.85   # axes box
 _PANEL_LEFT_WITH_Y = 1.6                   # room for the y label + tick captions
 _PANEL_LEFT_NO_Y = 0.40                    # half of the "0.0" tick caption
-_PANEL_RIGHT, _PANEL_BOTTOM, _PANEL_TOP = 0.35, 1.05, 0.10
+_PANEL_RIGHT, _PANEL_TOP = 0.35, 0.10
+_PANEL_BOTTOM_WITH_X = 1.05                # room for the x label + tick captions
+_PANEL_BOTTOM_NO_X = 0.55                  # tick captions only
 
 
 def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
-                    baseline=None, show_yaxis=True):
+                    baseline=None, show_yaxis=True, show_xlabel=True):
     """Mean ROC or PR curve across seeds, with a ±1 std band.
 
     `kind` is "roc" or "pr"; `curves` is a list of (x, y) per seed, `curves_thr`
@@ -351,10 +353,11 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     # Explicit geometry (see the _PANEL_* constants): the axes box is identical
     # with and without the y-axis text, only the figure width changes.
     left = _PANEL_LEFT_WITH_Y if show_yaxis else _PANEL_LEFT_NO_Y
+    bottom = _PANEL_BOTTOM_WITH_X if show_xlabel else _PANEL_BOTTOM_NO_X
     fig_w = left + _PANEL_AXES_W + _PANEL_RIGHT
-    fig_h = _PANEL_BOTTOM + _PANEL_AXES_H + _PANEL_TOP
+    fig_h = bottom + _PANEL_AXES_H + _PANEL_TOP
     fig = plt.figure(figsize=(fig_w, fig_h))
-    ax = fig.add_axes([left / fig_w, _PANEL_BOTTOM / fig_h,
+    ax = fig.add_axes([left / fig_w, bottom / fig_h,
                        _PANEL_AXES_W / fig_w, _PANEL_AXES_H / fig_h])
 
     # Random-model reference, drawn first. For PR it is the positive rate; the
@@ -365,8 +368,10 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     elif baseline is not None:
         ax.axhline(baseline, color="k", linestyle="--", alpha=0.5, linewidth=4.0,
                    zorder=1)
-        ax.text(0.98, baseline, "random model", fontsize=_MEAN_FONTSIZE - 9,
-                ha="right", va="bottom", fontweight="bold", zorder=5)
+        # Left-aligned: a PR curve ends at the baseline on the RIGHT (recall 1),
+        # so a right-aligned caption sits under the curve's tail.
+        ax.text(0.02, baseline, "random model", fontsize=_MEAN_FONTSIZE - 9,
+                ha="left", va="bottom", fontweight="bold", zorder=5)
 
     # Every seed, faintly: shows whether the band is even scatter or an outlier.
     for x, y in curves:
@@ -403,12 +408,30 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
         # neighbours; only the text goes.
         ax.set_ylabel("")
         ax.tick_params(axis="y", labelleft=False)
+    if not show_xlabel:
+        ax.set_xlabel("")
     ax.grid(True, linestyle="--", alpha=0.3, linewidth=3.0)
     for spine in ax.spines.values():
         spine.set_linewidth(3.0)
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     finish_plot(plt, out_path, format="pdf", dpi=300)
+
+
+def plot_axis_label(plt, text, out_path):
+    """`text` alone on a page, in the mean-curve panels' axis-label style.
+
+    Used for the ONE x-axis label ("Recall") the manuscript centres under its
+    row of four `show_xlabel=False` panels instead of printing it four times.
+    Same font size and weight as `plot_mean_curve()`'s labels, page cropped to
+    the text, so set at the panels' scale it matches them exactly.
+    """
+    fig = plt.figure(figsize=(4, 1))
+    fig.text(0.5, 0.5, text, fontsize=_MEAN_FONTSIZE, fontweight="bold",
+             ha="center", va="center")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    finish_plot(plt, out_path, format="pdf", dpi=300, bbox_inches="tight",
+                pad_inches=0.02)
 
 
 def plot_threshold_legend(plt, out_path, label="Mean decision\nthreshold"):

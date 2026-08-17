@@ -212,7 +212,9 @@ def _plot_mean_curves(config, runs, run_dir):
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from difftactile.cnn.curve_plots import plot_mean_curve, plot_threshold_legend
+    from difftactile.cnn.curve_plots import (
+        plot_axis_label, plot_mean_curve, plot_threshold_legend,
+    )
 
     roc_curves, roc_thr, pr_curves, pr_thr = [], [], [], []
     aurocs, aps, baselines = [], [], []
@@ -244,13 +246,19 @@ def _plot_mean_curves(config, runs, run_dir):
         print("  (fewer than two seeds have scores; no mean curve drawn)")
         return None
 
+    # The panels carry no x-axis label either: the row shares one, written
+    # below as a standalone figure (xlabel_*.pdf) and centred under the four.
     show_yaxis = config == Y_AXIS_CONFIG
     roc_path = os.path.join(run_dir, f"mean_roc_curve_{config}.pdf")
     plot_mean_curve(plt, roc_curves, roc_thr, aurocs, roc_path, kind="roc",
-                    show_yaxis=show_yaxis)
+                    show_yaxis=show_yaxis, show_xlabel=False)
     pr_path = os.path.join(run_dir, f"mean_pr_curve_{config}.pdf")
     plot_mean_curve(plt, pr_curves, pr_thr, aps, pr_path, kind="pr",
-                    baseline=float(np.mean(baselines)), show_yaxis=show_yaxis)
+                    baseline=float(np.mean(baselines)), show_yaxis=show_yaxis,
+                    show_xlabel=False)
+    plot_axis_label(plt, "Recall", os.path.join(run_dir, "xlabel_recall.pdf"))
+    plot_axis_label(plt, "False Positive Rate",
+                    os.path.join(run_dir, "xlabel_false_positive_rate.pdf"))
     # The threshold colour-coding legend, once per sweep directory rather than
     # on each panel: the manuscript sets the four configurations' PR panels in
     # one row with a single legend beside it. Identical for every config, so
@@ -259,7 +267,8 @@ def _plot_mean_curves(config, runs, run_dir):
     plot_threshold_legend(plt, legend_path)
     print(f"  mean ROC curve: {roc_path}")
     print(f"  mean PR curve:  {pr_path}")
-    print(f"  threshold legend: {legend_path}")
+    print(f"  threshold legend: {legend_path}   (+ xlabel_recall.pdf, "
+          "xlabel_false_positive_rate.pdf)")
     return {"roc": roc_path, "pr": pr_path, "legend": legend_path}
 
 

@@ -290,7 +290,12 @@ caption, fonts 1.5× (`_MEAN_FONTSIZE`), and the baseline labelled just "random 
 number). **Only the row's leftmost panel (`seed_sweep.Y_AXIS_CONFIG` = A-to-A) draws the
 y-axis label and tick captions**; the other three are rendered `show_yaxis=False` — same
 axes box (placed explicitly via the `_PANEL_*` inch constants, not `tight_layout`), narrower
-page — so the manuscript sets all four at one HEIGHT and the row fills the text width. The
+page — so the manuscript sets all four at one HEIGHT and the row fills the text width. All
+four are also `show_xlabel=False`: the one shared x label is `plot_axis_label()` →
+`xlabel_recall.pdf` (and `xlabel_false_positive_rate.pdf` for the ROC twins), set in the
+manuscript on its own line centred under the four panels, above the (a)–(d) sub-captions
+(zero-height `\subfloat`s of each panel's width). The "random model" caption sits at the LEFT
+of the baseline, since a PR curve's tail ends on the baseline at the right. The
 colour legend is a separate figure, `plot_threshold_legend()` →
 `threshold_legend.pdf` in the sweep directory, placed ONCE beside the row in the manuscript
 with no sub-caption label. `score_all_scenarios.sh --replot [SWEEP]`
