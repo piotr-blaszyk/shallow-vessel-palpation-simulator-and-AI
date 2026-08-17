@@ -411,7 +411,7 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     finish_plot(plt, out_path, format="pdf", dpi=300)
 
 
-def plot_threshold_legend(plt, out_path, label="Mean decision threshold"):
+def plot_threshold_legend(plt, out_path, label="Mean decision\nthreshold"):
     """The threshold colour-coding legend as a figure of its own, to `out_path`.
 
     A vertical colourbar over the fixed [0, 1] threshold scale that every curve
@@ -421,8 +421,10 @@ def plot_threshold_legend(plt, out_path, label="Mean decision threshold"):
     mean-curve panels' (1.5x the single-model figures'), so it reads at the
     same size as the panels it sits next to.
 
-    `label` defaults to the mean-curve wording; pass "Decision threshold" if
-    the legend is to accompany single-model curves instead.
+    `label` defaults to the mean-curve wording, broken over two lines: at the
+    height the legend is set beside the panels a single line is longer than the
+    bar and gets clipped by the manuscript's figure box. Pass "Decision
+    threshold" if the legend is to accompany single-model curves instead.
     """
     # Shorter than the 6 in panels on purpose: set at the same scale beside a
     # row of them, the bar then spans the panels' AXES (which start above the
