@@ -68,7 +68,7 @@ from matplotlib.cm import ScalarMappable
 matplotlib.rcParams["pdf.fonttype"] = 42
 matplotlib.rcParams["ps.fonttype"] = 42
 from matplotlib.collections import LineCollection
-from matplotlib.colors import Normalize
+from matplotlib.colors import LinearSegmentedColormap, Normalize
 
 from difftactile.main.display import finish_plot
 
@@ -110,9 +110,13 @@ MAP_DECISION_THRESHOLD = float(os.environ.get("DIFFTACTILE_MAP_THRESHOLD", 0.58)
 # Decision thresholds annotated as discrete markers on every ROC curve.
 MARKED_THRESHOLDS = np.array([0.40, 0.50, 0.60])
 
-# Colourmap encoding the decision threshold along the ROC curve, always
-# spanning the full [0, 1] range so colours are comparable between figures.
-THRESHOLD_CMAP = "viridis"
+# Colourmap encoding the decision threshold along the curves, always spanning
+# the full [0, 1] range so colours are comparable between figures. Plasma with
+# its top ~15% cut off: perceptually uniform like viridis (which this replaced),
+# but the trimmed end is a saturated orange rather than a pale yellow, so the
+# high-threshold end of a curve stays visible on the white page.
+THRESHOLD_CMAP = LinearSegmentedColormap.from_list(
+    "plasma_trunc", matplotlib.colormaps["plasma"](np.linspace(0.0, 0.85, 256)))
 THRESHOLD_NORM = Normalize(vmin=0.0, vmax=1.0)
 
 _FONTSIZE = 20
