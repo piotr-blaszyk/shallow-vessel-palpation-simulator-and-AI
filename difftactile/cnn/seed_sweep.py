@@ -277,7 +277,7 @@ def replot(sweep_dir=None):
 
     Reads `sweep.json` (default: the published sweep pinned in
     `files.published_sweep`) and re-renders `mean_{roc,pr}_curve_<config>.pdf`
-    and `threshold_legend.pdf` in place from the per-seed `scores_<config>.npz`
+    and `curve_legend.pdf` / `xlabel_*.pdf` in place from the per-seed `scores_<config>.npz`
     each run saved beside its checkpoint. This is how a styling change to
     `curve_plots.plot_mean_curve()` reaches the manuscript figures without
     re-running a multi-hour sweep; the metrics, weights and sweep.json are left

@@ -237,12 +237,12 @@ for cfg in A-to-A A-to-B A-to-C C-to-B; do
         echo "| figures/mean_${kind}_curve_${cfg}.pdf | Fig. 6 (PR; ROC twins not in the manuscript) | saved_models_sweeps/20260815-194045/ (docker/score_all_scenarios.sh --seeds 5) |" >> "${MA}/README.md"
     done
 done
-# The shared threshold colour legend and the shared x-axis label the four Fig. 6
-# panels carry once (beside / under the row).
-for f in threshold_legend xlabel_recall; do
+# The shared legend (threshold colour scale + random-model line) and the shared
+# x-axis label the four Fig. 6 panels carry once (above / under the row).
+for f in curve_legend xlabel_recall; do
     copy_file "saved_models_sweeps/20260815-194045/${f}.pdf"
     cp "${BUNDLE}/saved_models_sweeps/20260815-194045/${f}.pdf" "${MA}/figures/"
-    echo "| figures/${f}.pdf | Fig. 6 (shared colour legend / x label, set once for the four panels) | saved_models_sweeps/20260815-194045/ (docker/score_all_scenarios.sh --replot) |" >> "${MA}/README.md"
+    echo "| figures/${f}.pdf | Fig. 6 (shared legend / x label, set once for the four panels) | saved_models_sweeps/20260815-194045/ (docker/score_all_scenarios.sh --replot) |" >> "${MA}/README.md"
 done
 cp "${BUNDLE}/saved_models_sweeps/20260815-194045/sweep.json" "${MA}/tables/sweep.json"
 echo "| tables/sweep.json | every per-seed metric behind Fig. 6, best-of-five selection | saved_models_sweeps/20260815-194045/sweep.json |" >> "${MA}/README.md"

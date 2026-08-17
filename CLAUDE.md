@@ -294,10 +294,11 @@ page — so the manuscript sets all four at one HEIGHT and the row fills the tex
 four are also `show_xlabel=False`: the one shared x label is `plot_axis_label()` →
 `xlabel_recall.pdf` (and `xlabel_false_positive_rate.pdf` for the ROC twins), set in the
 manuscript on its own line centred under the four panels, above the (a)–(d) sub-captions
-(zero-height `\subfloat`s of each panel's width). The "random model" caption sits at the LEFT
-of the baseline, since a PR curve's tail ends on the baseline at the right. The
-colour legend is a separate figure, `plot_threshold_legend()` →
-`threshold_legend.pdf` in the sweep directory, placed ONCE beside the row in the manuscript
+(zero-height `\subfloat`s of each panel's width). The random-model baseline is RED
+(`BASELINE_STYLE`) and carries no caption in the panels. The shared legend is a separate
+one-line figure, `plot_curve_legend()` → `curve_legend.pdf` in the sweep directory — the
+threshold colourbar captioned "Mean decision threshold" on the left, the red dashed sample
+captioned "random model" on the right — set ONCE, centred ABOVE the row in the manuscript
 with no sub-caption label. `score_all_scenarios.sh --replot [SWEEP]`
 (`seed_sweep.replot()`) redraws the curves and legend of an existing sweep from its per-seed
 `scores_<config>.npz` — seconds, no torch — which is how a styling change reaches the
@@ -438,7 +439,7 @@ table for end users.
 | `annotate_data_bare_metal.sh --silicone/--meat` | **Fig. 5** (`fig:annotation-line`) — annotated Silicone frame, Meat labels |
 | `alignment_figures.sh` | **Fig. 4** (`fig:da-results`) — sim (red) vs real (green) marker alignment, four interactions (50 % opacity, per-trajectory MAE in caption) |
 | `ablation_clip_len.sh` | **Table 3** (`tab:clip-len`) — the temporal-window ablation |
-| `score_all_scenarios.sh --seeds 5` (or `--replot` to restyle an existing sweep) | **Fig. 6** (`fig:pr-curve`) — mean PR curves ± 1 std band, four panels in one row, plus the ONE shared `threshold_legend.pdf` set beside the row (the ROC twins are generated but not in the manuscript). There is no longer a separate IoU table. |
+| `score_all_scenarios.sh --seeds 5` (or `--replot` to restyle an existing sweep) | **Fig. 6** (`fig:pr-curve`) — mean PR curves ± 1 std band, four panels in one row, plus the ONE shared `curve_legend.pdf` (threshold colour scale + random-model line) set above the row and `xlabel_recall.pdf` under it (the ROC twins are generated but not in the manuscript). There is no longer a separate IoU table. |
 | `script_frame_space_metrics` (`cnn/frame_space_metrics.py`) | **Table 4** (`tab:localisation-map`) upper half: per-marker statistics in video-frame space, pooled once over all central frames, best-of-five instances (`FRAME_SPACE_METRICS.md`) |
 | `vessel_map_all.sh` | **Fig. 7** (`fig:vessel-map`, Sim→Sim, Sim→Silicone, Sim→Meat, Meat→Silicone) and the lower half of **Table 4** (per-pixel TP/FP/FN/TN, MCC, F1, P, R, FG/BG IoU, AP, mean L2 at 0 mm growth) |
 | `record_videos.sh` | the README's demonstration videos (supplementary) |

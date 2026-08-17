@@ -103,7 +103,8 @@
 #   ./docker/score_all_scenarios.sh --replot            # redraw the published sweep's curves
 #
 # --replot [SWEEP]: redraws ONLY the mean PR/ROC curves and the standalone
-#   threshold legend (mean_{pr,roc}_curve_<config>.pdf, threshold_legend.pdf) of
+#   shared legend + x labels (mean_{pr,roc}_curve_<config>.pdf, curve_legend.pdf,
+#   xlabel_*.pdf) of
 #   an existing sweep directory from its saved per-seed scores - no training, no
 #   inference, seconds rather than hours. Default SWEEP is files.published_sweep.
 #   Use it after changing the figure styling in cnn/curve_plots.py.
