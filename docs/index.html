@@ -33,8 +33,8 @@
   <h2>Abstract</h2>
   <p class="abstract">Reliable localisation of shallow subsurface vessels matters for safe robot-assisted venous access and vessel-aware manipulation, but collecting diverse tactile data on physical hardware is costly, slow, and can degrade soft vision-based tactile sensors. We present a robot-assisted sliding-palpation framework in which a calibrated digital twin generates labelled tactile sequences, reducing dependence on real-world data collection. The twin models sensor–vessel contact, is calibrated against real palpation trajectories by Bayesian-optimisation-based domain adaptation, and is randomised over sliding direction and contact conditions. A spatio-temporal graph neural network trained on simulated marker trajectories performs per-node vessel classification and yields a human-verifiable top-view localisation map through 2D-to-3D-to-2D geometric projection. Using three datasets (Sim, Silicone, and Meat, the latter a raw-meat phantom with vessel models at depths of 0–30 mm) we evaluate four [train]→[test] models: Sim→Sim, Sim→Silicone, Sim→Meat, and Meat→Silicone. The calibrated twin, validated on four canonical interactions, yields a simulated-to-real marker-alignment MAE of 0.50 mm at the point of deepest contact. After reprojection onto a 1 mm top-view grid, with each model's decision threshold set to favour few false alarms over high sensitivity, predicted vessel pixels lie on average 1.05–5.49 mm from the nearest true vessel pixel across the four models (1.05–1.31 mm for all but Sim→Meat, whose larger domain shift marks the current limit of simulation transfer). These results demonstrate progress toward trustworthy tactile palpation through calibrated simulation, interpretable localisation, and transparent reporting of cross-domain degradation. Code, model weights, and data are publicly available on GitHub and Zenodo.</p>
 
-  <h2>Simulator, datasets and predictions</h2>
-  <p class="blurb">From the <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI">shallow-vessel-palpation-simulator-and-AI</a> repository (<code>videos/</code>, <code>docs/images/</code>).</p>
+  <h2>Videos: simulator, datasets and predictions</h2>
+  <p class="blurb">From the <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI">shallow-vessel-palpation-simulator-and-AI</a> repository (<code>videos/</code>).</p>
     <h3>Simulator: the four sensor–phantom interactions</h3>
     <p class="blurb">Recorded from the digital twin's own camera at the calibrated parameters. Sensor green, phantom blue, vessel yellow.</p>
     <div class="grid">
@@ -57,22 +57,6 @@
       <figure>
         <video src="videos/sim_slide_vessel_present.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
         <figcaption>Slide, blood vessel present</figcaption>
-      </figure>
-    </div>
-    <h3>Sensor mesh: the ViTacTip finite-element model in Gmsh</h3>
-    <p class="blurb">The tetrahedral mesh of the ViTacTip sensor that the digital twin deforms, exactly as Gmsh draws it (<code>docker/sensor_mesh_screenshots.sh</code>). The sensor's base lies in the xy plane and its dome points along +z; it is 40 mm across: a spherical dome (the contact surface, green) on a 19 mm-radius shell (orange) above a 20 mm-radius base ring (yellow, cyan step) with a flat underside (blue) where the mesh is fixed to the rigid mount. The colours are Gmsh's per-surface colouring, not materials. All three views are from the +x side (the axis triad in each corner shows the orientation): level with the sensor, then with the camera raised and lowered to look at it from 45° above and 45° below.</p>
-    <div class="grid">
-      <figure>
-        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_side.webp" alt="ViTacTip mesh seen from the +x side, level with the sensor">
-        <figcaption>Side view: line of sight along −x, level with the sensor (y right, z up)</figcaption>
-      </figure>
-      <figure>
-        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_from_above.webp" alt="ViTacTip mesh seen from 45 degrees above: the contact dome">
-        <figcaption>Camera raised to look down at 45°: the contact dome</figcaption>
-      </figure>
-      <figure>
-        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_from_below.webp" alt="ViTacTip mesh seen from 45 degrees below: the fixed underside">
-        <figcaption>Camera lowered to look up at 45°: the fixed underside</figcaption>
       </figure>
     </div>
     <h3>Annotated real datasets</h3>
@@ -118,6 +102,23 @@
     <figure>
       <img src="videos/data_collection_meat.jpg" alt="Meat phantom: metal straws beneath layers of steak, sensor slide direction in blue">
       <figcaption>Meat phantom (no video was recorded): metal straws laid beneath layers of steak under cling film, with the sensor about to slide along the blue arrow.</figcaption>
+    </figure>
+  </div>
+
+  <h2>Sensor mesh: the ViTacTip finite-element model in Gmsh</h2>
+  <p class="blurb">The tetrahedral mesh of the ViTacTip sensor that the digital twin deforms, exactly as Gmsh draws it (<code>docker/sensor_mesh_screenshots.sh</code>). The sensor's base lies in the xy plane and its dome points along +z; it is 40 mm across: a spherical dome (the contact surface, green) on a 19 mm-radius shell (orange) above a 20 mm-radius base ring (yellow, cyan step) with a flat underside (blue) where the mesh is fixed to the rigid mount. The colours are Gmsh's per-surface colouring, not materials. All three views are from the +x side (the axis triad in each corner shows the orientation): level with the sensor, then with the camera raised and lowered to look at it from 45° above and 45° below.</p>
+  <div class="grid">
+    <figure>
+      <img class="mesh" src="images/sensor_mesh/vitactip_mesh_side.webp" alt="ViTacTip mesh seen from the +x side, level with the sensor">
+      <figcaption>Side view: line of sight along −x, level with the sensor (y right, z up)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/sensor_mesh/vitactip_mesh_from_above.webp" alt="ViTacTip mesh seen from 45 degrees above: the contact dome">
+      <figcaption>Camera raised to look down at 45°: the contact dome</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/sensor_mesh/vitactip_mesh_from_below.webp" alt="ViTacTip mesh seen from 45 degrees below: the fixed underside">
+      <figcaption>Camera lowered to look up at 45°: the fixed underside</figcaption>
     </figure>
   </div>
 
