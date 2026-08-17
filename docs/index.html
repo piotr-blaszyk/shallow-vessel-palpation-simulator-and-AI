@@ -18,6 +18,7 @@
   .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
   figure { margin:0; background:var(--card); border-radius:10px; padding:.6rem; }
   video, img { width:100%; height:auto; display:block; border-radius:6px; background:#000; }
+  img.mesh { background:#fff; }
   figcaption { font-size:.9rem; color:var(--muted); margin-top:.45rem; }
   ul.repos { list-style:none; padding:0; }
   ul.repos li { margin:.5rem 0; }
@@ -32,8 +33,8 @@
   <h2>Abstract</h2>
   <p class="abstract">Reliable localisation of shallow subsurface vessels matters for safe robot-assisted venous access and vessel-aware manipulation, but collecting diverse tactile data on physical hardware is costly, slow, and can degrade soft vision-based tactile sensors. We present a robot-assisted sliding-palpation framework in which a calibrated digital twin generates labelled tactile sequences, reducing dependence on real-world data collection. The twin models sensor–vessel contact, is calibrated against real palpation trajectories by Bayesian-optimisation-based domain adaptation, and is randomised over sliding direction and contact conditions. A spatio-temporal graph neural network trained on simulated marker trajectories performs per-node vessel classification and yields a human-verifiable top-view localisation map through 2D-to-3D-to-2D geometric projection. Using three datasets (Sim, Silicone, and Meat, the latter a raw-meat phantom with vessel models at depths of 0–30 mm) we evaluate four [train]→[test] models: Sim→Sim, Sim→Silicone, Sim→Meat, and Meat→Silicone. The calibrated twin, validated on four canonical interactions, yields a simulated-to-real marker-alignment MAE of 0.50 mm at the point of deepest contact. After reprojection onto a 1 mm top-view grid, with each model's decision threshold set to favour few false alarms over high sensitivity, predicted vessel pixels lie on average 1.05–5.49 mm from the nearest true vessel pixel across the four models (1.05–1.31 mm for all but Sim→Meat, whose larger domain shift marks the current limit of simulation transfer). These results demonstrate progress toward trustworthy tactile palpation through calibrated simulation, interpretable localisation, and transparent reporting of cross-domain degradation. Code, model weights, and data are publicly available on GitHub and Zenodo.</p>
 
-  <h2>Videos: simulator, datasets and predictions</h2>
-  <p class="blurb">From the <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI">shallow-vessel-palpation-simulator-and-AI</a> repository (<code>videos/</code>).</p>
+  <h2>Simulator, datasets and predictions</h2>
+  <p class="blurb">From the <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI">shallow-vessel-palpation-simulator-and-AI</a> repository (<code>videos/</code>, <code>docs/images/</code>).</p>
     <h3>Simulator: the four sensor–phantom interactions</h3>
     <p class="blurb">Recorded from the digital twin's own camera at the calibrated parameters. Sensor green, phantom blue, vessel yellow.</p>
     <div class="grid">
@@ -56,6 +57,34 @@
       <figure>
         <video src="videos/sim_slide_vessel_present.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
         <figcaption>Slide, blood vessel present</figcaption>
+      </figure>
+    </div>
+    <h3>Sensor mesh: the ViTacTip finite-element model in Gmsh</h3>
+    <p class="blurb">The tetrahedral mesh of the ViTacTip sensor that the digital twin deforms, exactly as Gmsh draws it (<code>docker/sensor_mesh_screenshots.sh</code>), from the six axis directions. The sensor is 40 mm across: a spherical dome (the contact surface, green) on a 19 mm-radius shell (orange) above a 20 mm-radius base ring (yellow) with a flat underside (cyan) where the mesh is fixed to the rigid mount; the colours are Gmsh's per-surface colouring, not materials. The dome points along +z, so the +z view is the sensor's underside and the −z view its contact face; the axis triad in each corner shows the orientation. "Along +x" means the line of sight points along +x, i.e. the sensor is seen from its −x side.</p>
+    <div class="grid">
+      <figure>
+        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_x_plus.webp" alt="ViTacTip mesh, line of sight along +x">
+        <figcaption>Along +x (seen from −x): y left, z up</figcaption>
+      </figure>
+      <figure>
+        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_y_plus.webp" alt="ViTacTip mesh, line of sight along +y">
+        <figcaption>Along +y (seen from −y): x right, z up</figcaption>
+      </figure>
+      <figure>
+        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_z_plus.webp" alt="ViTacTip mesh, line of sight along +z: the flat underside">
+        <figcaption>Along +z (seen from −z, the fixed underside): x right, y down</figcaption>
+      </figure>
+      <figure>
+        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_x_minus.webp" alt="ViTacTip mesh, line of sight along −x">
+        <figcaption>Along −x (seen from +x): y right, z up</figcaption>
+      </figure>
+      <figure>
+        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_y_minus.webp" alt="ViTacTip mesh, line of sight along −y">
+        <figcaption>Along −y (seen from +y): x left, z up</figcaption>
+      </figure>
+      <figure>
+        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_z_minus.webp" alt="ViTacTip mesh, line of sight along −z: the dome">
+        <figcaption>Along −z (seen from +z, the contact dome): x right, y up</figcaption>
       </figure>
     </div>
     <h3>Annotated real datasets</h3>
