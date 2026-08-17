@@ -353,9 +353,7 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     NOT drawn on the panel itself: four panels sit in one row in the manuscript
     and one legend above the row serves all of them.
 
-    The individual seed curves are drawn faintly underneath. The band shows the
-    spread; the thin lines show whether it comes from a couple of outliers or
-    from even scatter, which a band alone cannot distinguish.
+    Only the mean and its ±1 std band are drawn - no per-seed curves.
     """
     grid, mean_y, std_y = mean_curve_with_band(curves)
     _, mean_thr, _ = mean_threshold_along_grid(curves_thr)
@@ -380,13 +378,9 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     elif baseline is not None:
         ax.axhline(baseline, **BASELINE_STYLE, zorder=1)
 
-    # Every seed, faintly: shows whether the band is even scatter or an outlier.
-    for x, y in curves:
-        order = np.argsort(np.asarray(x, dtype=float))
-        ax.plot(np.asarray(x)[order], np.asarray(y)[order], color="0.55",
-                linewidth=1.2, alpha=0.7, zorder=2)
-
-    # +/- 1 std band around the mean.
+    # +/- 1 std band around the mean. The individual seed curves are NOT
+    # drawn: at a quarter of the text width they read as clutter, and the band
+    # already carries the spread.
     ax.fill_between(grid, np.clip(mean_y - std_y, 0, 1), np.clip(mean_y + std_y, 0, 1),
                     color="0.35", alpha=0.22, linewidth=0, zorder=3)
 
@@ -445,7 +439,7 @@ def plot_axis_label(plt, text, out_path):
 
 
 def plot_curve_legend(plt, out_path, threshold_label="Mean decision threshold",
-                      baseline_label="random model"):
+                      baseline_label="random model (precision = positive rate)"):
     """The row's shared legend as a figure of its own, one horizontal line.
 
     Left: the threshold colourbar over the fixed [0, 1] scale every curve in

@@ -298,9 +298,9 @@ manuscript on its own line centred under the four panels, above the (a)–(d) su
 axis-label style (`seed_sweep.PANEL_TITLES`, "Sim→" over "Sim" etc.; the panel page grows at
 the top, `_PANEL_TOP_WITH_TITLE`). The random-model baseline is RED
 (`BASELINE_STYLE`) and carries no caption in the panels. The shared legend is a separate
-one-line figure, `plot_curve_legend()` → `curve_legend.pdf` in the sweep directory — the
+one-line figure (no per-seed thin curves are drawn — mean + ±1 std band only), `plot_curve_legend()` → `curve_legend.pdf` in the sweep directory — the
 threshold colourbar captioned "Mean decision threshold" on the left, the red dashed sample
-captioned "random model" on the right — set ONCE, centred ABOVE the row in the manuscript
+captioned "random model (precision = positive rate)" on the right — set ONCE, centred ABOVE the row in the manuscript
 with no sub-caption label. `score_all_scenarios.sh --replot [SWEEP]`
 (`seed_sweep.replot()`) redraws the curves and legend of an existing sweep from its per-seed
 `scores_<config>.npz` — seconds, no torch — which is how a styling change reaches the
