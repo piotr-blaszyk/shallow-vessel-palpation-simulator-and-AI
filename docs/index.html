@@ -60,31 +60,19 @@
       </figure>
     </div>
     <h3>Sensor mesh: the ViTacTip finite-element model in Gmsh</h3>
-    <p class="blurb">The tetrahedral mesh of the ViTacTip sensor that the digital twin deforms, exactly as Gmsh draws it (<code>docker/sensor_mesh_screenshots.sh</code>), from the six axis directions. The sensor is 40 mm across: a spherical dome (the contact surface, green) on a 19 mm-radius shell (orange) above a 20 mm-radius base ring (yellow) with a flat underside (cyan) where the mesh is fixed to the rigid mount; the colours are Gmsh's per-surface colouring, not materials. The dome points along +z, so the +z view is the sensor's underside and the −z view its contact face; the axis triad in each corner shows the orientation. "Along +x" means the line of sight points along +x, i.e. the sensor is seen from its −x side.</p>
+    <p class="blurb">The tetrahedral mesh of the ViTacTip sensor that the digital twin deforms, exactly as Gmsh draws it (<code>docker/sensor_mesh_screenshots.sh</code>). The sensor's base lies in the xy plane and its dome points along +z; it is 40 mm across: a spherical dome (the contact surface, green) on a 19 mm-radius shell (orange) above a 20 mm-radius base ring (yellow, cyan step) with a flat underside (blue) where the mesh is fixed to the rigid mount. The colours are Gmsh's per-surface colouring, not materials. All three views are from the +x side (the axis triad in each corner shows the orientation): level with the sensor, then with the camera raised and lowered to look at it from 45° above and 45° below.</p>
     <div class="grid">
       <figure>
-        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_x_plus.webp" alt="ViTacTip mesh, line of sight along +x">
-        <figcaption>Along +x (seen from −x): y left, z up</figcaption>
+        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_side.webp" alt="ViTacTip mesh seen from the +x side, level with the sensor">
+        <figcaption>Side view: line of sight along −x, level with the sensor (y right, z up)</figcaption>
       </figure>
       <figure>
-        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_y_plus.webp" alt="ViTacTip mesh, line of sight along +y">
-        <figcaption>Along +y (seen from −y): x right, z up</figcaption>
+        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_from_above.webp" alt="ViTacTip mesh seen from 45 degrees above: the contact dome">
+        <figcaption>Camera raised to look down at 45°: the contact dome</figcaption>
       </figure>
       <figure>
-        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_z_plus.webp" alt="ViTacTip mesh, line of sight along +z: the flat underside">
-        <figcaption>Along +z (seen from −z, the fixed underside): x right, y down</figcaption>
-      </figure>
-      <figure>
-        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_x_minus.webp" alt="ViTacTip mesh, line of sight along −x">
-        <figcaption>Along −x (seen from +x): y right, z up</figcaption>
-      </figure>
-      <figure>
-        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_y_minus.webp" alt="ViTacTip mesh, line of sight along −y">
-        <figcaption>Along −y (seen from +y): x left, z up</figcaption>
-      </figure>
-      <figure>
-        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_along_z_minus.webp" alt="ViTacTip mesh, line of sight along −z: the dome">
-        <figcaption>Along −z (seen from +z, the contact dome): x right, y up</figcaption>
+        <img class="mesh" src="images/sensor_mesh/vitactip_mesh_from_below.webp" alt="ViTacTip mesh seen from 45 degrees below: the fixed underside">
+        <figcaption>Camera lowered to look up at 45°: the fixed underside</figcaption>
       </figure>
     </div>
     <h3>Annotated real datasets</h3>

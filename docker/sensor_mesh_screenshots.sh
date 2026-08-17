@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 #
-# Six orthogonal-view screenshots of the ViTacTip tetrahedral mesh as Gmsh
-# draws it - line of sight along +x, -x, +y, -y, +z and -z - saved as small
-# WebP files for the project page:
+# Three screenshots of the ViTacTip tetrahedral mesh as Gmsh draws it, all
+# from the +x side - level with the sensor (line of sight along -x), from 45
+# degrees above and from 45 degrees below - saved as small WebP files for the
+# project page:
 #
-#   docs/images/sensor_mesh/vitactip_mesh_along_{x,y,z}_{plus,minus}.webp
+#   docs/images/sensor_mesh/vitactip_mesh_{side,from_above,from_below}.webp
 #
-# ("along +x" = the line of sight points along +x, i.e. seen from the -x side.)
+# (The sensor's base lies in the xy plane; its dome points along +z.)
 # The uncompressed PNGs are kept in difftactile/output/sensor_mesh_screenshots/
 # (gitignored). Only docs/ is committed, which is why the images are WebP.
 #

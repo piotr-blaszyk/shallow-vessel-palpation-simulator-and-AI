@@ -8,5 +8,5 @@ from the robot-control repository, because raw.githubusercontent.com serves `.mp
 `application/octet-stream` with `nosniff`, which some browsers refuse to play. After
 re-recording (`docker/record_videos.sh`) copy the new files here again.
 
-`images/sensor_mesh/` holds the six orthogonal-view screenshots of the ViTacTip mesh
+`images/sensor_mesh/` holds the three screenshots of the ViTacTip mesh (side, 45° above, 45° below)
 (lossless WebP, ~20 kB each), written directly here by `docker/sensor_mesh_screenshots.sh`.

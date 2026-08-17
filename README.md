@@ -116,7 +116,7 @@ and the trained models (step 5), so a fresh clone can start anywhere.
 | `python -m difftactile.scripts.script_frame_space_metrics` | per-marker statistics of each best-of-five model, pooled over all central frames → `FRAME_SPACE_METRICS.md` | **Table 4**, upper half |
 | `./vessel_map_all.sh` | top-view vessel maps and per-pixel statistics for every configuration | **Fig. 7**, **Table 4** lower half |
 | `./record_videos.sh` | the [demonstration videos](#demonstration-videos) | supplementary |
-| `./sensor_mesh_screenshots.sh` | six orthogonal-view Gmsh screenshots of the ViTacTip mesh (line of sight along ±x, ±y, ±z), lossless WebP in `docs/images/sensor_mesh/` | project page only |
+| `./sensor_mesh_screenshots.sh` | three Gmsh screenshots of the ViTacTip mesh from the +x side (level, 45° above, 45° below), lossless WebP in `docs/images/sensor_mesh/` | project page only |
 
 Every mean ± std quotes the five seeds of the published sweep (`saved_models_sweeps/20260815-194045`);
 wherever a **single** model is shown or tabulated it is that configuration's **best-of-five

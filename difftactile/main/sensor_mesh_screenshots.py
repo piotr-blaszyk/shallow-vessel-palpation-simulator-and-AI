@@ -1,19 +1,19 @@
-"""Six orthogonal-view screenshots of the ViTacTip tetrahedral mesh, as Gmsh draws it.
+"""Three screenshots of the ViTacTip tetrahedral mesh, as Gmsh draws it.
 
 Renders the sensor mesh written by ``generate_vitactip_mesh_gmsh``
-(``files.gmsh_debug_msh``) with the line of sight along each of the six
-axis directions (+x, -x, +y, -y, +z, -z), and saves each view as a small
-WebP for the project page (``docs/images/sensor_mesh/``).  Nothing here
-touches the mesh pickles the simulator reads - this is a pure viewer.
+(``files.gmsh_debug_msh``) from the +x side - level with the sensor (line of
+sight along -x), from 45 degrees above and from 45 degrees below - and saves
+each view as a small WebP for the project page (``docs/images/sensor_mesh/``).
+The sensor's base lies in the xy plane and its dome points along +z.  Nothing
+here touches the mesh pickles the simulator reads - this is a pure viewer.
 
 Gmsh can only rasterise through its FLTK front end, so a Gmsh window opens
 briefly on the display (there is no off-screen path); it is closed again as
-soon as the six frames are written.  Run through ``docker/sensor_mesh_screenshots.sh``.
+soon as the three frames are written.  Run through ``docker/sensor_mesh_screenshots.sh``.
 
-Naming convention: "along +x" means the LINE OF SIGHT points along +x, i.e.
-the camera sits on the -x side of the sensor.  ``VIEWS`` records the Gmsh Euler
-angles that produce each view; they were verified against Gmsh's own axis
-triad (which stays in every screenshot precisely so the reader can check too).
+``VIEWS`` records the Gmsh Euler angles that produce each view; they were
+verified against Gmsh's own axis triad (which stays in every screenshot
+precisely so the reader can check too).
 """
 
 import os
@@ -25,17 +25,16 @@ from difftactile.main.constants import *
 from difftactile.main.paths import repo_path
 
 # view name -> (General.RotationX, RotationY, RotationZ in degrees; caption).
-# Gmsh applies these only with General.Trackball = 0.  The default view
-# (0, 0, 0) has x right, y up, z towards the viewer, i.e. line of sight -z.
+# Gmsh applies these only with General.Trackball = 0, as RotationZ (a spin
+# about the sensor's own axis) followed by RotationX (a tilt about the screen's
+# horizontal axis).  The default view (0, 0, 0) has x right, y up, z towards the
+# viewer, i.e. line of sight -z; RotationX = -90 stands the sensor up (z up), so
+# -45 / -135 raise / lower the camera by 45 degrees from that side view.
 VIEWS = {
-    "along_x_plus":  (-90, 0, 90,  "line of sight along +x (seen from the -x side): y left, z up"),
-    "along_x_minus": (-90, 0, -90, "line of sight along -x (seen from the +x side): y right, z up"),
-    "along_y_plus":  (-90, 0, 0,   "line of sight along +y (seen from the -y side): x right, z up"),
-    "along_y_minus": (-90, 0, 180, "line of sight along -y (seen from the +y side): x left, z up"),
-    "along_z_plus":  (180, 0, 0,   "line of sight along +z (seen from the -z side, the sensor's base): x right, y down"),
-    "along_z_minus": (0, 0, 0,     "line of sight along -z (seen from the +z side, the dome): x right, y up"),
+    "side":       (-90,  0, -90, "line of sight along -x (camera on the +x side, level with the sensor): y right, z up"),
+    "from_above": (-45,  0, -90, "camera on the +x side raised to look DOWN at the sensor at 45 degrees"),
+    "from_below": (-135, 0, -90, "camera on the +x side lowered to look UP at the sensor at 45 degrees"),
 }
-
 # Rendered frame size in pixels (square). The model is scaled up a little so
 # it fills the frame instead of cropping afterwards, which would either lose
 # Gmsh's axis triad or keep the whitespace between it and the model.
