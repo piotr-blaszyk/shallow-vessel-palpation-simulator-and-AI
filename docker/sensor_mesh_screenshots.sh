@@ -56,6 +56,6 @@ if [ "${REGENERATE}" -eq 1 ] || [ ! -f "${REPO_DIR}/${MSH}" ]; then
     in_container "python -m difftactile.scripts.script_generate_vitactip_mesh_gmsh"
 fi
 
-echo "Rendering the six views in Gmsh (a Gmsh window opens briefly)..."
+echo "Rendering the three views in Gmsh (a Gmsh window opens briefly)..."
 in_container "python -m difftactile.scripts.script_sensor_mesh_screenshots"
 echo "Done: ${REPO_DIR}/docs/images/sensor_mesh/"

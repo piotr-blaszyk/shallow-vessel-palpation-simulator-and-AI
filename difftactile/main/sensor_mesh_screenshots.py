@@ -51,7 +51,7 @@ def screenshot_dir():
 
 
 def configure_gmsh_view():
-    """Static Gmsh display options shared by all six views: shaded surface
+    """Static Gmsh display options shared by all three views: shaded surface
     faces with mesh edges, entity colouring, no ruler axes, the small
     orientation triad kept, and Euler-angle (non-trackball) rotation."""
     gmsh.option.setNumber("General.Terminal", 1)
