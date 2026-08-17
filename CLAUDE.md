@@ -302,8 +302,8 @@ one-line figure (no per-seed thin curves are drawn — mean + ±1 std band only)
 threshold colourbar captioned "Mean decision threshold" on the left, the red dashed sample
 captioned "random model (precision = positive rate)" on the right — set ONCE, centred ABOVE the row in the manuscript
 with no sub-caption label. `score_all_scenarios.sh --replot [SWEEP]`
-The threshold colourmap is Crameri's `batlow` (`cmcrameri`, Dockerfile section 10 and
-`requirements_ml.in`; replaced viridis and a truncated plasma). `score_all_scenarios.sh --replot [SWEEP]`
+The threshold colourmap is viridis (a truncated plasma and Crameri's batlow were tried on
+2026-08-17 and rejected — do not swap it again unasked). `score_all_scenarios.sh --replot [SWEEP]`
 (`seed_sweep.replot()`) redraws the curves and legend of an existing sweep from its per-seed
 `scores_<config>.npz` — seconds, no torch — which is how a styling change reaches the
 figures without retraining; it resolves each seed directory by basename under the sweep dir,
