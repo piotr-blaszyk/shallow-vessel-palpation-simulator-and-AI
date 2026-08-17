@@ -294,7 +294,9 @@ page — so the manuscript sets all four at one HEIGHT and the row fills the tex
 four are also `show_xlabel=False`: the one shared x label is `plot_axis_label()` →
 `xlabel_recall.pdf` (and `xlabel_false_positive_rate.pdf` for the ROC twins), set in the
 manuscript on its own line centred under the four panels, above the (a)–(d) sub-captions
-(zero-height `\subfloat`s of each panel's width). The random-model baseline is RED
+(zero-height `\subfloat`s of each panel's width). Each panel carries a two-line title in the
+axis-label style (`seed_sweep.PANEL_TITLES`, "Sim→" over "Sim" etc.; the panel page grows at
+the top, `_PANEL_TOP_WITH_TITLE`). The random-model baseline is RED
 (`BASELINE_STYLE`) and carries no caption in the panels. The shared legend is a separate
 one-line figure, `plot_curve_legend()` → `curve_legend.pdf` in the sweep directory — the
 threshold colourbar captioned "Mean decision threshold" on the left, the red dashed sample

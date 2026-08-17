@@ -80,6 +80,14 @@ SWEEP_ROOT = "saved_models_sweeps"
 # narrower figure), which is what lets the row fill the text width.
 Y_AXIS_CONFIG = "A-to-A"
 
+# Two-line panel titles, "train ->" over "test", set in the axis-label style.
+PANEL_TITLES = {
+    "A-to-A": "Sim\u2192\nSim",
+    "A-to-B": "Sim\u2192\nSilicone",
+    "A-to-C": "Sim\u2192\nMeat",
+    "C-to-B": "Meat\u2192\nSilicone",
+}
+
 # Tells a child where to write its checkpoint and test-loader pickle; read by
 # `segmentation_gnn._retrained_path()`. Spelled out here rather than imported
 # from that module, which would pull torch onto the parent's critical path when
@@ -249,13 +257,14 @@ def _plot_mean_curves(config, runs, run_dir):
     # The panels carry no x-axis label either: the row shares one, written
     # below as a standalone figure (xlabel_*.pdf) and centred under the four.
     show_yaxis = config == Y_AXIS_CONFIG
+    title = PANEL_TITLES.get(config)
     roc_path = os.path.join(run_dir, f"mean_roc_curve_{config}.pdf")
     plot_mean_curve(plt, roc_curves, roc_thr, aurocs, roc_path, kind="roc",
-                    show_yaxis=show_yaxis, show_xlabel=False)
+                    show_yaxis=show_yaxis, show_xlabel=False, title=title)
     pr_path = os.path.join(run_dir, f"mean_pr_curve_{config}.pdf")
     plot_mean_curve(plt, pr_curves, pr_thr, aps, pr_path, kind="pr",
                     baseline=float(np.mean(baselines)), show_yaxis=show_yaxis,
-                    show_xlabel=False)
+                    show_xlabel=False, title=title)
     plot_axis_label(plt, "Recall", os.path.join(run_dir, "xlabel_recall.pdf"))
     plot_axis_label(plt, "False Positive Rate",
                     os.path.join(run_dir, "xlabel_false_positive_rate.pdf"))

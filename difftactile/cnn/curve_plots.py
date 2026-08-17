@@ -317,13 +317,16 @@ def plot_pr(plt, precision, recall, all_probs, all_labels, ap, out_path,
 _PANEL_AXES_W, _PANEL_AXES_H = 5.2, 4.85   # axes box
 _PANEL_LEFT_WITH_Y = 1.6                   # room for the y label + tick captions
 _PANEL_LEFT_NO_Y = 0.40                    # half of the "0.0" tick caption
-_PANEL_RIGHT, _PANEL_TOP = 0.35, 0.10
+_PANEL_RIGHT = 0.35
+_PANEL_TOP_NO_TITLE = 0.10
+_PANEL_TOP_WITH_TITLE = 1.0                # two title lines at the axis-label size
 _PANEL_BOTTOM_WITH_X = 1.05                # room for the x label + tick captions
 _PANEL_BOTTOM_NO_X = 0.55                  # tick captions only
 
 
 def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
-                    baseline=None, show_yaxis=True, show_xlabel=True):
+                    baseline=None, show_yaxis=True, show_xlabel=True,
+                    title=None):
     """Mean ROC or PR curve across seeds, with a ±1 std band.
 
     `kind` is "roc" or "pr"; `curves` is a list of (x, y) per seed, `curves_thr`
@@ -361,8 +364,9 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     # with and without the y-axis text, only the figure width changes.
     left = _PANEL_LEFT_WITH_Y if show_yaxis else _PANEL_LEFT_NO_Y
     bottom = _PANEL_BOTTOM_WITH_X if show_xlabel else _PANEL_BOTTOM_NO_X
+    top = _PANEL_TOP_WITH_TITLE if title else _PANEL_TOP_NO_TITLE
     fig_w = left + _PANEL_AXES_W + _PANEL_RIGHT
-    fig_h = bottom + _PANEL_AXES_H + _PANEL_TOP
+    fig_h = bottom + _PANEL_AXES_H + top
     fig = plt.figure(figsize=(fig_w, fig_h))
     ax = fig.add_axes([left / fig_w, bottom / fig_h,
                        _PANEL_AXES_W / fig_w, _PANEL_AXES_H / fig_h])
@@ -413,6 +417,9 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
         ax.tick_params(axis="y", labelleft=False)
     if not show_xlabel:
         ax.set_xlabel("")
+    if title:
+        ax.set_title(title, fontsize=_MEAN_FONTSIZE, fontweight="bold",
+                     linespacing=1.0, pad=10)
     ax.grid(True, linestyle="--", alpha=0.3, linewidth=3.0)
     for spine in ax.spines.values():
         spine.set_linewidth(3.0)
