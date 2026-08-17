@@ -206,12 +206,17 @@ def _plot_mean_curves(config, runs, run_dir):
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from difftactile.cnn.curve_plots import plot_mean_curve
+    from difftactile.cnn.curve_plots import plot_mean_curve, plot_threshold_legend
 
     roc_curves, roc_thr, pr_curves, pr_thr = [], [], [], []
     aurocs, aps, baselines = [], [], []
     for r in sorted(runs, key=lambda r: r["seed"]):
-        scores_path = os.path.join(r["artifact_dir"], f"scores_{config}.npz")
+        # The per-seed directory is looked up by name under THIS run_dir rather
+        # than through the recorded absolute path: sweep.json stores the path
+        # the sweep ran with (the container's /workspace/...), which a replot
+        # from bare metal, or from a restored bundle, cannot resolve.
+        seed_dir = os.path.join(run_dir, os.path.basename(r["artifact_dir"]))
+        scores_path = os.path.join(seed_dir, f"scores_{config}.npz")
         if not os.path.exists(scores_path):
             print(f"  (no scores for seed {r['seed']}; skipping it in the mean curve)")
             continue
@@ -238,9 +243,46 @@ def _plot_mean_curves(config, runs, run_dir):
     pr_path = os.path.join(run_dir, f"mean_pr_curve_{config}.pdf")
     plot_mean_curve(plt, pr_curves, pr_thr, aps, pr_path, kind="pr",
                     baseline=float(np.mean(baselines)))
+    # The threshold colour-coding legend, once per sweep directory rather than
+    # on each panel: the manuscript sets the four configurations' PR panels in
+    # one row with a single legend beside it. Identical for every config, so
+    # rewriting it per config is harmless.
+    legend_path = os.path.join(run_dir, "threshold_legend.pdf")
+    plot_threshold_legend(plt, legend_path)
     print(f"  mean ROC curve: {roc_path}")
     print(f"  mean PR curve:  {pr_path}")
-    return {"roc": roc_path, "pr": pr_path}
+    print(f"  threshold legend: {legend_path}")
+    return {"roc": roc_path, "pr": pr_path, "legend": legend_path}
+
+
+def replot(sweep_dir=None):
+    """Redraw the mean curves and legend of an EXISTING sweep; trains nothing.
+
+    Reads `sweep.json` (default: the published sweep pinned in
+    `files.published_sweep`) and re-renders `mean_{roc,pr}_curve_<config>.pdf`
+    and `threshold_legend.pdf` in place from the per-seed `scores_<config>.npz`
+    each run saved beside its checkpoint. This is how a styling change to
+    `curve_plots.plot_mean_curve()` reaches the manuscript figures without
+    re-running a multi-hour sweep; the metrics, weights and sweep.json are left
+    untouched. Needs only numpy, sklearn and matplotlib - no torch, no GPU.
+    """
+    from difftactile.cnn.model_selection import load_sweep, published_sweep_dir
+    sweep_dir = sweep_dir or published_sweep_dir()
+    if not os.path.isabs(sweep_dir):
+        # Accept a bare timestamp as well as a full path.
+        candidate = repo_path(f"{SWEEP_ROOT}/{sweep_dir}")
+        sweep_dir = candidate if os.path.isdir(candidate) else repo_path(sweep_dir)
+    data = load_sweep(sweep_dir)
+    print(f"Replotting mean curves of sweep: {sweep_dir}")
+    paths = {}
+    for summary in data["summaries"]:
+        config = summary["config"]
+        if len(summary["runs"]) < 2:
+            print(f"{config}: fewer than two seeds; nothing to average")
+            continue
+        print(config)
+        paths[config] = _plot_mean_curves(config, summary["runs"], sweep_dir)
+    return paths
 
 
 def summarise(values):
@@ -541,14 +583,23 @@ def main(configs, num_seeds, seeds=None):
 
 
 def run_from_cli():
-    """Entrypoint for scripts/script_seed_sweep.py: `<num_seeds> [config ...]`."""
+    """Entrypoint for scripts/script_seed_sweep.py.
+
+    `<num_seeds> [config ...]` runs a sweep; `--replot [SWEEP]` only redraws the
+    mean curves and legend of an existing sweep (default: the published one).
+    """
     argv = sys.argv[1:]
     if not argv:
         raise SystemExit(
             "Usage: python -m difftactile.scripts.script_seed_sweep <num_seeds> [config ...]\n"
+            "       python -m difftactile.scripts.script_seed_sweep --replot [SWEEP_DIR|TIMESTAMP]\n"
             f"Configurations: {', '.join(SWEEPABLE)} (default: all three)\n"
-            "\nPrefer ./docker/score_all_scenarios.sh --seeds N"
+            "\nPrefer ./docker/score_all_scenarios.sh --seeds N  (or --replot [SWEEP])"
         )
+    if argv[0] == "--replot":
+        if len(argv) > 2:
+            raise SystemExit("--replot takes at most one argument: a sweep directory or timestamp")
+        return replot(argv[1] if len(argv) == 2 else None)
     try:
         num_seeds = int(argv[0])
     except ValueError:

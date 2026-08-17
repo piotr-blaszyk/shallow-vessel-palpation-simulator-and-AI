@@ -46,6 +46,14 @@ Design decisions worth knowing:
   at all - the same curve is excellent on a 1% positive set and useless on a 50%
   one. Both figures share the threshold colourmap and marker styling so they can
   be placed side by side.
+* **The MEAN curves (`plot_mean_curve`) are laid out for a four-panel row.** The
+  manuscript places the four configurations' mean PR curves side by side, each
+  a quarter of the text width, so those panels carry nothing that would be
+  duplicated four times or be illegible at that size: no title (the AP values
+  are in a table), no colourbar (the shared legend is a separate figure from
+  `plot_threshold_legend()`, placed once beside the row), no between-seed
+  threshold tick marks, and fonts 1.5x the single-model figures'. The random-
+  model baseline is labelled "random model" without its numeric value.
 """
 
 import os
@@ -108,6 +116,11 @@ THRESHOLD_CMAP = "viridis"
 THRESHOLD_NORM = Normalize(vmin=0.0, vmax=1.0)
 
 _FONTSIZE = 20
+
+# The mean-curve panels and the standalone threshold legend are printed at a
+# quarter of the manuscript's text width, so their text is 1.5x the single-model
+# figures' to stay legible at that size.
+_MEAN_FONTSIZE = int(round(1.5 * _FONTSIZE))
 
 
 def operating_points(all_probs, all_labels, thresholds=MARKED_THRESHOLDS):
@@ -294,6 +307,9 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
 
     `kind` is "roc" or "pr"; `curves` is a list of (x, y) per seed, `curves_thr`
     the matching (x, thresholds), and `scores` the per-seed AUROC or AP.
+    `scores` is accepted for interface symmetry with the callers' bookkeeping
+    but is not printed: the panels carry no title, because the manuscript
+    tabulates the mean ± std separately and a title would repeat it four times.
 
     HOW THE THRESHOLD COLOUR-CODING SURVIVES AVERAGING. On a single-model curve
     each vertex has one exact decision threshold, and the colour is that value.
@@ -302,29 +318,32 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     threshold at which the models reach that operating point - the same
     vertical-averaging idea applied to the threshold axis rather than to y.
 
-    That is a genuinely weaker claim than the single-curve colouring, so the
-    figure says so: the colourbar is labelled "mean decision threshold", and
-    where the seeds disagree badly about which threshold reaches a point, the
-    colour is an average over a wide spread. The per-seed spread in threshold is
-    drawn as faint tick marks along the top for exactly that reason - a smooth
-    colour ramp would otherwise hide it.
+    That is a genuinely weaker claim than the single-curve colouring, which is
+    why the shared legend (`plot_threshold_legend()`) is labelled "mean decision
+    threshold" rather than pretending a point has one threshold. The legend is
+    NOT drawn on the panel itself: four panels sit in one row in the manuscript
+    and one legend to the right of the row serves all of them.
 
     The individual seed curves are drawn faintly underneath. The band shows the
     spread; the thin lines show whether it comes from a couple of outliers or
     from even scatter, which a band alone cannot distinguish.
     """
     grid, mean_y, std_y = mean_curve_with_band(curves)
-    _, mean_thr, std_thr = mean_threshold_along_grid(curves_thr)
+    _, mean_thr, _ = mean_threshold_along_grid(curves_thr)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    # Square-ish: there is no colourbar beside the axes, and a quarter-width
+    # panel reads best when the two unit axes get equal room.
+    fig, ax = plt.subplots(figsize=(6.5, 6))
 
-    # Chance reference, drawn first.
+    # Random-model reference, drawn first. For PR it is the positive rate; the
+    # value itself is not printed (it is quoted in the results table), only
+    # what the line means.
     if kind == "roc":
         ax.plot([0, 1], [0, 1], "k-", alpha=0.5, linewidth=6.0, zorder=1)
     elif baseline is not None:
         ax.axhline(baseline, color="k", linestyle="--", alpha=0.5, linewidth=4.0,
                    zorder=1)
-        ax.text(0.98, baseline, f"chance = {baseline:.3f}", fontsize=_FONTSIZE - 6,
+        ax.text(0.98, baseline, "random model", fontsize=_MEAN_FONTSIZE - 9,
                 ha="right", va="bottom", fontweight="bold", zorder=5)
 
     # Every seed, faintly: shows whether the band is even scatter or an outlier.
@@ -346,61 +365,59 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     lc.set_array(0.5 * (mean_thr[:-1] + mean_thr[1:]))
     ax.add_collection(lc)
 
-    # Threshold disagreement between seeds, as tick marks along the top. Without
-    # this the smooth colour ramp would imply the seeds agree on which threshold
-    # reaches each point, which is exactly what is not guaranteed.
-    if len(curves) > 1 and np.nanmax(std_thr) > 0:
-        peak = float(np.nanmax(std_thr))
-        for i in range(0, len(grid), 10):
-            height = 0.035 * std_thr[i] / max(peak, 1e-9)
-            ax.plot([grid[i], grid[i]], [1.02 - height, 1.02], color="0.3",
-                    linewidth=1.5, alpha=0.8, zorder=5)
-        # Placed low-right, where neither the ticks along the top nor the curve
-        # itself (which rises to the top-left on a good model) can collide with it.
-        ax.text(0.98, 0.06,
-                f"top ticks: between-seed threshold spread (max σ={peak:.2f})",
-                fontsize=_FONTSIZE - 9, va="bottom", ha="right", color="0.3",
-                zorder=5)
-
-    scores = np.asarray(scores, dtype=float)
-    label = "AUROC" if kind == "roc" else "AP"
-    ax.set_title(
-        f"{label} = {scores.mean():.2f} ± {scores.std(ddof=1) if len(scores) > 1 else 0.0:.2f}"
-        f"  (n={len(scores)} seeds)",
-        fontsize=_FONTSIZE, fontweight="bold",
-    )
-
     ax.set_xlim(-0.02, 1.02)
     ax.set_ylim(-0.02, 1.02)
-    ax.tick_params(axis="both", which="major", labelsize=_FONTSIZE)
+    ax.tick_params(axis="both", which="major", labelsize=_MEAN_FONTSIZE)
     for lbl in ax.get_xticklabels() + ax.get_yticklabels():
         lbl.set_fontweight("bold")
     if kind == "roc":
-        ax.set_xlabel("False Positive Rate", fontsize=_FONTSIZE, fontweight="bold")
-        ax.set_ylabel("True Positive Rate", fontsize=_FONTSIZE, fontweight="bold")
+        ax.set_xlabel("False Positive Rate", fontsize=_MEAN_FONTSIZE, fontweight="bold")
+        ax.set_ylabel("True Positive Rate", fontsize=_MEAN_FONTSIZE, fontweight="bold")
     else:
-        ax.set_xlabel("Recall", fontsize=_FONTSIZE, fontweight="bold")
-        ax.set_ylabel("Precision", fontsize=_FONTSIZE, fontweight="bold")
+        ax.set_xlabel("Recall", fontsize=_MEAN_FONTSIZE, fontweight="bold")
+        ax.set_ylabel("Precision", fontsize=_MEAN_FONTSIZE, fontweight="bold")
     ax.grid(True, linestyle="--", alpha=0.3, linewidth=3.0)
     for spine in ax.spines.values():
         spine.set_linewidth(3.0)
 
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    finish_plot(plt, out_path, format="pdf", dpi=300)
+
+
+def plot_threshold_legend(plt, out_path, label="Mean decision threshold"):
+    """The threshold colour-coding legend as a figure of its own, to `out_path`.
+
+    A vertical colourbar over the fixed [0, 1] threshold scale that every curve
+    in this module shares, with nothing else on the page. It exists so a row of
+    mean-curve panels (`plot_mean_curve()`, which draws no colourbar) can carry
+    ONE legend placed beside the row instead of four copies. Fonts are the
+    mean-curve panels' (1.5x the single-model figures'), so it reads at the
+    same size as the panels it sits next to.
+
+    `label` defaults to the mean-curve wording; pass "Decision threshold" if
+    the legend is to accompany single-model curves instead.
+    """
+    # Shorter than the 6 in panels on purpose: set at the same scale beside a
+    # row of them, the bar then spans the panels' AXES (which start above the
+    # x-axis label) instead of overshooting the top of the row. The bar's axes
+    # are placed by hand (a colourbar-only figure defeats tight_layout) and the
+    # page is cropped to the drawn content when saved.
+    fig = plt.figure(figsize=(2.6, 4.8))
+    ax = fig.add_axes([0.05, 0.03, 0.22, 0.94])
     cbar = fig.colorbar(
-        ScalarMappable(norm=THRESHOLD_NORM, cmap=THRESHOLD_CMAP), ax=ax,
+        ScalarMappable(norm=THRESHOLD_NORM, cmap=THRESHOLD_CMAP), cax=ax,
         ticks=[0.0, 0.25, 0.5, 0.75, 1.0],
     )
-    # Named "mean" deliberately: on an averaged curve a point has no single
-    # threshold, and the label should not pretend otherwise.
-    cbar.set_label("Mean decision threshold", fontsize=_FONTSIZE - 2,
-                   fontweight="bold")
-    cbar.ax.tick_params(labelsize=_FONTSIZE - 4)
+    cbar.set_label(label, fontsize=_MEAN_FONTSIZE - 3, fontweight="bold")
+    cbar.ax.tick_params(labelsize=_MEAN_FONTSIZE - 6, width=3.0, length=8.0)
     for lbl in cbar.ax.get_yticklabels():
         lbl.set_fontweight("bold")
     cbar.outline.set_linewidth(3.0)
 
-    fig.tight_layout()
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    finish_plot(plt, out_path, format="pdf", dpi=300)
+    finish_plot(plt, out_path, format="pdf", dpi=300, bbox_inches="tight",
+                pad_inches=0.05)
 
 
 def plot_roc(plt, fpr, tpr, all_probs, all_labels, auc, out_path,

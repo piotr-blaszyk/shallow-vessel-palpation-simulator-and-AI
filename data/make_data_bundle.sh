@@ -237,6 +237,10 @@ for cfg in A-to-A A-to-B A-to-C C-to-B; do
         echo "| figures/mean_${kind}_curve_${cfg}.pdf | Fig. 6 (PR; ROC twins not in the manuscript) | saved_models_sweeps/20260815-194045/ (docker/score_all_scenarios.sh --seeds 5) |" >> "${MA}/README.md"
     done
 done
+# The shared threshold colour legend the four Fig. 6 panels carry once, beside the row.
+copy_file "saved_models_sweeps/20260815-194045/threshold_legend.pdf"
+cp "${BUNDLE}/saved_models_sweeps/20260815-194045/threshold_legend.pdf" "${MA}/figures/"
+echo "| figures/threshold_legend.pdf | Fig. 6 (the one colour legend beside the four panels) | saved_models_sweeps/20260815-194045/ (docker/score_all_scenarios.sh --replot) |" >> "${MA}/README.md"
 cp "${BUNDLE}/saved_models_sweeps/20260815-194045/sweep.json" "${MA}/tables/sweep.json"
 echo "| tables/sweep.json | every per-seed metric behind Fig. 6, best-of-five selection | saved_models_sweeps/20260815-194045/sweep.json |" >> "${MA}/README.md"
 

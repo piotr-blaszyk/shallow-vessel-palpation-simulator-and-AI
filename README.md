@@ -112,7 +112,7 @@ and the trained models (step 5), so a fresh clone can start anywhere.
 | `./annotate_data_bare_metal.sh --silicone` / `--meat` | the annotation viewers | **Fig. 5** (annotated Silicone frame, Meat labels) |
 | `./domain_adaptation.sh` → `./alignment_figures.sh` | joint BO calibration; sim (red) vs real (green) marker alignment on the four validation interactions, MAE per panel | **Fig. 4** and the 0.50 mm MAE |
 | `./ablation_clip_len.sh` | foreground IoU / AP per temporal window length, mean ± std over seeds | **Table 3** |
-| `./score_all_scenarios.sh --seeds 5` | five-seed sweep of every configuration: mean PR curves ± 1 std (ROC twins too), `AUROC_RESULTS.md`, `sweep.json` | **Fig. 6** |
+| `./score_all_scenarios.sh --seeds 5` | five-seed sweep of every configuration: mean PR curves ± 1 std (ROC twins too), the standalone threshold colour legend (`threshold_legend.pdf`), `AUROC_RESULTS.md`, `sweep.json`; `--replot` redraws the curves and legend of an existing sweep without training | **Fig. 6** |
 | `python -m difftactile.scripts.script_frame_space_metrics` | per-marker statistics of each best-of-five model, pooled over all central frames → `FRAME_SPACE_METRICS.md` | **Table 4**, upper half |
 | `./vessel_map_all.sh` | top-view vessel maps and per-pixel statistics for every configuration | **Fig. 7**, **Table 4** lower half |
 | `./record_videos.sh` | the [demonstration videos](#demonstration-videos) | supplementary |
@@ -160,6 +160,8 @@ sim-trained checkpoint on three test sets — the A→A → A→B gap is the sim
 ./score_all_scenarios.sh --pretrained    # published checkpoints only
 ./score_all_scenarios.sh --seeds 5       # retrain each configuration per seed: mean ± std,
                                          # mean PR/ROC curves, saved_models_sweeps/<TS>/
+./score_all_scenarios.sh --replot        # redraw the published sweep's mean curves + the
+                                         # shared threshold legend from saved scores (no training)
 ```
 
 Each run prints AUROC, AP (with its chance level and lift) and both IoUs, and writes

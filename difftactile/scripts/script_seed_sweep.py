@@ -2,6 +2,8 @@
 
     python -m difftactile.scripts.script_seed_sweep 5           # all three configs
     python -m difftactile.scripts.script_seed_sweep 5 C-to-B    # one config
+    python -m difftactile.scripts.script_seed_sweep --replot    # redraw the published
+                                                                # sweep's mean curves + legend
 
 Appends a "Seed sweep" section to AUROC_RESULTS.md with mean, standard deviation
 and range of AUROC and AP, plus every per-seed value.

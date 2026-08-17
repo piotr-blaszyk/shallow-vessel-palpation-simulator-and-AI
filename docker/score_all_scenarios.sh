@@ -22,6 +22,7 @@
 # Usage:
 #   ./docker/score_all_scenarios.sh [config ...] [--pretrained|--retrained]
 #   ./docker/score_all_scenarios.sh --seeds N [config ...]
+#   ./docker/score_all_scenarios.sh --replot [SWEEP_DIR|TIMESTAMP]
 #
 # Configurations (A = simulation, B = real silicone, C = real meat):
 #   A-to-A    train on simulation, test on held-out simulation
@@ -99,6 +100,13 @@
 #   ./docker/score_all_scenarios.sh A-to-B --pretrained # one scenario
 #   ./docker/score_all_scenarios.sh --seeds 5 C-to-B    # 5-seed sweep of one config
 #   ./docker/score_all_scenarios.sh --seeds 5           # 5-seed sweep of all three
+#   ./docker/score_all_scenarios.sh --replot            # redraw the published sweep's curves
+#
+# --replot [SWEEP]: redraws ONLY the mean PR/ROC curves and the standalone
+#   threshold legend (mean_{pr,roc}_curve_<config>.pdf, threshold_legend.pdf) of
+#   an existing sweep directory from its saved per-seed scores - no training, no
+#   inference, seconds rather than hours. Default SWEEP is files.published_sweep.
+#   Use it after changing the figure styling in cnn/curve_plots.py.
 #
 set -euo pipefail
 
@@ -110,6 +118,8 @@ usage() {
 }
 
 NUM_SEEDS=""
+REPLOT=""
+REPLOT_SWEEP=""
 CONFIGS=()
 PASSTHROUGH=()
 
@@ -128,6 +138,13 @@ while [ "$#" -gt 0 ]; do
             ;;
         --seeds=*)
             NUM_SEEDS="${1#*=}" ;;
+        --replot)
+            REPLOT=1
+            # Optional sweep dir / timestamp follows, unless the next word is a flag.
+            if [ "$#" -gt 1 ] && [ "${2#-}" = "$2" ]; then
+                shift; REPLOT_SWEEP="$1"
+            fi
+            ;;
         -h|--help) usage; exit 0 ;;
         *) echo "ERROR: unrecognised argument: $1" >&2; echo; usage; exit 1 ;;
     esac
@@ -146,6 +163,12 @@ fi
 # No display -> never block on a window; the files on disk are the output.
 if [ -z "${DISPLAY:-}" ]; then
     export DIFFTACTILE_HEADLESS="${DIFFTACTILE_HEADLESS:-1}"
+fi
+
+if [ -n "${REPLOT}" ]; then
+    # Replot mode: restyle an existing sweep's figures from its saved scores.
+    python -m difftactile.scripts.script_seed_sweep --replot ${REPLOT_SWEEP:+"${REPLOT_SWEEP}"}
+    exit 0
 fi
 
 if [ -n "${NUM_SEEDS}" ]; then

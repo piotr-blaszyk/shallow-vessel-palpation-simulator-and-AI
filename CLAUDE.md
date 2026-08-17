@@ -283,6 +283,20 @@ two **disagree in rank**: C→B is worse than A→B on AUROC (0.679 vs 0.731) bu
 `docker/score_all_scenarios.sh` wraps `script_auroc_all_scenarios` so users need not type the
 module path. ROC PDFs go to `difftactile/output/roc_curves/`, PR PDFs to `pr_curves/`.
 
+**The mean-curve panels (`plot_mean_curve`, since 2026-08-17) are laid out for the manuscript's
+four-in-a-row Fig. 6**, and deliberately carry less than the single-model figures: no title
+(AP is tabulated elsewhere), no colourbar, no between-seed threshold tick marks and their
+caption, fonts 1.5× (`_MEAN_FONTSIZE`), and the baseline labelled just "random model" (no
+number). The colour legend is a separate figure, `plot_threshold_legend()` →
+`threshold_legend.pdf` in the sweep directory, placed ONCE beside the row in the manuscript
+with no sub-caption label. `score_all_scenarios.sh --replot [SWEEP]`
+(`seed_sweep.replot()`) redraws the curves and legend of an existing sweep from its per-seed
+`scores_<config>.npz` — seconds, no torch — which is how a styling change reaches the
+figures without retraining; it resolves each seed directory by basename under the sweep dir,
+because `sweep.json` records the container's `/workspace/...` paths. `plot_pr()` / `plot_roc()`
+(single-model curves, not in the manuscript) keep their titles, colourbars and `chance = x`
+label.
+
 **The decision thresholds are two named constants in `curve_plots.py`** — there are no
 hardcoded probability cuts left anywhere in the project:
 
@@ -415,7 +429,7 @@ table for end users.
 | `annotate_data_bare_metal.sh --silicone/--meat` | **Fig. 5** (`fig:annotation-line`) — annotated Silicone frame, Meat labels |
 | `alignment_figures.sh` | **Fig. 4** (`fig:da-results`) — sim (red) vs real (green) marker alignment, four interactions (50 % opacity, per-trajectory MAE in caption) |
 | `ablation_clip_len.sh` | **Table 3** (`tab:clip-len`) — the temporal-window ablation |
-| `score_all_scenarios.sh --seeds 5` | **Fig. 6** (`fig:pr-curve`) — mean PR curves ± 1 std band (the ROC twins are generated but not in the manuscript). There is no longer a separate IoU table. |
+| `score_all_scenarios.sh --seeds 5` (or `--replot` to restyle an existing sweep) | **Fig. 6** (`fig:pr-curve`) — mean PR curves ± 1 std band, four panels in one row, plus the ONE shared `threshold_legend.pdf` set beside the row (the ROC twins are generated but not in the manuscript). There is no longer a separate IoU table. |
 | `script_frame_space_metrics` (`cnn/frame_space_metrics.py`) | **Table 4** (`tab:localisation-map`) upper half: per-marker statistics in video-frame space, pooled once over all central frames, best-of-five instances (`FRAME_SPACE_METRICS.md`) |
 | `vessel_map_all.sh` | **Fig. 7** (`fig:vessel-map`, Sim→Sim, Sim→Silicone, Sim→Meat, Meat→Silicone) and the lower half of **Table 4** (per-pixel TP/FP/FN/TN, MCC, F1, P, R, FG/BG IoU, AP, mean L2 at 0 mm growth) |
 | `record_videos.sh` | the README's demonstration videos (supplementary) |
