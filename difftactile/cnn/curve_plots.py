@@ -60,6 +60,7 @@ import os
 
 import matplotlib
 import numpy as np
+from cmcrameri import cm as cmc
 from matplotlib.cm import ScalarMappable
 
 # Embed TrueType (Type 42) fonts in PDF output instead of matplotlib's default
@@ -68,7 +69,7 @@ from matplotlib.cm import ScalarMappable
 matplotlib.rcParams["pdf.fonttype"] = 42
 matplotlib.rcParams["ps.fonttype"] = 42
 from matplotlib.collections import LineCollection
-from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.colors import Normalize
 
 from difftactile.main.display import finish_plot
 
@@ -111,12 +112,12 @@ MAP_DECISION_THRESHOLD = float(os.environ.get("DIFFTACTILE_MAP_THRESHOLD", 0.58)
 MARKED_THRESHOLDS = np.array([0.40, 0.50, 0.60])
 
 # Colourmap encoding the decision threshold along the curves, always spanning
-# the full [0, 1] range so colours are comparable between figures. Plasma with
-# its top ~15% cut off: perceptually uniform like viridis (which this replaced),
-# but the trimmed end is a saturated orange rather than a pale yellow, so the
-# high-threshold end of a curve stays visible on the white page.
-THRESHOLD_CMAP = LinearSegmentedColormap.from_list(
-    "plasma_trunc", matplotlib.colormaps["plasma"](np.linspace(0.0, 0.85, 256)))
+# the full [0, 1] range so colours are comparable between figures. Crameri's
+# `batlow` (cmcrameri): perceptually uniform and colour-blind safe, running
+# dark blue -> green -> warm red-brown with no washed-out end, so both ends of
+# a curve stay visible on the white page. It replaced viridis (pale-yellow top)
+# and a truncated plasma (mid-range pink too close to the red baseline).
+THRESHOLD_CMAP = cmc.batlow
 THRESHOLD_NORM = Normalize(vmin=0.0, vmax=1.0)
 
 _FONTSIZE = 20

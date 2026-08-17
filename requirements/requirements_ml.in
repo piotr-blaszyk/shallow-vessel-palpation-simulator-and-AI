@@ -16,3 +16,6 @@ torch_spline_conv
 numpy
 scikit-learn
 pyvista
+
+# Crameri scientific colourmaps (batlow) for cnn/curve_plots.py
+cmcrameri

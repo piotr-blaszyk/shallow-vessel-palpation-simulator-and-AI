@@ -233,3 +233,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m pip install --no-cache-dir \
         "PySide6==6.9.1" \
         "av==15.1.0"
+
+# ---------------------------------------------------------------------------
+# 10. Scientific colourmaps (Crameri) for the manuscript's curve figures.
+#     cnn/curve_plots.py colour-codes the decision threshold with `batlow`,
+#     a perceptually uniform, colour-blind-safe map with no washed-out end on
+#     a white page. Pure Python, no system deps; appended as its own layer so
+#     the layers above are not rebuilt.
+# ---------------------------------------------------------------------------
+RUN python -m pip install --no-cache-dir "cmcrameri==1.9"
