@@ -74,6 +74,12 @@ SWEEPABLE = ("A-to-A", "A-to-B", "C-to-B", "A-to-C")
 # Root for the per-sweep timestamped directories. Gitignored.
 SWEEP_ROOT = "saved_models_sweeps"
 
+# The manuscript sets the four configurations' mean PR curves in ONE row, in
+# this order, sharing a single y-axis: only the leftmost panel is drawn with
+# the y-axis label and tick captions, the other three without (same axes size,
+# narrower figure), which is what lets the row fill the text width.
+Y_AXIS_CONFIG = "A-to-A"
+
 # Tells a child where to write its checkpoint and test-loader pickle; read by
 # `segmentation_gnn._retrained_path()`. Spelled out here rather than imported
 # from that module, which would pull torch onto the parent's critical path when
@@ -238,11 +244,13 @@ def _plot_mean_curves(config, runs, run_dir):
         print("  (fewer than two seeds have scores; no mean curve drawn)")
         return None
 
+    show_yaxis = config == Y_AXIS_CONFIG
     roc_path = os.path.join(run_dir, f"mean_roc_curve_{config}.pdf")
-    plot_mean_curve(plt, roc_curves, roc_thr, aurocs, roc_path, kind="roc")
+    plot_mean_curve(plt, roc_curves, roc_thr, aurocs, roc_path, kind="roc",
+                    show_yaxis=show_yaxis)
     pr_path = os.path.join(run_dir, f"mean_pr_curve_{config}.pdf")
     plot_mean_curve(plt, pr_curves, pr_thr, aps, pr_path, kind="pr",
-                    baseline=float(np.mean(baselines)))
+                    baseline=float(np.mean(baselines)), show_yaxis=show_yaxis)
     # The threshold colour-coding legend, once per sweep directory rather than
     # on each panel: the manuscript sets the four configurations' PR panels in
     # one row with a single legend beside it. Identical for every config, so

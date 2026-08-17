@@ -287,7 +287,11 @@ module path. ROC PDFs go to `difftactile/output/roc_curves/`, PR PDFs to `pr_cur
 four-in-a-row Fig. 6**, and deliberately carry less than the single-model figures: no title
 (AP is tabulated elsewhere), no colourbar, no between-seed threshold tick marks and their
 caption, fonts 1.5× (`_MEAN_FONTSIZE`), and the baseline labelled just "random model" (no
-number). The colour legend is a separate figure, `plot_threshold_legend()` →
+number). **Only the row's leftmost panel (`seed_sweep.Y_AXIS_CONFIG` = A-to-A) draws the
+y-axis label and tick captions**; the other three are rendered `show_yaxis=False` — same
+axes box (placed explicitly via the `_PANEL_*` inch constants, not `tight_layout`), narrower
+page — so the manuscript sets all four at one HEIGHT and the row fills the text width. The
+colour legend is a separate figure, `plot_threshold_legend()` →
 `threshold_legend.pdf` in the sweep directory, placed ONCE beside the row in the manuscript
 with no sub-caption label. `score_all_scenarios.sh --replot [SWEEP]`
 (`seed_sweep.replot()`) redraws the curves and legend of an existing sweep from its per-seed

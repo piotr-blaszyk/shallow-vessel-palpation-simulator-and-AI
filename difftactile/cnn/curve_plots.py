@@ -301,8 +301,20 @@ def plot_pr(plt, precision, recall, all_probs, all_labels, ap, out_path,
     finish_plot(plt, out_path, format="pdf", dpi=300)
 
 
+# Geometry of one mean-curve panel, in inches. The AXES box is the same size
+# whether or not the panel draws its y-axis label and tick captions, so a row
+# of panels of which only the leftmost carries the y-axis (the manuscript's
+# layout - the four share one axis) lines up exactly and the panels without it
+# are simply narrower. Set explicitly instead of via tight_layout, which would
+# stretch the axes to fill whatever the y-axis text left over.
+_PANEL_AXES_W, _PANEL_AXES_H = 5.2, 4.85   # axes box
+_PANEL_LEFT_WITH_Y = 1.6                   # room for the y label + tick captions
+_PANEL_LEFT_NO_Y = 0.40                    # half of the "0.0" tick caption
+_PANEL_RIGHT, _PANEL_BOTTOM, _PANEL_TOP = 0.35, 1.05, 0.10
+
+
 def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
-                    baseline=None):
+                    baseline=None, show_yaxis=True):
     """Mean ROC or PR curve across seeds, with a ±1 std band.
 
     `kind` is "roc" or "pr"; `curves` is a list of (x, y) per seed, `curves_thr`
@@ -310,6 +322,11 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     `scores` is accepted for interface symmetry with the callers' bookkeeping
     but is not printed: the panels carry no title, because the manuscript
     tabulates the mean ± std separately and a title would repeat it four times.
+
+    `show_yaxis=False` drops the y-axis label and tick captions (the ticks and
+    grid stay) and narrows the figure by exactly the space they took, so the
+    axes box is the same size as with them. The manuscript sets four panels in
+    one row sharing one y-axis: only the leftmost is drawn with it.
 
     HOW THE THRESHOLD COLOUR-CODING SURVIVES AVERAGING. On a single-model curve
     each vertex has one exact decision threshold, and the colour is that value.
@@ -331,9 +348,14 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     grid, mean_y, std_y = mean_curve_with_band(curves)
     _, mean_thr, _ = mean_threshold_along_grid(curves_thr)
 
-    # Square-ish: there is no colourbar beside the axes, and a quarter-width
-    # panel reads best when the two unit axes get equal room.
-    fig, ax = plt.subplots(figsize=(6.5, 6))
+    # Explicit geometry (see the _PANEL_* constants): the axes box is identical
+    # with and without the y-axis text, only the figure width changes.
+    left = _PANEL_LEFT_WITH_Y if show_yaxis else _PANEL_LEFT_NO_Y
+    fig_w = left + _PANEL_AXES_W + _PANEL_RIGHT
+    fig_h = _PANEL_BOTTOM + _PANEL_AXES_H + _PANEL_TOP
+    fig = plt.figure(figsize=(fig_w, fig_h))
+    ax = fig.add_axes([left / fig_w, _PANEL_BOTTOM / fig_h,
+                       _PANEL_AXES_W / fig_w, _PANEL_AXES_H / fig_h])
 
     # Random-model reference, drawn first. For PR it is the positive rate; the
     # value itself is not printed (it is quoted in the results table), only
@@ -376,11 +398,15 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     else:
         ax.set_xlabel("Recall", fontsize=_MEAN_FONTSIZE, fontweight="bold")
         ax.set_ylabel("Precision", fontsize=_MEAN_FONTSIZE, fontweight="bold")
+    if not show_yaxis:
+        # Ticks and grid lines stay so the panel still reads against its
+        # neighbours; only the text goes.
+        ax.set_ylabel("")
+        ax.tick_params(axis="y", labelleft=False)
     ax.grid(True, linestyle="--", alpha=0.3, linewidth=3.0)
     for spine in ax.spines.values():
         spine.set_linewidth(3.0)
 
-    fig.tight_layout()
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     finish_plot(plt, out_path, format="pdf", dpi=300)
 
