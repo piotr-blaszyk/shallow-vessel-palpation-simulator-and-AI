@@ -213,7 +213,7 @@ def _plot_mean_curves(config, runs, run_dir):
     import matplotlib.pyplot as plt
 
     from difftactile.cnn.curve_plots import (
-        plot_axis_label, plot_mean_curve, plot_threshold_legend,
+        plot_axis_label, plot_curve_legend, plot_mean_curve,
     )
 
     roc_curves, roc_thr, pr_curves, pr_thr = [], [], [], []
@@ -259,15 +259,15 @@ def _plot_mean_curves(config, runs, run_dir):
     plot_axis_label(plt, "Recall", os.path.join(run_dir, "xlabel_recall.pdf"))
     plot_axis_label(plt, "False Positive Rate",
                     os.path.join(run_dir, "xlabel_false_positive_rate.pdf"))
-    # The threshold colour-coding legend, once per sweep directory rather than
-    # on each panel: the manuscript sets the four configurations' PR panels in
-    # one row with a single legend beside it. Identical for every config, so
-    # rewriting it per config is harmless.
-    legend_path = os.path.join(run_dir, "threshold_legend.pdf")
-    plot_threshold_legend(plt, legend_path)
+    # The shared legend (threshold colour-coding + random-model line), once per
+    # sweep directory rather than on each panel: the manuscript sets the four
+    # configurations' PR panels in one row with a single legend above it.
+    # Identical for every config, so rewriting it per config is harmless.
+    legend_path = os.path.join(run_dir, "curve_legend.pdf")
+    plot_curve_legend(plt, legend_path)
     print(f"  mean ROC curve: {roc_path}")
     print(f"  mean PR curve:  {pr_path}")
-    print(f"  threshold legend: {legend_path}   (+ xlabel_recall.pdf, "
+    print(f"  shared legend:  {legend_path}   (+ xlabel_recall.pdf, "
           "xlabel_false_positive_rate.pdf)")
     return {"roc": roc_path, "pr": pr_path, "legend": legend_path}
 

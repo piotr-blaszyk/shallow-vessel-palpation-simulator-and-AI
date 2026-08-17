@@ -50,10 +50,10 @@ Design decisions worth knowing:
   manuscript places the four configurations' mean PR curves side by side, each
   a quarter of the text width, so those panels carry nothing that would be
   duplicated four times or be illegible at that size: no title (the AP values
-  are in a table), no colourbar (the shared legend is a separate figure from
-  `plot_threshold_legend()`, placed once beside the row), no between-seed
-  threshold tick marks, and fonts 1.5x the single-model figures'. The random-
-  model baseline is labelled "random model" without its numeric value.
+  are in a table), no colourbar and no baseline caption (the shared legend is
+  a separate figure from `plot_curve_legend()`, placed once above the row), no
+  between-seed threshold tick marks, and fonts 1.5x the single-model figures'.
+  The random-model baseline is red and unlabelled in the panels.
 """
 
 import os
@@ -116,6 +116,13 @@ THRESHOLD_CMAP = "viridis"
 THRESHOLD_NORM = Normalize(vmin=0.0, vmax=1.0)
 
 _FONTSIZE = 20
+
+# The random-model baseline of the mean PR panels, and its legend sample: one
+# style dict so the two cannot drift apart. Red so it is distinct from the
+# grey grid lines it used to resemble.
+BASELINE_COLOUR = "red"
+BASELINE_STYLE = dict(color=BASELINE_COLOUR, linestyle="--", alpha=0.5,
+                      linewidth=4.0)
 
 # The mean-curve panels and the standalone threshold legend are printed at a
 # quarter of the manuscript's text width, so their text is 1.5x the single-model
@@ -338,10 +345,10 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     vertical-averaging idea applied to the threshold axis rather than to y.
 
     That is a genuinely weaker claim than the single-curve colouring, which is
-    why the shared legend (`plot_threshold_legend()`) is labelled "mean decision
+    why the shared legend (`plot_curve_legend()`) is labelled "mean decision
     threshold" rather than pretending a point has one threshold. The legend is
     NOT drawn on the panel itself: four panels sit in one row in the manuscript
-    and one legend to the right of the row serves all of them.
+    and one legend above the row serves all of them.
 
     The individual seed curves are drawn faintly underneath. The band shows the
     spread; the thin lines show whether it comes from a couple of outliers or
@@ -360,18 +367,14 @@ def plot_mean_curve(plt, curves, curves_thr, scores, out_path, kind,
     ax = fig.add_axes([left / fig_w, bottom / fig_h,
                        _PANEL_AXES_W / fig_w, _PANEL_AXES_H / fig_h])
 
-    # Random-model reference, drawn first. For PR it is the positive rate; the
-    # value itself is not printed (it is quoted in the results table), only
-    # what the line means.
+    # Random-model reference, drawn first. For PR it is the positive rate. It
+    # is red so it cannot be mistaken for a grid line, and carries no caption
+    # here: the row's shared legend (`plot_curve_legend()`) names it once.
     if kind == "roc":
-        ax.plot([0, 1], [0, 1], "k-", alpha=0.5, linewidth=6.0, zorder=1)
+        ax.plot([0, 1], [0, 1], "-", color=BASELINE_COLOUR, alpha=0.5,
+                linewidth=6.0, zorder=1)
     elif baseline is not None:
-        ax.axhline(baseline, color="k", linestyle="--", alpha=0.5, linewidth=4.0,
-                   zorder=1)
-        # Left-aligned: a PR curve ends at the baseline on the RIGHT (recall 1),
-        # so a right-aligned caption sits under the curve's tail.
-        ax.text(0.02, baseline, "random model", fontsize=_MEAN_FONTSIZE - 9,
-                ha="left", va="bottom", fontweight="bold", zorder=5)
+        ax.axhline(baseline, **BASELINE_STYLE, zorder=1)
 
     # Every seed, faintly: shows whether the band is even scatter or an outlier.
     for x, y in curves:
@@ -434,37 +437,45 @@ def plot_axis_label(plt, text, out_path):
                 pad_inches=0.02)
 
 
-def plot_threshold_legend(plt, out_path, label="Mean decision\nthreshold"):
-    """The threshold colour-coding legend as a figure of its own, to `out_path`.
+def plot_curve_legend(plt, out_path, threshold_label="Mean decision threshold",
+                      baseline_label="random model"):
+    """The row's shared legend as a figure of its own, one horizontal line.
 
-    A vertical colourbar over the fixed [0, 1] threshold scale that every curve
-    in this module shares, with nothing else on the page. It exists so a row of
-    mean-curve panels (`plot_mean_curve()`, which draws no colourbar) can carry
-    ONE legend placed beside the row instead of four copies. Fonts are the
-    mean-curve panels' (1.5x the single-model figures'), so it reads at the
-    same size as the panels it sits next to.
-
-    `label` defaults to the mean-curve wording, broken over two lines: at the
-    height the legend is set beside the panels a single line is longer than the
-    bar and gets clipped by the manuscript's figure box. Pass "Decision
-    threshold" if the legend is to accompany single-model curves instead.
+    Left: the threshold colourbar over the fixed [0, 1] scale every curve in
+    this module shares, captioned `threshold_label`. Right: a sample of the
+    random-model baseline (`BASELINE_STYLE`, the very line the panels draw),
+    captioned `baseline_label`. It exists so a row of mean-curve panels
+    (`plot_mean_curve()`, which draws neither a colourbar nor a baseline
+    caption) can carry ONE legend, set above the row in the manuscript, instead
+    of four copies. Fonts are the mean-curve panels' (1.5x the single-model
+    figures'), so it reads at the same size as the panels it sits over. Placed
+    by hand in inches and cropped to content on save.
     """
-    # Shorter than the 6 in panels on purpose: set at the same scale beside a
-    # row of them, the bar then spans the panels' AXES (which start above the
-    # x-axis label) instead of overshooting the top of the row. The bar's axes
-    # are placed by hand (a colourbar-only figure defeats tight_layout) and the
-    # page is cropped to the drawn content when saved.
-    fig = plt.figure(figsize=(2.6, 4.8))
-    ax = fig.add_axes([0.05, 0.03, 0.22, 0.94])
+    fig_w, fig_h = 16.5, 1.4
+    fig = plt.figure(figsize=(fig_w, fig_h))
+    label_fs, tick_fs = _MEAN_FONTSIZE - 3, _MEAN_FONTSIZE - 6
+
+    # --- left entry: caption, then the horizontal colourbar with ticks below.
+    fig.text(0.0, 0.62, threshold_label, fontsize=label_fs, fontweight="bold",
+             ha="left", va="center")
+    cax = fig.add_axes([5.95 / fig_w, 0.5, 4.6 / fig_w, 0.32])
     cbar = fig.colorbar(
-        ScalarMappable(norm=THRESHOLD_NORM, cmap=THRESHOLD_CMAP), cax=ax,
-        ticks=[0.0, 0.25, 0.5, 0.75, 1.0],
+        ScalarMappable(norm=THRESHOLD_NORM, cmap=THRESHOLD_CMAP), cax=cax,
+        orientation="horizontal", ticks=[0.0, 0.25, 0.5, 0.75, 1.0],
     )
-    cbar.set_label(label, fontsize=_MEAN_FONTSIZE - 3, fontweight="bold")
-    cbar.ax.tick_params(labelsize=_MEAN_FONTSIZE - 6, width=3.0, length=8.0)
-    for lbl in cbar.ax.get_yticklabels():
+    cbar.ax.tick_params(labelsize=tick_fs, width=3.0, length=8.0)
+    for lbl in cbar.ax.get_xticklabels():
         lbl.set_fontweight("bold")
     cbar.outline.set_linewidth(3.0)
+
+    # --- right entry: a sample of the baseline line, then its caption.
+    lax = fig.add_axes([11.35 / fig_w, 0.5, 1.5 / fig_w, 0.32])
+    lax.axis("off")
+    lax.set_xlim(0, 1)
+    lax.set_ylim(0, 1)
+    lax.axhline(0.5, **BASELINE_STYLE)
+    fig.text(13.05 / fig_w, 0.62, baseline_label, fontsize=label_fs,
+             fontweight="bold", ha="left", va="center")
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     finish_plot(plt, out_path, format="pdf", dpi=300, bbox_inches="tight",
