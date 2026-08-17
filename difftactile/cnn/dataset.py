@@ -304,7 +304,13 @@ class MyDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def get_folder_files(path):
-        return sorted([os.path.join(path, f) for f in os.listdir(path)])
+        """The trajectory .npz files of a dataset directory, sorted.
+
+        Only .npz: a directory may carry a sidecar such as the
+        `selection.json` that vessel_map_test_trajectories_main() writes beside
+        the ten project-page trajectories.
+        """
+        return sorted(os.path.join(path, f) for f in os.listdir(path) if f.endswith(".npz"))
 
     def compute_data_points_exp(self):
         num_video_frames = self.exp_markers.shape[0]

@@ -4566,12 +4566,15 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
               f"{os.path.join(run_dir, 'best_da_overlay_<name>.png')}")
 
     def collect_training_data(self, num_loops=None, substeps=(0, 1),
-                              trajectory_ixs=None, with_vein=COLLECT_VEIN_PAIR):
+                              trajectory_ixs=None, with_vein=COLLECT_VEIN_PAIR,
+                              file_nums=None):
         """Run the randomised trajectories and write one .npz per trial.
 
         Defaults reproduce the training-data collection exactly; the keyword
         arguments exist for `vessel_map_trajectory_main()`, which wants a
-        single vein-present slide rather than the whole loop:
+        single vein-present slide rather than the whole loop, and for
+        `vessel_map_test_trajectories_main()`, which re-simulates a few
+        specific trials of the published dataset:
 
           num_loops       outer loops (default DIFFTACTILE_NUM_LOOPS / config)
           substeps        which of the two substeps to run; substep 0 is the
@@ -4579,6 +4582,16 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
           trajectory_ixs  trajectory types to execute (default
                           DIFFTACTILE_TRAJECTORIES)
           with_vein       enable the sensor<->vein contact pair on substep 0
+          file_nums       if given, only these file numbers (trajectory_NNNN)
+                          are simulated and written. Every other trial still
+                          takes its random draws (generate_trajectories(),
+                          randomise_contact_params()) so the RNG stream - and
+                          with it the parameters of the wanted trials - is the
+                          same as in the full run under the same seed. Nothing
+                          inside a trial's timestep loop draws from NP_RNG when
+                          the phantom contact pair is off (permutation() of a
+                          list of length <= 1 leaves the generator untouched),
+                          which is what makes skipping the physics safe.
         """
         # self.clear_temp_images()
         # self.clear_npz()
@@ -4623,6 +4636,11 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
                 # Set DIFFTACTILE_TRAJECTORIES=3 to reproduce the published
                 # dataset; the default keeps the current all-four behaviour.
                 for traj_ix in trajectory_ixs:
+                    if file_nums is not None and file_num not in file_nums:
+                        # Not wanted: its random draws were taken above, so
+                        # just advance the numbering and move on.
+                        file_num += 1
+                        continue
                     self.trajectory_ix[None] = traj_ix
                     trajectory_name = self.trajectory_names[self.trajectory_ix[None]]
                     # print(f'executing trajectory: {trajectory_name}')
@@ -4736,6 +4754,155 @@ def vessel_map_trajectory_main():
     os.environ["DIFFTACTILE_SIM_RAW_DIR"] = raw_dir
     PreProcessSimData.sim_marker_tracker()
     print(f"Sim vessel-map trajectory written under {out_root}")
+    print("all done")
+
+
+def vessel_map_test_trajectories_main():
+    """Re-simulate the ten held-out trajectories of the project-page Sim -> Sim
+    prediction video WITH sensor poses, for their bird's-eye vessel maps.
+
+    The published simulated dataset (files.sim_data) records no sensor pose, so
+    its trajectories cannot be reprojected onto the phantom plane. It WAS
+    collected seeded, though (seed 42, DIFFTACTILE_TRAJECTORIES=3,
+    DIFFTACTILE_VEIN_PAIR=1, 250 loops), and every trial's parameters come from
+    the shared NP_RNG stream, so replaying that stream reproduces any trial:
+    `collect_training_data(file_nums=...)` takes every trial's random draws but
+    simulates only the wanted ones (see its docstring for why that is exact).
+    The sensor pose is kinematic (the PID controller drives the rigid base
+    from the undeformed tip position), so the recorded `T_BA` is the pose the
+    published trial had, and the re-simulated markers should reproduce the
+    published ones up to GPU round-off - which is CHECKED below and reported
+    per trajectory; a mismatch beyond 1 px means the RNG stream has diverged
+    from the one the dataset was collected with, and the run stops rather
+    than pair poses with the wrong trajectory.
+
+    Which ten: the same selection as the video - `cnn/trial_selection.py::
+    select_interleaved(7, 3)` over the sorted test-split trajectory names of
+    the A-to-A best-of-five model's test-loader pickle (7 vessel-present, 3
+    vessel-absent, interleaved a a b a a b a a b a, seed
+    DIFFTACTILE_VIEW_TRIALS_SEED = 0). The order is recorded in
+    `selection.json` and the maps are drawn in it, so the maps and the video
+    show the same trajectories in the same order.
+
+    Output, under difftactile/output/vessel_map_sim/:
+      test_trajectories_raw/                    the re-simulated trials
+      test_trajectories_raw_reordered_dense/    Hungarian-reordered (dataset layout)
+      test_trajectories/                        what vessel_map.sh A-to-A
+                                                --test-trajectories reads: the
+                                                PUBLISHED markers and labels of
+                                                each trial (byte-identical to
+                                                what the model and the video
+                                                saw) plus the re-simulated
+                                                T_BA / vein geometry, and
+                                                selection.json (order, category,
+                                                verification numbers)
+    Shipped in the data bundle; run this only to regenerate. ~15 min on a GPU.
+    """
+    # 1. The selection: identical to the viewer's `--trials interleaved:7:3`.
+    #    Read from the SAME test-loader pickle the viewer uses (the held-out
+    #    split the checkpoint was trained against; never re-derived), which
+    #    needs torch to unpickle - done before Taichi is initialised.
+    from difftactile.cnn.model_selection import resolve_model
+    from difftactile.cnn.trial_selection import select_interleaved, trial_has_vessel
+    n_present, n_absent = 7, 3
+    spec = resolve_model("A-to-A", "best")
+    with open(spec["stats"], "rb") as f:
+        test_dataset = pickle.load(f)["dataset"]
+    trial_path = {os.path.splitext(os.path.basename(p))[0]: p
+                  for p, _, _ in test_dataset.data_points}
+    order = select_interleaved(list(trial_path), trial_path.__getitem__, n_present, n_absent)
+    file_nums = {int(t.rsplit("_", 1)[1]) for t in order}
+    print(f"Sim->Sim demonstration trajectories ({n_present} vessel-present + "
+          f"{n_absent} vessel-absent, interleaved): {', '.join(order)}")
+
+    # 2. Re-simulate exactly those, replaying the dataset's RNG stream. The
+    #    dataset's seed and layout are pinned here rather than read from the
+    #    environment, so DIFFTACTILE_SEED cannot silently point at a different
+    #    stream: with one trajectory type and two substeps, file N is loop
+    #    N // 2, substep N % 2 (substep 0 = vein present).
+    dataset_seed, dataset_slide_ix = 42, 3
+    os.environ["DIFFTACTILE_SEED"] = str(dataset_seed)
+    seed = seed_everything(deterministic_torch=False)
+    print(f"Seed: {seed} (the published dataset's)")
+
+    out_root = repo_path("difftactile/output/vessel_map_sim")
+    raw_dir = os.path.join(out_root, "test_trajectories_raw")
+    os.makedirs(raw_dir, exist_ok=True)
+    for stale in os.listdir(raw_dir):
+        os.remove(os.path.join(raw_dir, stale))
+
+    if RUN_ON_LAB_MACHINE:
+        ti.init(debug=False, offline_cache=False, log_level=ti.ERROR,
+                arch=ti.cuda,
+                device_memory_GB=float(os.environ.get("TI_DEVICE_MEMORY_GB", 9)))
+    else:
+        ti.init(debug=False, offline_cache=False, log_level=ti.ERROR, arch=ti.cpu)
+    contact_model = Contact()
+    contact_model.visualisation_set_up_gui()
+    contact_model.save_tactile_sensor_mesh_node_mapping_to_pickle()
+    contact_model.trajectory_ix[None] = 0
+    contact_model.set_up_initial_positions_state_and_trajectory()
+    contact_model.reset_pid_controller()
+    contact_model.reset_exp_sim_traj()
+    contact_model.get_keypoint_indices_and_validate()
+    contact_model.training_data_dir_override = raw_dir
+    contact_model.collect_training_data(
+        num_loops=max(file_nums) // 2 + 1, substeps=(0, 1),
+        trajectory_ixs=[dataset_slide_ix], with_vein=True, file_nums=file_nums,
+    )
+
+    # 3. Reorder into the base-graph marker order (writes <raw>_reordered_dense).
+    from difftactile.data_analysis.sim.pre_process_sim_data import PreProcessSimData
+    os.environ["DIFFTACTILE_SIM_RAW_DIR"] = raw_dir
+    PreProcessSimData.sim_marker_tracker()
+    resim_dir = raw_dir + "_reordered_dense"
+
+    # 4. Verify against the published files, then merge: published arrays +
+    #    re-simulated poses/vein geometry, one file per trajectory.
+    final_dir = os.path.join(out_root, "test_trajectories")
+    os.makedirs(final_dir, exist_ok=True)
+    for stale in os.listdir(final_dir):
+        os.remove(os.path.join(final_dir, stale))
+    pose_keys = ("T_BA", "vein_centreline_A", "vein_radius", "distance_scaling_factor")
+    verification = {}
+    for trial in order:
+        published = np.load(trial_path[trial])
+        resim = np.load(os.path.join(resim_dir, f"{trial}.npz"))
+        n = min(published["markers"].shape[0], resim["markers"].shape[0])
+        diff = np.abs(published["markers"][:n] - resim["markers"][:n])
+        frames_ok = published["markers"].shape[0] == resim["markers"].shape[0]
+        labels_ok = bool(np.array_equal(published["vein_classification"][:n],
+                                        resim["vein_classification"][:n]))
+        verification[trial] = {
+            "frames_published": int(published["markers"].shape[0]),
+            "frames_resimulated": int(resim["markers"].shape[0]),
+            "marker_abs_diff_px_max": float(diff.max()),
+            "marker_abs_diff_px_mean": float(diff.mean()),
+            "labels_identical": labels_ok,
+        }
+        print(f"  {trial}: frames {published['markers'].shape[0]} vs {resim['markers'].shape[0]}, "
+              f"marker |diff| max {diff.max():.4f} px, mean {diff.mean():.4f} px, "
+              f"labels identical: {labels_ok}")
+        if not frames_ok or diff.max() > 1.0 or not labels_ok:
+            raise SystemExit(
+                f"{trial}: the re-simulated trajectory does not reproduce the published "
+                "one (frame count, marker positions or labels differ) - the RNG stream "
+                "no longer matches the dataset's, so its poses cannot be trusted. Not writing.")
+        np.savez(os.path.join(final_dir, f"{trial}.npz"),
+                 **{k: published[k] for k in published.files},
+                 **{k: resim[k] for k in pose_keys})
+    with open(os.path.join(final_dir, "selection.json"), "w") as f:
+        json.dump({
+            "order": order,
+            "vessel_present": {t: trial_has_vessel(trial_path[t]) for t in order},
+            "n_present": n_present, "n_absent": n_absent,
+            "selection_seed": int(os.environ.get("DIFFTACTILE_VIEW_TRIALS_SEED", "0")),
+            "dataset_seed": dataset_seed,
+            "source_dataset": os.path.dirname(next(iter(trial_path.values()))),
+            "test_loader_pickle": spec["stats"],
+            "verification": verification,
+        }, f, indent=2)
+    print(f"Sim->Sim demonstration trajectories with poses written under {final_dir}")
     print("all done")
 
 
@@ -5213,10 +5380,12 @@ def main():
     # ("which parameters produced this?") could only be answered by keeping the
     # .npz files forever. With a fixed seed the run itself is the record.
     #
-    # NOTE this changes which dataset a default run produces - it is a different
-    # draw, not the previously-shipped one. The PUBLISHED dataset predates this
-    # and cannot be regenerated by any seed; restore it from the Zenodo bundle
-    # rather than expecting `DIFFTACTILE_SEED=42` to rebuild it.
+    # The current published dataset (pickle_20260814_191137) WAS collected
+    # seeded (42, DIFFTACTILE_TRAJECTORIES=3 DIFFTACTILE_VEIN_PAIR=1
+    # DIFFTACTILE_NUM_LOOPS=250), and vessel_map_test_trajectories_main()
+    # relies on that to re-simulate single trials of it with poses. The
+    # PREVIOUS one (pickle_20250901_220921) predates seeding and cannot be
+    # regenerated by any seed.
     #
     # `deterministic_torch=False`: no torch in this path (the simulator is
     # Taichi), so the deterministic-kernel switches would cost startup work and

@@ -637,15 +637,25 @@ class Visualisation:
     def _select_trials(self, dataset):
         """Order `dataset`'s clips by trial and time, and restrict to `self.trials`.
 
-        `self.trials` is a comma-separated list. Each item is the token
-        `first-vessel-present` (the first trial, in dataset order, with at
-        least one vessel-present frame), `random:N` (N trials drawn with a
-        fixed seed, kept in dataset order) or a substring of a trial id (a meat
-        trial directory such as `2-metal-straws-beneath-2-steaks-20260228-235749`
-        or a simulated/silicone file stem such as `trajectory_0426`). Trials
-        keep their dataset order. Raises if nothing matches, since a viewer
-        that silently shows a different trial than asked for is worse than one
-        that stops.
+        `self.trials` is a comma-separated list. Each item is one of
+
+          * `first-vessel-present` - the first trial, in dataset order, with at
+            least one vessel-present frame;
+          * `random:N` - N trials drawn with a fixed seed, kept in dataset order;
+          * `interleaved:P:A` - P vessel-present and A vessel-absent trials,
+            each drawn at random (fixed seed) from the SORTED trial list and
+            interleaved `a a b a a b ...` for display (P = 7, A = 3 gives
+            `a a b a a b a a b a`); see `cnn/trial_selection.py`. This is the
+            project-page Sim -> Sim video, and the bird's-eye maps of the same
+            ten trajectories are drawn from the identical selection;
+          * a substring of a trial id (a meat trial directory such as
+            `2-metal-straws-beneath-2-steaks-20260228-235749` or a
+            simulated/silicone file stem such as `trajectory_0426`).
+
+        The viewer shows the selected trials IN THE ORDER THE ITEMS PRODUCE
+        THEM (so `interleaved` and an explicit list of ids play in the order
+        given). Raises if nothing matches, since a viewer that silently shows
+        a different trial than asked for is worse than one that stops.
 
         Exists for the README recordings, which show one vessel-present
         simulated trajectory rather than all 75 held-out ones (~23k sliding
@@ -675,7 +685,9 @@ class Visualisation:
             keep = trial_ids
         else:
             keep = self._match_trials(wanted, trial_ids, clips_of)
-        selected = [c for t in trial_ids if t in keep for c in clips_of[t]]
+        # Selection order, not dataset order: `keep` is what the caller asked
+        # for, in the order the items produced it.
+        selected = [c for t in keep for c in clips_of[t]]
         if is_meat:
             dataset.meat_data = selected
         else:
@@ -687,21 +699,28 @@ class Visualisation:
     def _match_trials(wanted, trial_ids, clips_of):
         """The trial ids selected by the `--trials` items, in dataset order."""
 
+        from difftactile.cnn.trial_selection import trial_has_vessel, select_interleaved
+
+        def trial_path(trial):
+            """The meat trial directory or the simulated / silicone .npz of a trial."""
+            return clips_of[trial][0][0]
+
         def has_vessel(trial):
             """True if any frame of the trial is labelled vessel-present."""
-            first = clips_of[trial][0]
-            path = first[0]
-            if os.path.isdir(path):  # meat trial directory
-                labels = np.load(os.path.join(path, "marker_labels.npz"))["marker_labels"]
-                return bool(np.any(labels))
-            with np.load(path) as d:  # simulated / silicone .npz
-                return bool(np.any(d["vein_classification"]))
+            return trial_has_vessel(trial_path(trial))
 
         keep = []
         for item in wanted:
             if item == "first-vessel-present":
                 match = next((t for t in trial_ids if has_vessel(t)), None)
                 matches = [match] if match is not None else []
+            elif item.startswith("interleaved:"):
+                # `interleaved:P:A` - P vessel-present + A vessel-absent trials,
+                # drawn from the sorted ids with the fixed seed and interleaved
+                # a a b a a b ...; the shared implementation in
+                # cnn/trial_selection.py is what the vessel maps use too.
+                n_present, n_absent = (int(v) for v in item.split(":")[1:3])
+                matches = select_interleaved(trial_ids, trial_path, n_present, n_absent)
             elif item.startswith("random:"):
                 # `random:N` - N trials drawn without replacement, in dataset
                 # order, from a FIXED seed (DIFFTACTILE_VIEW_TRIALS_SEED, default
@@ -1834,7 +1853,8 @@ def main():
     how good the model looks, that is the one that should be seen first.
 
     --trials SPEC  restrict the test set to some trials: a comma-separated list
-               of trial-id substrings, `first-vessel-present` or `random:N`
+               of trial-id substrings, `first-vessel-present`, `random:N` or
+               `interleaved:P:A`
                (see `Visualisation._select_trials()`).
 
     The configuration may also come from DIFFTACTILE_SCENARIO, the weight source

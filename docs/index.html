@@ -19,6 +19,10 @@
   figure { margin:0; background:var(--card); border-radius:10px; padding:.6rem; }
   video, img { width:100%; height:auto; display:block; border-radius:6px; background:#000; }
   img.mesh { background:#fff; }
+  img.map { image-rendering: pixelated; }
+  .grid.maps-small { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .grid.maps-single { grid-template-columns: repeat(auto-fit, minmax(300px, 480px)); }
+  h4 { font-size: .95rem; margin: 1.25rem 0 .25rem; }
   figcaption { font-size:.9rem; color:var(--muted); margin-top:.45rem; }
   ul.repos { list-style:none; padding:0; }
   ul.repos li { margin:.5rem 0; }
@@ -72,7 +76,7 @@
       </figure>
     </div>
     <h3>Per-frame GNN predictions</h3>
-    <p class="blurb">The prediction viewer on each model's best-of-five instance: ground truth, hard prediction, confusion (green = both say vessel, red = missed vessel, blue = false alarm, grey = neither), soft prediction, metadata. Every central frame of every trial for the real datasets; ten randomly drawn held-out trajectories for Sim → Sim.</p>
+    <p class="blurb">The prediction viewer on each model's best-of-five instance: ground truth, hard prediction, confusion (green = both say vessel, red = missed vessel, blue = false alarm, grey = neither), soft prediction, metadata. Every central frame of every trial for the real datasets. For Sim → Sim, ten held-out simulated trajectories: seven with the vessel under the sweep and three without, each drawn at random (fixed seed) from the test split and shown interleaved — present, present, absent, present, present, absent, present, present, absent, present (trajectories 0474, 0478, 0463, 0430, 0458, 0485, 0490, 0488, 0469, 0450). The <a href="#vessel-maps">top-view vessel maps</a> below are drawn from these same trajectories, in this same order.</p>
     <div class="grid">
       <figure>
         <video src="videos/predictions_sim_to_sim.mp4" controls muted playsinline preload="metadata"></video>
@@ -91,6 +95,118 @@
         <figcaption>Meat → Silicone</figcaption>
       </figure>
     </div>
+
+
+  <h2 id="vessel-maps">Top-view vessel maps</h2>
+  <p class="blurb">The bird's-eye localisation maps of the same four models (<code>docker/website_vessel_maps.sh</code>). Every per-marker prediction of the sensor's tactile image is lifted to 3D through the fisheye camera model, moved into the world frame with the sensor pose (robot kinematics for the real datasets, the simulator's own pose for Sim), and dropped onto a top-view grid of the phantom at 1 px = 1 mm (the 2D→3D→2D projection); the maps are shown here enlarged five times, so each 5 × 5 block is one map pixel. Each model's decision threshold is chosen to keep the pixel-level precision at 0.9 (a predicted pixel counting as correct within 3 mm of a true pixel) while maximising recall — few false alarms over high sensitivity; for Sim → Meat that precision is unreachable and the F1-optimal threshold is used instead. <strong>Legend:</strong> the four colours compare the thresholded prediction with the ground truth pixel by pixel — <span style="color:#00b000;font-weight:600">green</span> = both say vessel (a correctly found vessel pixel), <span style="color:#d00000;font-weight:600">red</span> = the ground truth says vessel but the prediction does not (a missed vessel), <span style="color:#1a4dff;font-weight:600">blue</span> = the prediction says vessel but the ground truth does not (a false alarm), <span style="font-weight:600">black</span> = neither (no vessel predicted and none present — this includes everything the sensor never swept, and the whole map when a vessel-free trajectory yields no false alarm). The ground truth is the test data's own per-marker labels reprojected exactly like the predictions (manual video annotation for Silicone, robot kinematics for Meat, the simulator's vessel projection for Sim), so it is a set of marker points rather than a filled vessel. <strong>These maps are made from exactly the same trajectories as the frame-by-frame prediction videos above:</strong> for Sim → Sim the ten held-out trajectories of the Sim → Sim video, for Sim → Meat the ten Meat trials of the Sim → Meat video, and for Sim → Silicone and Meat → Silicone the same silicone recordings as their videos. Where a model has several maps (Sim → Sim, Sim → Meat) they are presented in exactly the same order as the trajectories in the corresponding frame-by-frame prediction video — map 1 is the video's first trajectory, map 10 its last.</p>
+
+  <h3>Sim → Sim: ten held-out simulated trajectories (one map each)</h3>
+  <p class="blurb">The same ten trajectories as the Sim → Sim prediction video, in the same order (7 vessel-present, 3 vessel-absent, interleaved). Each map is one slide of the sensor across the phantom; the vessel-absent maps are entirely black because the model raised no false alarm along those sweeps.</p>
+  <div class="grid maps-small">
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_sim_map_01_trajectory_0474_vessel-present.webp" alt="Sim to Sim top-view map 1: trajectory 0474, vessel present">
+        <figcaption>1. trajectory_0474 — vessel present</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_sim_map_02_trajectory_0478_vessel-present.webp" alt="Sim to Sim top-view map 2: trajectory 0478, vessel present">
+        <figcaption>2. trajectory_0478 — vessel present</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_sim_map_03_trajectory_0463_vessel-absent.webp" alt="Sim to Sim top-view map 3: trajectory 0463, vessel absent">
+        <figcaption>3. trajectory_0463 — vessel absent</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_sim_map_04_trajectory_0430_vessel-present.webp" alt="Sim to Sim top-view map 4: trajectory 0430, vessel present">
+        <figcaption>4. trajectory_0430 — vessel present</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_sim_map_05_trajectory_0458_vessel-present.webp" alt="Sim to Sim top-view map 5: trajectory 0458, vessel present">
+        <figcaption>5. trajectory_0458 — vessel present</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_sim_map_06_trajectory_0485_vessel-absent.webp" alt="Sim to Sim top-view map 6: trajectory 0485, vessel absent">
+        <figcaption>6. trajectory_0485 — vessel absent</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_sim_map_07_trajectory_0490_vessel-present.webp" alt="Sim to Sim top-view map 7: trajectory 0490, vessel present">
+        <figcaption>7. trajectory_0490 — vessel present</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_sim_map_08_trajectory_0488_vessel-present.webp" alt="Sim to Sim top-view map 8: trajectory 0488, vessel present">
+        <figcaption>8. trajectory_0488 — vessel present</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_sim_map_09_trajectory_0469_vessel-absent.webp" alt="Sim to Sim top-view map 9: trajectory 0469, vessel absent">
+        <figcaption>9. trajectory_0469 — vessel absent</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_sim_map_10_trajectory_0450_vessel-present.webp" alt="Sim to Sim top-view map 10: trajectory 0450, vessel present">
+        <figcaption>10. trajectory_0450 — vessel present</figcaption>
+      </figure>
+  </div>
+
+  <h3>Sim → Silicone: the silicone phantom (one map)</h3>
+  <p class="blurb">One map for the whole silicone phantom, which the sensor scans in a snake-like pattern (five parallel trajectories, each swept in both directions — the ten sweeps of the Sim → Silicone video), 180 × 100 mm.</p>
+  <div class="grid maps-single">
+    <figure>
+      <img class="map" src="images/vessel_maps/sim_to_silicone.webp" alt="Sim to Silicone top-view map of the silicone phantom">
+      <figcaption>Sim → Silicone — the silicone phantom, all ten sweeps on one grid</figcaption>
+    </figure>
+  </div>
+
+  <h3>Sim → Meat: ten Meat trials (one map each)</h3>
+  <p class="blurb">The same ten trials as the Sim → Meat prediction video, in the same order (the dataset's sorted trial order). Every trial is a single straight slide of the same length, so all ten maps share one grid.</p>
+  <div class="grid">
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_meat_trial_01_1-metal-straw-beneath-1-steak-20260228-232013.webp" alt="Sim to Meat top-view map 1: 1 metal straw beneath 1 steak">
+        <figcaption>1. 1 metal straw beneath 1 steak (<code>1-metal-straw-beneath-1-steak-20260228-232013</code>)</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_meat_trial_02_1-metal-straw-beneath-2-steaks-20260228-232632.webp" alt="Sim to Meat top-view map 2: 1 metal straw beneath 2 steaks">
+        <figcaption>2. 1 metal straw beneath 2 steaks (<code>1-metal-straw-beneath-2-steaks-20260228-232632</code>)</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_meat_trial_03_1-metal-straw-beneath-3-steaks-20260228-233031.webp" alt="Sim to Meat top-view map 3: 1 metal straw beneath 3 steaks">
+        <figcaption>3. 1 metal straw beneath 3 steaks (<code>1-metal-straw-beneath-3-steaks-20260228-233031</code>)</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_meat_trial_04_1-metal-straw-beneath-4-steaks-20260228-233454.webp" alt="Sim to Meat top-view map 4: 1 metal straw beneath 4 steaks">
+        <figcaption>4. 1 metal straw beneath 4 steaks (<code>1-metal-straw-beneath-4-steaks-20260228-233454</code>)</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_meat_trial_05_1-metal-straw-beneath-6-steaks-20260228-234337.webp" alt="Sim to Meat top-view map 5: 1 metal straw beneath 6 steaks">
+        <figcaption>5. 1 metal straw beneath 6 steaks (<code>1-metal-straw-beneath-6-steaks-20260228-234337</code>)</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_meat_trial_06_1-metal-straw-on-top-20260228-230937.webp" alt="Sim to Meat top-view map 6: 1 metal straw on top">
+        <figcaption>6. 1 metal straw on top (<code>1-metal-straw-on-top-20260228-230937</code>)</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_meat_trial_07_1-silicone-straw-beneath-2-steaks-20260301-001457.webp" alt="Sim to Meat top-view map 7: 1 silicone straw beneath 2 steaks">
+        <figcaption>7. 1 silicone straw beneath 2 steaks (<code>1-silicone-straw-beneath-2-steaks-20260301-001457</code>)</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_meat_trial_08_2-metal-straws-beneath-2-steaks-20260228-235749.webp" alt="Sim to Meat top-view map 8: 2 metal straws beneath 2 steaks">
+        <figcaption>8. 2 metal straws beneath 2 steaks (<code>2-metal-straws-beneath-2-steaks-20260228-235749</code>)</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_meat_trial_09_3-metal-straws-beneath-2-steaks-20260301-000849.webp" alt="Sim to Meat top-view map 9: 3 metal straws beneath 2 steaks">
+        <figcaption>9. 3 metal straws beneath 2 steaks (<code>3-metal-straws-beneath-2-steaks-20260301-000849</code>)</figcaption>
+      </figure>
+      <figure>
+        <img class="map" src="images/vessel_maps/sim_to_meat_trial_10_no-straw-20260228-234824.webp" alt="Sim to Meat top-view map 10: no straw">
+        <figcaption>10. no straw (<code>no-straw-20260228-234824</code>)</figcaption>
+      </figure>
+  </div>
+
+  <h3>Meat → Silicone: the silicone phantom (one map)</h3>
+  <p class="blurb">The same silicone sweeps as the Meat → Silicone video, mapped by the meat-trained model.</p>
+  <div class="grid maps-single">
+    <figure>
+      <img class="map" src="images/vessel_maps/meat_to_silicone.webp" alt="Meat to Silicone top-view map of the silicone phantom">
+      <figcaption>Meat → Silicone — the silicone phantom, all ten sweeps on one grid</figcaption>
+    </figure>
+  </div>
 
   <h2>Video: experimental data collection</h2>
   <p class="blurb">From the <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-robot-control">shallow-vessel-palpation-robot-control</a> repository (<code>videos/</code>).</p>

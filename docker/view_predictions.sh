@@ -82,10 +82,13 @@
 #             Show only some trials of the test set: a comma-separated list of
 #             trial-id substrings (a meat trial directory name, or a simulated /
 #             silicone file stem such as trajectory_0426), or the tokens
-#             first-vessel-present / random:N (N trials, fixed seed). The i/o
-#             keys then step over just those.
+#             first-vessel-present / random:N (N trials, fixed seed) /
+#             interleaved:P:A (P vessel-present + A vessel-absent trials, fixed
+#             seed, shown a a b a a b ...). Trials are shown in the order the
+#             selection lists them; the i/o keys step over just those.
 #             Mainly for the simulated test set, whose 75 held-out trajectories
-#             are ~23k sliding windows - the README recording shows one.
+#             are ~23k sliding windows - the project-page recording shows ten
+#             (interleaved:7:3), the same ten the Sim->Sim bird's-eye maps use.
 #   --record PATH
 #             Record instead of opening a window: the viewer is stepped through
 #             every trial and frame automatically (one key press per 500 ms of

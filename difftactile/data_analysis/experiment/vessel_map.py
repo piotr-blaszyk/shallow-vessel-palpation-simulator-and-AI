@@ -11,7 +11,13 @@ against a ground-truth map on the same grid, and scored pixel by pixel.
 FOUR CONFIGURATIONS (train dataset -> test dataset):
 
     A-to-A  Sim -> Sim          one freshly simulated slide, poses from the
-                                simulator (main.py::vessel_map_trajectory_main)
+                                simulator (main.py::vessel_map_trajectory_main);
+                                or, with DIFFTACTILE_SIM_MAP_TRAJECTORIES=test
+                                (vessel_map.sh --test-trajectories), the TEN
+                                held-out trajectories of the project-page
+                                prediction video, one map each, in the video's
+                                order (main.py::vessel_map_test_trajectories_main
+                                re-simulates them with poses)
     A-to-B  Sim -> Silicone     the ten silicone sweeps, one shared 180 x 100 mm map
     C-to-B  Meat -> Silicone    same map, meat-trained model
     A-to-C  Sim -> Meat         one map per meat trial (ten), constant grid size
@@ -144,6 +150,12 @@ CONFIGS = {
 }
 # Where the Sim->Sim trajectory lives (written by vessel_map_trajectory_main).
 SIM_MAP_TRAJECTORY_DIR = "difftactile/output/vessel_map_sim/raw_reordered_dense"
+# The ten held-out trajectories of the project-page Sim->Sim prediction video,
+# with re-simulated poses (main.py::vessel_map_test_trajectories_main), one map
+# each; selected by DIFFTACTILE_SIM_MAP_TRAJECTORIES=test (vessel_map.sh A-to-A
+# --test-trajectories). `selection.json` in there fixes the map order to the
+# video's.
+SIM_TEST_TRAJECTORIES_DIR = "difftactile/output/vessel_map_sim/test_trajectories"
 OUTPUT_ROOT = "difftactile/output/vessel_maps"
 
 # Cheap upscale factor for the `_big` PNG twins - nearest-neighbour, so a
@@ -553,8 +565,24 @@ def collect_meat(model, stats, difficulty, device):
     return maps
 
 
+def sim_map_trajectory_dir():
+    """Which simulated trajectories the Sim -> Sim maps are drawn from.
+
+    DIFFTACTILE_SIM_MAP_TRAJECTORIES: unset / "single" -> the one dedicated
+    slide (SIM_MAP_TRAJECTORY_DIR, the manuscript's map); "test" -> the ten
+    trajectories of the project-page prediction video (SIM_TEST_TRAJECTORIES_DIR);
+    anything else is taken as a directory path.
+    """
+    choice = os.environ.get("DIFFTACTILE_SIM_MAP_TRAJECTORIES", "single")
+    if choice in ("", "single"):
+        return repo_path(SIM_MAP_TRAJECTORY_DIR), "single"
+    if choice == "test":
+        return repo_path(SIM_TEST_TRAJECTORIES_DIR), "test-trajectories"
+    return choice, os.path.basename(choice.rstrip("/"))
+
+
 def collect_sim(model, stats, difficulty, device):
-    """The Sim -> Sim map from the dedicated simulated slide (with poses).
+    """The Sim -> Sim map(s): one per simulated trajectory that carries poses.
 
     Reprojection mirrors the real datasets, with the simulator's exact frames:
     pixel -> point on the tip plane in the camera frame E (16 mm from the lens,
@@ -562,22 +590,36 @@ def collect_sim(model, stats, difficulty, device):
     tip along z) -> world A through the recorded per-frame T_BA -> millimetres
     (sim length = real length x meta.distance_scaling_factor).
     Columns run along +y (the slide direction), rows along +x.
+
+    Every `.npz` in `sim_map_trajectory_dir()` gives one map, all on ONE grid
+    (the union of their swept regions, so the ten project-page maps share a
+    resolution and extent, as the meat maps do). If the directory holds a
+    `selection.json` (written by vessel_map_test_trajectories_main), its
+    "order" fixes the map order - the order the prediction video plays the
+    same trajectories in - and its "vessel_present" flags label each map;
+    otherwise files are taken sorted. The vein's true centreline is drawn as
+    a reference only for vessel-present trajectories (the vein is a static
+    body: for a vessel-absent trial it is simply not there physically, so
+    the reference would be misleading).
     """
-    traj_dir = repo_path(SIM_MAP_TRAJECTORY_DIR)
+    traj_dir, _ = sim_map_trajectory_dir()
     files = sorted(f for f in os.listdir(traj_dir) if f.endswith(".npz")) if os.path.isdir(traj_dir) else []
     if not files:
         raise FileNotFoundError(
             f"No simulated map trajectory in {traj_dir}. Run "
-            "./docker/vessel_map_sim_trajectory.sh (inside the container) first."
+            "./docker/vessel_map_sim_trajectory.sh (single slide) or "
+            "./docker/vessel_map_sim_test_trajectories.sh (the ten video "
+            "trajectories) inside the container first."
         )
-    path = os.path.join(traj_dir, files[0])
-    with np.load(path) as d:
-        T_BA = d["T_BA"].astype(np.float64)                     # (frames, 4, 4)
-        centreline_A = d["vein_centreline_A"].astype(np.float64)
-        vein_radius = float(d["vein_radius"][0])
-        dist_sf = float(d["distance_scaling_factor"][0])
-        n_frames = d["markers"].shape[0]
-    mm_per_sim_unit = 1000.0 / dist_sf
+    selection = None
+    sel_path = os.path.join(traj_dir, "selection.json")
+    if os.path.exists(sel_path):
+        with open(sel_path) as f:
+            selection = json.load(f)
+        files = [f"{t}.npz" for t in selection["order"]]
+        missing = [f for f in files if not os.path.exists(os.path.join(traj_dir, f))]
+        if missing:
+            raise FileNotFoundError(f"{sel_path} lists trajectories missing from {traj_dir}: {missing}")
 
     dataset = MyDataset(scheme="single_dataset", sim_exp="sim", data_dir=traj_dir,
                         normalise_pos=False, apply_augmentations=False, name="sim-map")
@@ -586,32 +628,51 @@ def collect_sim(model, stats, difficulty, device):
     clip_len = SYSTEM_PARAMS.gnn.clip_len
     dilation = 24   # the sim clip dilation the model was trained with
     span = clip_len * dilation
-    # Every start frame, not the shuffled coarse subset the training loader
-    # uses: denser windows give a denser map, and the model sees the same input
-    # structure (a clip_len window at dilation 24) either way.
-    dataset.data_points = [(path, s, dilation) for s in range(0, n_frames - span + 1)]
-
     lens_to_shell_sim = SYSTEM_PARAMS.geometry.distance_from_camera_lens_to_outer_shell_surface
-    plane_sim = PLANE_DIST_MM["sim"] / mm_per_sim_unit           # sim units
     T_EB = np.eye(4)
     T_EB[2, 3] = -lens_to_shell_sim                              # inverse of T_BE
 
-    samples = []
-    for idx in range(len(dataset)):
-        probs, labels, points, _ = predict_clip(model, dataset, idx, device)
-        start = dataset.data_points[idx][1]
-        centre = start + (clip_len // 2) * dilation
-        # The recorded pixel convention is already the one the fisheye inverse
-        # expects: verified by reprojecting the recorded vein_polyline pixels
-        # at the vein's depth through this exact chain, which reproduces
-        # vein_centreline_A to numerical precision (y std 0.0).
-        p_E = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(points, plane_sim)
-        p_E_h = np.c_[p_E, np.ones(len(p_E))]
-        p_A = (T_BA[centre] @ T_EB @ p_E_h.T).T[:, :3] * mm_per_sim_unit
-        samples.append((p_A[:, 0], p_A[:, 1], probs, labels))
+    # First pass: run the model on every window of every trajectory, keep the
+    # world-frame samples per trajectory (mm).
+    per_file = []
+    for fname in files:
+        path = os.path.join(traj_dir, fname)
+        with np.load(path) as d:
+            T_BA = d["T_BA"].astype(np.float64)                     # (frames, 4, 4)
+            centreline_A = d["vein_centreline_A"].astype(np.float64)
+            vein_radius = float(d["vein_radius"][0])
+            dist_sf = float(d["distance_scaling_factor"][0])
+            n_frames = d["markers"].shape[0]
+            has_vessel = bool(np.any(d["vein_classification"]))
+        mm_per_sim_unit = 1000.0 / dist_sf
+        plane_sim = PLANE_DIST_MM["sim"] / mm_per_sim_unit           # sim units
+        # Every start frame, not the shuffled coarse subset the training loader
+        # uses: denser windows give a denser map, and the model sees the same
+        # input structure (a clip_len window at dilation 24) either way.
+        dataset.data_points = [(path, s, dilation) for s in range(0, n_frames - span + 1)]
+        samples = []
+        for idx in range(len(dataset)):
+            probs, labels, points, _ = predict_clip(model, dataset, idx, device)
+            start = dataset.data_points[idx][1]
+            centre = start + (clip_len // 2) * dilation
+            # The recorded pixel convention is already the one the fisheye
+            # inverse expects: verified by reprojecting the recorded
+            # vein_polyline pixels at the vein's depth through this exact
+            # chain, which reproduces vein_centreline_A to numerical precision.
+            p_E = FisheyeModelNoTaichi.project_pix_to_points_3d_plane(points, plane_sim)
+            p_E_h = np.c_[p_E, np.ones(len(p_E))]
+            p_A = (T_BA[centre] @ T_EB @ p_E_h.T).T[:, :3] * mm_per_sim_unit
+            samples.append((p_A[:, 0], p_A[:, 1], probs, labels))
+        per_file.append({
+            "stem": os.path.splitext(fname)[0], "path": path, "samples": samples,
+            "centreline_mm": centreline_A * mm_per_sim_unit,
+            "radius_mm": vein_radius * mm_per_sim_unit,
+            "has_vessel": has_vessel,
+        })
 
-    all_x = np.concatenate([s[0] for s in samples])
-    all_y = np.concatenate([s[1] for s in samples])
+    # One grid for every trajectory of the run.
+    all_x = np.concatenate([s[0] for f in per_file for s in f["samples"]])
+    all_y = np.concatenate([s[1] for f in per_file for s in f["samples"]])
     x_lo = np.floor(all_x.min()) - GRID_MARGIN_PX
     x_hi = np.ceil(all_x.max()) + GRID_MARGIN_PX
     y_lo = np.floor(all_y.min()) - GRID_MARGIN_PX
@@ -622,15 +683,27 @@ def collect_sim(model, stats, difficulty, device):
     def to_pixel(x_mm, y_mm):
         return np.floor((x_mm - x_lo) / MM_PER_PIXEL), np.floor((y_mm - y_lo) / MM_PER_PIXEL)
 
-    m = MapData("sim", (n_rows, n_cols), to_pixel,
-                f"simulated slide over the vein ({os.path.basename(path)})")
-    for s in samples:
-        m.add(*s)
-    # The vein's true centreline, for reference (world geometry, no projection).
-    cl_mm = centreline_A * mm_per_sim_unit
-    m.reference_centreline = to_pixel(cl_mm[:, 0], cl_mm[:, 1])
-    m.reference_radius_mm = vein_radius * mm_per_sim_unit
-    return [m]
+    maps = []
+    for k, f in enumerate(per_file):
+        if len(per_file) == 1:
+            name = "sim"
+            description = f"simulated slide over the vein ({os.path.basename(f['path'])})"
+        else:
+            category = "vessel-present" if f["has_vessel"] else "vessel-absent"
+            name = f"map_{k + 1:02d}_{f['stem']}_{category}"
+            description = (f"simulated slide {f['stem']} ({category}), "
+                           f"map {k + 1} of {len(per_file)} in the prediction video's order")
+        m = MapData(name, (n_rows, n_cols), to_pixel, description)
+        for smp in f["samples"]:
+            m.add(*smp)
+        if f["has_vessel"]:
+            # The vein's true centreline, for reference (world geometry, no
+            # projection). Only where the vein was physically present.
+            cl = f["centreline_mm"]
+            m.reference_centreline = to_pixel(cl[:, 0], cl[:, 1])
+            m.reference_radius_mm = f["radius_mm"]
+        maps.append(m)
+    return maps
 
 
 # ---------------------------------------------------------------------------
@@ -833,12 +906,18 @@ def score_map(m, gt, pred, out_dir, title):
 # The job
 # ---------------------------------------------------------------------------
 
-def run_dir_for(config, gt_source, legacy=False, root=None):
-    """`<root>/<train>-to-<test>_gt-<source>/<timestamp>[-legacy]/`, created."""
+def run_dir_for(config, gt_source, legacy=False, root=None, variant=None):
+    """`<root>/<train>-to-<test>[-<variant>]_gt-<source>/<timestamp>[-legacy]/`, created.
+
+    `variant` names a non-default test set of the same configuration (the
+    Sim -> Sim "test-trajectories" runs), so it never mixes with the default
+    runs' folder.
+    """
     cfg = CONFIGS[config]
     root = root or repo_path(OUTPUT_ROOT)
     stamp = time.strftime("%Y%m%d-%H%M%S") + ("-legacy" if legacy else "")
-    path = os.path.join(root, f"{cfg['train']}-to-{cfg['test']}_gt-{gt_source}", stamp)
+    test = cfg["test"] + (f"-{variant}" if variant else "")
+    path = os.path.join(root, f"{cfg['train']}-to-{test}_gt-{gt_source}", stamp)
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -889,7 +968,12 @@ def run(config, gt_source=None, model_choice="best", threshold=None, seed=None,
                           f"{choice['note']})")
     print(f"threshold: {choice['note']}")
 
-    out_dir = run_dir_for(config, gt_source, legacy=(model_choice == "legacy"), root=out_root)
+    variant = None
+    if cfg["test"] == "sim":
+        _, kind = sim_map_trajectory_dir()
+        variant = None if kind == "single" else kind
+    out_dir = run_dir_for(config, gt_source, legacy=(model_choice == "legacy"), root=out_root,
+                          variant=variant)
     print(f"run directory: {out_dir}")
     _write_threshold_curve(choice, os.path.join(out_dir, "threshold_selection.png"))
 
@@ -970,6 +1054,7 @@ def run(config, gt_source=None, model_choice="best", threshold=None, seed=None,
         "ground_truth_source": gt_source,
         "model": {k: v for k, v in spec.items()},
         "clip_len": SYSTEM_PARAMS.gnn.clip_len,
+        "sim_trajectories": (sim_map_trajectory_dir()[0] if cfg["test"] == "sim" else None),
         "mm_per_pixel": MM_PER_PIXEL,
         "plane_distance_mm": PLANE_DIST_MM[cfg["test"]],
         "threshold": {k: v for k, v in choice.items() if k != "curve"},

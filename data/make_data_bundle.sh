@@ -151,6 +151,11 @@ copy_file "difftactile/output/test_loader_gnn_meat.pickle"
 # (docker/vessel_map_sim_trajectory.sh) but shipped so the map needs no simulator.
 copy_tree "difftactile/output/vessel_map_sim/raw"
 copy_tree "difftactile/output/vessel_map_sim/raw_reordered_dense"
+# The ten held-out trajectories of the project-page Sim->Sim prediction video,
+# re-simulated with poses (published markers + T_BA; selection.json holds the
+# order) - behind the page's ten Sim->Sim maps. ~15 min with a GPU
+# (docker/vessel_map_sim_test_trajectories.sh); shipped for the same reason.
+copy_tree "difftactile/output/vessel_map_sim/test_trajectories"
 
 echo "[5/6] Sensor geometry / marker layout (~5 MB)"
 # Derived from the sensor CAD and a reference photo of the undeformed sensor.

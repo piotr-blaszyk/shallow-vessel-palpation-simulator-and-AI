@@ -274,12 +274,21 @@ Projects the per-marker predictions through the sensor pose onto the phantom pla
 ./vessel_map.sh C-to-B                          # Meat→Silicone
 ./vessel_map.sh A-to-C                          # Sim→Meat: one map per meat trial
 ./vessel_map.sh A-to-A                          # Sim→Sim: one simulated slide with recorded poses
+./vessel_map.sh A-to-A --test-trajectories      # Sim→Sim: the ten trajectories of the prediction video, one map each
 ./vessel_map_all.sh                             # all six, in one go
+./website_vessel_maps.sh                        # the project page's 22 maps -> docs/images/vessel_maps/ (lossless WebP)
 ./vessel_map.sh A-to-B --model legacy           # pre-2026-08-15 checkpoint (see Legacy models)
 ./vessel_map.sh A-to-B --threshold 0.6          # override the chosen decision threshold
 ```
 
 - **Model:** the best-of-five instance by AP (default) or `--model legacy`.
+- **Sim→Sim test set:** by default the one dedicated slide (the manuscript's map). With
+  `--test-trajectories` the ten held-out trajectories of the project page's Sim→Sim prediction
+  video — the same ten, in the same order — each mapped separately. The published dataset
+  records no sensor pose, so `./vessel_map_sim_test_trajectories.sh` (~15 min GPU) first
+  re-simulates exactly those ten by replaying the dataset's seed, verifies each against the
+  published file, and stores the published markers with the re-simulated poses under
+  `difftactile/output/vessel_map_sim/test_trajectories/` (shipped in the bundle).
 - **Ground truth:** `video` (default) reprojects the test data's own per-marker labels
   (manual annotation on Silicone, kinematics-derived on Meat, the simulator's vessel projection
   on Sim); `photo` (Silicone only) segments the phantom's top-view photograph. Video-vs-photo
@@ -329,6 +338,7 @@ neither), Soft Prediction, Metadata — using the best-of-five model by default.
 # from the docker/ directory on the HOST - it execs into the container itself
 ./view_predictions.sh A-to-B                    # central frames (default)
 ./view_predictions.sh A-to-C --all              # every frame of every window (debugging view)
+./view_predictions.sh A-to-A --trials interleaved:7:3       # 7 vessel-present + 3 vessel-absent held-out trajectories
 ./view_predictions.sh A-to-A --trials random:10             # ten random held-out simulated trajectories
 ./view_predictions.sh C-to-B --retrained        # a locally trained model
 ./view_predictions.sh C-to-B --sweep 20260815-194045 --seed 1   # one seed of a sweep
@@ -347,7 +357,10 @@ neither), Soft Prediction, Metadata — using the best-of-five model by default.
 first and last `clip_len // 2` frames of a trial have none). `--all` shows every off-centre
 prediction too, on sequential clips. Trials are meat trial directories, silicone videos or
 simulated trajectory files; `--trials` takes comma-separated trial-id substrings,
-`first-vessel-present` or `random:N` (fixed seed). `--record PATH` steps through everything automatically (one key press
+`first-vessel-present`, `random:N` (fixed seed) or `interleaved:P:A` (P vessel-present + A
+vessel-absent trials, fixed seed, shown `a a b a a b …`; the project-page Sim→Sim video is
+`interleaved:7:3`, and its bird's-eye maps use the identical selection). Trials play in the order
+the selection lists them. `--record PATH` steps through everything automatically (one key press
 per 500 ms of video), rendered offscreen. The Hard Prediction / Confusion panels use
 `MAP_DECISION_THRESHOLD` (0.58, `DIFFTACTILE_MAP_THRESHOLD`) — a display choice only; no
 reported metric depends on it. **The viewer shows one model, never an average over seeds**: an
@@ -466,8 +479,10 @@ green = absent):
 **Per-frame GNN predictions** — the prediction viewer on each configuration's best-of-five
 model. Panels: ground truth, hard prediction, confusion (green = both say vessel, red = missed
 vessel, blue = false alarm, grey = neither), soft prediction, metadata. Central frames of every
-trial for the real datasets; ten randomly drawn held-out trajectories (nine dilation-24 windows
-each) for Sim→Sim:
+trial for the real datasets; for Sim→Sim ten held-out trajectories (nine dilation-24 windows
+each): seven vessel-present and three vessel-absent, each drawn at random with a fixed seed and
+interleaved present, present, absent, … — the same ten, in the same order, as the project page's
+Sim→Sim bird's-eye maps:
 
 | | |
 |---|---|

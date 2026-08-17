@@ -178,8 +178,14 @@ gained `--trials SPEC` (`Visualisation._select_trials()`): the navigators now re
 EVERY dataset via `_clip_trials()` (meat trial dir, or the sim/silicone `.npz` stem), clips are
 ordered by trial then time (the pickled sim test set is shuffled), and `first-vessel-present`
 picks one trajectory and `random:N` N trajectories with a fixed seed (`DIFFTACTILE_VIEW_TRIALS_SEED`,
-default 0; the README video uses `random:10`) — the sim test set is dilation-24 windows, so one
-trajectory is 9 central frames, not 313. A-to-A works in the viewer with `--best`.
+default 0) — the sim test set is dilation-24 windows, so one trajectory is 9 central frames, not
+313. A-to-A works in the viewer with `--best`. **The project-page Sim→Sim video uses
+`interleaved:7:3`** (since 2026-08-17): 7 vessel-present + 3 vessel-absent trajectories, each drawn
+`random.Random(seed).sample()` from the SORTED test trial names, shown `a a b a a b a a b a`
+(`cnn/trial_selection.py`, shared with the vessel maps); the viewer now plays trials in the
+order the selection lists them, not dataset order. Measured (seed 0): 0474, 0478, 0463, 0430,
+0458, 0485, 0490, 0488, 0469, 0450 (even numbers are vessel-present: file N is loop N//2,
+substep N%2, substep 0 = with vein).
 
 No PyAV here, deliberately: this path decodes no video. It renders from precomputed `.npz`
 stacks and pickles, so there is nothing for a decoder to do. (The one `cv2.VideoCapture` left in
@@ -447,6 +453,7 @@ table for end users.
 | `script_frame_space_metrics` (`cnn/frame_space_metrics.py`) | **Table 4** (`tab:localisation-map`) upper half: per-marker statistics in video-frame space, pooled once over all central frames, best-of-five instances (`FRAME_SPACE_METRICS.md`) |
 | `vessel_map_all.sh` | **Fig. 7** (`fig:vessel-map`, Sim→Sim, Sim→Silicone, Sim→Meat, Meat→Silicone) and the lower half of **Table 4** (per-pixel TP/FP/FN/TN, MCC, F1, P, R, FG/BG IoU, AP, mean L2 at 0 mm growth) |
 | `record_videos.sh` | the README's demonstration videos (supplementary) |
+| `vessel_map_sim_test_trajectories.sh` then `website_vessel_maps.sh` | project page only — the 22 bird's-eye maps in `docs/images/vessel_maps/` (lossless WebP, ×5 nearest of `confusion_r00.png`): Sim→Sim ×10 (the video's ten trajectories, in the video's order), Sim→Silicone ×1, Sim→Meat ×10 (sorted trial order = the video's), Meat→Silicone ×1; `manifest.md` beside them names the runs. The first script re-simulates the ten video trajectories WITH poses by replaying the dataset's seed 42 (`main.py::vessel_map_test_trajectories_main`, `collect_training_data(file_nums=...)` skips the physics of every other trial but takes its RNG draws — exact because nothing in a trial's timestep loop draws when pair 0 is off), verifies each against the published file (measured 2026-08-17: identical frame counts and labels, marker |diff| max 0.001–0.043 px, mean 0.0002 px — GPU round-off; the check aborts above 1 px) and writes `difftactile/output/vessel_map_sim/test_trajectories/` (published markers + re-simulated `T_BA`; in the bundle). `vessel_map.sh A-to-A --test-trajectories` maps them (`DIFFTACTILE_SIM_MAP_TRAJECTORIES=test`, output folder `sim-to-sim-test-trajectories_gt-simulator/`); the manuscript's Sim→Sim map (the single seed-2026 slide) is unchanged. |
 | `sensor_mesh_screenshots.sh` | project page only — three Gmsh screenshots of the ViTacTip mesh from the +x side: level (line of sight −x), 45° above, 45° below (`main/sensor_mesh_screenshots.py`), lossless WebP in `docs/images/sensor_mesh/`. Gmsh has no off-screen renderer, so its FLTK window opens briefly; `General.Trackball=0` is required for the Euler-angle views to apply (RotationZ spins about the sensor axis, then RotationX tilts: −90 = level, −45 = 45° above, −135 = 45° below). Lossless WebP beats lossy here (flat colours + sharp edges: ~20 kB vs ~110 kB) |
 
 Tables 1–2 are the related-work comparison; Figs 1–3 are hand-drawn diagrams. The former

@@ -15,10 +15,14 @@
 #
 # Usage:
 #   ./docker/vessel_map.sh <config> [--ground-truth video|photo] [--model best|legacy]
-#                                   [--threshold T]
+#                                   [--threshold T] [--test-trajectories]
 #
 # Configurations (A = simulation, B = real silicone, C = real meat):
-#   A-to-A    Sim -> Sim          one simulated slide (needs vessel_map_sim_trajectory.sh once)
+#   A-to-A    Sim -> Sim          one simulated slide (needs vessel_map_sim_trajectory.sh once);
+#                                 with --test-trajectories, the TEN held-out trajectories
+#                                 of the project-page prediction video instead, one map
+#                                 each in the video's order (needs
+#                                 vessel_map_sim_test_trajectories.sh once)
 #   A-to-B    Sim -> Silicone     the ten silicone sweeps
 #   C-to-B    Meat -> Silicone    same sweeps, meat-trained model
 #   A-to-C    Sim -> Meat         one map per meat trial (ten)
@@ -43,6 +47,11 @@
 #                             only. Sets DIFFTACTILE_CLIP_LEN=7 for you, since
 #                             those weights were trained with a 7-frame window.
 #   --threshold T     Use decision threshold T instead of the rule below.
+#   --test-trajectories
+#                     A-to-A only: map the ten video trajectories
+#                     (difftactile/output/vessel_map_sim/test_trajectories/,
+#                     DIFFTACTILE_SIM_MAP_TRAJECTORIES=test) instead of the single
+#                     dedicated slide. Output folder: sim-to-sim-test-trajectories_gt-simulator/.
 #
 # THE DECISION THRESHOLD is chosen per run, never assumed: the smallest cut at
 # which the map's pixel-level PRECISION is >= 0.9, i.e. the one that maximises
@@ -93,6 +102,7 @@ CONFIG=""
 GT=""
 MODEL="best"
 THRESHOLD=""
+SIM_TRAJ=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
         A-to-A|A-to-B|C-to-B|A-to-C) CONFIG="$1" ;;
@@ -102,6 +112,7 @@ while [ "$#" -gt 0 ]; do
         --model=*) MODEL="${1#*=}" ;;
         --threshold) shift; [ "$#" -gt 0 ] || { echo "ERROR: --threshold needs a value" >&2; exit 1; }; THRESHOLD="$1" ;;
         --threshold=*) THRESHOLD="${1#*=}" ;;
+        --test-trajectories) SIM_TRAJ="test" ;;
         -h|--help) usage; exit 0 ;;
         *) echo "ERROR: unrecognised argument: $1" >&2; echo; usage; exit 1 ;;
     esac
@@ -118,6 +129,10 @@ export DIFFTACTILE_MAP_CONFIG="${CONFIG}"
 export DIFFTACTILE_MAP_MODEL="${MODEL}"
 [ -n "${GT}" ] && export DIFFTACTILE_MAP_GT="${GT}"
 [ -n "${THRESHOLD}" ] && export DIFFTACTILE_VESSEL_MAP_THRESHOLD="${THRESHOLD}"
+if [ -n "${SIM_TRAJ}" ]; then
+    [ "${CONFIG}" = "A-to-A" ] || { echo "ERROR: --test-trajectories applies to A-to-A only" >&2; exit 1; }
+    export DIFFTACTILE_SIM_MAP_TRAJECTORIES="${SIM_TRAJ}"
+fi
 # The legacy checkpoints were trained with a 7-frame window and their input
 # layer is sized to it; the current default is 5.
 [ "${MODEL}" = "legacy" ] && export DIFFTACTILE_CLIP_LEN=7
@@ -127,5 +142,5 @@ if [ -z "${DISPLAY:-}" ]; then
     export DIFFTACTILE_HEADLESS="${DIFFTACTILE_HEADLESS:-1}"
 fi
 
-echo "Bird's-eye vessel map: ${CONFIG}, ground truth from ${GT:-video}, model ${MODEL}${THRESHOLD:+, threshold ${THRESHOLD}}"
+echo "Bird's-eye vessel map: ${CONFIG}, ground truth from ${GT:-video}, model ${MODEL}${THRESHOLD:+, threshold ${THRESHOLD}}${SIM_TRAJ:+, the ten video trajectories}"
 python -m difftactile.scripts.script_vessel_map

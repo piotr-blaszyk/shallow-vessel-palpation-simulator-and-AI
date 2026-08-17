@@ -42,6 +42,8 @@ EXPECTED=(
     # The one simulated slide (with poses) behind the Sim->Sim vessel map.
     "difftactile/output/vessel_map_sim/raw"
     "difftactile/output/vessel_map_sim/raw_reordered_dense"
+    # The ten video trajectories with poses, behind the project page's Sim->Sim maps.
+    "difftactile/output/vessel_map_sim/test_trajectories"
     # Sensor geometry / marker layout — prerequisites for the simulator.
     "difftactile/output/base-graph-connectivity.npz"
     "difftactile/output/marker_locations_ordered.npz"
