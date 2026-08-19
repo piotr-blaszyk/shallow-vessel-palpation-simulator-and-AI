@@ -624,24 +624,29 @@ listed as fitted or randomised is identical in the two. Lengths are physical (th
 length scale is ×5). World frame: +z is up (the phantom's top-surface normal; gravity is −z);
 +x runs along the vessel's axis; +y is the slide direction across the vessel.
 
-| | Domain adaptation (joint BO) | Domain randomisation (dataset collection) |
+| Parameter / setting | Domain adaptation (joint BO) | Domain randomisation (dataset collection) |
 |---|---|---|
-| **Trajectory (waypoints)** | Per BO iteration: the **slide** twice — vessel-absent and vessel-present. Final validation (Fig. 4): **press** (phantom centre, 4 mm below the surface), **twist about z** (4 mm, then spin 30°), **twist about x** (off-centre, 2 mm, then tilt 20°), **slide** — all vessel-free. | The types named by `DIFFTACTILE_TRAJECTORIES` (0 press, 1 twist about z, 2 twist about x, 3 slide — the same waypoint builders). The published dataset is **slide only**. |
-| **The slide itself** | Same builder in both: two waypoints at a fixed height **3 mm below the phantom's top surface** (no descent phase, no press-depth randomisation); start 30 mm before the phantom centre, end 20 mm past it on the far side, 50 mm of travel, crossing the vessel roughly at right angles. | Identical. |
-| **Slide heading (random)** | Drawn **once per run** from `NP_RNG`: −90° ± U(−15°, 15°) about +z, i.e. motion roughly along +y with up to ±15° of yaw of the *path*; every iteration and the validation replay that one heading (seeded, default 42). | Re-drawn from the same distribution for **every loop × substep**, so trials differ in heading. |
-| **Sensor rotation about world +x, +y, +z (random)** | **None.** The sensor is held at the configured pose — pointing straight down (180° about +y) and spun by the fixed camera yaw of −10.37° about +z — for the whole slide. | **None** (the only rotation draws in the code sit in unreachable helpers and an `if False` block). Same fixed pose. |
-| **Vessel position / orientation in the phantom** | Fixed: centreline along +x at mid-y, **3 mm beneath the top surface** (radius 2 mm, 40 mm long, rigid). | Identical (vessel placement randomisation is disabled: `generate_random_state_dicts()` returns `[]`). |
-| **Vessel present?** | Both per iteration (absent → fidelity, present → sensitivity); validation vessel-free. | Alternates per **substep** with `DIFFTACTILE_VEIN_PAIR=1` (substep 0 present, substep 1 absent); without it all trials are vessel-free. |
-| **Sensor Young's modulus** | **Fitted**, log-scaled in [1e5, 1e6] Pa → adopted 881 400 Pa. | Fixed at the adopted 881 400 Pa (`vitactip.single_material`). |
-| **Sensor Poisson's ratio** | Fixed at the config value (0.497; not searched). | Identical. |
-| **Phantom Young's modulus / Poisson's ratio** | Inert: the phantom is kinematically pinned and takes part in no enabled contact pair, so its material has no effect. | Inert, same reason. |
-| **Vessel Young's modulus / Poisson's ratio** | None — the vessel is a rigid signed-distance body with no material parameters. | Identical. |
-| **Sensor↔phantom contact pair** | **Disabled** (pair 0; `enable_phantom_contact_pair: false`). | **Disabled.** |
-| **Phantom↔vessel contact pair** | **Disabled** (pair 1; never resolved). | **Disabled.** |
-| **Sensor↔vessel normal stiffness** | **Fitted**, log-scaled in [1e4, 1e5] → adopted 94 908. | **Random**, U(5e3, 5e4) per loop × substep. |
-| **Sensor↔vessel normal damping** | Fixed at 100. | **Random**, U(0, 100) per loop × substep. |
-| **Sensor↔vessel tangential stiffness** | 0 (i.e. disabled). | 0 (i.e. disabled). |
-| **Sensor↔vessel friction coefficient** | 0 (i.e. disabled). | 0 (i.e. disabled). |
+| 🟰 **Trajectory (waypoints)** | 🟰 Per BO iteration: the **slide** twice — vessel-absent and vessel-present. Final validation (Fig. 4): **press** (phantom centre, 4 mm below the surface), **twist about z** (4 mm, then spin 30°), **twist about x** (off-centre, 2 mm, then tilt 20°), **slide** — all vessel-free. | 🟰 The types named by `DIFFTACTILE_TRAJECTORIES` (0 press, 1 twist about z, 2 twist about x, 3 slide — the same waypoint builders). The published dataset is **slide only**. |
+| 🟰 **The slide itself** | 🟰 Same builder in both: two waypoints at a fixed height **3 mm below the phantom's top surface** (no descent phase, no press-depth randomisation); start 30 mm before the phantom centre, end 20 mm past it on the far side, 50 mm of travel, crossing the vessel roughly at right angles. | 🟰 Identical. |
+| 🎲 **Slide heading (random)** | 🎲 Drawn **once per run** from `NP_RNG`: −90° ± U(−15°, 15°) about +z, i.e. motion roughly along +y with up to ±15° of yaw of the *path*; every iteration and the validation replay that one heading (seeded, default 42). | 🎲 Re-drawn from the same distribution for **every loop × substep**, so trials differ in heading. |
+| 🛑 **Sensor rotation about world +x, +y, +z (random)** | 🛑 **None.** The sensor is held at the configured pose — pointing straight down (180° about +y) and spun by the fixed camera yaw of −10.37° about +z — for the whole slide. | 🛑 **None** (the only rotation draws in the code sit in unreachable helpers and an `if False` block). Same fixed pose. |
+| 🟰 **Vessel position / orientation in the phantom** | 🟰 Fixed: centreline along +x at mid-y, **3 mm beneath the top surface** (radius 2 mm, 40 mm long, rigid). | 🟰 Identical (vessel placement randomisation is disabled: `generate_random_state_dicts()` returns `[]`). |
+| 🟰 **Vessel present?** | 🟰 Both per iteration (absent → fidelity, present → sensitivity); validation vessel-free. | 🟰 Alternates per **substep** with `DIFFTACTILE_VEIN_PAIR=1` (substep 0 present, substep 1 absent); without it all trials are vessel-free. |
+| ❗ **Sensor Young's modulus** | 📈 **Fitted**, log-scaled in [1e5, 1e6] Pa → adopted 881 400 Pa. | 🟰 Fixed at the adopted 881 400 Pa (`vitactip.single_material`). |
+| 🟰 **Sensor Poisson's ratio** | 🟰 Fixed at the config value (0.497; not searched). | 🟰 Identical. |
+| 🛑 **Phantom Young's modulus / Poisson's ratio** | 🛑 Inert: the phantom is kinematically pinned and takes part in no enabled contact pair, so its material has no effect. | 🛑 Inert, same reason. |
+| 🛑 **Vessel Young's modulus / Poisson's ratio** | 🛑 None — the vessel is a rigid signed-distance body with no material parameters. | 🛑 Identical. |
+| 🛑 **Sensor↔phantom contact pair** | 🛑 **Disabled** (pair 0; `enable_phantom_contact_pair: false`). | 🛑 **Disabled.** |
+| 🛑 **Phantom↔vessel contact pair** | 🛑 **Disabled** (pair 1; never resolved). | 🛑 **Disabled.** |
+| ❗ **Sensor↔vessel normal stiffness** | 📈 **Fitted**, log-scaled in [1e4, 1e5] → adopted 94 908. | 🎲 **Random**, U(5e3, 5e4) per loop × substep. |
+| ❗ **Sensor↔vessel normal damping** | 🟰 Fixed at 100. | 🎲 **Random**, U(0, 100) per loop × substep. |
+| 🛑 **Sensor↔vessel tangential stiffness** | 🛑 0 (i.e. disabled). | 🛑 0 (i.e. disabled). |
+| 🛑 **Sensor↔vessel friction coefficient** | 🛑 0 (i.e. disabled). | 🛑 0 (i.e. disabled). |
+
+Legend — one emoji per cell: 🟰 fixed value · 🎲 drawn at random · 📈 fitted by the BO ·
+🛑 disabled / zero (a fixed zero counts as disabled). The left-hand column repeats the emoji when
+the two regimes agree, and shows ❗ where one regime holds a value fixed that the other varies
+(fits or randomises).
 
 How to picture the three rotation axes: a rotation about **+z** spins the sensor about its own
 vertical axis — the contact footprint stays put and only the marker pattern turns (the fixed
