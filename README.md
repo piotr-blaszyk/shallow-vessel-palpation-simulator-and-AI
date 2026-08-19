@@ -699,6 +699,10 @@ and the 2 × 2 grid of stiffness × damping range extremes).
 | Edits to `system-params.json` revert | `script_apply_scaling` regenerates them — edit `system-params-distances.json` / `-youngs-modulus.json`. |
 | Different numbers than the tables | Single seed vs five-seed mean; or a `--retrained` model instead of the published one. |
 
+### Limitations
+
+- The domain-randomisation scheme draws three parameters per trial: (1) the sensor's Young's modulus, (2) the sensor–vessel normal stiffness and (3) the approach angle. Because (1) and (2) are drawn from relatively narrow ranges, the diversity within the Sim dataset comes primarily from (3).
+
 ### Branches and tags
 
 `main` is the only branch, and the only one the documentation, the image and the bundle are
