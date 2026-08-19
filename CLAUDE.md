@@ -352,10 +352,10 @@ now calls it first thing, with `deterministic_torch=False` — there is no torch
 path, so the deterministic-kernel switches would only cost startup work and set
 `CUBLAS_WORKSPACE_CONFIG` for nothing. Both print the seed they used.
 
-What that reaches: `generate_trajectories()` / `generate_random_state_dicts()` (sensor poses,
-press depths, slide directions), `randomise_contact_params()` (the per-trial sensor↔vein
-contact pair), the `NP_RNG.permutation()` over `collision_ixs`, and in DA both `my_suggest_random`
-and the per-iteration `tangential_stiffness` fraction. `NP_RNG` is the **only** Generator
+What that reaches: `generate_trajectories()` (the slide heading — the only pose randomness
+that is live; `generate_random_state_dicts()` returns `[]`), `randomise_contact_params()` (the
+per-trial sensor↔vein contact pair), the `NP_RNG.permutation()` over `collision_ixs`, and in DA
+the random seeding phase of the BO (`BoGp.suggest_for(force_random=True)`). `NP_RNG` is the **only** Generator
 constructed anywhere in the project and nothing draws from bare `np.random.*`, so reseeding it
 in place covers the lot; there is no `ti.random` either, so Taichi adds no unseeded kernel
 randomness. The GP was already deterministic via `BayesianOptimization(random_state=1)`.
@@ -462,11 +462,12 @@ tool. The **accepted version's** vessel-map figure/table were made with the LEGA
 (`saved_models_legacy/`, see below), one panel with yellow shapes added by hand; the current
 Fig. 7 / Table 4 come entirely from `vessel_map_all.sh` + `script_frame_space_metrics`.
 
-`domain_adaptation.sh` is new: `Contact.domain_adaptation()` had always existed but was
-reachable only by editing `main()`, so it had no entrypoint. `main.py::domain_adaptation_main()`
-now provides one. Note it calls `generate_trajectories()`, which REPLACES the four training
-trajectory types with the four DA interactions (press / twist_z / twist_x / slide) — the two
-sets are different and share the `trajectory_names` attribute.
+`domain_adaptation.sh` → `main.py::domain_adaptation_main()` → `Contact.domain_adaptation_joint()`.
+It calls `generate_trajectories()`, which builds the four interactions (press / twist_z /
+twist_x / slide). `collect_training_data()` calls the SAME function per substep, so the dataset's
+trajectory types are these four too (0 press, 1 twist_z, 2 twist_x, 3 slide); the older
+`set_up_trajectories_and_phantom_states()` list ('press (no vein)', 'slide (vein)', …) is only
+the initial state and is overwritten before any trial runs.
 
 ### Reading the 3D scene: which colour is which
 
@@ -489,55 +490,40 @@ Because the vein's draw is gated on the same `collision_ixs` that gates its phys
 of yellow in a frame is direct evidence that the vein was disabled for that run, not merely
 hidden.
 
-### The BO search space is deliberately constrained (`bo_gp.py`)
+### The BO search space (`bo_gp.py`) — ONE joint search, two parameters
 
-Two properties are imposed by restricting the SPACE rather than by trusting the search, and
-both are admitted hacks in the service of reproducibility over robustness. The full reasoning
-and the measured numbers live in `BoGp.__init__`; the summary:
+**Only the joint mode exists (since 2026-08-19).** `domain_adaptation_main()` runs
+`Contact.domain_adaptation_joint()`: one GP over `vitactip_youngs_modulus` ∈ [1e5, 1e6] Pa and
+the sensor↔vein `normal_stiffness` ∈ [1e4, 1e5] (`BoGp.pbounds_joint`), each iteration running a
+vessel-absent slide (fidelity: marker MAE vs the photograph) and a vessel-present slide
+(sensitivity: how far the vessel holds the sensor up) and maximising `vpn - van`. The older
+two-stage design — `domain_adaptation()` (per-trajectory vessel-absent GPs over E and ν, with
+`build_da_schedule()`), then `domain_adaptation_vein()` (vein stiffness alone), selected by
+`DIFFTACTILE_DA_MODE=staged` — was **deleted** together with its `BoGp` machinery
+(`pbounds_no_vein`, `pbounds_vein`, `my_suggest_*`, `load_observations`, `best_observed`,
+`predict_mae`, `recommend`, `_report_bo_results`, `_report_recommendation`) and the env vars
+`DIFFTACTILE_BO_ITERATIONS` / `_RANDOM` / `_ITERS_PER_MODEL` / `_MODELS` / `_VEIN_ITERATIONS`,
+`DIFFTACTILE_STAGE1_OBSERVATIONS`, `DIFFTACTILE_SKIP_VEIN_BO`. `DIFFTACTILE_DA_MODE` is still
+read only to fail loudly on anything but `joint`. The live controls are
+`DIFFTACTILE_BO_JOINT_ITERATIONS` (10) and `DIFFTACTILE_BO_JOINT_RANDOM` (5). Do not resurrect
+the staged design; the README's "Domain adaptation vs domain randomisation" table is the
+reference for what is fitted, fixed and randomised.
 
-**1. Log-transform then min-max for scale-like parameters.** `BoGp.LOG_SCALED` names the four
-parameters that span decades (Young's modulus, the two contact stiffnesses, contact damping);
-each maps to the unit cube through its logarithm, so every decade gets an equal share of the
-range the GP searches. Poisson's ratio and the friction coefficient are bounded ratios on a
-natural additive scale and stay linear. A log needs a strictly positive lower bound, so the
-three contact coefficients are floored at `5e-2` instead of `0` (zero contact stiffness is
-degenerate anyway); `_validate_bounds()` raises if a log-scaled bound is ever set non-positive.
-Draw the initial design in NORMALISED coordinates — sampling raw values and taking the log
-afterwards reintroduces exactly the linear spacing this removes.
+**Log-transform then min-max.** `BoGp.LOG_SCALED` maps scale-like parameters to the unit cube
+through their logarithm, so every decade gets an equal share of the range the GP searches; a
+log needs a strictly positive lower bound and `_validate_bounds()` raises otherwise. Draw the
+initial design in NORMALISED coordinates (`suggest_for(force_random=True)`) — sampling raw
+values and taking the log afterwards reintroduces exactly the linear spacing this removes.
 
-**2. The sensor is stiff by construction.** `vitactip_youngs_modulus` ∈ [1.0e6, 2.0e6] (7×–14×
-the nominal 139300) and `vitactip_poissons_ratio` ∈ [0.42, 0.45]. The BO otherwise converges on
-very soft sensors, which reproduce marker positions by draping and dragging — the wrong
-mechanism, since the real sensor/phantom interface is well lubricated and the deformation is
-dominated by the press-like normal component.
-
-**Why ν moved AWAY from incompressible, which looks wrong but is the point.** The visible
-symptom was the sensor TIP lagging the BASE during `slide` with no contact involved: the base
-is a hard kinematic constraint (`update_external_forces()` overwrites `is_fixed_layer`
-velocities with `vertex_control_velocities`) while the tip only catches up as elastic waves
-travel down the mesh. That lag is a SHEAR response, governed by `c_s = √(μ/ρ)`. As ν → 0.5,
-`c_p` diverges (and `c_p` sets the CFL limit) while `c_s` barely moves — so
-near-incompressibility paid the whole timestep cost and bought nothing against the lag. Backing
-ν off frees the headroom to raise E 4×, and E is what raises `c_s`:
-
-| configuration | `c_s` | tip catch-up |
-|---|---|---|
-| E=1.39e5, ν=0.497 (nominal) | 6.5 m/s | ~460 timesteps |
-| E=2.0e6, ν=0.45 (current) | 25.0 m/s | ~120 timesteps |
-
-against a `slide` of ~398 timesteps. **Do not "restore" ν towards 0.5** on the grounds that
-silicone is nearly incompressible — that is what caused the lag, and it would cut the
-affordable E by ~4× at this `dt`.
-
-**The upper bounds are set by the timestep, not by taste.** `contact.dt_override` is fixed at
-1e-5 s and CFL needs `dt ≤ dx/c_p`, so the stiffest corner is the binding case. Measured
-C = 0.357 at E=2.0e6/ν=0.45, *below* the C = 0.363 the nominal configuration already runs at —
-so nothing slows down. **CFL is necessary, not sufficient**: the corner is also verified
-empirically (all four trajectories complete, every sensor vertex finite, with all three contact
-coefficients at 5e2 and friction at 1.0), and the minimal tip lag was confirmed by watching a
-full `slide` in the GGUI window. If a crash ever appears here the sensor is too stiff for the
-fixed `dt` — halve the offending side of each stiffness bound (for ν, halve its *distance to
-0.5*, since 0.49 → 0.495 is stiffer, the wrong way) and re-test the corner.
+**Why the box is one decade each.** Softer sensors (E ≤ 1e5) diverged with inverted elements,
+stiffer ones (≳ 1.5e6) went NaN; the vessel only visibly stops the sensor at high contact
+stiffness (at 5e4 it lifts it 8.4 mm; at k_n ~0.2 nothing). Poisson's ratio is NOT searched —
+it is held at the `system-params.json` value. **The upper bounds are set by the timestep, not
+by taste**: `contact.dt_override` is fixed at 1e-5 s and CFL needs `dt ≤ dx/c_p`; ν enters
+`c_p` through `(1-ν)/((1+ν)(1-2ν))`, so if ν is ever changed the E ceiling must be re-checked
+(measured C = 0.253 at E=1e6/ν=0.45 vs 0.363 nominal). CFL is necessary, not sufficient — the
+vein's penalty force `(k_n + c_n v_n) d` on a fixed dt makes `normal_stiffness` the likeliest
+crash cause (`_report_vein_crash()`); the response is to halve the offending UPPER bound.
 
 `contact.dt` was **deleted** — it was dead, read nowhere; `dt_override` is the live key at all
 four read sites (`main.py`, `vitactip.py`, `phantom.py`, `set_dt()`). The two documentation
@@ -551,8 +537,9 @@ backpropagated through Taichi to fit the contact/material parameters; that was a
 fields, and the `meta.enable_grad` config key. Do not reintroduce any of it: BO treats the
 simulator as a black box and needs only forward simulation.
 
-`domain_adaptation()` is now a clean BO loop — propose parameters, replay the four interactions,
-score by apex MAE, register with the GP. Two fixes were needed to make it work at all:
+The DA loop is a clean BO loop — propose parameters, run the slide(s), score, register with
+the GP; the chosen configuration is then validated on the four interactions
+(`validate_final_params()`). Two fixes were needed to make it work at all:
 
 1. **`copy_frame()` in the forward loop.** `update()` advances
    `vertices_undeformed_A[frame] -> [frame+1]` across the sub-frames of one timestep;
@@ -577,10 +564,11 @@ Other things worth knowing:
   `trajectories/iterNNN_<name>.npz` with the raw simulated/real markers per iteration.
 - **Nothing writes results back into `system-params.json`.** Adopting a configuration is manual
   and should stay that way.
-- `DIFFTACTILE_BO_ITERATIONS` / `DIFFTACTILE_BO_RANDOM` control the search; ~35 s per iteration.
+- `DIFFTACTILE_BO_JOINT_ITERATIONS` / `DIFFTACTILE_BO_JOINT_RANDOM` control the search; ~35 s
+  per iteration.
 
-Measured: 5 iterations improved aggregated MAE 13.88 -> 11.40 px, best found by the acquisition
-function (manuscript: 14 -> 13.5 px over a longer run). No regression from the grad removal —
+Measured (published `joint_bo` run): best at iteration 5 — E 881 359 Pa, vein normal stiffness
+94 908, vessel-absent MAE 12.43 px; validation 11.9 / 15.8 / 14.5 / 12.4 px. No regression from the grad removal —
 `sim-short` collection completes, A->B eval is unchanged (0.7314 / 0.2553 / 0.2059), C->B
 training reproduces 0.6043 / 0.1313.
 
@@ -711,7 +699,7 @@ Re-running the *same* configuration still overwrites in place.
 | `DIFFTACTILE_MAX_FRAMES` | Frames a non-interactive viewer loop steps through before returning (per-loop defaults apply otherwise). |
 | `QT_QPA_PLATFORM` | Force the Qt annotation viewers onto a platform plugin (`xcb` for X11). Unset, Qt picks `wayland` natively. `annotate_data_docker.sh` sets it itself (`wayland`, or `xcb` under `--x11`), so pass `--x11` there rather than this. |
 | `DIFFTACTILE_ANNOTATOR_PYTHON` | Interpreter for `docker/annotate_data_bare_metal.sh`, instead of the `vessel-palpation-annotator` env. |
-| `DIFFTACTILE_TRAJECTORIES` | Comma-separated trajectory types to collect (0 press, 1 slide-vein, 2 twist-y, 3 twist-z). Default all four. **The published dataset is entirely type 3** — use `3` to reproduce it. |
+| `DIFFTACTILE_TRAJECTORIES` | Comma-separated trajectory types to collect (0 press, 1 twist_z, 2 twist_x, 3 slide — the four `generate_trajectories()` builds; vessel presence is per substep, not per type). Default all four. **The published dataset is entirely type 3 (slide)** — use `3` to reproduce it. |
 | `DIFFTACTILE_VEIN_PAIR=1` | Enable the sensor↔vein contact pair on the first of each loop's two substeps, so a trajectory runs once **with** a subsurface vein and once **without**. The vein half is hard-disabled in the committed default (`if False and j < 1` in `main()`), so every substep otherwise runs vein-free. |
 | `DIFFTACTILE_SCENARIO` | Configuration name (`A-to-B`, `C-to-B`, `A-to-C`, or a legacy alias), if not passed as an argument. |
 | `DIFFTACTILE_MODE` | `train` or `eval`, if not passed as `--train` / `--eval`. |

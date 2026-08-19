@@ -217,18 +217,20 @@ the window for one process; `./ablation_clip_len.sh [--seeds N]` trains A-to-B a
 > 📄 **Fig. 4** and the marker-alignment MAE (0.50 mm at deepest contact).
 
 The premise only holds if the simulated markers move like the real ones. `./domain_adaptation.sh`
-fits the sensor's Young's modulus and the sensor↔vessel contact stiffness by **Bayesian
-optimisation** (`DIFFTACTILE_DA_MODE=joint`, the default): every iteration simulates **two
-slides** at the proposed parameters — vessel-**absent**, scored by marker MAE against the real
-photograph (fidelity), and vessel-**present**, scored by how far the vessel holds the sensor up
-(sensitivity) — and maximises one objective that trades the two off
-(`main.py::domain_adaptation_joint`). The winning configuration is then **validated, not
-searched**, on the four canonical interactions — press, twist about *z*, twist about *x*, slide
-— against one photograph of the real sensor at each interaction's apex. `staged` keeps the
-older two-stage design.
+fits the sensor's Young's modulus and the sensor↔vessel contact stiffness by one **joint
+Bayesian optimisation**: every iteration simulates **two slides** at the proposed parameters —
+vessel-**absent**, scored by marker MAE against the real photograph (fidelity), and
+vessel-**present**, scored by how far the vessel holds the sensor up (sensitivity) — and
+maximises one objective that trades the two off (`main.py::domain_adaptation_joint`). The
+winning configuration is then **validated, not searched**, on the four canonical interactions —
+press, twist about *z*, twist about *x*, slide — against one photograph of the real sensor at
+each interaction's apex. (An older two-stage design — a vessel-absent search over the sensor
+material, then a vessel-present search at the sensor it chose — is obsolete and has been
+removed; `DIFFTACTILE_DA_MODE` accepts only `joint`.)
 
 ```bash
-./domain_adaptation.sh                                # ~35 s per iteration; DIFFTACTILE_BO_ITERATIONS=N
+./domain_adaptation.sh                                # ~35 s per iteration; DIFFTACTILE_BO_JOINT_ITERATIONS=N (default 10),
+                                                      # DIFFTACTILE_BO_JOINT_RANDOM=M random iterations first (default 5)
 ./alignment_figures.sh                                # Fig. 4: white-background panels + MAE, from the
                                                       # published run (or the current parameters)
 ./score_params.sh                                     # score the CURRENT system-params.json once, no search
@@ -244,9 +246,10 @@ published run is `difftactile/output/domain_adaptation_published/joint_bo/` (in 
 spacing). **Adopting a result is manual, deliberately** — nothing writes back into
 `system-params.json`.
 
-Details worth knowing: the search space is log-scaled for the parameters that span decades and
-the sensor is kept stiff by construction (`bo_gp.py`, `BoGp.__init__` explains the bounds and
-the CFL limit behind them); a diverged parameter set is scored as the worst value rather than
+Details worth knowing: both searched parameters are log-scaled, one decade each — sensor
+Young's modulus in [1e5, 1e6] Pa, sensor↔vessel normal stiffness in [1e4, 1e5] (`bo_gp.py`,
+`BoGp.__init__` explains the bounds and the CFL limit behind them); a diverged parameter set is
+scored as the worst value rather than
 aborting; the earlier *differentiable* fit through Taichi was abandoned and its machinery
 removed — BO treats the simulator as a black box. The five reference photographs live in
 `difftactile/manual_or_experimental_data/domain_adaptation_flat_sensor/` (keys `da_press`,
@@ -436,7 +439,8 @@ DIFFTACTILE_SIM_RAW_DIR=difftactile/output/training_data/pickle_<timestamp> \
 `run_pipeline.sh sim-*` runs `script_apply_scaling` → `script_pre_main` → `script_main` as
 separate processes (`difftactile/scripts/run_all.sh` does the same outside Docker; a single
 process would load the config before `apply_scaling` rewrites it). Trajectory types are
-0 press, 1 slide-vessel, 2 twist-y, 3 twist-z (`DIFFTACTILE_TRAJECTORIES`); the published
+0 press, 1 twist about *z*, 2 twist about *x*, 3 slide (`DIFFTACTILE_TRAJECTORIES`; the same
+four interactions `generate_trajectories()` builds for domain adaptation); the published
 dataset is entirely type 3 with `DIFFTACTILE_VEIN_PAIR=1` (each loop's first substep with the
 sensor↔vessel contact pair, so half the trajectories are vessel-present). Collection is seeded,
 so the same invocation regenerates the same dataset up to GPU nondeterminism. Raw output is
@@ -551,7 +555,7 @@ There are **no command-line flags** beyond the ones documented above; behaviour 
 | `DIFFTACTILE_MAP_THRESHOLD` / `DIFFTACTILE_VESSEL_MAP_THRESHOLD` | Viewer hard-prediction cut (display only) / vessel-map operating point. |
 | `DIFFTACTILE_MAP_CONFIG`, `_GT`, `_MODEL`, `_SEED` | What `vessel_map.sh` passes to `script_vessel_map`. |
 | `DIFFTACTILE_VIEW_TRIALS`, `DIFFTACTILE_RECORD_MP4`, `DIFFTACTILE_RECORD_INTERVAL_MS`, `DIFFTACTILE_RECORD_SIZE` | Viewer trial selection; record mode (path, ms of video per key press, window size). |
-| `DIFFTACTILE_DA_MODE`, `DIFFTACTILE_BO_ITERATIONS`, `DIFFTACTILE_BO_RANDOM`, `DIFFTACTILE_VEIN`, `DIFFTACTILE_RECORD_TRAJECTORIES`, `DIFFTACTILE_DA_MAX_TIMESTEPS` | Domain adaptation / DA recording controls. |
+| `DIFFTACTILE_BO_JOINT_ITERATIONS`, `DIFFTACTILE_BO_JOINT_RANDOM`, `DIFFTACTILE_VEIN`, `DIFFTACTILE_RECORD_TRAJECTORIES`, `DIFFTACTILE_DA_MAX_TIMESTEPS` | Domain adaptation (iterations; random iterations before the acquisition function takes over) / DA recording controls. |
 | `DIFFTACTILE_SIM_RAW_DIR`, `DIFFTACTILE_MEAT_FROM_RAW` | Preprocessing inputs. |
 | `DIFFTACTILE_ANNOTATOR_PYTHON`, `QT_QPA_PLATFORM` | Interpreter for the bare-metal annotator; force a Qt platform (`xcb`). |
 
@@ -603,9 +607,63 @@ so keep work in the bind-mounted repository.
 - **The phantom is kinematically pinned** (every particle's `is_fixed` flag is set in
   `Phantom.g2p()`), which avoids the MPM collapse and jitter a free phantom showed and does not
   affect the learned quantity.
-- **The sensor is kept stiff in the BO** (`E` ∈ [1e6, 2e6], ν ∈ [0.42, 0.45]): a soft sensor
-  reproduces markers by draping, the wrong mechanism, and near-incompressibility made the tip
-  lag the base during slides. Do not "restore" ν towards 0.5 — see `bo_gp.py`.
+- **The BO searches only the sensor's Young's modulus (in [1e5, 1e6] Pa) and the
+  sensor↔vessel normal stiffness (in [1e4, 1e5]).** Softer sensors (≤ 1e5) and stiffer ones
+  (≳ 1.5e6) both diverged, so the box is the surviving decade; the sensor's Poisson's ratio is
+  not searched and is held at its `system-params.json` value. `bo_gp.py` records the CFL
+  reasoning (a stiffer or more incompressible sensor raises the wave speed at the fixed
+  timestep), and the section below lists what else is fixed, fitted or randomised.
+
+### Domain adaptation vs domain randomisation: what is fitted, fixed and randomised
+
+Domain adaptation (`domain_adaptation.sh`, `main.py::domain_adaptation_joint`) *fits* two
+simulator parameters against the real sensor; dataset collection (`run_pipeline.sh sim-*`,
+`main.py::collect_training_data`) then *randomises* a different pair per trial. Both drive the
+same simulator, the same `generate_trajectories()` and the same config, so everything not
+listed as fitted or randomised is identical in the two. Lengths are physical (the simulator's
+length scale is ×5). World frame: +z is up (the phantom's top-surface normal; gravity is −z);
++x runs along the vessel's axis; +y is the slide direction across the vessel.
+
+| | Domain adaptation (joint BO) | Domain randomisation (dataset collection) |
+|---|---|---|
+| **Trajectory (waypoints)** | Per BO iteration: the **slide** twice — vessel-absent and vessel-present. Final validation (Fig. 4): **press** (phantom centre, 4 mm below the surface), **twist about z** (4 mm, then spin 30°), **twist about x** (off-centre, 2 mm, then tilt 20°), **slide** — all vessel-free. | The types named by `DIFFTACTILE_TRAJECTORIES` (0 press, 1 twist about z, 2 twist about x, 3 slide — the same waypoint builders). The published dataset is **slide only**. |
+| **The slide itself** | Same builder in both: two waypoints at a fixed height **3 mm below the phantom's top surface** (no descent phase, no press-depth randomisation); start 30 mm before the phantom centre, end 20 mm past it on the far side, 50 mm of travel, crossing the vessel roughly at right angles. | Identical. |
+| **Slide heading (random)** | Drawn **once per run** from `NP_RNG`: −90° ± U(−15°, 15°) about +z, i.e. motion roughly along +y with up to ±15° of yaw of the *path*; every iteration and the validation replay that one heading (seeded, default 42). | Re-drawn from the same distribution for **every loop × substep**, so trials differ in heading. |
+| **Sensor rotation about world +x, +y, +z (random)** | **None.** The sensor is held at the configured pose — pointing straight down (180° about +y) and spun by the fixed camera yaw of −10.37° about +z — for the whole slide. | **None** (the only rotation draws in the code sit in unreachable helpers and an `if False` block). Same fixed pose. |
+| **Vessel position / orientation in the phantom** | Fixed: centreline along +x at mid-y, **3 mm beneath the top surface** (radius 2 mm, 40 mm long, rigid). | Identical (vessel placement randomisation is disabled: `generate_random_state_dicts()` returns `[]`). |
+| **Vessel present?** | Both per iteration (absent → fidelity, present → sensitivity); validation vessel-free. | Alternates per **substep** with `DIFFTACTILE_VEIN_PAIR=1` (substep 0 present, substep 1 absent); without it all trials are vessel-free. |
+| **Sensor Young's modulus** | **Fitted**, log-scaled in [1e5, 1e6] Pa → adopted 881 400 Pa. | Fixed at the adopted 881 400 Pa (`vitactip.single_material`). |
+| **Sensor Poisson's ratio** | Fixed at the config value (0.497; not searched). | Identical. |
+| **Phantom Young's modulus / Poisson's ratio** | Inert: the phantom is kinematically pinned and takes part in no enabled contact pair, so its material has no effect. | Inert, same reason. |
+| **Vessel Young's modulus / Poisson's ratio** | None — the vessel is a rigid signed-distance body with no material parameters. | Identical. |
+| **Sensor↔phantom contact pair** | **Disabled** (pair 0; `enable_phantom_contact_pair: false`). | **Disabled.** |
+| **Phantom↔vessel contact pair** | **Disabled** (pair 1; never resolved). | **Disabled.** |
+| **Sensor↔vessel normal stiffness** | **Fitted**, log-scaled in [1e4, 1e5] → adopted 94 908. | **Random**, U(5e3, 5e4) per loop × substep. |
+| **Sensor↔vessel normal damping** | Fixed at 100. | **Random**, U(0, 100) per loop × substep. |
+| **Sensor↔vessel tangential stiffness** | 0 (i.e. disabled). | 0 (i.e. disabled). |
+| **Sensor↔vessel friction coefficient** | 0 (i.e. disabled). | 0 (i.e. disabled). |
+
+How to picture the three rotation axes: a rotation about **+z** spins the sensor about its own
+vertical axis — the contact footprint stays put and only the marker pattern turns (the fixed
+−10.37° camera yaw, and the 30° "twist about z" validation interaction, are this); a rotation
+about **+x** tilts the sensor about the vessel's axis, so it leans forward or back *along the
+slide direction* (the 20° "twist about x" interaction); a rotation about **+y** would tilt it
+about the slide direction, leaning *along the vessel* — no trajectory in either regime does
+this. Neither regime randomises any of the three; the only pose randomness anywhere is the
+slide path's heading, and it is the *same* draw (same function, same distribution) in both —
+domain adaptation simply takes it once per seeded run, dataset collection once per trial.
+
+Things the table cannot show: a 0 for tangential stiffness or friction switches that term of
+the contact force off entirely (`min(k_t·v_t, μ·|F_n|)` is identically zero), so the vessel
+pushes on the sensor purely normally in both regimes. Because the sensor↔phantom pair is off,
+"press depth" is a commanded height of the sensor relative to the phantom surface, not a
+force — the phantom never pushes back, and the vessel is the only thing the sensor touches.
+The sensor's Young's modulus is the one parameter that is fitted in one regime and *held at
+the fitted value* in the other; the sensor↔vessel normal stiffness is fitted in one and
+*randomised over a different range* in the other — the adopted 94 908 lies **above** the
+U(5e3, 5e4) the dataset samples, and the fitted-stage damping of 100 is the *top* of the
+U(0, 100) the dataset samples. Those two ranges are the dataset's domain randomisation and
+predate the joint BO; they were left as collected so the published dataset stays reproducible.
 
 ### Troubleshooting
 

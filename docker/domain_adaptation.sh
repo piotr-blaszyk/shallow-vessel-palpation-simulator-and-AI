@@ -4,36 +4,32 @@
 # Bayesian optimisation, then validate on the four canonical interactions
 # (MANUSCRIPT FIGURE 5).
 #
-# DIFFTACTILE_DA_MODE=joint (default): ONE Bayesian optimisation over the sensor
-# stiffness and the sensor<->vein contact stiffness. Every iteration runs TWO
-# slides at the proposed parameters - vessel-ABSENT (scored by marker MAE against
-# the real photograph, i.e. fidelity) and vessel-PRESENT (scored by how far the
-# vessel holds the sensor up, i.e. sensitivity) - and maximises a single
-# objective that trades the two off (main.py::domain_adaptation_joint). The
-# winning configuration is then VALIDATED, not searched, on all four canonical
-# interactions (press, twist about z, twist about x, slide, vessel-free) - those
-# MAEs and overlays are what Fig. 4 shows.
+# ONE Bayesian optimisation over the sensor stiffness and the sensor<->vein
+# contact stiffness. Every iteration runs TWO slides at the proposed parameters
+# - vessel-ABSENT (scored by marker MAE against the real photograph, i.e.
+# fidelity) and vessel-PRESENT (scored by how far the vessel holds the sensor
+# up, i.e. sensitivity) - and maximises a single objective that trades the two
+# off (main.py::domain_adaptation_joint). The winning configuration is then
+# VALIDATED, not searched, on all four canonical interactions (press, twist
+# about z, twist about x, slide, vessel-free) - those MAEs and overlays are
+# what Fig. 4 shows.
 #
-# DIFFTACTILE_DA_MODE=staged: the older two-stage design (vessel-absent slide BO,
-# then vessel-present BO at the chosen sensor). Kept because the published
-# slide_only_bo run used it; the published joint_bo run is the current one.
+# The older two-stage design (a vessel-absent BO over the sensor material, then
+# a vessel-present BO at the chosen sensor; DIFFTACTILE_DA_MODE=staged) is
+# OBSOLETE and has been removed. The published run is the joint one.
 #
 # NOT DIFFERENTIABLE. An earlier design backpropagated through the Taichi
 # simulation to fit these parameters; that was abandoned, and every piece of
 # machinery supporting it has been removed from the codebase. BO treats the
 # simulator as a black box, so only forward simulation is needed.
 #
-# THE SEARCH SPACE IS LOG-SCALED for the parameters that span decades - Young's
-# modulus and the three contact stiffness/damping coefficients. Each is mapped
-# "log-transform then min-max" into [0, 1] (difftactile/data_analysis/experiment/
-# bo_gp.py, BoGp.LOG_SCALED), so every decade gets an equal share of the range
-# the GP searches and a fixed MULTIPLICATIVE change means the same thing
-# anywhere in it. Poisson's ratio and the friction coefficient are bounded
-# ratios on a natural additive scale, so they stay linear. Because a log needs a
-# strictly positive lower bound, the three contact coefficients are floored at
-# 5e-2 rather than 0 - zero contact stiffness is a degenerate configuration
-# anyway. Their upper bounds were raised 5e1 -> 5e2 at the same time, since the
-# adopted configuration sat hard against the old ceiling.
+# THE SEARCH SPACE IS LOG-SCALED: both parameters span a decade (sensor Young's
+# modulus in [1e5, 1e6] Pa, sensor<->vein normal stiffness in [1e4, 1e5]) and
+# each is mapped "log-transform then min-max" into [0, 1]
+# (difftactile/data_analysis/experiment/bo_gp.py, BoGp.LOG_SCALED), so every
+# decade gets an equal share of the range the GP searches and a fixed
+# MULTIPLICATIVE change means the same thing anywhere in it. BoGp.__init__
+# explains how the bounds were chosen.
 #
 # Run this INSIDE the container (see docker/docker-run.sh + docker/docker-connect.sh).
 # It needs Taichi and a GPU, so there is no bare-metal path. Everything is
@@ -59,10 +55,11 @@
 # docker/alignment_figures.sh redraws Fig. 4 (white background) from it.
 #
 # Environment:
-#   DIFFTACTILE_BO_ITERATIONS     how many parameter sets to try (default:
-#                                 contact.num_opt_steps). ~35 s per iteration.
-#   DIFFTACTILE_BO_RANDOM         how many of those are random before the
-#                                 acquisition function takes over (default 4).
+#   DIFFTACTILE_BO_JOINT_ITERATIONS
+#                                 how many parameter sets to try (default 10).
+#                                 ~35 s per iteration.
+#   DIFFTACTILE_BO_JOINT_RANDOM   how many of those are random before the
+#                                 acquisition function takes over (default 5).
 #                                 The GP needs a few samples before it can
 #                                 propose usefully.
 #   DIFFTACTILE_DA_MAX_TIMESTEPS_NO_VEIN
@@ -86,14 +83,15 @@
 # NaN) is scored as the worst possible value and the search continues - that is
 # a legitimate answer from the objective, not a crash.
 #
-# Measured: 5 iterations improved the aggregated MAE from 13.88 px (0.50 mm) to
-# 11.40 px (0.41 mm), with the best set found by the acquisition function. The
-# manuscript reports 14 px -> 13.5 px over a longer run. The inter-marker
-# spacing is ~55 px (2 mm), so these all align to a small fraction of one grid
-# step.
+# Measured (published joint_bo run, 10 iterations): best at iteration 5, found
+# by the acquisition function - sensor Young's modulus 881 359 Pa, sensor<->vein
+# normal stiffness 94 908; vessel-absent slide MAE 12.43 px, validation MAEs
+# 11.9 / 15.8 / 14.5 / 12.4 px (press / twist_z / twist_x / slide). The
+# inter-marker spacing is ~55 px (2 mm), so these all align to a small fraction
+# of one grid step.
 #
 # ADOPTING THE RESULT is manual and deliberate: the best configuration is
-# printed and stored in bo_results.json, but nothing writes it back into
+# printed and stored in bo_joint_results.json, but nothing writes it back into
 # system-params.json. Copy it across yourself once you are satisfied with it.
 #
 set -euo pipefail

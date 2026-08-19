@@ -276,8 +276,10 @@ def normalised_penetration(q_z, z_reference, z_vein_max):
 def _trajectory_indices():
     """Which trajectory types training-data collection should execute.
 
-    The four types are: 0 press (no vein), 1 slide (vein), 2 twist-y (no vein),
-    3 twist-z (no vein) — see `Contact.trajectory_names`.
+    The four types are the ones `generate_trajectories()` builds (it is called
+    per substep of `collect_training_data()`): 0 press, 1 twist_z, 2 twist_x,
+    3 slide. Whether the vessel is present is decided per SUBSTEP
+    (DIFFTACTILE_VEIN_PAIR), not per type.
 
     DIFFTACTILE_TRAJECTORIES accepts a comma-separated list, e.g. "3" to
     reproduce the published dataset (which is entirely type 3) or "0,1,2,3".
@@ -2797,7 +2799,7 @@ class Contact:
                 # trajectory and timestep, so without this every iteration would
                 # overwrite the previous one's frames and a 10-iteration run
                 # would leave only the last. `snapshot_subdir` is set by
-                # domain_adaptation(); paths with no iteration (training-data
+                # domain_adaptation_joint(); paths with no iteration (training-data
                 # collection) fall back to the flat directory.
                 out_dir = os.path.join(
                     self.snapshot_dir, getattr(self, "snapshot_subdir", "") or ""
@@ -2824,8 +2826,8 @@ class Contact:
         self.normal_damping[2] = NP_RNG.uniform(0, 100)
     
     # Sensor<->vein contact coefficients that are FIXED, not searched. Only
-    # normal_stiffness[2] is free (it is the vessel-present model's single
-    # parameter); the rest are pinned at the values already in
+    # normal_stiffness[2] is free (it is one of the joint BO's two
+    # parameters); the rest are pinned at the values already in
     # system-params.json, which apply_scaling.py does not touch.
     #
     # tangential_stiffness and coulomb_friction_coeff are BOTH 0, so the
@@ -2879,17 +2881,16 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
         self.coulomb_friction_coeff[2] = self.VEIN_COULOMB_FRICTION
 
     def set_contact_params_from_bo(self):
-        """Apply the current BO proposal, whichever stage produced it.
+        """Apply the current BO proposal.
 
-        The two stages fit DISJOINT parameter sets, so each key is applied only
-        if the proposal contains it:
+        Each key is applied only if the proposal contains it. The joint BO
+        (the only search mode) proposes `vitactip_youngs_modulus` and
+        `normal_stiffness` (of the sensor<->vein pair); `vitactip_poissons_ratio`
+        is still honoured for a hand-built proposal that carries it.
 
-          vessel-absent  vitactip_youngs_modulus, vitactip_poissons_ratio
-          vessel-present normal_stiffness  (of the sensor<->vein pair)
-
-        Pair-0 contact parameters are deliberately absent from both - that pair
-        is disabled (see set_contact_params), so fitting its coefficients would
-        be fitting noise.
+        Pair-0 contact parameters are deliberately absent - that pair is
+        disabled (see set_contact_params), so fitting its coefficients would be
+        fitting noise.
         """
         p = self.bo.params
         if 'vitactip_youngs_modulus' in p:
@@ -2898,12 +2899,11 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
             self.vitactip.poissons_ratio[None] = p['vitactip_poissons_ratio']
         if 'vitactip_youngs_modulus' in p or 'vitactip_poissons_ratio' in p:
             self.vitactip.set_up_system_params_2()
-        # The vessel-present model's only free parameter: the sensor<->vein
-        # normal stiffness. Note this is pair index 2, NOT 0.
+        # The sensor<->vein normal stiffness. Note this is pair index 2, NOT 0.
         if 'normal_stiffness' in p:
             self.normal_stiffness[2] = p['normal_stiffness']
         # Re-assert the fixed constants every time, so a stale value cannot
-        # survive from a previous stage or a previous iteration.
+        # survive from a previous iteration.
         self.set_contact_params()
     
     def print_contact_params(self):
@@ -3066,7 +3066,7 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
                 continue
             self.trajectory_ix[None] = i
 
-            # Same reset sequence as domain_adaptation(): rebuild from the rest
+            # Same reset sequence as domain_adaptation_joint(): rebuild from the rest
             # pose, then clear the markers/accumulators derived from the old one.
             # extract_markers() accumulates with `+=`, so stale projections would
             # otherwise persist across trajectories.
@@ -3150,507 +3150,9 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
         rgb = np.clip(rgb * 255.0, 0, 255).astype(np.uint8)
         return rgb[:, :, ::-1]
 
-    def build_da_schedule(self, iters_per_model=None):
-        """Which trajectory each BO iteration scores against.
-
-        FOUR INDEPENDENT SURROGATES, one per trajectory, each getting
-        `iters_per_model` iterations (default 10 = 4 random + 6
-        acquisition-driven), run BLOCK BY BLOCK: all of slide's iterations, then
-        all of press's, and so on. Default schedule is 4 * 10 = 40 iterations.
-
-        Returns a list with one entry per iteration, each a single-element list
-        of trajectory NAMES. One trajectory per iteration is the point: each
-        iteration then costs ONE forward simulation instead of four, and the
-        model for that trajectory gets 100% of the signal from it - no averaging
-        across objectives on different scales.
-
-        THE ORDER OF THE BLOCKS DOES NOT AFFECT THE RESULT. The four models are
-        fitted independently - no model sees another's observations - so running
-        them consecutively or interleaved gives each the same data and the same
-        posterior. Blocks are simply the clearer arrangement: the log reads as
-        four self-contained searches, and each model's 4 random draws are
-        immediately followed by its own 6 acquisition-driven ones instead of
-        being spread across the whole run.
-
-        `slide` leads only by convention (it is the most informative interaction
-        and dominates the summed objective); nothing depends on it.
-
-        NOTE THE SCORES ACROSS ITERATIONS ARE NOT COMPARABLE: a press MAE and a
-        slide MAE are different quantities and differ by ~10x. Each is only
-        comparable within its own model. The recommendation step
-        (`BoGp.recommend`) is what combines them.
-
-        Overridable with DIFFTACTILE_BO_ITERS_PER_MODEL.
-        """
-        iters_per_model = (
-            iters_per_model if iters_per_model is not None
-            else _env_int("DIFFTACTILE_BO_ITERS_PER_MODEL", 10)
-        )
-        # Deliberately NOT self.trajectory_names order (press, twist_z, twist_x,
-        # slide): slide's block runs first.
-        #
-        # DIFFTACTILE_BO_MODELS restricts the run to a subset, e.g.
-        # DIFFTACTILE_BO_MODELS=slide fits only the slide surrogate. Useful for
-        # iterating on one trajectory without paying for the other three - each
-        # model is independent, so a subset run produces exactly the same
-        # surrogate for the models it does include. Note the recommendation is
-        # then a single-objective one: `recommend()` sums over whichever models
-        # have observations, so with one model enabled it minimises that
-        # trajectory's predicted MAE alone.
-        models = ["slide", "press", "twist_x", "twist_z"]
-        selected = os.environ.get("DIFFTACTILE_BO_MODELS")
-        if selected:
-            wanted = [s.strip() for s in selected.split(",") if s.strip()]
-            unknown = [w for w in wanted if w not in models]
-            if unknown:
-                raise ValueError(
-                    f"DIFFTACTILE_BO_MODELS: unknown {unknown}; choose from {models}"
-                )
-            models = [m for m in models if m in wanted]
-        missing = [n for n in models if n not in self.trajectory_names]
-        if missing:
-            raise ValueError(
-                f"schedule names not in trajectory_names: {missing}. "
-                f"Available: {self.trajectory_names}"
-            )
-        schedule = []
-        for name in models:
-            schedule.extend([[name] for _ in range(iters_per_model)])
-        return schedule
-
-    def domain_adaptation(self, num_iterations=None, run_dir=None, schedule=None):
-        """Bayesian-optimisation calibration of the simulator's material/contact
-        parameters against the real sensor.
-
-        One ITERATION = propose a parameter set, replay all four canonical
-        trajectories (press, twist_z, twist_x, slide) with it, and score it by the
-        aggregated MAE between simulated and real marker positions at each apex.
-        The first `num_random` iterations sample the space at random to seed the
-        Gaussian process; the rest are proposed by the acquisition function.
-
-        NO DIFFERENTIABLE SIMULATION. This used to run a Taichi backward pass and
-        a gradient-based optimiser over the same objective; that approach was
-        abandoned, and everything supporting it has been removed. The objective
-        is evaluated by forward simulation only, and BO treats it as a black box -
-        which is why it needs no gradients through the simulator at all.
-
-        Writes, under `run_dir`:
-            bo_all_params.json / bo_all_targets.json   every configuration tried
-            bo_results.json                            best config + full history
-            bo_convergence.png                         MAE vs iteration
-            da_overlay_<name>.png                      alignment, best config
-        """
-        # The schedule decides how many iterations there are, and which
-        # trajectories each one scores - see build_da_schedule(). An explicit
-        # num_iterations still wins, truncating or (by repeating the last entry)
-        # extending it, so existing callers and DIFFTACTILE_BO_ITERATIONS behave
-        # as before.
-        schedule = schedule if schedule is not None else self.build_da_schedule()
-        if num_iterations is None:
-            num_iterations = _env_int("DIFFTACTILE_BO_ITERATIONS", len(schedule))
-        if num_iterations <= len(schedule):
-            schedule = schedule[:num_iterations]
-        else:
-            schedule = schedule + [schedule[-1]] * (num_iterations - len(schedule))
-        # RANDOM EXPLORATION IS ONLY THE FIRST 4 ITERATIONS, so with the stock
-        # schedule phase 1 is 4 random slide runs followed by 6 acquisition-driven
-        # slide runs, and every fine-tuning iteration is acquisition-driven too.
-        #
-        # The random draws exist ONLY to give the GP something to fit before its
-        # acquisition function means anything - a GP with no observations proposes
-        # arbitrarily. Four is enough for that, and every iteration beyond it is
-        # better spent on a proposal that uses what has been learned: a fully
-        # random phase 1 would be a plain random search, improving only by luck.
-        num_random = min(
-            _env_int("DIFFTACTILE_BO_RANDOM", 4), max(num_iterations - 1, 1)
-        )
-        run_dir = run_dir or repo_path("difftactile/output")
-        os.makedirs(run_dir, exist_ok=True)
-        self.bo.set_run_dir(run_dir)
-
-        phases = []
-        for names in schedule:
-            label = "+".join(names)
-            if phases and phases[-1][0] == label:
-                phases[-1][1] += 1
-            else:
-                phases.append([label, 1])
-        print(
-            f"\nBayesian optimisation: {num_iterations} iterations "
-            f"({num_random} random, then acquisition-driven).\n"
-            f"Schedule: " + ", ".join(f"{n}x {lbl}" for lbl, n in phases) + "\n"
-        )
-
-        history = []
-        # Best record per `scored_on` scope - see the note where it is updated.
-        best_by_scope = {}
-        for it in range(num_iterations):
-            # Propose the next parameter set. Random during the exploration
-            # phase, to give the GP something to fit before it starts exploiting.
-            # The surrogate this iteration proposes from and reports to. One
-            # model per trajectory, so "the first 4 iterations are random" is
-            # counted PER MODEL, not globally - each model needs its own seed
-            # observations before its acquisition function means anything.
-            model_name = schedule[it][0]
-            seen = len(self.bo.observations.get(model_name, []))
-            if seen < num_random:
-                self.bo.my_suggest_random(model_name)
-                how = "random"
-            else:
-                self.bo.my_suggest_optimise(model_name)
-                how = "acquisition"
-            self.set_contact_params_from_bo()
-
-            # Trajectories this iteration scores against, per the schedule.
-            iteration_names = schedule[it]
-            print(
-                f"=== iteration {it + 1}/{num_iterations} ({how}) "
-                f"[{'+'.join(iteration_names)}] ==="
-            )
-            for key, value in self.bo.params.items():
-                print(f"    {key:26s} {value:.6g}")
-
-            # Keep this iteration's rendered frames separate from the others'.
-            # Read by visualisation_update_gui(), which writes
-            # <snapshot_dir>/iterNNN/<trajectory>_ts<NNNN>.png - matching the
-            # iterNNN_<name>.npz convention the trajectories/ directory uses, so
-            # a frame and the raw markers behind it are easy to line up.
-            self.snapshot_subdir = f"iter{it:03d}"
-
-            per_trajectory = {}
-            self.da_losses = []
-            diverged = False
-            for name in iteration_names:
-                i = self.trajectory_names.index(name)
-                self.trajectory_ix[None] = i
-                # Full state reset between parameter sets.
-                #
-                # A diverged set leaves NaN throughout the sensor state. The
-                # stubborn carrier was vertex_velocities[0]: reset_state() used to
-                # clear frames 1..N only, but frame 0 is what set_vel(0) writes and
-                # the next simulation reads, so 7182 non-finite entries survived
-                # every reset. ONE bad parameter set therefore poisoned every
-                # iteration after it - 17 of 20 were recorded as "diverged" though
-                # each scored normally when re-run in a fresh process.
-                #
-                # reset_state() now clears frame 0's velocities too (see
-                # vitactip.reset_state), and the order below matters:
-                # set_up_initial_positions_state_and_trajectory() rebuilds the mesh
-                # from the rest pose, then the second reset clears the markers and
-                # accumulators derived from the OLD pose. extract_markers()
-                # accumulates with `+=`, so a NaN left in those projections would
-                # never wash out.
-                self.vitactip.reset_state()
-                self.phantom.reset_state()
-                self.set_up_initial_positions_state_and_trajectory()
-                self.vitactip.reset_state()
-                self.phantom.reset_state()
-                self.reset_pid_controller()
-                self.visualisation_reset_scene()
-                self.reset_exp_sim_traj()
-                self.vitactip.extract_markers(0)
-                self.compute_mapping_between_experimental_and_sim_markers()
-                self.set_dt()
-
-                # Forward simulation to the trajectory's apex. Bounded so a
-                # controller regression cannot spin forever; the PID normally
-                # terminates this well before the cap.
-                da_max_ts = _env_int(
-                    "DIFFTACTILE_DA_MAX_TIMESTEPS_NO_VEIN", DA_MAX_TIMESTEPS_NO_VEIN
-                )
-                ts = 0
-                while self.last_target_reached[None] != 1 and ts < da_max_ts:
-                    self.pid_controller_1()
-                    self.pid_controller_2(ts)
-                    self.pid_controller_3()
-                    self.vitactip.set_pose_control_1()
-                    self.vitactip.set_pose_control_2()
-                    self.vitactip.set_pose_control_3()
-                    self.forward_pass_common_part(ts)
-                    # Carries the pose reached at the end of this timestep back to
-                    # frame 0, which is where the next timestep reads from.
-                    # Without it every timestep restarts from the initial pose.
-                    self.copy_frame()
-                    self.vitactip.extract_markers(
-                        SYSTEM_PARAMS.contact.num_sub_frames - 1
-                    )
-                    self.visualisation_update_gui(ts)
-                    ts += 1
-
-                # MAE at the apex, and the alignment overlay for this trajectory.
-                #
-                # An extreme parameter set can make the FEM solve blow up, and
-                # the marker positions come back NaN - which the Hungarian
-                # reordering rejects with "matrix contains invalid numeric
-                # entries". That is a legitimate answer from the objective ("this
-                # configuration is unusable"), not a crash, so it is scored as a
-                # divergence and the search continues.
-                try:
-                    self.compute_da_loss(out_dir=run_dir)
-                except (ValueError, IndexError) as exc:
-                    print(f"    {name:9s} DIVERGED ({exc})")
-                    diverged = True
-                    break
-                mae_px = self.da_losses[-1]
-                if not np.isfinite(mae_px):
-                    print(f"    {name:9s} DIVERGED (non-finite MAE)")
-                    diverged = True
-                    break
-
-                # The collected trajectory itself: simulated marker positions at
-                # the apex, beside the real ones they are scored against. Saved
-                # per (iteration, trajectory) so a run's raw data survives for
-                # re-analysis without re-simulating - and because the run
-                # directory is timestamped, repeated runs accumulate rather than
-                # overwrite.
-                traj_dir = os.path.join(run_dir, "trajectories")
-                os.makedirs(traj_dir, exist_ok=True)
-                np.savez_compressed(
-                    os.path.join(traj_dir, f"iter{it:03d}_{name}.npz"),
-                    sim_markers=self.sim_markers_deformed.to_numpy(),
-                    exp_markers=np.load(self.da_npz_paths[name])["points"],
-                    mae_px=mae_px,
-                    timesteps=ts,
-                    params=json.dumps(dict(self.bo.params)),
-                )
-                per_trajectory[name] = mae_px
-                print(
-                    f"    {name:9s} MAE = {mae_px:6.2f} px "
-                    f"({mae_px * PX_TO_MM:.2f} mm)  [{ts} timesteps]"
-                )
-
-            if diverged:
-                # Penalise rather than drop it: the GP learns to avoid a region
-                # only if it is told the region is bad. A large MAE in the same
-                # pixel units the objective already uses - no rescaling, so the
-                # penalty reads directly as "far worse than any usable
-                # configuration" (real values land well under 300 px).
-                aggregated = DIVERGENCE_PENALTY_PX
-                print(f"    diverged -> scored as {aggregated:.0f} px (penalty)")
-            else:
-                aggregated = float(np.mean(self.da_losses))
-            self.bo.my_register(aggregated, model_name)
-            scored_on = "+".join(iteration_names)
-            record = {
-                "iteration": it,
-                "proposed_by": how,
-                # WHICH trajectories this score came from. Load-bearing under a
-                # schedule: without it the history is a column of MAEs measured
-                # against different objectives with no way to tell them apart.
-                "scored_on": scored_on,
-                "params": dict(self.bo.params),
-                "mae_px": aggregated,
-                "mae_mm": aggregated * PX_TO_MM,
-                "per_trajectory_px": per_trajectory,
-            }
-            history.append(record)
-            print(
-                f"    MAE = {aggregated:.2f} px "
-                f"({aggregated * PX_TO_MM:.2f} mm)  [{scored_on}]"
-            )
-
-            # "Best" is only meaningful AMONG ITERATIONS SCORED THE SAME WAY -
-            # a press MAE and a slide MAE are different quantities and routinely
-            # differ by ~10x, so comparing them across the whole history would
-            # just pick whichever trajectory happens to score lowest. Best is
-            # therefore tracked per `scored_on`, and the headline `best` is the
-            # best on the LAST entry in the schedule (slide by default), which is
-            # the objective the run finishes on.
-            prev = best_by_scope.get(scored_on)
-            if not diverged and (prev is None or aggregated < prev["mae_px"]):
-                best_by_scope[scored_on] = record
-                # Keep the overlays produced by the best configuration so far.
-                # Later iterations overwrite da_overlay_*.png, so the winning set
-                # is preserved under its own names. Only the trajectories this
-                # iteration actually ran have a fresh overlay to copy.
-                for name in iteration_names:
-                    src = os.path.join(run_dir, f"da_overlay_{name}.png")
-                    if os.path.exists(src):
-                        shutil.copyfile(
-                            src, os.path.join(run_dir, f"best_da_overlay_{name}.png")
-                        )
-                print(f"    ^ best so far for [{scored_on}]")
-            print()
-
-        self.bo.write_to_file()
-        # The headline single-trajectory result is the best `slide` observation -
-        # the interaction taken to be most informative, and the one that
-        # dominates the summed objective. Pinned to slide by NAME rather than to
-        # whichever scope the schedule happens to end on, so reordering the cycle
-        # cannot silently change which trajectory the headline refers to.
-        # Falling back to the global minimum only matters if slide never produced
-        # a usable (non-diverged) score.
-        best = best_by_scope.get("slide")
-        if best is None and best_by_scope:
-            best = min(best_by_scope.values(), key=lambda r: r["mae_px"])
-
-        # The multi-model posterior combination (`bo.recommend()`) is NOT run
-        # here. With the project relying exclusively on the slide model there is
-        # nothing to combine: the best measured slide configuration IS the
-        # answer, and a one-model "composite" would only restate it through a
-        # surrogate, adding the GP's extrapolation error to a number that is
-        # otherwise measured. `recommend()` is kept in bo_gp.py for whoever
-        # re-enables the other three trajectory models.
-        recommendation = None
-
-        self._report_bo_results(history, best, run_dir, best_by_scope)
-        return history, best, recommendation
-
-    def domain_adaptation_vein(self, num_iterations=None, run_dir=None,
-                               sensor_name="slide", model_name="slide_vein"):
-        """Stage 2: BO on the slide trajectory WITH the subsurface vessel present.
-
-        Objective: MAXIMISE the MAE between the simulated markers and the
-        vessel-FREE reference photograph, measured at the moment the projected
-        vessel passes under the sensor centre.
-
-        The reasoning, and why the two stages point in opposite directions:
-
-          * stage 1 (vessel-absent, MINIMISE MAE) asks "does the simulator
-            reproduce the real sensor?" - low error means high fidelity.
-          * stage 2 (vessel-present, MAXIMISE the same MAE) asks "does a
-            subsurface vessel actually show up in the markers?" - a large
-            departure from the vessel-free appearance means the signal the GNN
-            must detect is present at all.
-
-        ONE FREE PARAMETER: the sensor<->vein normal stiffness. Everything else
-        about that contact pair is fixed (Contact.VEIN_*: damping at the repo's
-        100, tangential stiffness and friction at 0), and the sensor material -
-        Young's modulus and Poisson's ratio - is INHERITED from the vessel-absent
-        model's best result rather than re-fitted.
-
-        NO FIDELITY CONSTRAINT IS NEEDED, and none is applied. The two stages fit
-        disjoint parameters, and a sensor<->vein contact coefficient cannot
-        change how the sensor behaves on a phantom with no vein in it. The
-        vessel-absent fidelity established in stage 1 is therefore preserved by
-        construction, not by policing the search. (An earlier design shared one
-        6-D space between the stages and needed rejection sampling to keep stage
-        2 faithful; splitting the spaces removed the problem rather than
-        managing it.)
-
-        Because the contact force is F_n = -(k_n + c_n*v_n)*d*n_hat, raising the
-        vein's normal stiffness raises the force the vessel exerts without
-        touching the sensor's own stiffness - which is what allows a stiff sensor
-        to still show a pronounced local indentation over the vessel.
-        """
-        # 4 random + 6 acquisition by default.
-        num_iterations = num_iterations or _env_int(
-            "DIFFTACTILE_BO_VEIN_ITERATIONS", 10
-        )
-        num_random = min(_env_int("DIFFTACTILE_BO_RANDOM", 4), num_iterations)
-        run_dir = run_dir or repo_path("difftactile/output")
-        os.makedirs(run_dir, exist_ok=True)
-
-        # Sensor material from stage 1's best, held fixed for the whole stage.
-        sensor_params, sensor_mae = self.bo.best_observed(sensor_name)
-        self.vitactip.youngs_modulus[None] = sensor_params[
-            "vitactip_youngs_modulus"
-        ]
-        self.vitactip.poissons_ratio[None] = sensor_params[
-            "vitactip_poissons_ratio"
-        ]
-        self.vitactip.set_up_system_params_2()
-
-        print("\n" + "=" * 70)
-        print(" Stage 2: vessel-present slide (MAXIMISING marker disagreement)")
-        print("=" * 70)
-        print(
-            f"\n{num_iterations} iterations ({num_random} random, then "
-            f"acquisition-driven).\n"
-            f"Free parameter: normal_stiffness of the sensor<->vein pair "
-            f"{self.bo.pbounds_vein['normal_stiffness']}\n"
-            f"Fixed: sensor E={sensor_params['vitactip_youngs_modulus']:.6g}, "
-            f"nu={sensor_params['vitactip_poissons_ratio']:.4g} "
-            f"(stage-1 best, {sensor_mae:.2f} px); vein damping="
-            f"{self.VEIN_NORMAL_DAMPING:g}, tangential stiffness="
-            f"{self.VEIN_TANGENTIAL_STIFFNESS:g}, friction="
-            f"{self.VEIN_COULOMB_FRICTION:g}\n"
-        )
-
-        # The vessel is what this stage is about, so switch the contact pair on.
-        previous_collision_ixs = list(self.collision_ixs)
-        self.collision_ixs = active_collision_pairs(True)
-        history, best = [], None
-        completed = 0
-        try:
-            for it in range(num_iterations):
-                how = "random" if it < num_random else "acquisition"
-                self.bo.suggest_for(model_name, force_random=(it < num_random))
-                self.set_contact_params_from_bo()
-                self.snapshot_subdir = f"vein_iter{it:03d}"
-
-                print(f"=== vein iteration {it + 1}/{num_iterations} ({how}) ===")
-                print(f"    normal_stiffness (vein)    "
-                      f"{self.bo.params['normal_stiffness']:.6g}")
-
-                mae, triggered, closest, diverged, _ = self._run_vein_slide(
-                    run_dir, it
-                )
-                if diverged:
-                    # An unusable configuration earns nothing, the same as one
-                    # that is faithful but shows no vessel. Zero rather than a
-                    # negative score: a blown-up solve is not "worse than
-                    # useless", it is simply useless.
-                    score = 0.0
-                    print(f"    diverged -> scored {score:.0f}")
-                elif mae is None:
-                    print("    vessel never reached the sensor centre "
-                          f"(closest {closest:.1f} px) -> scored 0")
-                    score = 0.0
-                else:
-                    score = mae
-                    print(f"    vessel-present MAE = {mae:.2f} px "
-                          f"({mae * PX_TO_MM:.2f} mm)  [vessel {closest:.1f} px "
-                          f"from centre]")
-
-                # maximise=True: a LARGER disagreement is better here.
-                self.bo.my_register(score, model_name, maximise=True)
-                record = {
-                    "iteration": it,
-                    "proposed_by": how,
-                    "params": dict(self.bo.params),
-                    "sensor_params": dict(sensor_params),
-                    "vein_mae_px": score,
-                    "vein_mae_mm": score * PX_TO_MM,
-                    "triggered": bool(triggered),
-                    "diverged": bool(diverged),
-                    "closest_vein_px": None if closest == float("inf") else closest,
-                }
-                history.append(record)
-                completed = it + 1
-                # A diverged iteration can never be "best", whatever its score.
-                if (not diverged and score > 0
-                        and (best is None or score > best["vein_mae_px"])):
-                    best = record
-                    print("    ^ best so far")
-                print()
-        except BaseException as exc:
-            # A crash here is almost always the simulator blowing up at a high
-            # vein stiffness. Report how far the search got and what to do about
-            # it BEFORE re-raising, so the message is not buried under a
-            # traceback the user has to scroll past.
-            self._report_vein_crash(exc, completed, num_iterations,
-                                    sensor_params, history, run_dir)
-            raise
-        finally:
-            self.collision_ixs = previous_collision_ixs
-
-        path = os.path.join(run_dir, "bo_vein_results.json")
-        with open(path, "w") as f:
-            json.dump({"best": best, "history": history,
-                       "sensor_params": sensor_params,
-                       "stage1_best_mae_px": sensor_mae}, f, indent=4)
-        print(f"Stage-2 history: {path}")
-        if best is not None:
-            print(f"\nBest vessel-present configuration (iteration "
-                  f"{best['iteration']}): {best['vein_mae_px']:.2f} px")
-            print(f"    normal_stiffness (vein)    "
-                  f"{best['params']['normal_stiffness']:.6g}")
-        return history, best
-
     def _report_vein_crash(self, exc, completed, num_iterations, sensor_params,
                            history, run_dir):
-        """Explain a stage-2 crash and what the operator should do next.
+        """Explain a vessel-present-slide crash and what the operator should do next.
 
         The expected cause is an over-stiff CONTACT: the vein's penalty force is
         (k_n + c_n*v_n)*d, and a large k_n at a fixed dt drives the explicit
@@ -3674,7 +3176,7 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
 
         e = sensor_params.get("vitactip_youngs_modulus")
         print("\n" + "!" * 70)
-        print(" STAGE 2 CRASHED")
+        print(" VESSEL-PRESENT BO CRASHED")
         print("!" * 70)
         print(f"\n  {completed}/{num_iterations} iterations completed "
               f"successfully before the failure.")
@@ -3708,13 +3210,13 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
         if e is not None:
             print(
                 f"\n  SUGGESTED MANUAL ACTION: halve the sensor Young's modulus "
-                f"assigned by\n  the vessel-absent model, then re-run stage 2:"
+                f"of the\n  crashing proposal and re-run:"
                 f"\n\n      {e:.6g}  ->  {e / 2:.6g}\n"
                 f"\n  A softer sensor absorbs the same contact force with less "
                 f"violent\n  acceleration, which is what restores stability. "
-                f"Set it in\n  system-params.json (vitactip.single_material."
-                f"youngs_modulus) or in the\n  stage-1 observations this stage "
-                f"reads, and run domain_adaptation.sh again."
+                f"Halve the upper\n  bound of vitactip_youngs_modulus in "
+                f"bo_gp.py (BoGp.pbounds_joint), and run\n  "
+                f"domain_adaptation.sh again."
             )
         print("!" * 70 + "\n")
 
@@ -4364,7 +3866,7 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
         nothing left to measure, so the remaining timesteps are pure cost. The
         vessel typically passes under the sensor early in the slide, so this cuts
         most of a ~398-timestep trajectory - the dominant expense of the whole
-        stage.
+        search.
 
         Nothing downstream depends on the trajectory finishing: the score is the
         MAE at the trigger instant, and `last_target_reached` is only used to end
@@ -4439,131 +3941,6 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
                 break
             ts += 1
         return mae, mae is not None, closest, False, trigger_ts
-
-    def _report_recommendation(self, rec, run_dir):
-        """Print the combined recommendation and write it beside the history."""
-        print("\n" + "=" * 70)
-        print(" Combined recommendation (all four models)")
-        print("=" * 70)
-        print(
-            "\nMinimises the SUM of the four models' predicted pixel errors, "
-            "unscaled -\nNOT an average of the four best-observed points.\n"
-        )
-        print("  parameters:")
-        for key, value in rec["params"].items():
-            print(f"    {key:26s} {value:.6g}")
-        total = rec["predicted_total_mae_px"]
-        print("\n  predicted MAE at this configuration (px):")
-        for name, mae in sorted(rec["predicted_mae_px"].items()):
-            sigma = rec["predicted_sigma_px"][name]
-            print(f"    {name:9s} {mae:7.2f} +/- {sigma:.2f}")
-        print(f"    {'TOTAL':9s} {total:7.2f} px ({total * PX_TO_MM:.2f} mm)")
-        print("\n  each model's own best OBSERVED point, for comparison:")
-        for name, d in sorted(rec["per_model_best_observed"].items()):
-            print(f"    {name:9s} {d['mae_px']:7.2f} px")
-        spread = rec["argmin_spread"]
-        print(f"\n  argmin spread across models: {spread:.3f}")
-        print(
-            "    (0 = the four models agree on where the optimum is; ~0.29 is "
-            "as\n     scattered as random points. A large value means the "
-            "objectives\n     genuinely conflict and a single recommendation is "
-            "hiding a trade-off.)"
-        )
-        print(
-            "\n  NOT YET MEASURED: this is a model prediction. Confirm it by "
-            "running\n  all four trajectories at these parameters before "
-            "adopting them."
-        )
-        path = os.path.join(run_dir, "bo_recommendation.json")
-        with open(path, "w") as f:
-            json.dump(rec, f, indent=4)
-        print(f"\n  Written to: {path}")
-
-    def _report_bo_results(self, history, best, run_dir, best_by_scope=None):
-        """Print the BO outcome and write it to JSON and a convergence figure."""
-        print("=" * 70)
-        print(" Bayesian optimisation results")
-        print("=" * 70)
-        print(f"\nEvery configuration tried ({len(history)} total), worst to best:\n")
-        print(f"  {'iter':>4}  {'MAE px':>8}  {'MAE mm':>7}  {'by':>12}  {'scored on':>10}")
-        for r in sorted(history, key=lambda r: -r["mae_px"]):
-            print(
-                f"  {r['iteration']:>4}  {r['mae_px']:>8.2f}  "
-                f"{r['mae_mm']:>7.3f}  {r['proposed_by']:>12}  "
-                f"{r.get('scored_on', '?'):>10}"
-            )
-
-        # Under a schedule the MAEs above are NOT mutually comparable - each is
-        # measured against whichever trajectories that iteration ran. Report the
-        # best within each scope so the ranking means something.
-        if best_by_scope:
-            print("\nBest per trajectory scope (these ARE comparable within a row):\n")
-            print(f"  {'scored on':>10}  {'iter':>4}  {'MAE px':>8}  {'MAE mm':>7}")
-            for scope, r in sorted(best_by_scope.items()):
-                print(
-                    f"  {scope:>10}  {r['iteration']:>4}  {r['mae_px']:>8.2f}  "
-                    f"{r['mae_mm']:>7.3f}"
-                )
-
-        if best is not None:
-            print(f"\nBest configuration (iteration {best['iteration']}, "
-                  f"scored on {best.get('scored_on', '?')}):")
-            print(f"  MAE = {best['mae_px']:.2f} px "
-                  f"({best['mae_mm']:.3f} mm)")
-            for name, mae in best["per_trajectory_px"].items():
-                print(f"    {name:9s} {mae:6.2f} px ({mae * PX_TO_MM:.2f} mm)")
-            print("\n  parameters:")
-            for key, value in best["params"].items():
-                print(f"    {key:26s} {value:.6g}")
-            print(
-                "\n  To adopt these, copy them into system-params.json "
-                "(contact.* and the Young's modulus / Poisson's ratio entries)."
-            )
-
-        results_path = os.path.join(run_dir, "bo_results.json")
-        with open(results_path, "w") as f:
-            json.dump(
-                {
-                    "best": best,
-                    "best_by_scope": best_by_scope or {},
-                    "history": history,
-                },
-                f,
-                indent=4,
-            )
-        print(f"\nFull history: {results_path}")
-
-        # Convergence, PLOTTED PER SCOPE. A single running minimum over the whole
-        # history would be meaningless under a schedule: it would step down every
-        # time the objective changed to a trajectory that simply scores lower,
-        # which reads as progress but is not. One series per `scored_on` keeps
-        # each curve a like-for-like comparison, and the running best is taken
-        # within a series.
-        plt.figure(figsize=(10, 6))
-        scopes = []
-        for r in history:
-            s = r.get("scored_on", "?")
-            if s not in scopes:
-                scopes.append(s)
-        for scope in scopes:
-            pts = [(r["iteration"], r["mae_px"]) for r in history
-                   if r.get("scored_on", "?") == scope]
-            xs = [p[0] for p in pts]
-            ys = [p[1] for p in pts]
-            line, = plt.plot(xs, ys, "o-", label=f"{scope}")
-            if len(ys) > 1:
-                plt.plot(xs, np.minimum.accumulate(ys), "--", linewidth=2,
-                         color=line.get_color(), alpha=0.6,
-                         label=f"{scope} (best so far)")
-        plt.xlabel("Bayesian optimisation iteration")
-        plt.ylabel("MAE (px)")
-        plt.title("Domain adaptation: marker alignment error, by trajectory scope")
-        plt.grid(True, alpha=0.3)
-        plt.legend(fontsize=8)
-        finish_plot(plt, os.path.join(run_dir, "bo_convergence.png"))
-        print(f"Convergence figure: {os.path.join(run_dir, 'bo_convergence.png')}")
-        print(f"Alignment overlays (best config): "
-              f"{os.path.join(run_dir, 'best_da_overlay_<name>.png')}")
 
     def collect_training_data(self, num_loops=None, substeps=(0, 1),
                               trajectory_ixs=None, with_vein=COLLECT_VEIN_PAIR,
@@ -5075,8 +4452,8 @@ def domain_adaptation_main():
     slide (how visibly the vessel deforms the sensor) together - see
     `domain_adaptation_joint()`. The chosen configuration is then validated on
     all four canonical interactions (press, twist about z, twist about x,
-    slide), which is what the manuscript's Fig. 4 shows. `staged` keeps the
-    older sequential design.
+    slide), which is what the manuscript's Fig. 4 shows. (The older two-stage
+    design, DIFFTACTILE_DA_MODE=staged, is obsolete and was removed.)
 
     NOT DIFFERENTIABLE. An earlier design backpropagated through the Taichi
     simulation; that was abandoned, and all of the machinery supporting it has
@@ -5130,10 +4507,9 @@ def domain_adaptation_main():
     # Seed BEFORE anything stochastic runs, so a DA run is reproducible.
     #
     # `NP_RNG` (main/constants.py) is `default_rng()` with no seed, and this path
-    # draws from it in three places: the random phase of the BO search
-    # (`BoGp.my_suggest_random`), the tangential_stiffness fraction drawn every
-    # iteration, and generate_trajectories(), which randomises the four DA
-    # interactions themselves. Without this call each run explored a different
+    # draws from it in two places: the random phase of the BO search
+    # (`BoGp.suggest_for(force_random=True)`) and generate_trajectories(), which
+    # randomises the four DA interactions themselves. Without this call each run explored a different
     # search space AND scored it against differently-randomised trajectories, so
     # two runs of the same code were not comparable.
     #
@@ -5204,70 +4580,27 @@ def domain_adaptation_main():
 
     start = time.perf_counter()
 
-    # TWO MODES, selected by DIFFTACTILE_DA_MODE:
+    # ONE MODE: the joint BO over sensor Young's modulus + sensor<->vein contact
+    # stiffness, running BOTH slides (vessel-absent and vessel-present) per
+    # iteration so fidelity and vessel sensitivity are traded off inside a single
+    # search. It finishes with a validation: all four trajectories once, at the
+    # chosen configuration, vessel-free (which is what the reference photographs
+    # show).
     #
-    #   joint (default)  ONE BO over sensor E + vein contact stiffness, running
-    #                    BOTH trajectories per iteration and scoring 3A - B.
-    #                    Fidelity and vessel sensitivity are traded off inside a
-    #                    single search.
-    #   staged           the older sequential design: vessel-absent BO first,
-    #                    then vessel-present BO at the sensor it chose. Kept
-    #                    because it is what the published slide_only_bo run used.
-    #
-    # Both finish with the same validation: all four trajectories once, at the
-    # chosen configuration, vessel-free (which is what the reference
-    # photographs show).
+    # The older two-stage design (DIFFTACTILE_DA_MODE=staged: a vessel-absent BO
+    # per trajectory, then a vessel-present BO at the sensor it chose) is
+    # OBSOLETE and has been removed; the published run is the joint one. The
+    # variable is still read only to fail loudly if someone asks for it.
     mode = os.environ.get("DIFFTACTILE_DA_MODE", "joint")
-    final_params, label = None, None
-
-    if mode == "joint":
-        _, joint_best = contact_model.domain_adaptation_joint(run_dir=run_dir)
-        if joint_best is not None:
-            final_params, label = dict(joint_best["params"]), "final_joint"
-    elif mode == "staged":
-        # STAGE 1 IS LOADED FROM DISK when a completed run is available, rather
-        # than re-simulated. Its search is seeded and deterministic, so
-        # re-running it reproduces the same observations at a cost of ~30 minutes
-        # of simulation; replaying the saved ones gives the same surrogate.
-        # DIFFTACTILE_STAGE1_OBSERVATIONS points elsewhere, or "" forces a fresh
-        # run.
-        stage1_default = repo_path(
-            "difftactile/output/domain_adaptation_published/slide_only_bo/"
-            "bo_observations.json"
-        )
-        stage1_path = os.environ.get(
-            "DIFFTACTILE_STAGE1_OBSERVATIONS", stage1_default
-        )
-        if stage1_path and os.path.exists(stage1_path):
-            loaded = contact_model.bo.load_observations(
-                stage1_path, names={"slide"}
-            )
-            print(f"\nStage 1 loaded from {stage1_path}: {loaded} "
-                  f"(not re-simulated - the search is seeded and deterministic)")
-            _, best_mae = contact_model.bo.best_observed("slide")
-            print(f"  best vessel-absent MAE: {best_mae:.2f} px")
-        else:
-            contact_model.domain_adaptation(run_dir=run_dir)
-
-        sensor_params, _ = contact_model.bo.best_observed("slide")
-        if os.environ.get("DIFFTACTILE_SKIP_VEIN_BO", "0") != "1":
-            _, vein_best = contact_model.domain_adaptation_vein(run_dir=run_dir)
-            if vein_best is not None:
-                # MERGE, do not replace. The vein stage fits only the contact
-                # stiffness, so its parameter dict alone does not describe the
-                # configuration that ran - the sensor material came from stage 1.
-                # Validating the vein dict by itself recorded a provenance that
-                # could not be reproduced from the JSON.
-                final_params = dict(sensor_params)
-                final_params.update(vein_best["params"])
-                label = "final_vein"
-        if final_params is None:
-            final_params, label = dict(sensor_params), "final_slide"
-    else:
+    if mode != "joint":
         raise SystemExit(
-            f"DIFFTACTILE_DA_MODE={mode!r} is not recognised; "
-            f"use 'joint' or 'staged'."
+            f"DIFFTACTILE_DA_MODE={mode!r} is not supported; only 'joint' "
+            f"exists (the 'staged' two-stage design is obsolete and was removed)."
         )
+    final_params, label = None, None
+    _, joint_best = contact_model.domain_adaptation_joint(run_dir=run_dir)
+    if joint_best is not None:
+        final_params, label = dict(joint_best["params"]), "final_joint"
 
     if final_params is None:
         print("\nNo usable configuration was found - skipping validation.")
