@@ -474,17 +474,17 @@ vessel **yellow**), from the simulator's own camera (`record_da_trajectories.sh`
 
 **Domain randomisation** — one vessel-present slide per randomised configuration
 (`./docker/record_domain_randomisation_videos.sh`): the slide heading at −15° / 0° / +15° from a
-top-down camera (`DIFFTACTILE_CAMERA_VIEW=top`, +y up the image so the slide runs bottom → top),
-and the sensor–vessel normal stiffness (5 × 10³ / 5 × 10⁴) and normal damping (0 / 100) at
-their range extremes from the side view, each with the other two at the midpoint (0°, 2.75 × 10⁴,
-50). The three pins — `DIFFTACTILE_SLIDE_HEADING_DEG`, `DIFFTACTILE_VEIN_NORMAL_STIFFNESS`,
+top-down camera (`DIFFTACTILE_CAMERA_VIEW=top`, +y up the image so the slide runs bottom → top)
+with both contact coefficients at their midpoint (2.75 × 10⁴, 50), and the 2 × 2 grid of
+sensor–vessel normal stiffness {5 × 10³, 5 × 10⁴} × normal damping {0, 100} at heading 0° from
+the side view. The three pins — `DIFFTACTILE_SLIDE_HEADING_DEG`, `DIFFTACTILE_VEIN_NORMAL_STIFFNESS`,
 `DIFFTACTILE_VEIN_NORMAL_DAMPING` — are read by `record_da_trajectories_main()` only:
 
 | | | |
 |---|---|---|
 | [`dr_heading_m15.mp4`](videos/dr_heading_m15.mp4) | [`dr_heading_0.mp4`](videos/dr_heading_0.mp4) | [`dr_heading_p15.mp4`](videos/dr_heading_p15.mp4) |
-| [`dr_stiffness_5e3.mp4`](videos/dr_stiffness_5e3.mp4) | [`dr_stiffness_5e4.mp4`](videos/dr_stiffness_5e4.mp4) | |
-| [`dr_damping_0.mp4`](videos/dr_damping_0.mp4) | [`dr_damping_100.mp4`](videos/dr_damping_100.mp4) | |
+| [`dr_kn5e3_cn0.mp4`](videos/dr_kn5e3_cn0.mp4) | [`dr_kn5e3_cn100.mp4`](videos/dr_kn5e3_cn100.mp4) | |
+| [`dr_kn5e4_cn0.mp4`](videos/dr_kn5e4_cn0.mp4) | [`dr_kn5e4_cn100.mp4`](videos/dr_kn5e4_cn100.mp4) | |
 
 **Annotated datasets** — every frame of every recording, stepped through with the annotation
 viewers. Silicone: the clicked vessel points. Meat: per-marker labels (red = vessel present,
@@ -685,7 +685,7 @@ U(0, 100) the dataset samples. Those two ranges are the dataset's domain randomi
 predate the joint BO; they were left as collected so the published dataset stays reproducible.
 The [project page](https://piotr-blaszyk.github.io/shallow-vessel-palpation-simulator-and-AI/)
 shows one simulated vessel-present slide per randomised configuration (heading −15°/0°/+15°,
-stiffness and damping at their range extremes).
+and the 2 × 2 grid of stiffness × damping range extremes).
 
 ### Troubleshooting
 

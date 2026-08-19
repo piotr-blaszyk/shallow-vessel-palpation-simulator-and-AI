@@ -110,7 +110,7 @@
   <p class="blurb">🔧 = used to fit the Bayesian-optimisation model (each BO iteration replays A1 and A2); 📏 = used to verify the fitted configuration's marker alignment against the four real reference interactions (A2, B1–B3, all vessel-free); 🗂️ = used to collect the Sim training dataset (the published dataset is slides only, A1 and A2 alternating; B1–B3 can be collected too but are not part of it).</p>
 
   <h2>Simulator: domain randomisation</h2>
-  <p class="blurb">Dataset collection randomises exactly three things per simulated trial — the slide heading and the two sensor–vessel contact coefficients — and nothing else; every other parameter is as in the calibrated twin above. One vessel-present slide per configuration, each varying one parameter while the other two sit at the midpoint of their range (θ = 0°, kₙ = 2.75 × 10⁴ N/m, cₙ = 50 N s/m). These trajectories are used exclusively for Sim dataset collection (🗂️). The three heading videos are filmed from directly above the phantom (camera looking straight down the z-axis, +y up the image), so the slide runs from the bottom of the frame to the top and the heading offset shows as a sideways drift; the vessel (yellow) runs left–right across the phantom (blue). The four contact-coefficient videos use the usual side view (camera on the −x side looking along +x, z up), in which the vessel is seen end-on as a yellow disc.</p>
+  <p class="blurb">Dataset collection randomises exactly three things per simulated trial — the slide heading and the two sensor–vessel contact coefficients — and nothing else; every other parameter is as in the calibrated twin above. One vessel-present slide per configuration: first the heading at −15°, 0° and +15° with both contact coefficients at the midpoint of their range (kₙ = 2.75 × 10⁴ N/m, cₙ = 50 N s/m), then the 2 × 2 grid of the two contact coefficients at the minimum and maximum of their ranges, heading 0°. These trajectories are used exclusively for Sim dataset collection (🗂️). The three heading videos are filmed from directly above the phantom (camera looking straight down the z-axis, +y up the image), so the slide runs from the bottom of the frame to the top and the heading offset shows as a sideways drift; the vessel (yellow) runs left–right across the phantom (blue). The four contact-coefficient videos (the 2 × 2 grid) use the usual side view (camera on the −x side looking along +x, z up), in which the vessel is seen end-on as a yellow disc.</p>
   <div class="grid">
     <figure>
       <video src="videos/dr_heading_m15.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
@@ -127,22 +127,22 @@
   </div>
   <div class="grid" style="margin-top:1rem">
     <figure>
-      <video src="videos/dr_stiffness_5e3.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
-      <figcaption>kₙ = 5 × 10³ (range minimum), θ = 0°, cₙ = 50</figcaption>
+      <video src="videos/dr_kn5e3_cn0.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>kₙ = 5 × 10³ (min), cₙ = 0 (min), θ = 0°</figcaption>
     </figure>
     <figure>
-      <video src="videos/dr_stiffness_5e4.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
-      <figcaption>kₙ = 5 × 10⁴ (range maximum), θ = 0°, cₙ = 50</figcaption>
+      <video src="videos/dr_kn5e3_cn100.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>kₙ = 5 × 10³ (min), cₙ = 100 (max), θ = 0°</figcaption>
     </figure>
   </div>
   <div class="grid" style="margin-top:1rem">
     <figure>
-      <video src="videos/dr_damping_0.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
-      <figcaption>cₙ = 0 (range minimum), θ = 0°, kₙ = 2.75 × 10⁴</figcaption>
+      <video src="videos/dr_kn5e4_cn0.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>kₙ = 5 × 10⁴ (max), cₙ = 0 (min), θ = 0°</figcaption>
     </figure>
     <figure>
-      <video src="videos/dr_damping_100.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
-      <figcaption>cₙ = 100 (range maximum), θ = 0°, kₙ = 2.75 × 10⁴</figcaption>
+      <video src="videos/dr_kn5e4_cn100.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>kₙ = 5 × 10⁴ (max), cₙ = 100 (max), θ = 0°</figcaption>
     </figure>
   </div>
   <p class="blurb">θ = slide heading, the yaw of the slide path about the vertical axis from the nominal direction straight across the vessel, drawn uniformly in ±15°; kₙ = sensor–vessel contact normal stiffness, drawn uniformly in [5 × 10³, 5 × 10⁴] N/m; cₙ = sensor–vessel contact normal damping, drawn uniformly in [0, 100] N s/m. Recorded by <code>docker/record_domain_randomisation_videos.sh</code>.</p>

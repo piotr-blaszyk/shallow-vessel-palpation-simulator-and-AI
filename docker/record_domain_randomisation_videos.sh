@@ -7,13 +7,13 @@
 # Dataset collection (main.py::collect_training_data) randomises exactly three
 # things per trial - the slide heading (+-15 deg about the nominal crossing
 # direction) and the sensor<->vessel normal stiffness k_n ~ U(5e3, 5e4) and
-# normal damping c_n ~ U(0, 100). The seven configurations below sweep each
-# one while holding the other two at their midpoint (heading 0 deg,
-# k_n = 27 500, c_n = 50):
+# normal damping c_n ~ U(0, 100). The seven configurations below: the heading
+# at its extremes and midpoint with the contact coefficients at their
+# midpoints (k_n = 27 500, c_n = 50), then the 2 x 2 grid of the contact
+# coefficients' range extremes at heading 0:
 #
-#   heading -15 / 0 / +15 deg    (k_n 27 500, c_n 50)        -> 3 videos
-#   k_n 5e3 / 5e4                (heading 0, c_n 50)         -> 2 videos
-#   c_n 0 / 100                  (heading 0, k_n 27 500)     -> 2 videos
+#   heading -15 / 0 / +15 deg    (k_n 27 500, c_n 50)              -> 3 videos
+#   k_n {5e3, 5e4} x c_n {0, 100}  (heading 0)                     -> 4 videos
 #
 # Everything else is as in dataset collection: the adopted sensor Young's
 # modulus from system-params.json, the vessel embedded, no sensor<->phantom
@@ -66,10 +66,10 @@ CONFIGS=(
     "heading_m15   -15  27500  50  top"
     "heading_0       0  27500  50  top"
     "heading_p15    15  27500  50  top"
-    "stiffness_5e3   0   5000  50  side"
-    "stiffness_5e4   0  50000  50  side"
-    "damping_0       0  27500   0  side"
-    "damping_100     0  27500 100  side"
+    "kn5e3_cn0       0   5000   0  side"
+    "kn5e3_cn100     0   5000 100  side"
+    "kn5e4_cn0       0  50000   0  side"
+    "kn5e4_cn100     0  50000 100  side"
 )
 
 in_container() {
