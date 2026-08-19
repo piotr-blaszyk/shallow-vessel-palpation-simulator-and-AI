@@ -6,7 +6,10 @@ https://piotr-blaszyk.github.io/shallow-vessel-palpation-simulator-and-AI/
 `videos/` are **copies** of `../videos/` (this repository) plus the two data-collection files
 from the robot-control repository, because raw.githubusercontent.com serves `.mp4` as
 `application/octet-stream` with `nosniff`, which some browsers refuse to play. After
-re-recording (`docker/record_videos.sh`) copy the new files here again.
+re-recording (`docker/record_videos.sh`) copy the new files here again. The seven `dr_*.mp4`
+domain-randomisation slides are written here directly by
+`docker/record_domain_randomisation_videos.sh` (heading ±15°/0° from a top-down camera, the
+sensor–vessel stiffness and damping extremes from the side view).
 
 `images/sensor_mesh/` holds the three screenshots of the ViTacTip mesh (side, 45° above, 45° below)
 (lossless WebP, ~20 kB each), written directly here by `docker/sensor_mesh_screenshots.sh`.

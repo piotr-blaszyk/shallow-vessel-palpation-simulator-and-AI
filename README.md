@@ -459,7 +459,7 @@ the sensor-geometry artifacts the simulator loads at start-up ship in the bundle
 
 ## Demonstration videos
 
-All videos live in **[`videos/`](videos/)** (H.264 `.mp4`, ~15 MB in total), made by
+All videos live in **[`videos/`](videos/)** (H.264 `.mp4`, ~22 MB in total), made by
 `./docker/record_videos.sh` (host-launched) at the parameters in `system-params.json` with the
 best-of-five checkpoints; the GUI tools are stepped automatically, one key press per 500 ms of
 video, and rendered offscreen (see "Record mode" in `difftactile/main/qt_viewer.py`).
@@ -471,6 +471,20 @@ vessel **yellow**), from the simulator's own camera (`record_da_trajectories.sh`
 |---|---|---|
 | **Press** — [`sim_press.mp4`](videos/sim_press.mp4) | **Twist about x** — [`sim_twist_x.mp4`](videos/sim_twist_x.mp4) | **Twist about z** — [`sim_twist_z.mp4`](videos/sim_twist_z.mp4) |
 | **Slide, blood vessel absent** — [`sim_slide_vessel_absent.mp4`](videos/sim_slide_vessel_absent.mp4) | **Slide, blood vessel present** — [`sim_slide_vessel_present.mp4`](videos/sim_slide_vessel_present.mp4) | |
+
+**Domain randomisation** — one vessel-present slide per randomised configuration
+(`./docker/record_domain_randomisation_videos.sh`): the slide heading at −15° / 0° / +15° from a
+top-down camera (`DIFFTACTILE_CAMERA_VIEW=top`, +y up the image so the slide runs bottom → top),
+and the sensor–vessel normal stiffness (5 × 10³ / 5 × 10⁴) and normal damping (0 / 100) at
+their range extremes from the side view, each with the other two at the midpoint (0°, 2.75 × 10⁴,
+50). The three pins — `DIFFTACTILE_SLIDE_HEADING_DEG`, `DIFFTACTILE_VEIN_NORMAL_STIFFNESS`,
+`DIFFTACTILE_VEIN_NORMAL_DAMPING` — are read by `record_da_trajectories_main()` only:
+
+| | | |
+|---|---|---|
+| [`dr_heading_m15.mp4`](videos/dr_heading_m15.mp4) | [`dr_heading_0.mp4`](videos/dr_heading_0.mp4) | [`dr_heading_p15.mp4`](videos/dr_heading_p15.mp4) |
+| [`dr_stiffness_5e3.mp4`](videos/dr_stiffness_5e3.mp4) | [`dr_stiffness_5e4.mp4`](videos/dr_stiffness_5e4.mp4) | |
+| [`dr_damping_0.mp4`](videos/dr_damping_0.mp4) | [`dr_damping_100.mp4`](videos/dr_damping_100.mp4) | |
 
 **Annotated datasets** — every frame of every recording, stepped through with the annotation
 viewers. Silicone: the clicked vessel points. Meat: per-marker labels (red = vessel present,
@@ -669,6 +683,9 @@ the fitted value* in the other; the sensor↔vessel normal stiffness is fitted i
 U(5e3, 5e4) the dataset samples, and the fitted-stage damping of 100 is the *top* of the
 U(0, 100) the dataset samples. Those two ranges are the dataset's domain randomisation and
 predate the joint BO; they were left as collected so the published dataset stays reproducible.
+The [project page](https://piotr-blaszyk.github.io/shallow-vessel-palpation-simulator-and-AI/)
+shows one simulated vessel-present slide per randomised configuration (heading −15°/0°/+15°,
+stiffness and damping at their range extremes).
 
 ### Troubleshooting
 

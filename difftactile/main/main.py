@@ -1711,7 +1711,17 @@ class Contact:
         r21 = dy/2+r/2
         r22 = dy/2
 
-        theta_degrees = -90+NP_RNG.uniform(-15, 15)
+        # The slide heading: the nominal crossing direction (-90 deg, i.e.
+        # along +y, perpendicular to the vessel) plus a random +-15 deg - the
+        # ONLY pose randomness in the project. DIFFTACTILE_SLIDE_HEADING_DEG
+        # pins that offset (e.g. "0", "-15", "15") for the domain-randomisation
+        # demonstration videos; when set, no random draw is taken.
+        heading_override = os.environ.get("DIFFTACTILE_SLIDE_HEADING_DEG")
+        if heading_override is not None:
+            theta_degrees = -90 + float(heading_override)
+        else:
+            theta_degrees = -90+NP_RNG.uniform(-15, 15)
+        self.slide_heading_offset_deg = theta_degrees + 90
         theta = np.deg2rad(theta_degrees)
         
         # Get points on circle
@@ -2713,10 +2723,29 @@ class Contact:
         self.camera = ti.ui.Camera()
         self.camera.projection_mode(ti.ui.ProjectionMode.Perspective)
         x, y, z = self.phantom_centroid_pose[:3]
-        self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
-        self.camera.up(0, 0, 1)
-        self.camera.lookat(x, y, z)
-        self.camera.fov(3)
+        # DIFFTACTILE_CAMERA_VIEW selects the fixed camera, axis-aligned either
+        # way (no skew):
+        #   side (default)  on the -x side of the phantom centre, looking along
+        #                   +x, z up - the view every published video uses.
+        #   top             straight above the phantom centre, looking down -z
+        #                   with +y up the image, so a slide along +y (the
+        #                   nominal crossing direction) runs bottom -> top.
+        #                   Wider field of view (DIFFTACTILE_CAMERA_FOV, default
+        #                   7 deg vs 3) so the whole 50 mm slide stays in frame.
+        # Used by record_domain_randomisation_videos.sh for the heading videos.
+        view = os.environ.get("DIFFTACTILE_CAMERA_VIEW", "side")
+        if view == "top":
+            self.camera.position(x, y, z + SYSTEM_PARAMS.visualisation.camera_offset)
+            self.camera.up(0, 1, 0)
+            self.camera.lookat(x, y, z)
+            self.camera.fov(float(os.environ.get("DIFFTACTILE_CAMERA_FOV", 7)))
+        elif view == "side":
+            self.camera.position(x-SYSTEM_PARAMS.visualisation.camera_offset, y, z)
+            self.camera.up(0, 0, 1)
+            self.camera.lookat(x, y, z)
+            self.camera.fov(float(os.environ.get("DIFFTACTILE_CAMERA_FOV", 3)))
+        else:
+            raise ValueError(f"DIFFTACTILE_CAMERA_VIEW={view!r}: use 'side' or 'top'")
         self.tactile_window = ti.ui.Window("tactile readout", (
             int(SYSTEM_PARAMS.visualisation.tactile_readout_width),
             int(SYSTEM_PARAMS.visualisation.tactile_readout_height)
@@ -3046,6 +3075,14 @@ PAIR 0 (sensor<->phantom) depends on the seam (see
             "tangential_stiffness": float(self.tangential_stiffness[0]),
             "normal_damping": float(self.normal_damping[0]),
             "coulomb_friction_coeff": float(self.coulomb_friction_coeff[0]),
+            # The live pair (sensor<->vein, index 2) and the slide heading -
+            # what the domain-randomisation videos vary.
+            "vein_normal_stiffness": float(self.normal_stiffness[2]),
+            "vein_normal_damping": float(self.normal_damping[2]),
+            "slide_heading_offset_deg": float(
+                getattr(self, "slide_heading_offset_deg", float("nan"))
+            ),
+            "vein_enabled": 2 in self.collision_ixs,
         }}
         combined_writer = None
 
@@ -4637,6 +4674,13 @@ def record_da_trajectories_main():
         DIFFTACTILE_RECORD_TRAJECTORIES
                                  comma-separated subset of press / twist_z /
                                  twist_x / slide to record (default all four)
+        DIFFTACTILE_SLIDE_HEADING_DEG
+                                 pin the slide heading offset (degrees about
+                                 +z from the nominal crossing direction) instead
+                                 of the random +-15 deg draw
+        DIFFTACTILE_VEIN_NORMAL_STIFFNESS / DIFFTACTILE_VEIN_NORMAL_DAMPING
+                                 pin the sensor<->vein contact coefficients
+                                 (the two that dataset collection randomises)
     """
     run_dir = repo_path(
         f"difftactile/output/da_recordings/{time.strftime('%Y%m%d-%H%M%S')}"
@@ -4678,10 +4722,30 @@ def record_da_trajectories_main():
     else:
         contact_model.collision_ixs = active_collision_pairs(False)
 
+    # Sensor<->vein contact overrides, for recording the domain-randomisation
+    # configurations (`docker/record_domain_randomisation_videos.sh`): the two
+    # coefficients `randomise_contact_params()` draws per trial, pinned to a
+    # chosen value. Unset, the system-params.json values are used as before.
+    # (The slide heading is pinned through DIFFTACTILE_SLIDE_HEADING_DEG, read
+    # by get_slide_trajectory().)
+    k_n = os.environ.get("DIFFTACTILE_VEIN_NORMAL_STIFFNESS")
+    if k_n is not None:
+        contact_model.normal_stiffness[2] = float(k_n)
+    c_n = os.environ.get("DIFFTACTILE_VEIN_NORMAL_DAMPING")
+    if c_n is not None:
+        contact_model.normal_damping[2] = float(c_n)
+    print(f"Sensor<->vein contact: normal_stiffness "
+          f"{contact_model.normal_stiffness[2]:.6g}, normal_damping "
+          f"{contact_model.normal_damping[2]:.6g}"
+          f"{' (overridden)' if k_n is not None or c_n is not None else ''}")
+
     contact_model.visualisation_set_up_gui()
-    # Replaces the four TRAINING trajectory types with the four DA interactions,
-    # in the order the manuscript's panels (a)-(d) expect.
+    # Builds the four interactions (press / twist_z / twist_x / slide) in the
+    # order the manuscript's panels (a)-(d) expect.
     contact_model.generate_trajectories()
+    heading = os.environ.get("DIFFTACTILE_SLIDE_HEADING_DEG")
+    print(f"Slide heading offset: {contact_model.slide_heading_offset_deg:+.2f} deg"
+          f"{' (pinned by DIFFTACTILE_SLIDE_HEADING_DEG)' if heading is not None else ' (random, seeded)'}")
     contact_model.trajectory_ix[None] = 0
     contact_model.set_up_initial_positions_state_and_trajectory()
     contact_model.reset_pid_controller()

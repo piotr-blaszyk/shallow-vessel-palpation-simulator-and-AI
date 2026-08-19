@@ -37,64 +37,136 @@
   <h2>Abstract</h2>
   <p class="abstract">Reliable localisation of shallow subsurface vessels matters for safe robot-assisted venous access and vessel-aware manipulation, but collecting diverse tactile data on physical hardware is costly, slow, and can degrade soft vision-based tactile sensors. We present a robot-assisted sliding-palpation framework in which a calibrated digital twin generates labelled tactile sequences, reducing dependence on real-world data collection. The twin models sensor–vessel contact, is calibrated against real palpation trajectories by Bayesian-optimisation-based domain adaptation, and is randomised over sliding direction and contact conditions. A spatio-temporal graph neural network trained on simulated marker trajectories performs per-node vessel classification and yields a human-verifiable top-view localisation map through 2D-to-3D-to-2D geometric projection. Using three datasets (Sim, Silicone, and Meat, the latter a raw-meat phantom with vessel models at depths of 0–30 mm) we evaluate four [train]→[test] models: Sim→Sim, Sim→Silicone, Sim→Meat, and Meat→Silicone. The calibrated twin, validated on four canonical interactions, yields a simulated-to-real marker-alignment MAE of 0.50 mm at the point of deepest contact. After reprojection onto a 1 mm top-view grid, with each model's decision threshold set to favour few false alarms over high sensitivity, predicted vessel pixels lie on average 1.05–5.49 mm from the nearest true vessel pixel across the four models (1.05–1.31 mm for all but Sim→Meat, whose larger domain shift marks the current limit of simulation transfer). These results demonstrate progress toward trustworthy tactile palpation through calibrated simulation, interpretable localisation, and transparent reporting of cross-domain degradation. Code, model weights, and data are publicly available on GitHub and Zenodo.</p>
 
-  <h2>Videos: simulator, datasets and predictions</h2>
-  <p class="blurb">From the <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI">shallow-vessel-palpation-simulator-and-AI</a> repository (<code>videos/</code>).</p>
-    <h3>Simulator: the four sensor–phantom interactions</h3>
-    <p class="blurb">Recorded from the digital twin's own camera at the calibrated parameters. Sensor green, phantom blue, vessel yellow.</p>
-    <div class="grid">
-      <figure>
-        <video src="videos/sim_press.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
-        <figcaption>Press</figcaption>
-      </figure>
-      <figure>
-        <video src="videos/sim_twist_x.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
-        <figcaption>Twist about x</figcaption>
-      </figure>
-      <figure>
-        <video src="videos/sim_twist_z.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
-        <figcaption>Twist about z</figcaption>
-      </figure>
-      <figure>
-        <video src="videos/sim_slide_vessel_absent.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
-        <figcaption>Slide, blood vessel absent</figcaption>
-      </figure>
-      <figure>
-        <video src="videos/sim_slide_vessel_present.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
-        <figcaption>Slide, blood vessel present</figcaption>
-      </figure>
-    </div>
-    <h3>Annotated real datasets</h3>
-    <p class="blurb">Every frame of every recording, stepped through with the annotation viewers. Silicone: the clicked vessel points. Meat: per-marker labels (red = vessel present, green = absent).</p>
-    <div class="grid">
-      <figure>
-        <video src="videos/dataset_annotations_silicone.mp4" controls muted playsinline preload="metadata"></video>
-        <figcaption>Silicone phantom</figcaption>
-      </figure>
-      <figure>
-        <video src="videos/dataset_annotations_meat.mp4" controls muted playsinline preload="metadata"></video>
-        <figcaption>Meat phantom</figcaption>
-      </figure>
-    </div>
-    <h3>Per-frame GNN predictions</h3>
-    <p class="blurb">The prediction viewer on each model's best-of-five instance: ground truth, hard prediction, confusion (green = both say vessel, red = missed vessel, blue = false alarm, grey = neither), soft prediction, metadata. Every central frame of every trial for the real datasets. For Sim → Sim, ten held-out simulated trajectories: seven with the vessel under the sweep and three without, each drawn at random (fixed seed) from the test split and shown interleaved — present, present, absent, present, present, absent, present, present, absent, present (trajectories 0474, 0478, 0463, 0430, 0458, 0485, 0490, 0488, 0469, 0450). The <a href="#vessel-maps">top-view vessel maps</a> below are drawn from these same trajectories, in this same order.</p>
-    <div class="grid">
-      <figure>
-        <video src="videos/predictions_sim_to_sim.mp4" controls muted playsinline preload="metadata"></video>
-        <figcaption>Sim → Sim</figcaption>
-      </figure>
-      <figure>
-        <video src="videos/predictions_sim_to_silicone.mp4" controls muted playsinline preload="metadata"></video>
-        <figcaption>Sim → Silicone</figcaption>
-      </figure>
-      <figure>
-        <video src="videos/predictions_sim_to_meat.mp4" controls muted playsinline preload="metadata"></video>
-        <figcaption>Sim → Meat</figcaption>
-      </figure>
-      <figure>
-        <video src="videos/predictions_meat_to_silicone.mp4" controls muted playsinline preload="metadata"></video>
-        <figcaption>Meat → Silicone</figcaption>
-      </figure>
-    </div>
+  <h2>Real datasets: experimental data collection</h2>
+  <p class="blurb">From the <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-robot-control">shallow-vessel-palpation-robot-control</a> repository (<code>videos/</code>).</p>
+  <div class="grid">
+    <figure>
+      <video src="videos/data_collection_silicone.mp4" controls muted playsinline preload="metadata"></video>
+      <figcaption>Silicone phantom: the DOBOT Magician E6 driving the ViTacTip sensor over the silicone vascular phantom during test-set collection — five trajectories (four crossing a vein, one vein-free), each swept in both directions.</figcaption>
+    </figure>
+    <figure>
+      <img src="videos/data_collection_meat.jpg" alt="Meat phantom: metal straws beneath layers of steak, sensor slide direction in blue">
+      <figcaption>Meat phantom (no video was recorded): metal straws laid beneath layers of steak under cling film, with the sensor about to slide along the blue arrow.</figcaption>
+    </figure>
+  </div>
+
+  <h2>Annotated real datasets</h2>
+  <p class="blurb">From the <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI">shallow-vessel-palpation-simulator-and-AI</a> repository (<code>videos/</code>), as are the simulator and prediction videos below.</p>
+  <p class="blurb">Every frame of every recording, stepped through with the annotation viewers. Silicone: the clicked vessel points. Meat: per-marker labels (red = vessel present, green = absent).</p>
+  <div class="grid">
+    <figure>
+      <video src="videos/dataset_annotations_silicone.mp4" controls muted playsinline preload="metadata"></video>
+      <figcaption>Silicone phantom</figcaption>
+    </figure>
+    <figure>
+      <video src="videos/dataset_annotations_meat.mp4" controls muted playsinline preload="metadata"></video>
+      <figcaption>Meat phantom</figcaption>
+    </figure>
+  </div>
+
+  <h2>Sensor mesh: the ViTacTip finite-element model in Gmsh</h2>
+  <p class="blurb">The tetrahedral mesh of the ViTacTip sensor that the digital twin deforms, exactly as Gmsh draws it (<code>docker/sensor_mesh_screenshots.sh</code>). The sensor's base lies in the xy plane and its dome points along +z; it is 40 mm across: a spherical dome (the contact surface, green) on a 19 mm-radius shell (orange) above a 20 mm-radius base ring (yellow, cyan step) with a flat underside (blue) where the mesh is fixed to the rigid mount. The colours are Gmsh's per-surface colouring, not materials. All three views are from the +x side (the axis triad in each corner shows the orientation): level with the sensor, then with the camera raised and lowered to look at it from 45° above and 45° below.</p>
+  <div class="grid">
+    <figure>
+      <img class="mesh" src="images/sensor_mesh/vitactip_mesh_side.webp" alt="ViTacTip mesh seen from the +x side, level with the sensor">
+      <figcaption>Side view: line of sight along −x, level with the sensor (y right, z up)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/sensor_mesh/vitactip_mesh_from_above.webp" alt="ViTacTip mesh seen from 45 degrees above: the contact dome">
+      <figcaption>Camera raised to look down at 45°: the contact dome</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/sensor_mesh/vitactip_mesh_from_below.webp" alt="ViTacTip mesh seen from 45 degrees below: the fixed underside">
+      <figcaption>Camera lowered to look up at 45°: the fixed underside</figcaption>
+    </figure>
+  </div>
+
+  <h2>Simulator: the sensor–phantom interactions</h2>
+  <p class="blurb">Recorded from the digital twin's own camera at the calibrated parameters (sensor Young's modulus 881 kPa, sensor–vessel normal stiffness 9.5 × 10⁴ N/m). Sensor green, phantom blue, vessel yellow. The symbols in each caption say where that interaction is used: 🔧 domain adaptation — fitting the Bayesian-optimisation model; 📏 domain adaptation — verifying the alignment of the fitted configuration against real-world data; 🗂️ collecting the Sim dataset.</p>
+  <div class="grid">
+    <figure>
+      <video src="videos/sim_slide_vessel_present.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>A1. Slide, blood vessel present &nbsp;🔧 🗂️</figcaption>
+    </figure>
+    <figure>
+      <video src="videos/sim_slide_vessel_absent.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>A2. Slide, blood vessel absent &nbsp;🔧 📏 🗂️</figcaption>
+    </figure>
+  </div>
+  <div class="grid" style="margin-top:1rem">
+    <figure>
+      <video src="videos/sim_press.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>B1. Press &nbsp;📏</figcaption>
+    </figure>
+    <figure>
+      <video src="videos/sim_twist_x.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>B2. Twist about x &nbsp;📏</figcaption>
+    </figure>
+    <figure>
+      <video src="videos/sim_twist_z.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>B3. Twist about z &nbsp;📏</figcaption>
+    </figure>
+  </div>
+  <p class="blurb">🔧 = used to fit the Bayesian-optimisation model (each BO iteration replays A1 and A2); 📏 = used to verify the fitted configuration's marker alignment against the four real reference interactions (A2, B1–B3, all vessel-free); 🗂️ = used to collect the Sim training dataset (the published dataset is slides only, A1 and A2 alternating; B1–B3 can be collected too but are not part of it).</p>
+
+  <h2>Simulator: domain randomisation</h2>
+  <p class="blurb">Dataset collection randomises exactly three things per simulated trial — the slide heading and the two sensor–vessel contact coefficients — and nothing else; every other parameter is as in the calibrated twin above. One vessel-present slide per configuration, each varying one parameter while the other two sit at the midpoint of their range (θ = 0°, kₙ = 2.75 × 10⁴ N/m, cₙ = 50 N s/m). These trajectories are used exclusively for Sim dataset collection (🗂️). The three heading videos are filmed from directly above the phantom (camera looking straight down the z-axis, +y up the image), so the slide runs from the bottom of the frame to the top and the heading offset shows as a sideways drift; the vessel (yellow) runs left–right across the phantom (blue). The four contact-coefficient videos use the usual side view (camera on the −x side looking along +x, z up), in which the vessel is seen end-on as a yellow disc.</p>
+  <div class="grid">
+    <figure>
+      <video src="videos/dr_heading_m15.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>θ = −15°, kₙ = 2.75 × 10⁴, cₙ = 50</figcaption>
+    </figure>
+    <figure>
+      <video src="videos/dr_heading_0.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>θ = 0°, kₙ = 2.75 × 10⁴, cₙ = 50 (all midpoints)</figcaption>
+    </figure>
+    <figure>
+      <video src="videos/dr_heading_p15.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>θ = +15°, kₙ = 2.75 × 10⁴, cₙ = 50</figcaption>
+    </figure>
+  </div>
+  <div class="grid" style="margin-top:1rem">
+    <figure>
+      <video src="videos/dr_stiffness_5e3.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>kₙ = 5 × 10³ (range minimum), θ = 0°, cₙ = 50</figcaption>
+    </figure>
+    <figure>
+      <video src="videos/dr_stiffness_5e4.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>kₙ = 5 × 10⁴ (range maximum), θ = 0°, cₙ = 50</figcaption>
+    </figure>
+  </div>
+  <div class="grid" style="margin-top:1rem">
+    <figure>
+      <video src="videos/dr_damping_0.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>cₙ = 0 (range minimum), θ = 0°, kₙ = 2.75 × 10⁴</figcaption>
+    </figure>
+    <figure>
+      <video src="videos/dr_damping_100.mp4#t=0.5" controls muted playsinline preload="metadata"></video>
+      <figcaption>cₙ = 100 (range maximum), θ = 0°, kₙ = 2.75 × 10⁴</figcaption>
+    </figure>
+  </div>
+  <p class="blurb">θ = slide heading, the yaw of the slide path about the vertical axis from the nominal direction straight across the vessel, drawn uniformly in ±15°; kₙ = sensor–vessel contact normal stiffness, drawn uniformly in [5 × 10³, 5 × 10⁴] N/m; cₙ = sensor–vessel contact normal damping, drawn uniformly in [0, 100] N s/m. Recorded by <code>docker/record_domain_randomisation_videos.sh</code>.</p>
+
+  <h2>Per-frame GNN predictions</h2>
+  <p class="blurb">The prediction viewer on each model's best-of-five instance: ground truth, hard prediction, confusion (green = both say vessel, red = missed vessel, blue = false alarm, grey = neither), soft prediction, metadata. Every central frame of every trial for the real datasets. For Sim → Sim, ten held-out simulated trajectories: seven with the vessel under the sweep and three without, each drawn at random (fixed seed) from the test split and shown interleaved — present, present, absent, present, present, absent, present, present, absent, present (trajectories 0474, 0478, 0463, 0430, 0458, 0485, 0490, 0488, 0469, 0450). The <a href="#vessel-maps">top-view vessel maps</a> below are drawn from these same trajectories, in this same order.</p>
+  <div class="grid">
+    <figure>
+      <video src="videos/predictions_sim_to_sim.mp4" controls muted playsinline preload="metadata"></video>
+      <figcaption>Sim → Sim</figcaption>
+    </figure>
+    <figure>
+      <video src="videos/predictions_sim_to_silicone.mp4" controls muted playsinline preload="metadata"></video>
+      <figcaption>Sim → Silicone</figcaption>
+    </figure>
+    <figure>
+      <video src="videos/predictions_sim_to_meat.mp4" controls muted playsinline preload="metadata"></video>
+      <figcaption>Sim → Meat</figcaption>
+    </figure>
+    <figure>
+      <video src="videos/predictions_meat_to_silicone.mp4" controls muted playsinline preload="metadata"></video>
+      <figcaption>Meat → Silicone</figcaption>
+    </figure>
+  </div>
 
 
   <h2 id="vessel-maps">Top-view vessel maps</h2>
@@ -205,36 +277,6 @@
     <figure>
       <img class="map" src="images/vessel_maps/meat_to_silicone.webp" alt="Meat to Silicone top-view map of the silicone phantom">
       <figcaption>Meat → Silicone — the silicone phantom, all ten sweeps on one grid</figcaption>
-    </figure>
-  </div>
-
-  <h2>Video: experimental data collection</h2>
-  <p class="blurb">From the <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-robot-control">shallow-vessel-palpation-robot-control</a> repository (<code>videos/</code>).</p>
-  <div class="grid">
-    <figure>
-      <video src="videos/data_collection_silicone.mp4" controls muted playsinline preload="metadata"></video>
-      <figcaption>Silicone phantom: the DOBOT Magician E6 driving the ViTacTip sensor over the silicone vascular phantom during test-set collection — five trajectories (four crossing a vein, one vein-free), each swept in both directions.</figcaption>
-    </figure>
-    <figure>
-      <img src="videos/data_collection_meat.jpg" alt="Meat phantom: metal straws beneath layers of steak, sensor slide direction in blue">
-      <figcaption>Meat phantom (no video was recorded): metal straws laid beneath layers of steak under cling film, with the sensor about to slide along the blue arrow.</figcaption>
-    </figure>
-  </div>
-
-  <h2>Sensor mesh: the ViTacTip finite-element model in Gmsh</h2>
-  <p class="blurb">The tetrahedral mesh of the ViTacTip sensor that the digital twin deforms, exactly as Gmsh draws it (<code>docker/sensor_mesh_screenshots.sh</code>). The sensor's base lies in the xy plane and its dome points along +z; it is 40 mm across: a spherical dome (the contact surface, green) on a 19 mm-radius shell (orange) above a 20 mm-radius base ring (yellow, cyan step) with a flat underside (blue) where the mesh is fixed to the rigid mount. The colours are Gmsh's per-surface colouring, not materials. All three views are from the +x side (the axis triad in each corner shows the orientation): level with the sensor, then with the camera raised and lowered to look at it from 45° above and 45° below.</p>
-  <div class="grid">
-    <figure>
-      <img class="mesh" src="images/sensor_mesh/vitactip_mesh_side.webp" alt="ViTacTip mesh seen from the +x side, level with the sensor">
-      <figcaption>Side view: line of sight along −x, level with the sensor (y right, z up)</figcaption>
-    </figure>
-    <figure>
-      <img class="mesh" src="images/sensor_mesh/vitactip_mesh_from_above.webp" alt="ViTacTip mesh seen from 45 degrees above: the contact dome">
-      <figcaption>Camera raised to look down at 45°: the contact dome</figcaption>
-    </figure>
-    <figure>
-      <img class="mesh" src="images/sensor_mesh/vitactip_mesh_from_below.webp" alt="ViTacTip mesh seen from 45 degrees below: the fixed underside">
-      <figcaption>Camera lowered to look up at 45°: the fixed underside</figcaption>
     </figure>
   </div>
 
