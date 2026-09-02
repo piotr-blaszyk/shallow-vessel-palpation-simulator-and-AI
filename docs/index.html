@@ -41,7 +41,7 @@
   <p class="blurb">From the <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-robot-control">shallow-vessel-palpation-robot-control</a> repository (<code>videos/</code>).</p>
   <div class="grid">
     <figure>
-      <video src="videos/data_collection_silicone.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/data_collection_silicone.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>Silicone phantom: the DOBOT Magician E6 driving the ViTacTip sensor over the silicone vascular phantom during test-set collection — five trajectories (four crossing a vein, one vein-free), each swept in both directions.</figcaption>
     </figure>
     <figure>
@@ -55,11 +55,11 @@
   <p class="blurb">Every frame of every recording, stepped through with the annotation viewers. Silicone: the clicked vessel points. Meat: per-marker labels (red = vessel present, green = absent).</p>
   <div class="grid">
     <figure>
-      <video src="videos/dataset_annotations_silicone.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/dataset_annotations_silicone.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>Silicone phantom</figcaption>
     </figure>
     <figure>
-      <video src="videos/dataset_annotations_meat.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/dataset_annotations_meat.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>Meat phantom</figcaption>
     </figure>
   </div>
@@ -85,25 +85,25 @@
   <p class="blurb">Recorded from the digital twin's own camera at the calibrated parameters (sensor Young's modulus 881 kPa, sensor–vessel normal stiffness 9.5 × 10⁴ N/m). Sensor green, phantom blue, vessel yellow. The symbols in each caption say where that interaction is used: 🔧 domain adaptation — fitting the Bayesian-optimisation model; 📏 domain adaptation — verifying the alignment of the fitted configuration against real-world data; 🗂️ collecting the Sim dataset.</p>
   <div class="grid">
     <figure>
-      <video src="videos/sim_slide_vessel_present.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/sim_slide_vessel_present.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>A1. Slide, blood vessel present &nbsp;🔧 🗂️</figcaption>
     </figure>
     <figure>
-      <video src="videos/sim_slide_vessel_absent.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/sim_slide_vessel_absent.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>A2. Slide, blood vessel absent &nbsp;🔧 📏 🗂️</figcaption>
     </figure>
   </div>
   <div class="grid" style="margin-top:1rem">
     <figure>
-      <video src="videos/sim_press.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/sim_press.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>B1. Press &nbsp;📏</figcaption>
     </figure>
     <figure>
-      <video src="videos/sim_twist_x.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/sim_twist_x.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>B2. Twist about x &nbsp;📏</figcaption>
     </figure>
     <figure>
-      <video src="videos/sim_twist_z.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/sim_twist_z.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>B3. Twist about z &nbsp;📏</figcaption>
     </figure>
   </div>
@@ -113,35 +113,35 @@
   <p class="blurb">Dataset collection randomises exactly three things per simulated trial — the slide heading and the two sensor–vessel contact coefficients — and nothing else; every other parameter is as in the calibrated twin above. One vessel-present slide per configuration: first the heading at −15°, 0° and +15° with both contact coefficients at the midpoint of their range (kₙ = 2.75 × 10⁴ N/m, cₙ = 50 N s/m), then the 2 × 2 grid of the two contact coefficients at the minimum and maximum of their ranges, heading 0°. These trajectories are used exclusively for Sim dataset collection (🗂️). The three heading videos are filmed from directly above the phantom (camera looking straight down the z-axis, +y up the image), so the slide runs from the bottom of the frame to the top and the heading offset shows as a sideways drift; the vessel (yellow) runs left–right across the phantom (blue). The four contact-coefficient videos (the 2 × 2 grid) use the usual side view (camera on the −x side looking along +x, z up), in which the vessel is seen end-on as a yellow disc.</p>
   <div class="grid">
     <figure>
-      <video src="videos/dr_heading_m15.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/dr_heading_m15.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>θ = −15°, kₙ = 2.75 × 10⁴, cₙ = 50</figcaption>
     </figure>
     <figure>
-      <video src="videos/dr_heading_0.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/dr_heading_0.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>θ = 0°, kₙ = 2.75 × 10⁴, cₙ = 50 (all midpoints)</figcaption>
     </figure>
     <figure>
-      <video src="videos/dr_heading_p15.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/dr_heading_p15.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>θ = +15°, kₙ = 2.75 × 10⁴, cₙ = 50</figcaption>
     </figure>
   </div>
   <div class="grid" style="margin-top:1rem">
     <figure>
-      <video src="videos/dr_kn5e3_cn0.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/dr_kn5e3_cn0.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>kₙ = 5 × 10³ (min), cₙ = 0 (min), θ = 0°</figcaption>
     </figure>
     <figure>
-      <video src="videos/dr_kn5e3_cn100.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/dr_kn5e3_cn100.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>kₙ = 5 × 10³ (min), cₙ = 100 (max), θ = 0°</figcaption>
     </figure>
   </div>
   <div class="grid" style="margin-top:1rem">
     <figure>
-      <video src="videos/dr_kn5e4_cn0.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/dr_kn5e4_cn0.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>kₙ = 5 × 10⁴ (max), cₙ = 0 (min), θ = 0°</figcaption>
     </figure>
     <figure>
-      <video src="videos/dr_kn5e4_cn100.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/dr_kn5e4_cn100.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>kₙ = 5 × 10⁴ (max), cₙ = 100 (max), θ = 0°</figcaption>
     </figure>
   </div>
@@ -151,19 +151,19 @@
   <p class="blurb">The prediction viewer on each model's best-of-five instance: ground truth, hard prediction, confusion (green = both say vessel, red = missed vessel, blue = false alarm, grey = neither), soft prediction, metadata. Every central frame of every trial for the real datasets. For Sim → Sim, ten held-out simulated trajectories: seven with the vessel under the sweep and three without, each drawn at random (fixed seed) from the test split and shown interleaved — present, present, absent, present, present, absent, present, present, absent, present (trajectories 0474, 0478, 0463, 0430, 0458, 0485, 0490, 0488, 0469, 0450). The <a href="#vessel-maps">top-view vessel maps</a> below are drawn from these same trajectories, in this same order.</p>
   <div class="grid">
     <figure>
-      <video src="videos/predictions_sim_to_sim.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/predictions_sim_to_sim.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>Sim → Sim</figcaption>
     </figure>
     <figure>
-      <video src="videos/predictions_sim_to_silicone.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/predictions_sim_to_silicone.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>Sim → Silicone</figcaption>
     </figure>
     <figure>
-      <video src="videos/predictions_sim_to_meat.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/predictions_sim_to_meat.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>Sim → Meat</figcaption>
     </figure>
     <figure>
-      <video src="videos/predictions_meat_to_silicone.mp4#t=0.001" controls muted playsinline preload="metadata"></video>
+      <video src="videos/predictions_meat_to_silicone.mp4#t=1.0" controls muted playsinline preload="metadata"></video>
       <figcaption>Meat → Silicone</figcaption>
     </figure>
   </div>
