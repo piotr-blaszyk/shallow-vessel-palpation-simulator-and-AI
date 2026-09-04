@@ -1,0 +1,98 @@
+/* Styling for the LaTeXML output of modality-table-cited.tex.
+   The colour tokens mirror docs/index.html of the shallow-vessel-palpation-simulator-and-AI
+   repository, so this page sits inside that GitHub Pages site without looking foreign.
+   LaTeXML's own LaTeXML.css / ltx-article.css are loaded first; everything here overrides
+   them, chiefly the inline point widths and heights it copies out of the LaTeX boxes. */
+
+:root {
+  --fg: #1d1d1f; --muted: #5b5b60; --bg: #ffffff; --card: #f4f4f6;
+  --accent: #0a5cff; --rule: #d3d3d9; --rule-strong: #1d1d1f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e8e8ec; --muted: #a3a3ab; --bg: #111114; --card: #1c1c21;
+    --accent: #5b93ff; --rule: #34343c; --rule-strong: #c9c9d1;
+  }
+}
+
+body {
+  margin: 0; background: var(--bg); color: var(--fg); line-height: 1.55;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.ltx_page_main { max-width: 1100px; margin: 0 auto; padding: 2.5rem 1.25rem 3rem; }
+.ltx_page_content { background: none; }
+
+/* ---------------------------------------------------------------- headings & prose */
+.ltx_para { margin: 0 0 1rem; }
+.ltx_p { margin: 0; }
+.ltx_font_typewriter { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+a, .ltx_ref { color: var(--accent); text-decoration: none; }
+a:hover, .ltx_ref:hover { text-decoration: underline; }
+
+/* ------------------------------------------------------------------ modality table */
+.modtable {
+  width: 100%; table-layout: fixed; border-collapse: collapse; margin: 1.5rem 0 1rem;
+}
+/* LaTeXML copies the LaTeX column width (68.3pt) into a style attribute; six equal
+   columns is what the poster means by it, so override with the same specificity + weight. */
+.modtable > tbody > tr > td { width: 16.6667% !important; padding: 0.35rem 0.3rem !important; }
+.modtable > tbody > tr > td.ltx_border_t { border-top: 1px solid var(--rule-strong); }
+.modtable > tbody > tr > td.ltx_border_bb { border-bottom: 2px solid var(--rule-strong); }
+
+/* Row 1: modality names. */
+.modtable > tbody > tr:first-child > td { vertical-align: bottom; text-align: center; }
+.modtable > tbody > tr:first-child .ltx_font_bold { font-size: 1.05rem; letter-spacing: 0.01em; }
+
+/* Row 2: illustrations, bottom-aligned on a shared baseline as in the poster. */
+.modtable > tbody > tr:nth-child(2) > td { vertical-align: bottom; }
+.modtable img { display: block; width: 100%; height: auto; }
+
+/* Rows 3 and 4: the pros/cons stacks, each a one-column table of icon/label pairs. */
+.modtable > tbody > tr > td { vertical-align: top; }
+.modtable td table.ltx_tabular { width: 100%; border-collapse: collapse; }
+.modtable td table.ltx_tabular td { padding: 0 !important; text-align: center; }
+/* \picon emits an icon row then a label row, so odd rows are icons and even rows labels. */
+.modtable td table.ltx_tabular tr:nth-child(odd) td { height: 2.1rem; vertical-align: bottom; }
+.modtable td table.ltx_tabular tr:nth-child(even) td { height: 3.2rem; vertical-align: top; }
+
+/* The parbox widths and heights are point values from the PDF layout; let them be fluid. */
+.modtable .ltx_parbox { width: 100% !important; height: auto !important; display: block; }
+
+.modtable .fas { font-size: 1.5rem; line-height: 1; color: var(--fg); }
+.modtable td table.ltx_tabular tr:nth-child(even) .ltx_p { font-size: 0.76rem; line-height: 1.25; }
+.modtable cite { font-style: normal; font-size: 0.68rem; color: var(--muted); }
+.modtable cite .ltx_ref { color: var(--accent); }
+
+/* ------------------------------------------------------------- caption & side note */
+.ltx_para:nth-of-type(4) { font-size: 0.95rem; }
+.ltx_para:nth-of-type(5) {
+  font-size: 0.85rem; color: var(--muted); background: var(--card);
+  border-radius: 8px; padding: 0.9rem 1.1rem; margin-top: 1.25rem;
+}
+
+/* --------------------------------------------------------------------- bibliography */
+.ltx_pagination { display: none; }               /* the PDF's \clearpage has no web meaning */
+.ltx_bibliography { margin-top: 2.5rem; border-top: 1px solid var(--rule); padding-top: 1rem; }
+.ltx_title_bibliography { font-size: 1.35rem; margin: 0 0 1rem; }
+.ltx_biblist { list-style: none; padding: 0; margin: 0; }
+.ltx_bibitem {
+  position: relative; padding-left: 3.1rem; margin-bottom: 0.85rem; font-size: 0.9rem;
+}
+.ltx_tag_bibitem {
+  position: absolute; left: 0; width: 2.6rem; text-align: right; color: var(--muted);
+}
+.ltx_bibblock { display: inline; }
+.ltx_bibitem .ltx_url { font-size: 0.85em; word-break: break-all; }
+
+/* ------------------------------------------------------------------------- footer */
+.ltx_page_footer {
+  margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+  font-size: 0.78rem; color: var(--muted);
+}
+.ltx_page_footer a { color: var(--muted); }
+
+@media (max-width: 720px) {
+  .modtable { font-size: 0.9em; }
+  .modtable .fas { font-size: 1.2rem; }
+  .modtable td table.ltx_tabular tr:nth-child(even) .ltx_p { font-size: 0.66rem; }
+}
