@@ -47,9 +47,13 @@ PRETTY = {"A-to-A": "Sim->Sim", "A-to-B": "Sim->Silicone",
           "A-to-C": "Sim->Meat", "C-to-B": "Meat->Silicone"}
 
 
-def vessel_map_run(config):
-    """Path of the published top-view-map run of `config` (see the module docstring)."""
-    cfg = MAP_DIRS[config]
+def map_run_dir(cfg):
+    """Path of the published run of one vessel-map directory, by its directory name.
+
+    `cfg` is a directory of difftactile/output/vessel_maps/, e.g.
+    "sim-to-silicone_gt-video" or "sim-to-sim-test-trajectories_gt-simulator".
+    See the module docstring for the two layouts this accepts and why.
+    """
     local = MAPS / cfg
     if local.is_dir():
         # Newest timestamp wins; `-legacy` runs are a different checkpoint and never published.
@@ -61,8 +65,13 @@ def vessel_map_run(config):
     if bundled.is_dir():
         return bundled
     raise FileNotFoundError(
-        f"no top-view map run for {config}: looked in {local} and {bundled}. "
+        f"no top-view map run for {cfg}: looked in {local} and {bundled}. "
         "Restore the Zenodo bundle (./data/restore_data.sh) or run ./docker/vessel_map_all.sh.")
+
+
+def vessel_map_run(config):
+    """Path of the published top-view-map run of one A-to-B style configuration."""
+    return map_run_dir(MAP_DIRS[config])
 
 
 def ensure_dirs():

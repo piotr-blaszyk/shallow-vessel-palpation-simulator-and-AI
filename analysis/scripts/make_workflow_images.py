@@ -50,7 +50,7 @@ from PIL import Image
 from scipy import ndimage
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import ANALYSIS, FIGURES, REPO  # noqa: E402
+from paths import ANALYSIS, FIGURES, REPO, map_run_dir  # noqa: E402
 
 VIDEOS = os.path.join(REPO, "docs", "videos")
 MESH = os.path.join(REPO, "docs", "images", "sensor_mesh", "vitactip_mesh_side.webp")
@@ -423,24 +423,19 @@ SIM_TO_SIM_MAP = "map_04_trajectory_0430_vessel-present"   # 4th of the ten held
 SIM_TO_MEAT_TRIAL = "trial_03_1-metal-straw-beneath-3-steaks-20260228-233031"
 
 
-def _newest(d):
-    runs = sorted(p for p in d.iterdir() if p.is_dir() and not p.name.endswith("-legacy"))
-    if not runs:
-        raise FileNotFoundError(f"no run under {d}")
-    return runs[-1]
-
-
 def maps():
-    """Copy the four top-view confusion maps out of the published vessel-map runs."""
-    from pathlib import Path
-    vm = Path(REPO) / "difftactile/output/vessel_maps"
+    """Copy the four top-view confusion maps out of the published vessel-map runs.
+
+    map_run_dir() resolves each one either from a local run of vessel_map_all.sh or
+    from the copy the Zenodo bundle restores, so this works on a fresh clone.
+    """
     sources = {
-        "map_sim_to_sim": _newest(vm / "sim-to-sim-test-trajectories_gt-simulator")
+        "map_sim_to_sim": map_run_dir("sim-to-sim-test-trajectories_gt-simulator")
                           / SIM_TO_SIM_MAP / "confusion_r00_big.png",
-        "map_sim_to_meat": _newest(vm / "sim-to-meat_gt-video")
+        "map_sim_to_meat": map_run_dir("sim-to-meat_gt-video")
                            / SIM_TO_MEAT_TRIAL / "confusion_r00_big.png",
-        "map_sim_to_silicone": _newest(vm / "sim-to-silicone_gt-video") / "confusion_r00_big.png",
-        "map_meat_to_silicone": _newest(vm / "meat-to-silicone_gt-video") / "confusion_r00_big.png",
+        "map_sim_to_silicone": map_run_dir("sim-to-silicone_gt-video") / "confusion_r00_big.png",
+        "map_meat_to_silicone": map_run_dir("meat-to-silicone_gt-video") / "confusion_r00_big.png",
     }
     for name, src in sources.items():
         save(name, np.asarray(Image.open(src).convert("RGB")))
