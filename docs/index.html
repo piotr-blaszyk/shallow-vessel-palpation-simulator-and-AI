@@ -22,6 +22,9 @@
   img.map { image-rendering: pixelated; }
   .grid.maps-small { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
   .grid.maps-single { grid-template-columns: repeat(auto-fit, minmax(300px, 480px)); }
+  /* The four top-view centreline panels: two per row, so the flat Sim -> Meat map
+     (157 x 48 mm) is still legible. */
+  .grid.cl-maps { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
   h4 { font-size: .95rem; margin: 1.25rem 0 .25rem; }
   figcaption { font-size:.9rem; color:var(--muted); margin-top:.45rem; }
   ul.repos { list-style:none; padding:0; }
@@ -279,6 +282,118 @@
       <figcaption>Meat → Silicone — the silicone phantom, all ten sweeps on one grid</figcaption>
     </figure>
   </div>
+
+  <h2 id="centrelines">Vessel centrelines and centroids</h2>
+  <p class="blurb">Everything above scores the prediction element by element — is <em>this</em> marker, is <em>this</em> map pixel, over a vessel? That says nothing about <strong>how many</strong> vessels were found, and a mean distance over the elements a model got right quietly rewards one that finds the easy vessel and skips the hard one. The two sections below score the same four models the way object detection is scored instead: pull individual vessels out of the prediction and out of the ground truth, reduce each to <strong>one straight centreline and one centroid</strong>, match the two sets with the Hungarian algorithm, and then report how many were found and how far off they were (<code>docker/website_centreline_panels.sh</code>).</p>
+  <p class="blurb">Two numbers accompany each panel. <strong>F₁</strong> counts detections at a 5 mm tolerance — a matched pair inside it is a hit, an unmatched prediction a false alarm, an unmatched ground-truth vessel a miss. <strong>OSPA</strong> (Schuhmacher, Vo &amp; Vo, 2008) folds localisation and counting into one distance in millimetres: matched pairs contribute their separation capped at 5 mm, and every unmatched object contributes the 5 mm cutoff, a false alarm weighted twice a miss — a phantom vessel sends a needle into tissue, whereas a missed one only forfeits the assist. It is therefore bounded at 10 mm, and <strong>lower is better</strong>. The 5 mm tolerance is a judgement about clinical usefulness, not a value fitted to the data; the <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI/blob/main/analysis/results/detection_ospa.json">published results</a> carry a 1 mm cutoff alongside it.</p>
+  <p class="blurb"><strong>Legend</strong> (both sections). Markers and map pixels keep the confusion colours used throughout this page: <span style="color:#00b000;font-weight:600">green</span> = both say vessel, <span style="color:#d00000;font-weight:600">red</span> = missed vessel, <span style="color:#1a4dff;font-weight:600">blue</span> = false alarm, grey = neither. Drawn over them, <span style="color:#c800c8;font-weight:600">magenta</span> is the <strong>ground-truth</strong> vessel and <span style="color:#e07000;font-weight:600">orange</span> the <strong>predicted</strong> one, each a straight centreline with its centroid marked. The index beside an object says what the matching did with it: the same number <em>k</em> in both colours = matched pair; <em>k*</em> = matched, but the two are more than 5 mm apart; <em>(k)</em> in parentheses = unmatched, i.e. an invented vessel in orange or a missed one in magenta.</p>
+
+  <h3>Frame-space vessel centrelines and centroids</h3>
+  <p class="blurb">One video frame at a time, in the sensor's own surface coordinates (millimetres; the 127 tracked markers, thresholded at 0.5). The grid runs across the four models and down the number of vessels actually present in the frame, so a column shows one model on progressively harder frames and a row compares the four models on the same difficulty.</p>
+  <p class="blurb">Each cell is the <strong>most representative</strong> frame of that stratum, not the best one: the frame whose F₁ and OSPA both sit closest to the median over that model's frames <em>holding the same number of vessels</em>. The stratification matters — 379 of Sim → Sim's 675 test frames contain no vessel at all, and an unstratified median would simply be theirs. Only the meat phantom was ever built with three straws under one slide, so three cells of the bottom row are an explicit placeholder rather than a blank. Which frame each cell shows, and the spread it was picked from, are recorded in <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI/blob/main/docs/images/centrelines/manifest.md"><code>manifest.md</code></a>.</p>
+
+  <h4>No vessel under the sensor</h4>
+  <div class="grid maps-small">
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_0_sim_to_sim.webp" alt="Sim to Sim, a vessel-free frame: the model predicts nothing">
+      <figcaption>Sim → Sim — 379 such frames; the typical one is silent, as it should be (OSPA 0.00, F₁ 1.00)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_0_sim_to_silicone.webp" alt="Sim to Silicone, a vessel-free frame: the model predicts nothing">
+      <figcaption>Sim → Silicone — 26 such frames; typically silent too (OSPA 0.00, F₁ 1.00)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_0_sim_to_meat.webp" alt="Sim to Meat, a vessel-free frame: the model invents a vessel">
+      <figcaption>Sim → Meat — 90 such frames; the typical one invents a vessel, which scores the maximum (OSPA 10.00, F₁ 0.00)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_0_meat_to_silicone.webp" alt="Meat to Silicone, a vessel-free frame: the model invents a vessel">
+      <figcaption>Meat → Silicone — 26 such frames, and it raises a false alarm on every one (OSPA 10.00, F₁ 0.00)</figcaption>
+    </figure>
+  </div>
+
+  <h4>One vessel</h4>
+  <div class="grid maps-small">
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_1_sim_to_sim.webp" alt="Sim to Sim, a one-vessel frame">
+      <figcaption>Sim → Sim — 270 frames; centreline matched to about a marker pitch (OSPA 1.05, F₁ 1.00)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_1_sim_to_silicone.webp" alt="Sim to Silicone, a one-vessel frame">
+      <figcaption>Sim → Silicone — 43 frames; the vessel is found, plus one spurious neighbour (OSPA 5.19, F₁ 0.67)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_1_sim_to_meat.webp" alt="Sim to Meat, a one-vessel frame">
+      <figcaption>Sim → Meat — 103 frames; same pattern, one hit and one false alarm (OSPA 5.55, F₁ 0.67)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_1_meat_to_silicone.webp" alt="Meat to Silicone, a one-vessel frame">
+      <figcaption>Meat → Silicone — 43 frames; the over-prediction is worst here, three objects for one vessel (OSPA 6.82, F₁ 0.50)</figcaption>
+    </figure>
+  </div>
+
+  <h4>Two vessels</h4>
+  <div class="grid maps-small">
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_2_sim_to_sim.webp" alt="Sim to Sim, a two-vessel frame">
+      <figcaption>Sim → Sim — 26 frames; the two are merged into one prediction (OSPA 4.09, F₁ 0.67)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_2_sim_to_silicone.webp" alt="Sim to Silicone, a two-vessel frame">
+      <figcaption>Sim → Silicone — 51 frames; both separated and both matched, the best cell of the grid (OSPA 1.59, F₁ 1.00)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_2_sim_to_meat.webp" alt="Sim to Meat, a two-vessel frame">
+      <figcaption>Sim → Meat — 17 frames; two found, but one pair sits beyond the tolerance (OSPA 4.59, F₁ 0.50)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_2_meat_to_silicone.webp" alt="Meat to Silicone, a two-vessel frame">
+      <figcaption>Meat → Silicone — 51 frames; one broad prediction covers both vessels (OSPA 4.39, F₁ 0.67)</figcaption>
+    </figure>
+  </div>
+
+  <h4>Three vessels</h4>
+  <div class="grid maps-small">
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_3_sim_to_sim.webp" alt="Sim to Sim: no three-vessel frame exists in this test set">
+      <figcaption>Sim → Sim — the simulated phantom holds a single vessel, so this case does not arise</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_3_sim_to_silicone.webp" alt="Sim to Silicone: no three-vessel frame exists in this test set">
+      <figcaption>Sim → Silicone — no sweep of the silicone phantom crosses three vessels at once</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_3_sim_to_meat.webp" alt="Sim to Meat, a three-vessel frame">
+      <figcaption>Sim → Meat — 9 frames, the only three-vessel data in any test set; the model finds one of the three (OSPA 4.02, F₁ 0.50)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_grid_3_meat_to_silicone.webp" alt="Meat to Silicone: no three-vessel frame exists in this test set">
+      <figcaption>Meat → Silicone — same silicone test set as above, so the case does not arise here either</figcaption>
+    </figure>
+  </div>
+
+  <h3>Top-view-space vessel centrelines and centroids</h3>
+  <p class="blurb">The same decomposition applied to the <a href="#vessel-maps">top-view maps</a> instead of to single frames: 1 px = 1 mm on the phantom, at each model's own operating point. A whole slide — or, on the silicone phantom, all ten sweeps — is aggregated first and the vessels are extracted from the result, so these panels ask whether the <em>map</em> a clinician would look at contains the right vessels in the right places. Objects here are plain connected components: the map builder writes thresholded masks and discards the probability field, so the peak-finding used in frame space has nothing to work on.</p>
+  <p class="blurb">Sim → Meat has ten separate trial maps rather than one stitched map, so the panel shows the trial whose OSPA is closest to the median of the ten. The extraction recovers the physical vessel counts exactly — 1 on the simulated map, 10 on each silicone whole-phantom map (the ten recorded sweeps) and 1/1/1/1/1/1/1/2/3/0 across the ten meat trials, matching every trial's name including the vessel-free control.</p>
+  <div class="grid cl-maps">
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_map_sim_to_sim.webp" alt="Sim to Sim top-view map with fitted centrelines and centroids">
+      <figcaption>Sim → Sim — 1 vessel, 1 found, matched: the one configuration that is right on both counts (OSPA 0.36 mm, F₁ 1.00)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_map_sim_to_silicone.webp" alt="Sim to Silicone top-view map with fitted centrelines and centroids">
+      <figcaption>Sim → Silicone — 10 sweeps, 13 objects predicted; all 10 pair up, but the three extras cost it (OSPA 4.76 mm)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_map_sim_to_meat.webp" alt="Sim to Meat top-view map with fitted centrelines and centroids">
+      <figcaption>Sim → Meat — the median trial of ten (one straw beneath three steaks): 1 vessel, 1 found (OSPA 5.00 mm)</figcaption>
+    </figure>
+    <figure>
+      <img class="mesh" src="images/centrelines/cl_map_meat_to_silicone.webp" alt="Meat to Silicone top-view map with fitted centrelines and centroids">
+      <figcaption>Meat → Silicone — 10 sweeps, 14 objects predicted; training on real meat buys no advantage here (OSPA 5.06 mm)</figcaption>
+    </figure>
+  </div>
+  <p class="blurb">Read together, the two sections say the same thing twice: <strong>counting is the harder half of the problem</strong>. Sim → Sim aside, every model finds roughly where the vessels are but over-predicts how many there are, and it is that cardinality error — not the millimetres between matched pairs — that dominates OSPA. The full breakdown, including a 1 mm tolerance and the count confusion matrices, is in <a href="https://github.com/piotr-blaszyk/shallow-vessel-palpation-simulator-and-AI/blob/main/analysis/reports/detection-ospa.md"><code>analysis/reports/detection-ospa.md</code></a>.</p>
 
   <h2>Code and data</h2>
   <ul class="repos">

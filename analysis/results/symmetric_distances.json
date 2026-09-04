@@ -1,0 +1,122 @@
+{
+  "A-to-A": {
+    "frame": {
+      "fg_iou": 0.19008308478909247,
+      "symmetric_all_px": 18.237361542150595,
+      "symmetric_all_mm": 0.6631767833509307,
+      "symmetric_all_n": 85725,
+      "symmetric_mismatched_px": 102.80777393311368,
+      "symmetric_mismatched_mm": 3.738464506658679,
+      "symmetric_mismatched_n": 15207,
+      "one_directional_px": 83.33185168395515,
+      "one_directional_mm": 3.0302491521438237,
+      "one_directional_n": 18738,
+      "assd_px": 69.98209086025015,
+      "assd_mm": 2.5448033040090965,
+      "assd_n": 22345
+    },
+    "map": {
+      "fg_iou": 0.4175531914893617,
+      "symmetric_all_mm": 0.13117096984782534,
+      "symmetric_all_n": 3102,
+      "symmetric_swept_mm": 0.28178140475620095,
+      "symmetric_swept_n": 1444,
+      "symmetric_mismatched_mm": 1.8579559290774166,
+      "symmetric_mismatched_n": 219,
+      "one_directional_mm": 1.0524670019890858,
+      "one_directional_n": 335,
+      "assd_mm": 0.747609644658453,
+      "assd_n": 533
+    }
+  },
+  "A-to-B": {
+    "frame": {
+      "fg_iou": 0.2393995259415328,
+      "symmetric_all_px": 14.168045026133356,
+      "symmetric_all_mm": 0.5152016373139402,
+      "symmetric_all_n": 15118,
+      "symmetric_mismatched_px": 77.43763727588,
+      "symmetric_mismatched_mm": 2.815914082759272,
+      "symmetric_mismatched_n": 2766,
+      "one_directional_px": 59.3677985497858,
+      "one_directional_mm": 2.158829038174029,
+      "one_directional_n": 2857,
+      "assd_px": 58.556763180636146,
+      "assd_mm": 2.1293368429322235,
+      "assd_n": 4565
+    },
+    "map": {
+      "fg_iou": 0.282712511938873,
+      "symmetric_all_mm": 0.13324594258365705,
+      "symmetric_all_n": 18000,
+      "symmetric_swept_mm": 0.2681004880958894,
+      "symmetric_swept_n": 8946,
+      "symmetric_mismatched_mm": 1.5968222147175948,
+      "symmetric_mismatched_n": 1502,
+      "one_directional_mm": 1.208741059574922,
+      "one_directional_n": 1342,
+      "assd_mm": 1.4858814371324118,
+      "assd_n": 2686
+    }
+  },
+  "A-to-C": {
+    "frame": {
+      "fg_iou": 0.16692754919499106,
+      "symmetric_all_px": 33.161821891478354,
+      "symmetric_all_mm": 1.2058844324173947,
+      "symmetric_all_n": 26919,
+      "symmetric_mismatched_px": 136.14199839815552,
+      "symmetric_mismatched_mm": 4.950618123569291,
+      "symmetric_mismatched_n": 6557,
+      "one_directional_px": 113.29807404412269,
+      "one_directional_mm": 4.119929965240825,
+      "one_directional_n": 7733,
+      "assd_px": 94.60744154549121,
+      "assd_mm": 3.440270601654226,
+      "assd_n": 9483
+    },
+    "map": {
+      "fg_iou": 0.2116163189037683,
+      "symmetric_all_mm": 0.42893147084758704,
+      "symmetric_all_n": 74981,
+      "symmetric_swept_mm": 1.544231555942907,
+      "symmetric_swept_n": 20827,
+      "symmetric_mismatched_mm": 6.8662917625155675,
+      "symmetric_mismatched_n": 4684,
+      "one_directional_mm": 5.485438882985218,
+      "one_directional_n": 5823,
+      "assd_mm": 4.358722909852461,
+      "assd_n": 7402
+    }
+  },
+  "C-to-B": {
+    "frame": {
+      "fg_iou": 0.15724815724815724,
+      "symmetric_all_px": 67.51720600330277,
+      "symmetric_all_mm": 2.455171127392828,
+      "symmetric_all_n": 14040,
+      "symmetric_mismatched_px": 128.53445047950794,
+      "symmetric_mismatched_mm": 4.673980017436652,
+      "symmetric_mismatched_n": 7375,
+      "one_directional_px": 106.35041147022459,
+      "one_directional_mm": 3.867287689826348,
+      "one_directional_n": 8848,
+      "assd_px": 89.80445073627541,
+      "assd_mm": 3.265616390410015,
+      "assd_n": 10575
+    },
+    "map": {
+      "fg_iou": 0.3062622309197652,
+      "symmetric_all_mm": 0.13786201924728045,
+      "symmetric_all_n": 18000,
+      "symmetric_swept_mm": 0.2773883687068016,
+      "symmetric_swept_n": 8946,
+      "symmetric_mismatched_mm": 1.7500115278216135,
+      "symmetric_mismatched_n": 1418,
+      "one_directional_mm": 1.3102549226844944,
+      "one_directional_n": 1326,
+      "assd_mm": 1.5000388106503897,
+      "assd_n": 2670
+    }
+  }
+}

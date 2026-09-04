@@ -42,3 +42,8 @@ shallow-vessel-palpation-data.tar.gz.sha256
 difftactile/manual_or_experimental_data/particle_spacing_study/iteration_*/
 stale_artifacts_pre_new_dataset_20260815/
 saved_models_legacy/**/*.pickle
+
+# analysis/: the scripts, the figures they draw and the JSON/Markdown they write are
+# tracked; the per-data-point overlay runs they can also produce are not (thousands of
+# images, hundreds of MB, regenerable with ./docker/reproduce_analysis.sh --with-overlays).
+analysis/overlays/

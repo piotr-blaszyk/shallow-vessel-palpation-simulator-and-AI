@@ -64,6 +64,16 @@ EXPECTED=(
     # The published domain-adaptation BO run: alignment_figures.sh reads its
     # marker caches / MAEs, and it is the record behind the adopted parameters.
     "difftactile/output/domain_adaptation_published"
+    # Stage 1 of docker/reproduce_analysis.sh: the per-marker probabilities of all
+    # four published models over every central test frame. Regenerable in a minute,
+    # but only on a GPU - shipping them is what lets a CPU-only machine rebuild
+    # every poster figure and number (stages 2-12). Listed file by file, not as the
+    # directory, because analysis/results/ also holds git-tracked JSON and so exists
+    # in a fresh clone - verifying the directory would verify nothing.
+    "analysis/results/frame_space_predictions_A-to-A.npz"
+    "analysis/results/frame_space_predictions_A-to-B.npz"
+    "analysis/results/frame_space_predictions_A-to-C.npz"
+    "analysis/results/frame_space_predictions_C-to-B.npz"
 )
 
 # Restored when present, but not required for anything to run: the manuscript's

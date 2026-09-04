@@ -233,3 +233,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m pip install --no-cache-dir \
         "PySide6==6.9.1" \
         "av==15.1.0"
+
+# -----------------------------------------------------------------------------
+# 10. networkx - the only dependency of analysis/scripts/ that the layers above
+#     do not already provide. It draws the 3D render of the ST-GNN input graph
+#     (analysis/scripts/gnn_graph_figure.py); everything else the analysis tree
+#     needs (numpy, scipy, matplotlib, scikit-learn, opencv, Pillow, torch,
+#     torch_geometric) is installed above.
+# -----------------------------------------------------------------------------
+RUN python -m pip install --no-cache-dir "networkx==3.4.2"

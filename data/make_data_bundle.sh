@@ -156,6 +156,13 @@ copy_tree "difftactile/output/vessel_map_sim/raw_reordered_dense"
 # order) - behind the page's ten Sim->Sim maps. ~15 min with a GPU
 # (docker/vessel_map_sim_test_trajectories.sh); shipped for the same reason.
 copy_tree "difftactile/output/vessel_map_sim/test_trajectories"
+# The per-marker probabilities of all four published models over every central test
+# frame (analysis/scripts/frame_space_predictions.py, stage 1 of
+# docker/reproduce_analysis.sh). ~1.5 MB, one minute on a GPU - but a GPU is the
+# point: shipping them is what lets a CPU-only machine run stages 2-12 and rebuild
+# every poster figure and number. They are gitignored (*.npz), so the bundle is the
+# only place they exist outside a run.
+copy_tree "analysis/results" -name "*.npz"
 
 echo "[5/6] Sensor geometry / marker layout (~5 MB)"
 # Derived from the sensor CAD and a reference photo of the undeformed sensor.
