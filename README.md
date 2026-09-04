@@ -144,7 +144,10 @@ It trains nothing and simulates nothing: it evaluates the four published checkpo
 reads the published top-view map runs off disk, and derives everything else from those two.
 A full pass is about two minutes, and needs a GPU **for stage 1 only** — the Zenodo bundle
 also ships stage 1's output (`analysis/results/frame_space_predictions_<config>.npz`), so
-stages 2–12 run on a CPU-only machine.
+stages 2–12 run on a CPU-only machine. Those four files are the only part of the bundle
+`data/restore_data.sh --verify` reports as *regenerable* rather than *missing*: an older
+download that predates them still restores cleanly, it just needs
+`./docker/reproduce_analysis.sh --only 1` (one GPU minute) run first.
 
 | Poster block | Artefact under `analysis/` | Script (stage) |
 |---|---|---|

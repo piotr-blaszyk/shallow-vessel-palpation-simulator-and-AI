@@ -64,12 +64,17 @@ EXPECTED=(
     # The published domain-adaptation BO run: alignment_figures.sh reads its
     # marker caches / MAEs, and it is the record behind the adopted parameters.
     "difftactile/output/domain_adaptation_published"
-    # Stage 1 of docker/reproduce_analysis.sh: the per-marker probabilities of all
-    # four published models over every central test frame. Regenerable in a minute,
-    # but only on a GPU - shipping them is what lets a CPU-only machine rebuild
-    # every poster figure and number (stages 2-12). Listed file by file, not as the
-    # directory, because analysis/results/ also holds git-tracked JSON and so exists
-    # in a fresh clone - verifying the directory would verify nothing.
+)
+
+# Restored exactly like EXPECTED, but their absence is a WARNING rather than an
+# error: stage 1 of docker/reproduce_analysis.sh regenerates them in about a
+# minute. That stage is the only one that needs a GPU, so shipping its output is
+# what lets a CPU-only machine rebuild every analysis figure and number (stages
+# 2-12); a bundle downloaded before these were added simply needs that one stage
+# run first. Listed file by file, not as the directory, because analysis/results/
+# also holds git-tracked JSON and so exists in a fresh clone - verifying the
+# directory would verify nothing.
+REGENERABLE=(
     "analysis/results/frame_space_predictions_A-to-A.npz"
     "analysis/results/frame_space_predictions_A-to-B.npz"
     "analysis/results/frame_space_predictions_A-to-C.npz"
@@ -85,6 +90,7 @@ OPTIONAL=(
 
 verify() {
     local missing=0
+    local absent=0
     echo
     echo "Verifying restored data in ${REPO_DIR}:"
     for rel in "${EXPECTED[@]}"; do
@@ -98,10 +104,24 @@ verify() {
             missing=$((missing + 1))
         fi
     done
+    for rel in "${REGENERABLE[@]}"; do
+        if [ -e "${REPO_DIR}/${rel}" ]; then
+            printf '  OK      %s\n' "${rel}"
+        else
+            printf '  ABSENT  %s  (regenerable)\n' "${rel}"
+            absent=$((absent + 1))
+        fi
+    done
     echo
     if [ "${missing}" -gt 0 ]; then
         echo "${missing} expected path(s) missing — the ML entrypoints will fail with FileNotFoundError."
         return 1
+    fi
+    if [ "${absent}" -gt 0 ]; then
+        echo "All required data present."
+        echo "${absent} regenerable path(s) absent: run './docker/reproduce_analysis.sh --only 1'"
+        echo "(needs a GPU, about a minute) before the CPU-only stages 2-12."
+        return 0
     fi
     echo "All expected data present."
     return 0
@@ -153,7 +173,7 @@ echo
 
 # Copy each expected path into place. Existing files are replaced; anything the
 # bundle does not carry is left untouched, so this is safe to re-run.
-for rel in "${EXPECTED[@]}"; do
+for rel in "${EXPECTED[@]}" "${REGENERABLE[@]}"; do
     src="${BUNDLE}/${rel}"
     dest="${REPO_DIR}/${rel}"
     if [ ! -e "${src}" ]; then
