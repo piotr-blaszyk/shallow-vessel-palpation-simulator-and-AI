@@ -4,15 +4,15 @@
    LaTeXML's own LaTeXML.css / ltx-article.css are loaded first; everything here overrides
    them, chiefly the inline point widths and heights it copies out of the LaTeX boxes. */
 
+/* This page is LIGHT ONLY (user, 2026-09-04): it reproduces a printed poster table, and the
+   poster is black on white. `color-scheme: light` also stops the browser from darkening the
+   scrollbars and form controls of a page it would otherwise treat as dark-capable. The rest
+   of the site (docs/index.html) is untouched and still follows the device's setting -- these
+   tokens live in this page's own stylesheet, which nothing else loads. */
 :root {
+  color-scheme: light;
   --fg: #1d1d1f; --muted: #5b5b60; --bg: #ffffff; --card: #f4f4f6;
   --accent: #0a5cff; --rule: #d3d3d9; --rule-strong: #1d1d1f;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fg: #e8e8ec; --muted: #a3a3ab; --bg: #111114; --card: #1c1c21;
-    --accent: #5b93ff; --rule: #34343c; --rule-strong: #c9c9d1;
-  }
 }
 
 body {
